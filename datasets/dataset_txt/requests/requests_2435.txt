@@ -1,0 +1,27 @@
+amenasse commented on Jun 28, 2012
+We were experiencing a lot of time out exceptions in production which were triggered on a get using requests.
+response = requests.get(url,verify=False, prefetch=True)
+was occasionally raising a Timeout exception ('Request timed out.')
+We weren't setting timeout explicitly in the request so it was confusing that our request was timing out at all.
+I dug around in urllib3 and realised there are two types of timeout error that can be raised, a socket timeout and a timeout caused by no connections available in the connection pool:
+line 406 in requests/packages/urllib3/connectionpool.py:
+    except Empty as e:
+        # Timed out by queue
+        raise TimeoutError(self, "Request timed out. (pool_timeout=%s)" %
+                           pool_timeout)
+
+    except SocketTimeout as e:
+        # Timed out by socket
+        raise TimeoutError(self, "Request timed out. (timeout=%s)" %
+                           timeout)
+currently both of thse get raised as a generic Timeout errors by requests:
+in requests/models.py line 618
+except (_SSLError, _HTTPError) as e:
+       if self.verify and isinstance(e, _SSLError):
+           raise SSLError(e)
+
+        raise Timeout('Request timed out.')
+I think its usefull for us to know the difference between a socket time out error or a timeout due to no more connections available in the connection pool .
+Let me know if you are interested in accepting a patch for this issue.
+Thanks
+Anthony

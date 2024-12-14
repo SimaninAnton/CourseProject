@@ -1,0 +1,86 @@
+SimplicityGuy commented on 15 Apr 2014
+server (very basic!):
+from flask import (Flask, request, jsonify)
+from werkzeug import secure_filename
+
+app = Flask(__name__)
+app.config.from_object(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024
+
+@app.route('/files', methods=['POST'])
+def post_files():
+    r = dict()
+    r['directory'] = request.form['directory']
+    # yes, there is more code here, but this is the simplest repro!
+    return jsonify(r)
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0')
+client (with debugging output)
+from itertools import izip_longest
+from requests_toolbelt import MultipartEncoder
+import requests
+import os
+import sys
+import argparse
+
+URL = "http://localhost:5000/files"
+
+
+def grouper(n, iterable, fillvalue=None):
+    args = [iter(iterable)] * n
+    return izip_longest(fillvalue=fillvalue, *args)
+
+
+def import(source_folder, url):
+    for (path, dirs, files) in os.walk(source_folder):
+        if '.DS_Store' in files:
+            files.remove('.DS_Store')
+
+        if '.git' in dirs:
+            dirs.remove('.git')
+
+        # in order to limit the number of files being uploaded at once, keep it to 3 at a time
+        for f1, f2, f3 in grouper(3, files):
+            fields = dict()
+            fields['directory'] = os.path.basename(path)
+            if f1 is not None:
+                fields['f1'] = (f1, open(os.path.join(path, f1), 'rb'))
+            if f2 is not None:
+                fields['f2'] = (f2, open(os.path.join(path, f2), 'rb'))
+            if f3 is not None:
+                fields['f3'] = (f3, open(os.path.join(path, f3), 'rb'))
+            print fields
+            print
+            m = MultipartEncoder(fields=fields)
+            r = requests.post(url,
+                              data=m,
+                              headers={'Content-Type': m.content_type})
+            print r.json()
+            print r
+            print
+            print
+
+
+def main():
+    parser = argparse.ArgumentParser(description='importer')
+    parser.add_argument('source',
+                        help='source folder to import from')
+    parser.add_argument('--server',
+                        help='server to upload folder to',
+                        dest='url',
+                        required=False,
+                        default=URL)
+
+    args = parser.parse_args()
+    import(args.source, args.url)
+
+
+if __name__ == '__main__':
+    status = main()
+    sys.exit(status)
+When I run it with an input directory that has 9 files, the first time through, I get a RESPONSE 200, second time through, I get a RESPONSE 400:
+127.0.0.1 - - [14/Apr/2014 22:02:30] "POST /files HTTP/1.1" 200 -
+127.0.0.1 - - [14/Apr/2014 22:02:30] "POST /files HTTP/1.1" 400 -
+Any idea why this is happening?

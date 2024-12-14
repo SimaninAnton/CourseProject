@@ -1,0 +1,119 @@
+QuantumLiu commented on 15 Jun 2019 •
+edited
+System information
+Have I written custom code (as opposed to using example directory):
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Ubuntu 16.04
+TensorFlow backend (yes / no): yes
+TensorFlow version: 1.8.0
+Keras version: 2.2.4
+Python version: 3.5.6
+CUDA/cuDNN version: CUDA 9
+GPU model and memory: 1080ti*2
+Describe the current behavior
+Same as #12742 .
+Using Concatenate layer to concat two same shape layers, and got TypeError: unhashable type: 'Dimension'
+Part of logs:
+File "/home/visionai/pyprojects/VisionFaceSwap/unet/blocks.py", line 88, in layer
+    x = Concatenate()([x, skip])
+
+  File "/home/visionai/anaconda3/lib/python3.5/site-packages/keras/engine/base_layer.py", line 431, in __call__
+    self.build(unpack_singleton(input_shapes))
+
+  File "/home/visionai/anaconda3/lib/python3.5/site-packages/keras/layers/merge.py", line 358, in build
+    shape_set.add(tuple(reduced_inputs_shapes[i]))
+I added some code to track vars, I added some before concatenate ops in custom codes. And also in merge.py, the build function of Concatenate layer:
+def Upsample2D_block_face(filters, stage,p, kernel_size=(3,3), upsample_rate=(2,2),
+                     use_batchnorm=False, skip=None):
+
+    def layer(input_tensor):
+
+        conv_name, bn_name, relu_name, up_name = handle_block_names_face(stage,p)
+        
+        x = UpSampling2D(size=upsample_rate, name=up_name)(input_tensor)
+        if skip is not None:
+            print(x,skip)
+            x = Concatenate()([x, skip])
+    def build(self, input_shape):
+        # Used purely for shape validation.
+        print(input_shape)
+        if not isinstance(input_shape, list) or len(input_shape) < 2:
+            raise ValueError('A `Concatenate` layer should be called '
+                             'on a list of at least 2 inputs')
+        if all([shape is None for shape in input_shape]):
+            return
+        reduced_inputs_shapes = [list(shape) for shape in input_shape]
+        shape_set = set()
+        for i in range(len(reduced_inputs_shapes)):
+            del reduced_inputs_shapes[i][self.axis]
+            shape_set.add(tuple(reduced_inputs_shapes[i]))
+        if len(shape_set) > 1:
+            raise ValueError('A `Concatenate` layer requires '
+                             'inputs with matching shapes '
+                             'except for the concat axis. '
+                             'Got inputs shapes: %s' % (input_shape))
+print result:
+Tensor("decoder_stage0_src_upsample/ResizeNearestNeighbor:0", shape=(?, 16, 16, 512), dtype=float32) Tensor("input_3:0", shape=(?, 16, 16, 512), dtype=float32)
+[(None, Dimension(16), Dimension(16), Dimension(512)), (None, Dimension(16), Dimension(16), Dimension(512))]
+Describe the expected behavior
+Excepted to be
+from keras.layers import Input
+from keras.layers import Concatenate
+a=Conv2D(512,3,padding='same')(x)
+print(a,x)
+x=Concatenate()([a,Input((16,16,512))])
+print result
+Tensor("conv2d_3/BiasAdd:0", shape=(?, 16, 16, 512), dtype=float32) Tensor("concatenate_4/concat:0", shape=(?, 16, 16, 1024), dtype=float32)
+[(None, 16, 16, 512), (None, 16, 16, 512)]```
+Code to reproduce the issue
+Sorry, I do don't know.
+Other info / logs
+Traceback (most recent call last):
+
+  File "<ipython-input-11-629009f526f3>", line 1, in <module>
+    m=Unet_face(input_shape=(256,256,3),classes=3)
+
+  File "/home/visionai/pyprojects/VisionFaceSwap/utils/utils.py", line 31, in wrapper
+    return func(*args, **kwargs)
+
+  File "/home/visionai/pyprojects/VisionFaceSwap/unet/model.py", line 148, in Unet_face
+    use_batchnorm=decoder_use_batchnorm)
+
+  File "/home/visionai/pyprojects/VisionFaceSwap/unet/builder.py", line 96, in build_unet_face
+    skip=input_skip, use_batchnorm=use_batchnorm)(x_face)
+
+  File "/home/visionai/pyprojects/VisionFaceSwap/unet/blocks.py", line 88, in layer
+    x = Concatenate()([x, skip])
+
+  File "/home/visionai/anaconda3/lib/python3.5/site-packages/keras/engine/base_layer.py", line 431, in __call__
+    self.build(unpack_singleton(input_shapes))
+
+  File "/home/visionai/anaconda3/lib/python3.5/site-packages/keras/layers/merge.py", line 358, in build
+    shape_set.add(tuple(reduced_inputs_shapes[i]))
+
+TypeError: unhashable type: 'Dimension'
+            input_skip=Input(skip_connection.shape[-3:])
+.
+.
+.
+            x_face = up_block(decoder_filters[i], i,p, upsample_rate=upsample_rate,
+                         skip=input_skip, use_batchnorm=use_batchnorm)(x_face)
+def Upsample2D_block_face(filters, stage,p, kernel_size=(3,3), upsample_rate=(2,2),
+                     use_batchnorm=False, skip=None):
+
+    def layer(input_tensor):
+
+        conv_name, bn_name, relu_name, up_name = handle_block_names_face(stage,p)
+        
+        x = UpSampling2D(size=upsample_rate, name=up_name)(input_tensor)
+        if skip is not None:
+            print(x,skip)
+            x = Concatenate()([x, skip])
+
+        x = ConvRelu(filters, kernel_size, use_batchnorm=use_batchnorm,
+                     conv_name=conv_name + '1', bn_name=bn_name + '1', relu_name=relu_name + '1')(x)
+
+        x = ConvRelu(filters, kernel_size, use_batchnorm=use_batchnorm,
+                     conv_name=conv_name + '2', bn_name=bn_name + '2', relu_name=relu_name + '2')(x)
+
+        return x
+    return layer

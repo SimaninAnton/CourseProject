@@ -1,0 +1,62 @@
+thebenwaters commented on 12 Sep 2014
+Below is my new AuthTokenEmailSerializer
+serializer
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
+from django.utils.translation import ugettext_lazy as _
+import logging
+
+from rest_framework import serializers
+
+logger = logging.getLogger('ccDjango.core')
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.DEBUG)
+
+
+class AuthTokenEmailSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False)
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(required=True)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        logger.debug('Email is: ' + email)
+        password = attrs.get('password')
+        logger.debug(password)
+
+        if email and password:
+            my_user = User.objects.get(email=email)
+            user = authenticate(username=my_user.username, password=password)
+
+            if user:
+                if not user.is_active:
+                    msg = _('User account is disabled.')
+                    raise serializers.ValidationError(msg)
+                attrs['user'] = user
+                return attrs
+            else:
+                msg = _('Unable to log in with provided credentials.')
+                raise serializers.ValidationError(msg)
+
+        else:
+            msg = _('Must include "username" and "password"')
+            raise serializers.ValidationError(msg)
+url
+url(r'^api/authtokenemail', ObtainAuthTokenEmail.as_view()),
+view
+class ObtainAuthTokenEmail(APIView):
+    throttle_classes = ()
+    permission_classes = ()
+    parser_classes = (parsers.FormParser,  parsers.JSONParser,)
+    renderer_classes = (renderers.JSONRenderer,)
+
+    def post(self, request):
+        serializer = AuthTokenEmailSerializer(data=request.DATA)
+        logger.debug(serializer.data)
+        logger.debug('About to validate')
+        if serializer.is_valid():
+            token, created = Token.objects.get_or_create(user=serializer.object['user'])
+            return Response({'token': token.key})
+        logger.debug(serializer.errors)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+Whenever I try to post to it still says username is required? Why?

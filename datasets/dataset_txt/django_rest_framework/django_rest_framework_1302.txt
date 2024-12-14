@@ -1,0 +1,94 @@
+Contributor
+agconti commented on 4 Feb 2016
+When an object with a SerializerMethodField its accessed directly, its value gets added to the serialized output. However when an object is nested, its SerializerMethodField doesn't get called. (Supporting test in #3901)
+Is this the intended behavior?
+For example, a ProductGroup serializer has a SerializerMethodField that returns product logos. When accessed directly, those logos are populated:
+[
+    {
+      "id": "c4f984f1-1021-4f6c-b68a-ddfa2c36610d",
+      "description": " A description.",
+      "logos": [
+          "/media/product-logos/logo1.png",
+          "/media/product-logos/logo2.jpg",
+          "/media/product-logos/logo3.jpg"
+      ],
+      "products": [
+          {
+              "id": "1a671784-564e-44da-906c-a6af3b3cd484",
+              "logo": "http://localhost:8000/media/product-logos/ps3.png",
+          },
+          {
+              "id": "ff3b5fe6-993d-428d-8839-12491df9a657",
+              "logo": "http://localhost:8000/media/product-logos/good-logos-5.jpg",
+          },          
+      ]
+    }
+]
+When its nested in the response of a Dashboard serializer, its left out:
+[
+    {
+        "id": "3ad323a5-fc34-4eec-8fef-01885b585779",
+        "product_group": {
+            "id": "c4f984f1-1021-4f6c-b68a-ddfa2c36610d",
+            "description": " A description.",
+             "products": [
+                {
+                    "id": "1a671784-564e-44da-906c-a6af3b3cd484",
+                    "logo": "http://localhost:8000/media/product-logos/ps3.png",
+                },
+                {
+                    "id": "ff3b5fe6-993d-428d-8839-12491df9a657",
+                    "logo": "http://localhost:8000/media/product-logos/good-logos-5.jpg",
+                },          
+            ]
+        }
+    }
+]
+Using DRF 3.3.2, here's a setup to reproduce:
+Serializers.py:
+from rest_framework import serializers
+from .models import Product, Issue, Dashboard
+
+
+class ProductSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Product
+
+
+class ProudctGroupSerializer(serializers.ModelSerializer):
+    logos = serializers.SerializerMethodField()
+
+    def get_logos(self, obj):
+        return map(lambda p: p.logo.url, obj.products.all())
+
+    class Meta:
+        model = Issue
+
+
+class DashBoardSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Dashboard
+        depth = 3
+models.py:
+from __future__ import unicode_literals
+
+import uuid
+from django.db import models
+
+
+class Product(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    logo = models.ImageField(upload_to="logos/")
+
+
+class ProductGroup(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    description = models.TextField(max_length=80)
+    products = models.ManyToManyField(Product)
+
+
+class Dashboard(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ProductGroup = models.OneToOneField(ProductGroup)

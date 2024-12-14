@@ -1,0 +1,17 @@
+albertz commented on 31 Aug 2016
+The current implementation of sparse_categorical_crossentropy is:
+def sparse_categorical_crossentropy(output, target, from_logits=False):
+    target = T.cast(T.flatten(target), 'int32')
+    target = T.extra_ops.to_one_hot(target, nb_class=output.shape[-1])
+    target = reshape(target, shape(output))
+    return categorical_crossentropy(output, target, from_logits)
+However, that is a very inefficient implementation, because there is actually crossentropy_categorical_1hot provided by Theano. Theano's categorical_crossentropy will even automatically select that one if ndim is one less. This is the Theano code:
+def categorical_crossentropy(coding_dist, true_dist):
+    if true_dist.ndim == coding_dist.ndim:
+        return -tensor.sum(true_dist * tensor.log(coding_dist),
+                           axis=coding_dist.ndim - 1)
+    elif true_dist.ndim == coding_dist.ndim - 1:
+        return crossentropy_categorical_1hot(coding_dist, true_dist)
+    else:
+        raise TypeError('rank mismatch between coding and true distributions')
+So, it really should use crossentropy_categorical_1hot instead.

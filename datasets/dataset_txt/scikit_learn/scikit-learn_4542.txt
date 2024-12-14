@@ -1,0 +1,46 @@
+depristo commented on Jan 18, 2014
+The version 1.14 and the current master have a significant bug in StratifiedShuffleSplit in cross_validation.py
+The original code looks like:
+            permutation = rng.permutation(n_i[i] + t_i[i])
+but this code will systematically fail to some indices depending on the exact number of samples in each class and the fold requested. The following nose test will fail, detecting that two indices are never seen:
+def test_shuffle_split():
+    def checkme(npos, nneg, reps, fold):
+        labels = make_labels(int(npos), int(nneg))
+        splits = sklearn.cross_validation.StratifiedShuffleSplit(labels, n_iter=reps, test_size=1./fold, random_state=0)
+        assert_splits_are_even(labels, splits, 0, fold)
+
+    yield checkme, 11, 11, 1000, 5
+
+
+def assert_splits_are_even(labels, splits, n_left_out, fold):
+    train_counts = [0] * len(labels)
+    test_counts = [0] * len(labels)
+    for train, test in splits:
+        for counter, ids in [(train_counts, train), (test_counts, test)]:
+            for id in ids:
+                counter[id] += 1
+
+    n_splits = len(splits)
+    n_labels = len(labels)
+    label_counts = Counter(labels)
+    nose.tools.eq_(splits.test_size, 1.0 / fold)
+    nose.tools.eq_(splits.n_train + splits.n_test, len(labels))
+    nose.tools.eq_(len(label_counts), 2)
+    ex_test_p = (1. * splits.n_test) / n_labels
+    ex_train_p = 1.0 - ex_test_p
+
+    def assert_counts_are_ok(idx_counts, p):
+        print(idx_counts)
+        threshold = 0.01 / n_splits
+        bf = binom(n_splits, p)
+        for count in idx_counts:
+            p = bf.pmf(count)
+            nose.tools.assert_true(p > threshold,
+                                   "p value {} < threshold {} for "
+                                   "count {} with n={} p={}".format(p, threshold, count, n_splits, ex_train_p))
+
+    assert_counts_are_ok(train_counts, ex_train_p)
+    assert_counts_are_ok(test_counts, ex_test_p)
+The correct line should read:
+            permutation = rng.permutation(cls_count[i])
+so that all class counts are avaliable for selection.

@@ -1,0 +1,131 @@
+lk1983823 commented on 27 Mar 2017 •
+edited
+Tensorflow 1.0.1 Keras 2.0 and Python 3.4
+I am running a regression trainning using UFCNN model following lukovkin/ufcnn-keras' model of ufcnn-keras/notebook/UFCNN.ipynb ("https://github.com/lukovkin/ufcnn-keras/tree/master/notebook") and keras funcational API tutorials.
+But an error shows that " ValueError: Error when checking model input: expected input to have shape (None, 64, 1) but got array with shape (6400, 1, 1)"
+Here are my codes:
+from __future__ import absolute_import
+from __future__ import print_function
+import numpy as np
+import keras 
+from keras.models import Model
+from keras.models import Sequential
+from keras.layers import Input, merge
+from keras.layers.core import Activation
+from keras.layers.convolutional import Conv1D
+import matplotlib.pyplot as plt
+from keras.preprocessing import sequence
+
+## UFCNN function
+def ufcnn_regression_model(sequence_length=5000,
+                           features=1,
+                           nb_filter=150,
+                           filter_length=5,
+                           output_dim=1,
+                           optimizer='adagrad',
+                           loss='mse'):
+    inputs = Input(shape=(sequence_length, features), name = 'input')
+    
+    #########################################################
+    conv_1 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(inputs)
+    relu_1 = Activation('relu')(conv_1)
+    #########################################################
+    conv_2 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_1)
+    relu_2 = Activation('relu')(conv_2)
+    #########################################################
+    conv_3 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_2)
+    relu_3 = Activation('relu')(conv_3)
+    #########################################################
+    conv_4 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_3)
+    relu_4 = Activation('relu')(conv_4)
+    #########################################################
+    merge_1 = keras.layers.add([relu_2, relu_4])
+    conv_5 =Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(merge_1)
+    relu_5 = Activation('relu')(conv_5)
+    #########################################################
+    merge_2 = keras.layers.add([relu_1, relu_5])
+    conv_6 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(merge_2)
+    relu_6 = Activation('relu')(conv_6)
+    #########################################################
+    conv_7 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_6)
+    #########################################################
+    model = Model(inputs = inputs, outputs = conv_7)
+    model.compile(optimizer=optimizer, loss=loss)    
+    print(model.summary())
+    return model
+
+## Input & Output function
+def gen_cosine_amp(amp=100, period=25, x0=0, xn=500, step=1, k=0.0001):
+    cos = np.zeros(((xn - x0) * step,  1, 1))
+    print("Cos. Shape",cos.shape)
+    for i in range(len(cos)):
+        idx = x0 + i * step
+        cos[i, 0, 0] = amp * np.cos(idx / (2 * np.pi * period))
+        cos[i, 0, 0] = cos[i, 0, 0] * np.exp(-k * idx)
+        
+    lahead = 1
+    expected_output = np.zeros((len(cos), 1))
+    for i in range(len(cos) - lahead):
+        expected_output[i, 0] = np.mean(cos[i + 1:i + lahead + 1])
+    return cos, expected_output
+
+##  Parameter
+sequence_length = 64  
+features = 1               
+nb_filter = 150             
+filter_length = 5            
+output_dim = 1              
+epochs = 5
+batch_size = 128
+
+##  UFCNN_1 model summary
+UFCNN_1 = ufcnn_regression_model(sequence_length=sequence_length)
+
+## Inputs and ouputs to be trained
+cos = gen_cosine_amp(xn = sequence_length * 100)[0]
+expected_output =  gen_cosine_amp(xn = sequence_length * 100)[1]
+
+## Trainning
+for i in range(epochs):
+    print('Epoch', i, '/', epochs)
+    UFCNN_1.fit(cos, expected_output, verbose=1,epochs=1,shuffle=False, batch_size=batch_size)
+    print('Predicting')
+
+## Predicting
+predicted_output = model.predict(cos, batch_size=batch_size)
+My Error is:
+Epoch 0 / 5
+
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-8-d49a856b74bd> in <module>()
+      1 for i in range(epochs):
+      2     print('Epoch', i, '/', epochs)
+----> 3     UFCNN_1.fit(cos, expected_output, verbose=1,epochs=1,shuffle=False, batch_size=batch_size)
+      4     print('Predicting')
+      5 predicted_output = model.predict(cos, batch_size=batch_size)
+
+/usr/local/lib/python3.4/dist-packages/keras/engine/training.py in fit(self, x, y, batch_size, epochs, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, initial_epoch, **kwargs)
+   1403             class_weight=class_weight,
+   1404             check_batch_axis=False,
+-> 1405             batch_size=batch_size)
+   1406         # prepare validation data
+   1407         if validation_data:
+
+/usr/local/lib/python3.4/dist-packages/keras/engine/training.py in _standardize_user_data(self, x, y, sample_weight, class_weight, check_batch_axis, batch_size)
+   1293                                     self._feed_input_shapes,
+   1294                                     check_batch_axis=False,
+-> 1295                                     exception_prefix='model input')
+   1296         y = _standardize_input_data(y, self._feed_output_names,
+   1297                                     output_shapes,
+
+/usr/local/lib/python3.4/dist-packages/keras/engine/training.py in _standardize_input_data(data, names, shapes, check_batch_axis, exception_prefix)
+    131                             ' to have shape ' + str(shapes[i]) +
+    132                             ' but got array with shape ' +
+--> 133                             str(array.shape))
+    134     return arrays
+    135 
+
+ValueError: Error when checking model input: expected input to have shape (None, 64, 1) but got array with shape (6400, 1, 1)
+Thank you for your help to make it work!!!!!
+BTW: this model is almost the same as lukovkin/ufcnn-keras' model, only to update the code to fit for a newer version of keras and tensorflow.

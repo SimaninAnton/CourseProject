@@ -1,0 +1,24 @@
+dgreisen-cfpb commented on 7 Mar 2014
+We have implemented a pattern for selecting or excluding fields from a serializer by passing comma-separated, dotted field paths to select or exclude query params. We have full tests, is this something you would be interested in for trunk? If so, I'll pull it out of subclasses and into the DRF code.
+Given the following serializer:
+class GroupSerializer(SelectModelSerializer):
+    field1 = serializers.SerializerMethodField('_field1')
+
+    def _field1(self, obj):
+        return 5
+
+    class Meta:
+        model = Group
+        fields = ['name', 'field1']
+
+class UserSerializer(SelectModelSerializer):
+    groups = GroupSerializer(many=True, source='groups')
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'username', 'groups']
+we can make the following types of queries:
+/users/jdoe/?exclude=groups,first_name -> {"last_name": "doe", "username": "jdoe"}
+/users/?select=first_name,last_name -> [{"first_name": "john", "last_name": "doe"}, ...]
+/users/?select=username,groups.name -> [{"username": "jdoe", "groups": [{"name": "admin"}, ...]}, ...]
+This is accomplished by passing an optional select, exclude, or querydict to the serializer, so while it is trivial to plumb up with the select/exclude query string, it is still easy to use any other method of acquiring the list of selected/excluded fields.
+We have found this particularly useful for rich web apps, as it allows us to expose all the info the app could ever need for a given object, but the app can choose which data from all available it actually needs. Substantially reducing the number of requests the app must make, but still ensuring that each request doesn't make db queries for unneeded data.

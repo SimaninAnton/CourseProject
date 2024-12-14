@@ -1,0 +1,42 @@
+matthubb commented on 25 May 2018
+Summary
+Certbot's cli.ini file will not support the same config items as the renewal conf files because the former is read by ConfigArgParse and the latter is read by configobj. It is not possible to supply plugin configuration options in the cli.ini for plugins not covered by PREFIX_FREE_DISTRIBUTIONS.
+Certbot forces third party plugins to have colons in their configuration arguments as prefix-name:plugin-name.
+Certbot's cli configuration will not support arguments that include colons because ConfigArgParse treats these as key-value separators.
+Certbot also converts hyphens to underscores in plugin prefixes while configuration arguments are written to renewal configuration files, these are not recognised in the cli.ini.
+Environment
+I installed Certbot 0.24.0 with virtualenv + pip on CentOS 7.3
+We're developing an auth plugin for our local DNS environment. We're having difficulties with the configuration system, specifically involving the colon in the PluginEntryPoint.name.
+Say our module dist key is certbot-dns-local-acme, and our module name is certbot_dns_local_acme, and our entry point name is dns-local-acme. The cli.ini line to use this is: authenticator = certbot-dns-local-acme:dns-local-acme.
+The plugin includes an option to change the propagation wait time and a credential file using the configuration methods from dns-common. I provided a credential file interactively and obtained a test certificate.
+Certbot produced a renewal config that included:
+[renewalparams]
+authenticator = certbot-dns-local-acme:dns-local-acme
+certbot_dns_local_acme:dns_local_acme_credentials = /opt/certbot/local_acme.ini
+With the config line from the renewal config.
+Thinking I could use that configuration line in the cli.ini file.
+Config
+certbot_dns_local_acme:dns-local-acme-credentials = /opt/certbot/local_acme.ini
+Certbot response:
+certbot: error: unrecognized arguments: --certbot_dns_local_acme dns-local-acme-credentials = /opt/certbot/local_acme.ini
+Modifying the config to replace the underscores with hyphens:
+Config
+certbot-dns-local-acme:dns-local-acme-credentials = /opt/certbot/local_acme.ini
+Certbot response
+certbot: error: ambiguous option: --certbot-dns-local-acme could match --certbot-dns-local-acme:dns-local-acme-propagation-seconds, --certbot-dns-local-acme:dns-local-acme-credentials
+Horrible hack
+I've dug through the sources for ConfigArgParse and determined that it's not possible to have a colon in a key.
+Why not use a delimiter that will work on the CLI and isn't a separator for ConfigArgParse?
+All of the prefix-colon configuration problems are resolved by a horrible hack to add our plugin to PREFIX_FREE_DISTRIBUTION by adding this to our __init__.py file:
+import inspect
+
+def _patch():
+    for frame_obj, filename, line, func, _, _ in inspect.stack():
+        if func == '__init__' and frame_obj.f_locals['self'].__class__.__name__ == 'PluginEntryPoint':
+            frame_obj.f_locals['self'].name = frame_obj.f_locals['entry_point'].name
+            module_name = frame_obj.f_locals['entry_point'].dist.key
+            pre_free_dist = frame_obj.f_locals['self'].PREFIX_FREE_DISTRIBUTIONS
+            if module_name not in pre_free_dist:
+                pre_free_dist.append(module_name)
+
+_patch()

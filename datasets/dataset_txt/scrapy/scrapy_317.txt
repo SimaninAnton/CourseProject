@@ -1,0 +1,67 @@
+ricoxor commented on Aug 12, 2018
+Hello,
+I want to run an old crawler build with Scrapy but I got an error that stop everyting. I try multiple thing but nothing change.
+Can someone help me to fix this issue ?
+Thank you in advance.
+Logs :
+root@xxxxx:/home/CrawlerNDD# scrapy crawl expired_one
+:0: UserWarning: You do not have a working installation of the service_identity module: 'No module named x509'.  Please install it from <https://pypi.python.org/pypi/service_identity> and make sure all of its dependencies are satisfied.
+Without the service_identity module, Twisted can perform only rudimentary TLS client hostname verification.  Many valid certificate/hostname mappings may be rejected.
+2018-08-12 15:14:55 [scrapy.utils.log] INFO: Scrapy 1.5.1 started (bot: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36)
+2018-08-12 15:14:55 [scrapy.utils.log] INFO: Versions: lxml 3.4.0.0, libxml2 2.9.1, cssselect 1.0.3, parsel 1.5.0, w3lib 1.19.0, Twisted 18.7.0, Python 2.7.9 (default, Jun 29 2016, 13:08:31) - [GCC 4.9.2], pyOpenSSL 0.14 (OpenSSL 1.0.1t
+3 May 2016), cryptography 0.6.1, Platform Linux-3.16.0-6-amd64-x86_64-with-debian-8.11
+2018-08-12 15:14:55 [scrapy.crawler] INFO: Overridden settings: {'NEWSPIDER_MODULE': 'dirbot.spiders', 'DOWNLOAD_MAXSIZE': 23554432, 'SPIDER_MODULES': ['dirbot.spiders'], 'CONCURRENT_REQUESTS': 128, 'DOWNLOAD_WARNSIZE': 0, 'DUPEFILTER_CLASS': 'dirbot.custom_filters.BLOOMDupeFilter', 'BOT_NAME': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36', 'AJAXCRAWL_ENABLED': True, 'DEPTH_PRIORITY': 1, 'COOKIES_ENABLED': False, 'DOWNLOAD_TIMEOUT': 15, 'DEFAULT_ITEM_CLASS': 'dirbot.items.Website', 'SCHEDULER_MEMORY_QUEUE': 'scrapy.squeues.FifoMemoryQueue', 'DNS_TIMEOUT': 15, 'LOG_ENABLED': False, 'SCHEDULER_DISK_QUEUE': 'scrapy.squeues.PickleFifoDiskQueue'}
+Unhandled error in Deferred:
+My Spider :
+from __future__ import division
+import scrapy
+from scrapy.spiders import CrawlSpider, Rule
+from scrapy.linkextractors.lxmlhtml import LxmlLinkExtractor
+from dirbot.settings import *
+from scrapy import signals
+import time
+import tldextract, json, pika, os, signal
+
+class HttpbinSpider(CrawlSpider):
+    name = "expired_one"
+    rules = (Rule(LxmlLinkExtractor(allow=(), canonicalize=False), callback='parse_items', follow=True),)
+
+    blacklist = [...]
+
+    domains = ['http://www.website.com']
+
+    allowed_suffix = [...]
+
+    def __init__(self, domains=None, **kwargs):
+
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+        self.channel = self.connection.channel()
+        self.channel.queue_declare(queue='expired', passive=False, durable=True, auto_delete=False)
+        self.channel.confirm_delivery()
+        #self.start_urls = json.loads(domains)
+     self.start_urls = ['http://www.website.com']
+        domain = json.loads(domains)
+        ext = tldextract.extract(domain[0])
+        self.allowed_domains = []
+        self.allowed_domains.append(ext.registered_domain)
+
+        dispatcher.connect(self.spider_closed, signals.spider_closed)
+        super(HttpbinSpider, self).__init__()
+
+    def parse_items(self, response):
+        for link in LxmlLinkExtractor(allow=(), deny=self.allowed_domains, canonicalize=False).extract_links(response):
+            ext = tldextract.extract(link.url)
+            domain = ext.registered_domain
+            if ext.suffix in self.allowed_suffix:
+                if domain not in self.domains and domain not in self.blacklist:
+                    self.connection.sleep(0.05)
+                    self.channel.basic_publish(exchange='', routing_key='expired', body=domain,
+                                               properties=pika.BasicProperties(
+                                                   delivery_mode=2,
+                                               ))
+                    self.domains.append(domain)
+
+    def spider_closed(self, spider):
+        self.connection.close()
+        pid = os.getpid()
+        os.kill(pid, signal.SIGTERM)

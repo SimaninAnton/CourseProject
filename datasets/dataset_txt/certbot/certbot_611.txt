@@ -1,0 +1,76 @@
+Member
+cpu commented on 12 Apr 2018
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+Cloned from git:
+$> git rev-parse HEAD
+6b29d159a2f221c3437770bdb43924ee6f953c4b
+I ran this command and it produced this output:
+certbot_test --server http://localhost:4001/directory certonly --standalone -d one.wtf --preferred-challenges http-01
+Certbot's behavior differed from what I expected because:
+The JWS payload sent to the newOrder endpoint contained two fields not mentioned in modern ACME drafts (e.g. draft-10, draft-11, "ACME v2"): "resource" and "status".
+{
+  "status": "pending", 
+  "identifiers": [
+    {
+      "type": "dns", 
+      "value": "one.wtf"
+    }
+  ], 
+  "resource": "new-order"
+}
+The first unexpected field, "resource", is already captured in #5708
+The second unexpected field, "status", is something assigned by the server in the returned order object and not a field that should appear in the client's newOrder request. Section 7.4 of draft-11 only specifies the following fields for a newOrder request: "identifiers", "notBefore" and "notAfter". Because Let's Encrypt does not support the latter two fields I would expect a newOrder JWS body to look like:
+{
+  "identifiers": [
+    {
+      "type": "dns", 
+      "value": "one.wtf"
+    }
+  ], 
+}
+Here is a Certbot log showing the issue (if available):
+<snip>
+
+JWS payload:
+{
+  "status": "pending", 
+  "identifiers": [
+    {
+      "type": "dns", 
+      "value": "one.wtf"
+    }
+  ], 
+  "resource": "new-order"
+}
+Sending POST request to http://localhost:4001/acme/new-order:
+{
+  "protected": "eyJub25jZSI6ICJEYjVYUWNIWGJ3MmVwdHNUVVJJZkpwN0ZScUl2RlVsQWJlQm80VW1qb25rIiwgInVybCI6ICJodHRwOi8vbG9jYWxob3N0OjQwMDEvYWNtZS9uZXctb3JkZXIiLCAia2lkIjogImh0dHA6Ly9sb2NhbGhvc3Q6NDAwMS9hY21lL2FjY3QvMjE0MSIsICJhbGciOiAiUlMyNTYifQ", 
+  "payload": "ewogICJzdGF0dXMiOiAicGVuZGluZyIsIAogICJpZGVudGlmaWVycyI6IFsKICAgIHsKICAgICAgInR5cGUiOiAiZG5zIiwgCiAgICAgICJ2YWx1ZSI6ICJvbmUud3RmIgogICAgfQogIF0sIAogICJyZXNvdXJjZSI6ICJuZXctb3JkZXIiCn0", 
+  "signature": "ET-axiCTOnK_YHcI_dAcBy2x6hkdP9rc3gTBOySQyLuArlLCwI9SF9T36Yy0QMui0Va7gEPnSk8-5PvuA7xnxGC0R8PLwHBpDAG2T4ARclZtOxyArS0_fv8H4NAERn7EkPHIDrxdYaHj51TgYl7Trejmqb6tpYPJN8x3K2xXxzK9_RXqyFQDizaYQ3YH8gAsgmc24o0W8T4ervdeurztxnk0Y9xBUQa8kBLkuPxWWD9O-P8N8BlVobFpIYibYiZJ2pwFZGgtwQJ1f8eZek5IceZKbv-i_WI7KAS-VdHkLWo7p5L9jCA2KejWgEblsOxKwZRjyp5ZC0tWkglDm3gIZg"
+}
+http://localhost:4001 "POST /acme/new-order HTTP/1.1" 201 323
+Received response:
+HTTP 201
+Boulder-Requester: 2141
+Cache-Control: public, max-age=0, no-cache
+Content-Type: application/json
+Location: http://localhost:4001/acme/order/2141/932
+Replay-Nonce: Aeop9czyFGXSMBH0TfD4MwI5klCloEnml8AFsRzBPDU
+Date: Thu, 12 Apr 2018 17:06:51 GMT
+Content-Length: 323
+
+{
+  "status": "ready",
+  "expires": "2018-04-19T17:06:51.98458014Z",
+  "identifiers": [
+    {
+      "type": "dns",
+      "value": "one.wtf"
+    }
+  ],
+  "authorizations": [
+    "http://localhost:4001/acme/authz/qklYRnxxHtf8PAaR8IpgK2ex7uPqWYzWgPEQrPiqEKc"
+  ],
+  "finalize": "http://localhost:4001/acme/finalize/2141/932"
+}
+<snip>

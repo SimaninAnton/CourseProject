@@ -1,0 +1,74 @@
+leockl commented 28 days ago •
+edited
+I was running:
+sklearn.utils.estimator_checks.check_estimator
+to check a binary classifier that I had just developed, and the error below came up:
+---------------------------------------------------------------------------
+AssertionError                            Traceback (most recent call last)
+<ipython-input-19-b6bd5534c8b4> in <module>
+      1 from sklearn.utils.estimator_checks import check_estimator
+----> 2 check_estimator(my_classifier)
+
+~\Anaconda3\lib\site-packages\sklearn\utils\estimator_checks.py in check_estimator(Estimator)
+    300     for check in _yield_all_checks(name, estimator):
+    301         try:
+--> 302             check(name, estimator)
+    303         except SkipTest as exception:
+    304             # the only SkipTest thrown currently results from not
+
+~\Anaconda3\lib\site-packages\sklearn\utils\estimator_checks.py in check_classifiers_classes(name, classifier_orig)
+   1800         for y_names_i in [y_names, y_names.astype('O')]:
+   1801             y_ = choose_check_classifiers_labels(name, y, y_names_i)
+-> 1802             check_classifiers_predictions(X, y_, name, classifier_orig)
+   1803 
+   1804     labels_binary = [-1, 1]
+
+~\Anaconda3\lib\site-packages\sklearn\utils\testing.py in wrapper(*args, **kwargs)
+    353             with warnings.catch_warnings():
+    354                 warnings.simplefilter("ignore", self.category)
+--> 355                 return fn(*args, **kwargs)
+    356 
+    357         return wrapper
+
+~\Anaconda3\lib\site-packages\sklearn\utils\estimator_checks.py in check_classifiers_predictions(X, y, name, classifier_orig)
+   1762         # For some specific cases 'ComplementNB' predicts less classes
+   1763         # than expected
+-> 1764         assert_array_equal(np.unique(y), np.unique(y_pred))
+   1765     assert_array_equal(classes, classifier.classes_,
+   1766                        err_msg="Unexpected classes_ attribute for %r: "
+
+~\Anaconda3\lib\site-packages\numpy\testing\_private\utils.py in assert_array_equal(x, y, err_msg, verbose)
+    904     __tracebackhide__ = True  # Hide traceback for py.test
+    905     assert_array_compare(operator.__eq__, x, y, err_msg=err_msg,
+--> 906                          verbose=verbose, header='Arrays are not equal')
+    907 
+    908 
+
+~\Anaconda3\lib\site-packages\numpy\testing\_private\utils.py in assert_array_compare(comparison, x, y, err_msg, verbose, header, precision, equal_nan, equal_inf)
+    752                                 verbose=verbose, header=header,
+    753                                 names=('x', 'y'), precision=precision)
+--> 754             raise AssertionError(msg)
+    755 
+    756         flagged = bool_(False)
+
+AssertionError: 
+Arrays are not equal
+
+(shapes (3,), (2,) mismatch)
+ x: array(['one', 'three', 'two'], dtype='<U5')
+ y: array(['one', 'three'], dtype='<U5')
+I have pinpointed it down to the part of the code in sklearn.utils.estimator_checks.check_estimator where I think where the issue is:
+    problems = [(X_binary, y_binary, y_names_binary)]
+    if not _safe_tags(classifier_orig, 'binary_only'):
+        problems.append((X_multiclass, y_multiclass, y_names_multiclass))
+
+    for X, y, y_names in problems:
+        for y_names_i in [y_names, y_names.astype('O')]:
+            y_ = _choose_check_classifiers_labels(name, y, y_names_i)
+            check_classifiers_predictions(X, y_, name, classifier_orig)
+
+    labels_binary = [-1, 1]
+    y_names_binary = np.take(labels_binary, y_binary)
+    y_binary = _choose_check_classifiers_labels(name, y_binary, y_names_binary)
+    check_classifiers_predictions(X_binary, y_binary, name, classifier_orig)
+There is something wrong with the tag 'binary_only' where it is not properly capturing binary classifiers only. I could be wrong and not entire sure how to fix the tag. Can anyone help or point me to the right direction. Many thanks.

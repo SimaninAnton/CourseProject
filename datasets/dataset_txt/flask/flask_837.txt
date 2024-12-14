@@ -1,0 +1,34 @@
+easyrider666 commented on 13 May 2016 •
+edited
+The signing of session-cookies works fine on development computer. But when moving the software to an embedded device, ARM71, 32 bit the derive_key() occasionally fail and returns an invalid key. Making the cookie invalid.
+It is actually the hmac that returns invalid hashed string, but this only happens when running the flask application.
+def derive_key(self):
+    """This method is called to derive the key.  If you're unhappy with
+    the default key derivation choices you can override them here.
+    Keep in mind that the key derivation in itsdangerous is not intended
+    to be used as a security method to make a complex key out of a short
+    password.  Instead you should use large random secret keys.
+    """
+    salt = want_bytes(self.salt)
+    if self.key_derivation == 'concat':
+        return self.digest_method(salt + self.secret_key).digest()
+    elif self.key_derivation == 'django-concat':
+        return self.digest_method(salt + b'signer' +
+            self.secret_key).digest()
+    elif self.key_derivation == 'hmac':
+        mac = hmac.new(self.secret_key, digestmod=self.digest_method) ##### 1
+        print(binascii.hexlify(mac.digest()))
+        mac.update(salt)               ##### 2
+        print(binascii.hexlify(mac.digest()))
+        return mac.digest()
+    elif self.key_derivation == 'none':
+        return self.secret_key
+    else:
+        raise TypeError('Unknown key derivation method')
+secret_key = b"testing"
+salt = "cookie-session"
+After #####1, binascii.hexlify(mac.digest()) = b'6ab6fc891eefd3b78743ea28b1803811561a7c9b'
+After #####2, binascii.hexlify(mac.digest()) = b'd58bd52b4ced54374ea5baca0b6aa52b0e03af74'
+But sometimes (1) above return b'9dac0c533fcca6cb787aa332d8f152ffb7e6b960'
+and (2) does not change when adding salt: b'9dac0c533fcca6cb787aa332d8f152ffb7e6b960'
+Been trying to solve this for a couple of days without success. Any ideas?

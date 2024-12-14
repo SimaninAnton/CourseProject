@@ -1,0 +1,79 @@
+Contributor
+jjallaire commented on 15 Dec 2017
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+When running under both Keras 2.1.2 as well as Keras from GitHub master the validation accuracy achieved in the dogs vs. cats example in Chapter 5.3 of the DL w/Python book (https://github.com/fchollet/deep-learning-with-python-notebooks/blob/master/5.3-using-a-pretrained-convnet.ipynb) is ~ 90%.
+However, the validation accuracy when running under Keras 2.0.9 is ~ 96%.
+The code (as well as the cats vs. dogs images) required to reproduce this is in the following GitHub repo (the script is also inline below):
+https://github.com/jjallaire/keras-vgg16-accuracy
+One other noteworthy thing is that with Keras 2.1.2 case training takes ~ 22 seconds/epoch whereas with Keras 2.0.9 it's ~ 50 seconds per epoch (this on an Amazon p2.xlarge instance).
+import os
+import keras
+from keras import models
+from keras import layers
+from keras import optimizers
+from keras.applications import VGG16
+from keras.preprocessing.image import ImageDataGenerator
+
+
+base_dir = 'cats_and_dogs_small'
+train_dir = os.path.join(base_dir, 'train')
+validation_dir = os.path.join(base_dir, 'validation')
+test_dir = os.path.join(base_dir, 'test')
+
+
+conv_base = VGG16(weights='imagenet',
+                  include_top=False,
+                  input_shape=(150, 150, 3))
+                  
+model = models.Sequential()
+model.add(conv_base)
+model.add(layers.Flatten())
+model.add(layers.Dense(256, activation='relu'))
+model.add(layers.Dense(1, activation='sigmoid'))
+
+conv_base.trainable = False
+
+
+train_datagen = ImageDataGenerator(
+      rescale=1./255,
+      rotation_range=40,
+      width_shift_range=0.2,
+      height_shift_range=0.2,
+      shear_range=0.2,
+      zoom_range=0.2,
+      horizontal_flip=True,
+      fill_mode='nearest')
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+        train_dir,
+        target_size=(150, 150),
+        batch_size=20,
+        class_mode='binary')
+
+validation_generator = test_datagen.flow_from_directory(
+        validation_dir,
+        target_size=(150, 150),
+        batch_size=20,
+        class_mode='binary')
+
+
+model.compile(loss='binary_crossentropy',
+              optimizer=optimizers.RMSprop(lr=2e-5),
+              metrics=['acc'])
+
+history = model.fit_generator(
+      train_generator,
+      steps_per_epoch=100,
+      epochs=30,
+      validation_data=validation_generator,
+      validation_steps=50,
+      verbose=1)

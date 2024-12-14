@@ -1,0 +1,62 @@
+jeremyjordan commented on Sep 4, 2017
+I am running a spider with Scrapy but after it finishes crawling it can't seem to terminate. Log stats just recursively report that it is scraping 0 pages/minute. When I try to quit with Ctrl-C, it fails to shut down gracefully and I have to quit forcefully with Ctrl-C again. Any clue what is happening?
+After completing a scrape, I just get output like this:
+2017-08-24 11:13:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:14:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:15:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:16:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:17:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:18:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:19:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:20:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+2017-08-24 11:21:45 [scrapy.extensions.logstats] INFO: Crawled 60 pages (at 0 pages/min), scraped 54 items (at 0 items/min)
+which continues indefinitely.
+My spider goes to a page that contains a list of links over multiple pages. It visits the first page, extracts the links (using the request meta trick to pass some information along while following the link), and then goes to the next page of links.
+A second parser extracts information from the individual pages.
+I don't see any error messages, and the job performs successfully; it just fails to end. This is a problem because I would like to use a script to call the job to run multiple times on different pages (same structure, different information), but the since the first job never finishes I can't ever get to the next set of pages to scrape.
+The parse(self, response) method yields two types of information.
+For each link on the page, visit the page to extract more information.
+ request = scrapy.Request(item['url'], callback=self.parse_transcript)
+ request.meta['item'] = item
+ yield request
+If there is another page of links, get link and increment page number by 1 using regex.
+ while data['count'] > 0:
+     next_page = re.sub('(?<=page=)(\d+)', lambda x: str(int(x.group(0)) + 1), response.url) 
+     yield Request(next_page)
+I checked the engine status using the telnet extension. I'm not sure how to interpret this information though.
+>>> est()
+Execution engine status
+
+time()-engine.start_time                        : 10746.1215799
+engine.has_capacity()                           : False
+len(engine.downloader.active)                   : 0
+engine.scraper.is_idle()                        : False
+engine.spider.name                              : transcripts
+engine.spider_is_idle(engine.spider)            : False
+engine.slot.closing                             : <Deferred at 0x10d8fda28>
+len(engine.slot.inprogress)                     : 4
+len(engine.slot.scheduler.dqs or [])            : 0
+len(engine.slot.scheduler.mqs)                  : 0
+len(engine.scraper.slot.queue)                  : 0
+len(engine.scraper.slot.active)                 : 4
+engine.scraper.slot.active_size                 : 31569
+engine.scraper.slot.itemproc_size               : 0
+engine.scraper.slot.needs_backout()             : False
+I tried raising an exception to close the spider after it reached the end of the links, but this prematurely stopped the spider from being able to visit all of the links that were scrapped. Further, the engine still appeared to hang after closing the spider.
+while data['count'] > 0:
+    next_page = re.sub('(?<=page=)(\d+)', lambda x: str(int(x.group(0)) + 1), response.url)
+    yield Request(next_page)
+else:
+    raise CloseSpider('End of transcript history has been reached.')
+I also tried using the CLOSESPIDER_TIMEOUT extension, but to no avail. The spider appears to close properly, but the engine remains idling indefinitely.
+2017-08-30 11:20:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 9 pages/min), scraped 42 items (at 9 items/min)
+2017-08-30 11:23:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+2017-08-30 11:24:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+2017-08-30 11:25:44 [scrapy.core.engine] INFO: Closing spider (closespider_timeout)
+2017-08-30 11:25:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+2017-08-30 11:28:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+2017-08-30 11:29:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+2017-08-30 11:32:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+^C2017-08-30 11:33:31 [scrapy.crawler] INFO: Received SIGINT, shutting down gracefully. Send again to force
+2017-08-30 11:41:44 [scrapy.extensions.logstats] INFO: Crawled 48 pages (at 0 pages/min), scraped 42 items (at 0 items/min)
+^C2017-08-30 11:45:52 [scrapy.crawler] INFO: Received SIGINT twice, forcing unclean shutdown

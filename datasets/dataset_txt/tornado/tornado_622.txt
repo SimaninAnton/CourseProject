@@ -1,0 +1,60 @@
+zhkzyth commented on 8 Aug 2015
+Hello, i am using tornado for the service of user logi.But today,it just did not work as usual.
+I wrote some code like below:
+sign_token, session_key = yield self.login_user(raw_user)
+log.info('Success to login user(%s) with sign_token(%s) and session_key(%s).' % (raw_user['id'], sign_token, session_key))
+As usual, it should work when it call the self.login_user function.
+Below is the code:
+    @tornado.gen.coroutine
+    def login_user(self, raw_user):
+
+        req = self.requestObj
+        user_info = self.prepare_user_info(raw_user)
+        redis_conn = req.application.redis_conn
+
+        # set session data
+        session_key = SESSION_PREFIX + str(raw_user['id'])
+        # now = time.mktime(time.gmtime())
+        now = get_utc_time_stamp()
+        session_id = yield self.__gen_session_id()
+        sign_token_id = yield self.__gen_sign_token()
+        session_data = {
+            'session': session_id,
+            'session_expired_at': now + SESSION_LIFE_TIME,
+            'token': sign_token_id,
+            'token_expired_at': now + SIGN_TOKEN_LIFE_TIME
+        }
+        yield tornado.gen.Task(redis_conn.hmset, session_key, session_data)
+        log.info('Successfully to set a record for session_key:' + session_key)
+
+        # set user_info
+        # avoid to write None to redis
+        for key in user_info:
+            if user_info[key] is None:
+                user_info[key] = ''
+
+        log.info('dump user data to cache: %s ' % user_info)
+
+        user_info_key = USER_INFO_PREFIX + str(raw_user['id'])
+        yield tornado.gen.Task(redis_conn.hmset, user_info_key, user_info)
+
+        log.info('Successfully to set a record for user_key:' + user_info_key)
+
+        raise tornado.gen.Return([sign_token_id, session_id])
+But now the func just stop responsing, the log Success to login user(... did not come out.And no exception at all.
+Some infos may help:
+MySQL-python==1.2.5
+PyYAML==3.11
+backports.ssl-match-hostname==3.4.0.2
+certifi==14.05.14
+cffi==0.8.6
+cryptography==0.6.1
+protobuf==2.4.1
+pyOpenSSL==0.14
+pycparser==2.10
+six==1.8.0
+tornado==4.0.2
+tornado-redis==2.4.18
+torndb==0.3
+wsgiref==0.1.2
+pytz

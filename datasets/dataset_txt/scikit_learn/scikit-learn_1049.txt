@@ -1,0 +1,103 @@
+Contributor
+oleksandr-pavlyk commented on Sep 28, 2018 •
+edited
+Description
+The linear_model/tests/test_logistic.py::test_logistic_regression_multi_class_auto test contains assertions (see diff of the commit where they are introduced as part of PR #11905).
+The assertion claims that logistic regression coefficients trained with multi_class='ovr' and multi_class='multinomial' must be different on a dataset with 2 distinct labels.
+Both calls result in solving the same underlying minimization problems and should give identical answers, provided that underlying solvers work correctly.
+EDIT: 'ovr' and 'multinomial' formulations are solving equivalent unregularized problems, but L2 regularization breaks the equivalence.
+Steps/Code to Reproduce
+import numpy as np
+import sklearn
+import sklearn.linear_model as lm
+from sklearn.datasets import load_iris
+
+iris = load_iris()
+X = iris.data[::10]
+y_bin = (iris.target[::10] == 0).astype(np.intc)
+
+est_b = lm.LogisticRegression(solver='lbfgs', multi_class='ovr', random_state=0)
+est_m = lm.LogisticRegression(solver='lbfgs', multi_class='multinomial', random_state=0)
+
+est_b.fit(X, y_bin)
+est_m.fit(X, y_bin)
+
+assert est_b.coef_.shape == est_m.coef_.shape
+# the following is the contentious assert
+assert not np.allclose(est_b.coef_, est_m.coef_)
+
+# test that `est_b` coefficients and intercept are the turel logistic loss argmin
+#      and `est_m` ones are not
+y_pm = 2*y_bin - 1
+w_b = np.append(est_b.coef_, est_b.intercept_).ravel()
+w_m = np.append(est_m.coef_, est_m.intercept_).ravel()
+
+l_b, grad_b = lm.logistic._logistic_loss_and_grad(w_b, X, y_pm, 1.0 / est_b.C )
+l_m, grad_m = lm.logistic._logistic_loss_and_grad(w_m, X, y_pm, 1.0 / est_m.C )
+
+print(l_b, grad_b)
+print(l_m, grad_m)
+
+print(l_b, grad_b)
+print(l_m, grad_m)
+print("-"*40)
+
+# Multinomial objective function
+
+w2_b = np.array([0*w_b, w_b]).ravel()   # embedding of ovr logistic problem into multinomial
+w2_m = np.array([-w_m, w_m]).ravel()  # liftiting of binary logistic regression coef. into multi-class 
+
+y_multi = sklearn.preprocessing.LabelBinarizer().fit_transform(y_bin)
+y_multi = np.hstack((1-y_multi, y_multi))
+
+l2_b, grad2_b, _ = lm.logistic._multinomial_loss_grad(w2_b, X, y_multi, 1.0/est_b.C, sample_weights)
+l2_m, grad2_m, _ = lm.logistic._multinomial_loss_grad(w2_m, X, y_multi, 1.0/est_m.C, sample_weights)
+
+print(l2_b, grad2_b.reshape((2,-1)))
+print(l2_m, grad2_m.reshape((2,-1)))
+Actual Results
+Here is the output of the script:
+2.220442756956402 [5.45466010e-05 3.48024555e-05 3.31397356e-05 4.06096797e-05
+ 4.71382929e-06]
+2.9363848853677994 [1.70550173 0.03434332 3.01349841 1.20793733 0.18469541]
+--------------------------------------------------------------------------------
+2.2204427569564027 [[-2.19898133e-01  4.82174639e-01 -1.30392864e+00 -5.30313685e-01
+  -4.71382929e-06]
+ [ 5.45466010e-05  3.48024555e-05  3.31397356e-05  4.06096797e-05
+   4.71382929e-06]]
+1.5342152595957554 [[-3.70500300e-05 -1.60463362e-05 -3.67762305e-05 -1.53470065e-05
+  -7.88789659e-06]
+ [ 3.70500300e-05  1.60463362e-05  3.67762305e-05  1.53470065e-05
+   7.88789659e-06]]
+So we see that est_b solution embedded into multinomial formulation gives the same value of the objective function, but because the coefficients of class 0 were fixed to zero, their corresponding gradient components in multinomial formulation are non-zero ([-2.19898133e-01 4.82174639e-01 -1.30392864e+00 -5.30313685e-01 -4.71382929e-06]), but the other gradient components coincide with those in 'ovr' formulation.
+We also see that est_m is indeed a solution to the 'multinomial' problem.
+Expected Results
+I expect est_b.coef_ to agree with est_m.coef_ as they are solution to reformulations of the same optimization problem (cross-entropy loss for 2 classes exactly equals logistic loss), where multinomial
+coefficients are np.array([-w_b, w_b]).
+I also expect that grad_m be a close zero vector, like grad_b is.
+Taking into account the effect of L2 regularization, I expect that ovr coefficients with C, be twice the multinomial coefficients with C/2.
+And indeed they are:
+est2_m = lm.LogisticRegression(solver='lbfgs', multi_class='multinomial', random_state=0, C=0.5*est_b.C)
+est2_m.fit(X, y_bin)
+
+print(est_b.coef_)
+print(est2_m.coef_*2)
+print(est_b.intercept_)
+print(est2_m.intercept_*2)
+which prints
+[[-0.21984359  0.48220944 -1.3038955  -0.53027307]]
+[[-0.2198369   0.48218687 -1.30390622 -0.53028542]]
+[3.73368486]
+[3.73375273]
+Versions
+In [8]: sklearn.__version__
+Out[8]: '0.20.0'
+
+In [10]: import scipy
+
+In [11]: scipy.__version__
+Out[11]: '1.1.0'
+
+In [12]: np.__version__
+Out[12]: '1.15.1'
+@jnothman @GaelVaroquaux

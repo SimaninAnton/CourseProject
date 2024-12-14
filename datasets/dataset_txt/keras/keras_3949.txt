@@ -1,0 +1,63 @@
+KlaymenGC commented on 10 Nov 2016 •
+edited
+Hello,
+I have an end-to-end network (like FCN), which has the input shape:
+(batch_size, channel, img_col, img_row)
+and the output shape:
+(batch_size, img_col, img_row, num_class)
+the labels are one-hot-encoded and have the shape:
+(batch_size, img_col, img_row, num_class)
+When computing the loss, I don´t want to compute the loss for the whole output but just compute on the randomly sampling part of the whole region. The custom loss function is like:
+def custom_loss_fun(y_true, y_pred)
+
+      from theano.tensor.shared_randomstreams import RandomStreams
+
+      # reshape to (batch_size*img_col*img_row, n_class)
+      y_pred = y_pred.dimshuffle(3, 0, 1, 2).flatten(2).dimshuffle(1, 0)
+      y_true = y_true.dimshuffle(3, 0, 1, 2).flatten(2).dimshuffle(1, 0)
+      
+      # sampling
+      mask_size = y_true.shape[0]
+      rs = RandomStreams(seed=234)
+      # make mask for sampling
+      mask = rs.binomial(n=1, p=0.8, size=mask_size)
+      # get the indices
+      label_idx = (mask > 0).nonzero()
+     
+      y_pred = y_pred[label_idx] # size has changed
+      y_true = y_true[label_idx] # size has changed
+      
+      return keras.objectives.categorical_crossentropy(y_true, y_pred)
+The error is as follows:
+Note: batch_size = 2, batch_size * img_col * img_row = 921600
+Traceback (most recent call last):
+  File "C:\lib\site-packages\theano\compile\function_module.py", line 859, in __call__
+    outputs = self.fn()
+ValueError: Input dimension mis-match. (input[0].shape[0] = 921600, input[1].shape[0] = 2)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+.......
+  File "C:\lib\site-packages\theano\compile\function_module.py", line 859, in __call__
+    outputs = self.fn()
+ValueError: Input dimension mis-match. (input[0].shape[0] = 921600, input[1].shape[0] = 2)
+Apply node that caused the error: Elemwise{mul,no_inplace}(mean, reshape_2_sample_weights)
+Toposort index: 1709
+Inputs types: [TensorType(float32, vector), TensorType(float32, vector)]
+Inputs shapes: [(921600,), (2,)]   
+Inputs strides: [(4,), (4,)]
+Inputs values: ['not shown', array([ 1.,  1.], dtype=float32)]
+Outputs clients: [[Elemwise{true_div,no_inplace}(Elemwise{mul,no_inplace}.0, DimShuffle{x}.0)]]
+
+Backtrace when the node is created(use Theano flag traceback.limit=N to make it longer):
+ .....
+  File "C:/.....py", line 436, in train_model
+    model.compile(loss=self.sampled_loss_CE, optimizer='adam', metrics=[keras.metrics.categorical_accuracy])
+  File "C:\lib\site-packages\keras\engine\training.py", line 625, in compile
+    sample_weight, mask)
+  File "C:\lib\site-packages\keras\engine\training.py", line 344, in weighted
+    score_array *= weights
+
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+any ideas?

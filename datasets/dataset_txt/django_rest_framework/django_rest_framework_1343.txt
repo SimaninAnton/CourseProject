@@ -1,0 +1,40 @@
+kewama commented on 6 Jan 2016
+ModelSerializer.get_extra_kwargs() currently does:
+extra_kwargs = getattr(self.Meta, 'extra_kwargs', {})
+<snip>
+extra_kwargs[field_name] = kwargs
+If extra_kwargs is defined in the Meta class, this alters the value of it. To avoid this, get_extra_kwargs() should update a copy of it:
+extra_kwargs = copy.deepcopy(getattr(self.Meta, 'extra_kwargs', {}))
+When the value of Meta.extra_kwargs is updated, it causes side effects for child serializers that inherit from Meta. (I know that this is officially not recommended, but the doc does show how to do it.) For example:
+>>> from django.contrib.auth.models import User
+>>> from rest_framework import serializers
+>>> 
+>>> class UserSerializer(serializers.ModelSerializer):
+...     class Meta:
+...         model = User
+...         read_only_fields = ('username', 'email')
+...         fields = read_only_fields
+...         extra_kwargs = {}
+... 
+>>> class ChildUserSerializer(UserSerializer):
+...     class Meta(UserSerializer.Meta):
+...         read_only_fields = ()
+... 
+Before instantiating the base class, the child class looks correct:
+>>> ChildUserSerializer.Meta.extra_kwargs
+{}
+>>> print ChildUserSerializer()
+ChildUserSerializer():
+    username = CharField(help_text='Required. 30 characters or fewer. Letters, digits and @/./+/-/_ only.', max_length=30, validators=[<django.core.validators.RegexValidator object>, <UniqueValidator(queryset=User.objects.all())>])
+    email = EmailField(allow_blank=True, label='Email address', max_length=254, required=False)
+But after instantiating the base class, the child class' Meta.extra_kwargs is corrupted:
+>>> print UserSerializer()
+UserSerializer():
+    username = CharField(help_text='Required. 30 characters or fewer. Letters, digits and @/./+/-/_ only.', read_only=True)
+    email = EmailField(label='Email address', read_only=True)
+>>> ChildUserSerializer.Meta.extra_kwargs
+{'username': {u'read_only': True}, 'email': {u'read_only': True}}
+>>> print ChildUserSerializer()
+ChildUserSerializer():
+    username = CharField(help_text='Required. 30 characters or fewer. Letters, digits and @/./+/-/_ only.', read_only=True)
+    email = EmailField(label='Email address', read_only=True)

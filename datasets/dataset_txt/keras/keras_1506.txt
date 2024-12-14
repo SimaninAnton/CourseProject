@@ -1,0 +1,52 @@
+vishvananda commented on 9 Nov 2017
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+The following code which attempts to use tf.string as the dtype for a layer fails:
+import tensorflow as tf
+from keras.models import Model
+from keras.layers import Input
+from keras.layers import Lambda
+
+def decode_images(images):
+    return tf.map_fn(lambda x: tf.image.decode_jpeg(tf.squeeze(x), channels=3), images, dtype=tf.uint8)
+                     
+i = Input(batch_shape=(None, 1), dtype=tf.string, name="input")
+o = Lambda(decode_images, dtype=tf.uint8)(i)
+m = Model(inputs=i, outputs=o)
+fnames = ["test01.jpg", "test02.jpg"]
+images = []
+for fname in fnames:
+    with open(fname, mode='rb') as f:
+        images.append(f.read())
+encoded = np.array(images, dtype=object)
+m.predict(encoded[:, np.newaxis])
+The error is as follows:
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/op_def_library.py in _apply_op_helper(self, op_type_name, name, **keywords)
+    509                 as_ref=input_arg.is_ref,
+--> 510                 preferred_dtype=default_dtype)
+    511           except TypeError as err:
+
+/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py in internal_convert_to_tensor(value, dtype, name, as_ref, preferred_dtype, ctx)
+    925     if ret is None:
+--> 926       ret = conversion_func(value, dtype=dtype, name=name, as_ref=as_ref)
+    927 
+
+/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py in _TensorTensorConversionFunction(t, dtype, name, as_ref)
+    773         "Tensor conversion requested dtype %s for Tensor with dtype %s: %r" %
+--> 774         (dtype.name, t.dtype.name, str(t)))
+    775   return t
+
+ValueError: Tensor conversion requested dtype string for Tensor with dtype float32: 'Tensor("lambda_1_2/map_1/while/Squeeze:0", shape=(), dtype=float32)'
+It appears that the request for tf.string was not recognized and therefore automatically converted into float32? Note that the same code using the version of keras inside of tensorflow works fine. It appears that the backend understands 'string' as a type:
+>>> from keras import backend as K
+>>> import tensorflow as tf
+>>> K.dtype(K.placeholder(dtype=tf.string))
+'string'
+so i'm not sure why it is getting converted to a float32.
+1

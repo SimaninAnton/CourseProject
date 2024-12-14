@@ -1,0 +1,201 @@
+Jackal93 commented on 19 Feb 2018 •
+edited
+I have a problem with using Keras models in threads. I have been able to reproduce the issue in a MWE that I report below.
+Here and in the real code, I create the networks outside the threads, then inside of them i use a network to make predictions and fitting.
+To make it work with as few as 2 threads, I hade to use the workarounds described in:
+#5896
+and
+#6124
+(i.e. they amount to using with graph.as_default(): and net._make_train_function())
+The program executes without any problem with 32 threads, however when that number is increased to 64 exceptions are raised (see below).
+import threading
+import numpy as np
+from keras.layers import Input, LSTM
+from keras.models import Model
+
+import tensorflow as tf
+
+
+n_threads = 64
+
+# get reference to graph as per issue #5896
+graph = tf.get_default_graph()
+
+
+def make_rnet():
+    inp = Input(batch_shape=(1,1,5))
+    out = LSTM(1, stateful=True)(inp)
+    return Model(inputs=inp, outputs=out)
+
+def thread_fn(index, global_net):
+    """
+    :param index:
+    :type global_net: Model
+    """
+
+    print("thread-%s" % index)
+
+    net = nets[index]
+
+    # use with statement as per issue #5896
+    with graph.as_default():
+
+        net.reset_states()
+
+        # sync weigths with global network
+        gw = global_net.get_weights()
+        net.set_weights(gw)
+
+        in_shape = [int(d) for d in net.input.shape]
+        out_shape = [int(d) for d in net.output.shape]
+
+        # test prediction
+        net.predict(np.ones(shape=in_shape))
+
+        # test fit on random data
+        x = np.random.random(size=in_shape)
+        y = np.ones(shape=out_shape)
+        w = net.get_weights()
+        net.fit(x,y, verbose=0, batch_size=1)
+        new_w = net.get_weights()
+
+        # update global network weigths
+        upd = [n - o for n,o in zip(new_w, w)]
+        new_gw = [w + u for w,u in zip(global_net.get_weights(), upd)]
+        global_net.set_weights(new_gw)
+
+
+global_net = make_rnet()
+nets = [make_rnet() for i in range(n_threads)]
+threads = [threading.Thread(target=thread_fn, args=(i, global_net)) for i in range(n_threads)]
+
+for i, net in enumerate([global_net] + nets):
+    print("init net", i)
+    net.compile(optimizer='rmsprop', loss='mse')
+    # init as per issue #6124
+    net._make_train_function()
+
+
+print("saving global_net weights")
+
+old_gw = global_net.get_weights()
+
+print("starting %s threads..." % n_threads)
+
+for t in threads:
+    t.start()
+
+for t in threads:
+    t.join()
+
+print("threads terminated.")
+
+# the following code is not very important
+new_gw = global_net.get_weights()
+
+changed = False
+for o,n in zip(old_gw, new_gw):
+    if not np.array_equal(o,n):
+        changed = True
+        break
+
+if changed:
+    print('global w changed!')
+else:
+    print('global w unaltered')
+Some of the exceptions raised with 64 threads are:
+Exception in thread Thread-8:
+Traceback (most recent call last):
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\threading.py", line 914, in _bootstrap_inner
+    self.run()
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\threading.py", line 862, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:/Users/Daniele/Desktop/univ/tesi/codice/prove/mwe_thread_problem.py", line 43, in thread_fn
+    net.predict(np.ones(shape=in_shape))
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\engine\training.py", line 1787, in predict
+    self._make_predict_function()
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\engine\training.py", line 1029, in _make_predict_function
+    **kwargs)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\backend\tensorflow_backend.py", line 2381, in function
+    return Function(inputs, outputs, updates=updates, **kwargs)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\backend\tensorflow_backend.py", line 2333, in __init__
+    self.updates_op = tf.group(*updates_ops)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\ops\control_flow_ops.py", line 2898, in group
+    return _GroupControlDeps(dev, deps, name=name)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\ops\control_flow_ops.py", line 2855, in _GroupControlDeps
+    return no_op(name=name)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\contextlib.py", line 66, in __exit__
+    next(self.gen)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\framework\ops.py", line 3240, in device
+    self._device_function_stack.pop()
+IndexError: pop from empty list
+
+Exception in thread Thread-63:
+Traceback (most recent call last):
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\client\session.py", line 1139, in _do_call
+    return fn(*args)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\client\session.py", line 1121, in _run_fn
+    status, run_metadata)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\contextlib.py", line 66, in __exit__
+    next(self.gen)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\framework\errors_impl.py", line 466, in raise_exception_on_not_ok_status
+    pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'input_54' with dtype float and shape [1,1,5]
+  [[Node: input_54 = Placeholder[dtype=DT_FLOAT, shape=[1,1,5], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\threading.py", line 914, in _bootstrap_inner
+    self.run()
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\threading.py", line 862, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:/Users/Daniele/Desktop/univ/tesi/codice/prove/mwe_thread_problem.py", line 38, in thread_fn
+    net.set_weights(gw)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\engine\topology.py", line 2007, in set_weights
+    K.batch_set_value(tuples)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\backend\tensorflow_backend.py", line 2252, in batch_set_value
+    get_session().run(assign_ops, feed_dict=feed_dict)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\client\session.py", line 789, in run
+    run_metadata_ptr)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\client\session.py", line 997, in _run
+    feed_dict_string, options, run_metadata)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\client\session.py", line 1132, in _do_run
+    target_list, options, run_metadata)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\client\session.py", line 1152, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'input_54' with dtype float and shape [1,1,5]
+  [[Node: input_54 = Placeholder[dtype=DT_FLOAT, shape=[1,1,5], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+Caused by op 'input_54', defined at:
+  File "C:/Users/Daniele/Desktop/univ/tesi/codice/prove/mwe_thread_problem.py", line 57, in <module>
+    nets = [make_rnet() for i in range(n_threads)]
+  File "C:/Users/Daniele/Desktop/univ/tesi/codice/prove/mwe_thread_problem.py", line 57, in <listcomp>
+    nets = [make_rnet() for i in range(n_threads)]
+  File "C:/Users/Daniele/Desktop/univ/tesi/codice/prove/mwe_thread_problem.py", line 16, in make_rnet
+    inp = Input(batch_shape=(1,1,5))
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\engine\topology.py", line 1439, in Input
+    input_tensor=tensor)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\legacy\interfaces.py", line 87, in wrapper
+    return func(*args, **kwargs)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\engine\topology.py", line 1348, in __init__
+    name=self.name)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\keras\backend\tensorflow_backend.py", line 497, in placeholder
+    x = tf.placeholder(dtype, shape=shape, name=name)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\ops\array_ops.py", line 1530, in placeholder
+    return gen_array_ops._placeholder(dtype=dtype, shape=shape, name=name)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\ops\gen_array_ops.py", line 1954, in _placeholder
+    name=name)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\framework\op_def_library.py", line 767, in apply_op
+    op_def=op_def)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\framework\ops.py", line 2506, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "C:\WinPython-64bit-3.5.4.0Qt5-r2017-02\python-3.5.4.amd64\lib\site-packages\tensorflow\python\framework\ops.py", line 1269, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'input_54' with dtype float and shape [1,1,5]
+  [[Node: input_54 = Placeholder[dtype=DT_FLOAT, shape=[1,1,5], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+In the real code much less threads (8) are needed for this behaviour to occur, maybe because each thread uses many networks (6) and they have way more parameters (~3 millions).
+Why is this happening?
+1
+1

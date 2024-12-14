@@ -1,0 +1,23 @@
+phdowling commented on 18 May 2016 •
+edited
+From my understanding, stateful recurrent models in Keras will keep the states at each batch axis-0 index intact for the next batch, i.e. the final state of sample 0 will be fed to sample 128 for a batch size of 128. This is useful, because with masking and arranging our data in a smart way, we can train using consistent state even on samples that are longer than the networks specified input length.
+One caveat: states can only be reset all-at-once, meaning either all data needs to be padded to the same length again (which is not ideal), or we have to do something like training on only subsets of a longer texts at a time, and reset states e.g. after each batch.
+My idea now was to allow arbitrary state resets during training time through an extra parameter to the model.train_on_batch() function, namely a vector with length input_batch.shape[0], which contains a boolean of whether the network should reset the state for each sample after this step. This could essentially look as follows (example along the lines of a character-model network):
+num_samples = X.shape[0]
+for i in range(steps_per_sentence - 1):
+    loss = model.train_on_batch(
+        X[
+            :, i: i + prev_steps, :
+        ],
+        np.reshape(
+            X[
+                :, i + prev_steps: i + prev_steps + 1, :
+            ], (num_samples, num_inputs)
+        ),
+        state_resets=[
+            is_sentence_end_index(sentence_idx, i) for sentence_idx in range(num_samples)
+        ]
+    )
+Where is_sentence_end_index(sentence_idx, i) returns True if a sentence/sample ends at the given index, which could be stored e.g. during data preprocessing. This would allow users to concatenate input data as they wish, thus possibly saving resources as there can be less "empty" space in the data (and perhaps even gaining performance, I'm not sure if masking/padding is harmful for some models and loss functions).
+Is this a good idea? Is this realistic to implement under Keras? I could imagine that there's something about the symbolic nature of Theano or TF that may make this difficult, but I am not familiar enough with Keras' under-the-hood implementations to judge how hard this would be.
+4

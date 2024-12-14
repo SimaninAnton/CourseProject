@@ -1,0 +1,154 @@
+Ichaab commented on May 5, 2018 •
+edited
+Description
+I search to test ensemble learning classifiers with imbalanced data under the same conditions (cross validation and estimator params for example). Among them, there are the BalanceCascade, the balancedBagging and the EasyEnsemble which are already implemented under the imblearn API. Testing balancedBagging classifier with stratified Kfold cross validation go alright, however there is a problem or mishandling of BalanceCascade and EasyEnsemble in my code.
+Steps/Code to Reproduce
+data=pandas.read_excel('./glass6-1.xlsx', sep='\t', header=0)
+data.head(2)
+nbr_col=data.shape[1]-1
+X = data.ix[:, 1:nbr_col].values
+Y = data.ix[:, nbr_col].values
+clfs = {
+    'Balanced_BAG': BalancedBaggingClassifier(n_estimators=30),
+    'Balanced_Cascade': BalanceCascade(),
+}
+def run_pipeline(clfs, X_num, Y_num):
+    seed=5
+    kf = model_selection.StratifiedKFold(n_splits=10, shuffle=True,random_state=seed)
+    for clf_name in clfs:
+        labels = np.asarray(["positive","negative"])
+        last_line_heading = 'avg / total'
+        target_names = ['%s' % l for l in labels]
+        name_width = max(len(cn) for cn in target_names)
+        digits=3
+        width = max(name_width, len(last_line_heading), digits)
+        headers = ["Sen", "Spe"]
+        fmt = '%% %ds' % width  # first column: class name
+        fmt += '  '
+        fmt += ' '.join(['% 9s' for _ in headers])
+        fmt += '\n'
+        headers = [""] + headers
+        report = fmt % tuple(headers)
+        report += '\n'
+        clf = clfs[clf_name]
+        cv_sens = cross_val_score(clf, X_num, Y_num, cv=kf, scoring=make_scorer(sens,pos_label=1)) 
+        cv_spec = cross_val_score(clf, X_num, Y_num, cv=kf, scoring=make_scorer(spec,pos_label=1)) 
+        values=[clf_name]
+        for v in (np.mean(cv_sens), np.mean(cv_spec)):
+            values += ['{0:.3f}'.format(v)]
+        report += fmt % tuple(values)
+        print(report)
+run_pipeline(clfs,X,Y)
+Actual Results
+The sensitivity and specificity are calculated according to the BalancedBagging approach, but with BalanceCascade there is a bug:
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+<ipython-input-21-03790d8fd49e> in <module>()
+----> 1 run_pipeline(clfs,X,Y)
+
+<ipython-input-20-51438e7be42a> in run_pipeline(clfs, X_num, Y_num)
+     22         report += '\n'
+     23         clf = clfs[clf_name]
+---> 24         cv_sens = cross_val_score(clf, X_num, Y_num, cv=kf, scoring=make_scorer(sens,pos_label=1))
+     25         cv_spec = cross_val_score(clf, X_num, Y_num, cv=kf, scoring=make_scorer(spec,pos_label=1))
+     26         values=[clf_name]
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\model_selection\_validation.py in cross_val_score(estimator, X, y, groups, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch)
+    354                                 n_jobs=n_jobs, verbose=verbose,
+    355                                 fit_params=fit_params,
+--> 356                                 pre_dispatch=pre_dispatch)
+    357     return cv_results['test_score']
+    358 
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\model_selection\_validation.py in cross_validate(estimator, X, y, groups, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch, return_train_score, return_estimator)
+    213             fit_params, return_train_score=return_train_score,
+    214             return_times=True, return_estimator=return_estimator)
+--> 215         for train, test in cv.split(X, y, groups))
+    216 
+    217     zipped_scores = list(zip(*scores))
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\parallel.py in __call__(self, iterable)
+    777             # was dispatched. In particular this covers the edge
+    778             # case of Parallel used with an exhausted iterator.
+--> 779             while self.dispatch_one_batch(iterator):
+    780                 self._iterating = True
+    781             else:
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\parallel.py in dispatch_one_batch(self, iterator)
+    623                 return False
+    624             else:
+--> 625                 self._dispatch(tasks)
+    626                 return True
+    627 
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\parallel.py in _dispatch(self, batch)
+    586         dispatch_timestamp = time.time()
+    587         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+--> 588         job = self._backend.apply_async(batch, callback=cb)
+    589         self._jobs.append(job)
+    590 
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\_parallel_backends.py in apply_async(self, func, callback)
+    109     def apply_async(self, func, callback=None):
+    110         """Schedule a func to be run"""
+--> 111         result = ImmediateResult(func)
+    112         if callback:
+    113             callback(result)
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\_parallel_backends.py in __init__(self, batch)
+    330         # Don't delay the application, to avoid keeping the input
+    331         # arguments in memory
+--> 332         self.results = batch()
+    333 
+    334     def get(self):
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\parallel.py in __call__(self)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\externals\joblib\parallel.py in <listcomp>(.0)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\model_selection\_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, return_n_test_samples, return_times, return_estimator, error_score)
+    517         fit_time = time.time() - start_time
+    518         # _score will return dict if is_multimetric is True
+--> 519         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
+    520         score_time = time.time() - start_time - fit_time
+    521         if return_train_score:
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\model_selection\_validation.py in _score(estimator, X_test, y_test, scorer, is_multimetric)
+    554     """
+    555     if is_multimetric:
+--> 556         return _multimetric_score(estimator, X_test, y_test, scorer)
+    557     else:
+    558         if y_test is None:
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\model_selection\_validation.py in _multimetric_score(estimator, X_test, y_test, scorers)
+    584             score = scorer(estimator, X_test)
+    585         else:
+--> 586             score = scorer(estimator, X_test, y_test)
+    587 
+    588         if hasattr(score, 'item'):
+
+~\Anaconda35\Lib\site-packages\scikit-learn\sklearn\metrics\scorer.py in __call__(self, estimator, X, y_true, sample_weight)
+     99         super(_PredictScorer, self).__call__(estimator, X, y_true,
+    100                                              sample_weight=sample_weight)
+--> 101         y_pred = estimator.predict(X)
+    102         if sample_weight is not None:
+    103             return self._sign * self._score_func(y_true, y_pred,
+
+AttributeError: 'BalanceCascade' object has no attribute 'predict'
+Versions
+Windows-8.1-6.3.9600-SP0
+Python 3.6.4 Anaconda, Inc
+Numpy 1.14.0
+SciPy 1.0.0
+Scikit-learn: 0.20.dev0
+Any help would be much appreciated.

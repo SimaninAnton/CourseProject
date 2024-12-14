@@ -1,0 +1,41 @@
+turowicz commented on 29 Nov 2017 •
+edited
+Steps to reproduce the problem:
+Hey I'm running mitmdump in a docker container on a VM. Over time, the memory overflows and disk swap starts, rendering the proxy unusable. This is easily fixed by a system reboot.
+I start the execution with the following command:
+sudo docker run -d --restart unless-stopped -p 80:8080 -v ~/HttpReorder.py:/tmp/HttpReorder.py mitmproxy/mitmproxy mitmdump -s /tmp/HttpReorder.py -R https://<my-url-here>:443 -p 8080
+and the script file's contents are:
+def reorder(headers, header_order=["Date", "Server", "Connection", "Pragma", "Accept-Ranges", "Expires", "Cache-Control", "Content-Disposition", "Content-Length", "Vary", "Content-Range", "Content-Type"]):
+    lines = []
+    for name in header_order:  # add existing headers in the specified order
+        if name in headers:
+            lines.append([name, headers[name]])
+            del headers[name]
+    #lines.extend(headers.fields)  # all other headers
+    return lines
+
+def response(flow):
+
+    reordered = reorder(flow.response.headers)
+
+    for pair in reordered:
+        flow.response.headers[pair[0]] = pair[1]
+
+    if "/download/" in flow.request.path and "Content-Type" not in flow.response.headers:
+        flow.response.headers["Content-Type"] = "text/plain;charset=UTF-8"
+
+
+def requestheaders(flow):
+    flow.request.headers["NewHost"] = flow.request.headers["Host"]
+
+def request(flow):
+    if "NewHost" in flow.request.headers:
+        requested = flow.request.headers["NewHost"]
+
+        if "dev.data.something" in requested:
+            flow.request.host = "dev.admin.something"
+        elif "data.something" in requested:
+            flow.request.host = "admin.something"
+
+        del flow.request.headers["NewHost"]
+What am I doing wrong? There seems to be a new python process in memory for each request. They never quit, only add up used memory.

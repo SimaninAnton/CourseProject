@@ -1,0 +1,71 @@
+gborrageiro commented on 22 Mar 2018 •
+edited by ThiefMaster
+hello,
+I've spent the best part of a week trying to get flask working with Apache, without success.
+I am running
+Redhat Linux lonrs12363 3.10.0-327.10.1.el7.x86_64
+conda version : 4.5.0
+conda-build version : 3.7.1
+python version : 3.6.4.final.0
+mod_wsgi-py36.cpython-36m-x86_64-linux-gnu.so
+Apache/2.4.6 (Red Hat Enterprise Linux) mod_fcgid/2.3.9 PHP/5.4.16 mod_wsgi/3.4 Python/2.7.5
+Now my Anaconda uses Python 3.6.4, and Red Hat's Apache appears to use Python 2.7.5.
+Not sure how big a problem this is, but there are no Python 3 packages available via yum in the standard repo.
+httpd.conf is configured as follows (with some details obfuscated):
+LoadModule wsgi_module /pathto/anaconda3/lib/myProject3.6/site-packages/mod_wsgi/server/mod_wsgi-py36.cmyProject-36m-x86_64-linux-gnu.so
+WSGISocketPrefix /var/run/wsgi
+WSGImyProjectPath /pathto/anaconda3/lib/myProject3.6/site-packages:/pathto/myProject/code
+
+<VirtualHost *>
+    ServerName www.namechanged.com
+
+    WSGIDaemonProcess foo myProject-path=/pathto/anaconda3/lib/myProject3.6/site-packages:/pathto/myProject/code user=user group=user threads=5
+    WSGIProcessGroup %{GLOBAL}
+    WSGIApplicationGroup %{GLOBAL}
+    WSGIScriptAlias /foo /home/user/www/wsgi-scripts/foo.wsgi process-group=foo application-group=%{GLOBAL}
+
+    <Directory /home/user/www/wsgi-scripts>
+        WSGIProcessGroup foo
+        WSGIApplicationGroup %{GLOBAL}
+        Require all granted
+    </Directory>
+</VirtualHost>
+my .wsgi file looks like:
+#!pathto/anaconda3/bin/python
+import sys
+import site
+
+if sys.platform == 'win32':
+    ALLDIRS = ['python-path=C:\\dev\\apps\\Anaconda3\\Lib\\site-packages']
+else:
+    ALLDIRS = []
+    ALLDIRS.append('pathto/myProject/code')
+    ALLDIRS.append('pathto/anaconda3/lib/python36.zip')
+    ALLDIRS.append('pathto/anaconda3/lib/python3.6')
+    ALLDIRS.append('pathto/anaconda3/lib/python3.6/lib-dynload')
+    ALLDIRS.append('pathto/anaconda3/lib/python3.6/site-packages')
+
+# Remember original sys.path.
+prev_sys_path = list(sys.path)
+
+# Add each new site-packages directory.
+for directory in ALLDIRS:
+    site.addsitedir(directory)
+
+# Reorder sys.path so new directories at the front.
+new_sys_path = []
+for item in list(sys.path):
+    if item not in prev_sys_path:
+        new_sys_path.append(item)
+    sys.path.remove(item)
+
+sys.path[:0] = new_sys_path
+print(sys.path)
+
+from analytics.signal import app as application
+When I try access the web page made available by Apache, I get import errors of the form:
+import numpy as np
+ImportError: No module named numpy
+When I run a standard Flask server, everything works perfectly fine.
+help!
+thank you.

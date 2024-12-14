@@ -1,0 +1,106 @@
+Manezx commented on 12 Oct 2016
+Hey,
+I'm trying to do an LSTM-CNN model for named entity recognition.
+I have this issue :
+Traceback (most recent call last):
+File "learning/ner.py", line 429, in
+neural_network.train(X, y, display=True)
+File "learning/ner.py", line 411, in train
+callbacks=[early_stopping])
+File "/Library/Python/2.7/site-packages/keras/models.py", line 620, in fit
+sample_weight=sample_weight)
+File "/Library/Python/2.7/site-packages/keras/engine/training.py", line 1119, in fit
+callback_metrics=callback_metrics)
+File "/Library/Python/2.7/site-packages/keras/engine/training.py", line 837, in _fit_loop
+outs = f(ins_batch)
+File "/Library/Python/2.7/site-packages/keras/backend/tensorflow_backend.py", line 1014, in call
+updated = session.run(self.outputs + [self.updates_op], feed_dict=feed_dict)
+File "/Library/Python/2.7/site-packages/tensorflow/python/client/session.py", line 340, in run
+run_metadata_ptr)
+File "/Library/Python/2.7/site-packages/tensorflow/python/client/session.py", line 564, in _run
+feed_dict_string, options, run_metadata)
+File "/Library/Python/2.7/site-packages/tensorflow/python/client/session.py", line 637, in _do_run
+target_list, options, run_metadata)
+File "/Library/Python/2.7/site-packages/tensorflow/python/client/session.py", line 659, in _do_call
+e.code)
+tensorflow.python.framework.errors.InvalidArgumentError: indices[8,1436] = 57 is not in [0, 57)
+[[Node: Gather_1 = Gather[Tindices=DT_INT32, Tparams=DT_FLOAT, validate_indices=true, _device="/job:localhost/replica:0/task:0/cpu:0"](embedding_2_W/read, _recv_embedding_input_2_0)]]
+Caused by op u'Gather_1', defined at:
+File "learning/ner.py", line 429, in
+neural_network.train(X, y, display=True)
+File "learning/ner.py", line 403, in train
+model = self.construct()
+File "learning/ner.py", line 338, in construct
+mask_zero=False))
+File "/Library/Python/2.7/site-packages/keras/models.py", line 276, in add
+layer.create_input_layer(batch_input_shape, input_dtype)
+File "/Library/Python/2.7/site-packages/keras/engine/topology.py", line 370, in create_input_layer
+self(x)
+File "/Library/Python/2.7/site-packages/keras/engine/topology.py", line 514, in call
+self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+File "/Library/Python/2.7/site-packages/keras/engine/topology.py", line 572, in add_inbound_node
+Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+File "/Library/Python/2.7/site-packages/keras/engine/topology.py", line 149, in create_node
+output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+File "/Library/Python/2.7/site-packages/keras/layers/embeddings.py", line 137, in call
+out = K.gather(W, x)
+File "/Library/Python/2.7/site-packages/keras/backend/tensorflow_backend.py", line 423, in gather
+return tf.gather(reference, indices)
+File "/Library/Python/2.7/site-packages/tensorflow/python/ops/gen_array_ops.py", line 566, in gather
+validate_indices=validate_indices, name=name)
+File "/Library/Python/2.7/site-packages/tensorflow/python/ops/op_def_library.py", line 655, in apply_op
+op_def=op_def)
+File "/Library/Python/2.7/site-packages/tensorflow/python/framework/ops.py", line 2154, in create_op
+original_op=self._default_original_op, op_def=op_def)
+File "/Library/Python/2.7/site-packages/tensorflow/python/framework/ops.py", line 1154, in init
+self._traceback = _extract_stack()
+Code :
+`
+    word_model = Sequential()
+    word_model.add(Embedding(output_dim=self.word_embedding_size,
+                  input_dim=self.max_word_features, input_length=self.maxlen_sent, mask_zero=True))
+    word_model.add(Dropout(0.5))
+    print ("\nword_model.output_shape : {0}".format(word_model.output_shape))
+
+
+    # capital model
+    cap_model = Sequential()
+    cap_model.add(Reshape((self.maxlen_sent, 1), input_shape=(self.maxlen_sent,)))
+    cap_model.add(Masking(mask_value=0.))
+    print ("cap_model.output_shape : {0}".format(cap_model.output_shape))
+
+
+    #character model
+    char_model = Sequential()
+    char_model.add(Embedding(input_dim=self.max_char_features, output_dim=self.char_embedding_size,
+                             input_length=self.maxlen_sent * self.maxlen_word,
+                            mask_zero=False))
+    char_model.add(Reshape(target_shape=(self.maxlen_sent, self.maxlen_word, self.char_embedding_size)))
+    char_model.add(Permute((3, 1, 2)))
+    char_model.add(Convolution2D(nb_filter=self.nb_filter_conv2d,
+                                 nb_row=self.nb_row_conv2d, nb_col=self.nb_col_conv2d, border_mode='same'))
+    char_model.add(Permute((2, 1, 3)))
+    char_model.add(MaxPooling2D(pool_size=self.pool_size))
+    print("char_model.output_shape : {0}".format(char_model.output_shape))
+    char_model.add(Reshape(target_shape=(self.maxlen_sent,
+                                        (char_model.output_shape[1] * char_model.output_shape[2] *
+                                         char_model.output_shape[3]) / self.maxlen_sent)))
+    print("char_model.output_shape : {0}".format(char_model.output_shape))
+    char_model.add(Masking(mask_value=0.))
+
+
+    # main model
+    model = Sequential()
+    model.add(Merge([word_model, cap_model, char_model], mode='concat', concat_axis=-1))
+    print ("merge_layer.output_shape : {0}".format(model.output_shape))
+    model.add(Bidirectional(LSTM(self.hidden_size, return_sequences=True)))
+    model.add(Dropout(0.5))
+    model.add(TimeDistributed(Dense(self.nb_classes)))
+    model.add(Activation('softmax'))
+
+    optimizer = Adam(lr=self.lr)
+
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+`
+When I don't use the character model it works, but when I try to merge two embedding layers, it doesn't.
+Thanks for your help

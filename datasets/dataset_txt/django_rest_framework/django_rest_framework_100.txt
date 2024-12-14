@@ -1,0 +1,81 @@
+csunday95 commented on 19 Jul 2019
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+create an app with the following content
+test_app/urls.py
+from django.urls import path
+from rest_framework.schemas import get_schema_view
+from rest_framework import views, response
+
+
+class ExampleModelView(views.APIView):
+    def get(self, request, fmt=None):
+        return response.Response(status=200, data={'test_endpoint': 'success'})
+
+
+schema_view = get_schema_view(
+    title='Example Schema',
+    url='api/'  # note that url= is being specified here
+)
+
+urlpatterns = [
+    path('api/test', ExampleModelView.as_view()),
+    path('schema/', schema_view, name='schema-endpoint')
+]
+prefix_test/urls.py (root urls module)
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('test_app.urls'))
+]
+run the django testserver and navigate to localhost:8000/schema
+Expected behavior
+A yml schema spec with the content:
+HTTP 200 OK
+Allow: GET, HEAD, OPTIONS
+Content-Type: application/vnd.oai.openapi
+Vary: Accept
+
+openapi: 3.0.2
+info:
+  title: Example Schema
+  version: TODO
+paths:
+  /api/test:
+    get:
+      operationId: ListExampleModels
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+Actual behavior
+HTTP 200 OK
+Allow: GET, HEAD, OPTIONS
+Content-Type: application/vnd.oai.openapi
+Vary: Accept
+
+openapi: 3.0.2
+info:
+  title: Example Schema
+  version: TODO
+paths:
+  /test:
+    get:
+      operationId: ListExampleModels
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+note the difference between the given paths. Issue #6675 appears similar but not identical. If one examines the openapi.py get_paths() method, it's clear that a url prefix is being determined, removed from url endpoint paths and discarded.

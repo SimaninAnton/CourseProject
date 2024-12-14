@@ -1,0 +1,66 @@
+adrianodennanni commented on 30 Nov 2018 •
+edited
+Hello!
+I am training a image classification model with multiple outputs:
+trained_model = tf.keras.applications.xception.Xception(
+        include_top=False,
+        weights='imagenet',
+        input_shape=[300, 300, 3],
+        pooling='max')
+
+    outputs = []
+    for i in range(8):
+      outputs.append(tf.keras.layers.Dense(1,  activation='softmax', kernel_initializer=kernel_initializer) (trained_model.output))
+
+    model = tf.keras.Model(inputs=trained_model.input, outputs=outputs)
+The y returned by this model is a Python List, with 8 elements. Each element is a mini-batch of tensors.
+However, flow_from_dataframe reads all my y columns from the dataframe as one numpy array, instead of a Python list.
+Example
+Suppose my dataframe is something like this:
+image_path,field_1,field_2,field_3,field_4,field_5,field_6,field_7,field_8
+1532672467738.jpeg,1,1,0,1,0,0,0,1
+1532669990747.jpeg,0,0,0,1,0,1,1,0
+...
+Then I call flow_from_dataframe:
+train_batches = generator.flow_from_dataframe(
+  dataframe=dataframe,
+  directory=path,
+  x_col='image_path',
+  y_col=['field_1', 'field_2', 'field_3', 'field_4', 'field_5', 'field_6', 'field_7', 'field_8'],
+  class_mode='other',
+  batch_size=16
+)
+When I call fit_generator with both the model and train_batches, I get this error:
+ValueError: Error when checking model target: the list of Numpy arrays that you are passing to your model is not the size the model expected. Expected to see 8 array(s), but instead got the following list of 1 arrays: [array([[0, 0, 0, 0, 1, 0, 1, 1],
+       [1, 1, 0, 1, 1, 0, 0, 0],
+       [0, 0, 1, 0, 1, 0, 0, 1],
+       [0, 0, 1, 1, 0, 0, 1, 0],
+       [0, 1, 0, 1, 0, 1, 0, 1],
+       [1, 0, 0, 1, 0, 1, 0, 0],
+So, like I wrote in the beggining: DataframeIterator sends a numpy array of shape (16, 8), and the model outputs a Python List of 8 numpy arrays of size (16).
+I thing the problem is in this excerpt from keras_preprocessing/image.py:
+if self.class_mode == 'input':
+            batch_y = batch_x.copy()
+        elif self.class_mode == 'sparse':
+            batch_y = self.classes[index_array]
+        elif self.class_mode == 'binary':
+            batch_y = self.classes[index_array].astype(self.dtype)
+        elif self.class_mode == 'categorical':
+            batch_y = np.zeros(
+                (len(batch_x), self.num_classes),
+                dtype=self.dtype)
+            for i, label in enumerate(self.classes[index_array]):
+                batch_y[i, label] = 1.
+        elif self.class_mode == 'other':
+            batch_y = self.data[index_array]
+        else:
+            return batch_x
+        return batch_x, batch_y
+The line batch_y = self.data[index_array] returns a Numpy array.
+Please make sure that the boxes below are checked before you submit your issue.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+Check that your version of TensorFlow is up-to-date. The installation instructions can be found here.
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

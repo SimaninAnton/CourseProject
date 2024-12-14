@@ -1,0 +1,74 @@
+nd7141 commented on 5 Mar 2019
+TF version: 1.12.0
+Keras version: 2.1.6-tf
+I have a problem adding tf.summary.scalar to Tensorboard when using Dataset API when fitting the model.
+Here is the code for the model:
+    embedding_in = Embedding(
+        input_dim=vocab_size + 1 + 1,  
+        output_dim=dim,
+        mask_zero=True,
+    )
+
+    embedding_out = Embedding(
+        input_dim=vocab_size + 1 + 1,  
+        output_dim=dim,
+        mask_zero=True,
+    )
+    
+    input_a = Input((None,))
+    input_b = Input((None,))
+    input_c = Input((None, None))
+
+    emb_target = embedding_in(input_a)
+    emb_context = embedding_out(input_b)
+    emb_negatives = embedding_out(input_c)
+
+    emb_gru = GRU(dim, return_sequences=True)(emb_target)
+    
+    num_negatives = tf.shape(input_c)[-1]
+
+
+    def make_logits(tensors):
+        emb_gru, emb_context, emb_negatives = tensors
+        true_logits = tf.reduce_sum(tf.multiply(emb_gru, emb_context), axis=2)
+        true_logits = tf.expand_dims(true_logits, -1)
+        sampled_logits = tf.squeeze(
+            tf.matmul(emb_negatives, tf.expand_dims(emb_gru, axis=2),
+                      transpose_b=True), axis=3)
+        true_logits = true_logits*0
+        sampled_logits = sampled_logits*0
+        
+        logits = K.concatenate([true_logits, sampled_logits], axis=-1)
+        return logits
+
+
+    logits = Lambda(make_logits)([emb_gru, emb_context, emb_negatives])
+    
+    mean = tf.reduce_mean(logits)
+    tf.summary.scalar('mean_logits', mean)
+
+    model = keras.models.Model(inputs=[input_a, input_b, input_c], outputs=[logits])
+In particular, I want to see the evolution of mean_logits scalar after each batch.
+I create and compile the model like this:
+model = build_model(dim, vocab_size)
+    model.compile(loss='binary_crossentropy', optimizer='sgd')
+    callbacks = [
+            keras.callbacks.TensorBoard(logdir, histogram_freq=1)
+    ]
+I use tf Dataset API to the model:
+    iterator = dataset.make_initializable_iterator()
+    
+    with tf.Session() as sess:
+            
+            sess.run(iterator.initializer)
+            sess.run(tf.tables_initializer())
+            model.fit(iterator, steps_per_epoch=100, 
+                      callbacks=callbacks,
+                      validation_data=iterator,
+                      validation_steps=1
+                     )
+        
+However, I don't get any mean_logits graph in the tensorboard and it's not in the graphs.
+I tried a few solutions which were described here and here. But unfortunately all of them work only in the case you either use not Dataset API, or provide the data in the batches (hence don't use fit method, but instead train_on_batch).
+How can I track mean_logits scalar in tensorboard after each batch?
+2

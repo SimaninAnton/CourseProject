@@ -1,0 +1,66 @@
+salar-khan-symc commented on 29 Jan 2018 •
+edited
+Tornado version: 4.2.1
+Hi! I'm using tornado for making parallel async requests to some APIs to avoid serially waiting for each request to come in. To do this what I have done is I have created the following generator:
+def parallelize(requests, batch_size=100, timeout=120, log=None):
+    if timeout==None or timeout<=0:
+    ¦   timeout = 120 # this to assure the generator won't wait on result_queue forever
+
+    http_client = AsyncHTTPClient(max_clients=batch_size)
+    # http_client.configure(None, defaults=dict(connect_timeout=45, request_timeout=60))
+    sendTotal = 0
+    recvTotal = 0
+    wind = batch_size
+    '''
+    ¦   parallelize return as a generator, which should be used like a lazy collection.
+    ¦   result_queue is used to collect http response, and yield the response into the lazy collection
+    '''
+    result_queue = Queue.Queue()
+    iterable = iter(requests or [])
+
+    threading.Thread(target=tornado.ioloop.IOLoop.instance().start).start()
+    try:
+    ¦   while True:
+    ¦   ¦   # send as many requests asynchronously
+    ¦   ¦   has_more = False
+    ¦   ¦   for req in iterable:
+    ¦   ¦   ¦   if not req:
+    ¦   ¦   ¦   ¦   continue
+    ¦   ¦   ¦   http_client.fetch(req.http_request, callback=partial(req.response_callback_handler, result_queue))
+    ¦   ¦   ¦   wind -= 1
+    ¦   ¦   ¦   sendTotal += 1
+    ¦   ¦   ¦   has_more = True
+    ¦   ¦   ¦   if wind <= 0:
+    ¦   ¦   ¦   ¦   break;
+    ¦   ¦   # wait for the asynchronous responses
+    ¦   ¦   if recvTotal >= sendTotal:
+    ¦   ¦   ¦   if log:
+    ¦   ¦   ¦   ¦   log('received %d' % recvTotal)
+
+    ¦   ¦   if has_more and sendTotal % batch_size == 0 and log:
+    ¦   ¦   ¦   log('sent %d' % sendTotal)
+
+    ¦   ¦   ¦   ¦
+    ¦   ¦   try:
+    ¦   ¦   ¦   result = result_queue.get(timeout=timeout)
+    ¦   ¦   ¦   result_queue.task_done()
+    ¦   ¦   except Exception, ex:
+    ¦   ¦   ¦   result = ex
+    ¦   ¦   ¦   result.request = 'Unknown'
+    ¦   ¦   ¦
+    ¦   ¦   yield result
+    ¦   ¦   recvTotal += 1
+    ¦   ¦   wind += 1
+    ¦   ¦   if recvTotal % batch_size == 0 and log:
+    ¦   ¦   ¦   log('received %d' % recvTotal)
+    finally:
+    ¦   tornado.ioloop.IOLoop.instance().stop()
+I've removed the non-issue-related code from this - just some loggers and book keeping. The problem is I'm getting the following exception:
+[2018-01-29 07:10:18,411: WARNING/28947] Exception in thread Thread-5: 
+Traceback (most recent call last): 
+File "/usr/lib/python2.7/threading.py", line 801, in __bootstrap_inner self.run() 
+File "/usr/lib/python2.7/threading.py", line 754, in run self.__target(*self.__args, **self.__kwargs) 
+File "/home/madmin/venv/connectors/local/lib/python2.7/site-packages/tornado/ioloop.py", line 794, in start heapq.heappop(self._timeouts) 
+RuntimeError: list changed size during iteration
+To provide more information: this code piece runs as a task, inside a celery worker.
+What I cannot get my head around is that the exact problem is arising in ioloop.py at a place which deals with timeouts, even though there is no place in my code base which calls 'add_timeout' on the main thread. I'm only using AsyncHTTPClient.fetch - which internally uses add_callback, only if I'm not wrong! This works fine on my local setup, but this exception throws up when I deploy to the could. I've been looking into this since days, I haven't figured out exactly why this is so, any help would be greatly appreciated. Thank you!

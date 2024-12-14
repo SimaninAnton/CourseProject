@@ -1,0 +1,43 @@
+MNFuad commented on 30 Oct 2018
+My data dimension is [1438 x 6100 x 3], where
+as in here,
+nSequences = 1438   #(number of subjects)
+timeSteps = ? 
+features = 3        #(3 features at each time step)
+outputFeatures = 5  #(classes)
+I have 1438 (3-dimensional) data collected from different sources with arbitrary lengths. The 6100 is the time series length after zero-padding, should I consider it "timeSteps"?
+However, each sequence in (1438) has unique labels. How to construct the "outputArray"? does have to be categorical, such that labels dimensions is [1438 x 6100 x 5]
+I want to train a single RNN (stateful) model to learn labeling the data from the given set of labels [1438 x 6100], each label-vector has 5 classes.
+Here is my example code,
+nSequences = data.shape[0]
+timeSteps = data.shape[1]
+features = data.shape[-1]-1 
+outputFeatures = data.shape[1]
+
+#reconstruct the labels array
+labels = [];
+for i in range(nSequences):
+    labels.append(data[i,:,-1])
+inputArray = data[:,:,:-1]   # removing the labels from data 
+outputArray = np.array(labels)
+
+batch_input = (nSequences, 1, features)
+#use layers like this:
+model = Sequential()
+model.add(LSTM(25, stateful=True, batch_input_shape=batch_input))
+model.add(Dense(5, kernel_initializer='Orthogonal', activation='softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+#Train like this:
+earlyStopping = EarlyStopping(monitor='val_loss', patience=5, verbose=0, mode='auto')
+checkpointer = ModelCheckpoint(filepath='./best_models/'+ path_best_model, monitor='val_loss', verbose=1,  save_best_only=True)
+callbacklist = [earlyStopping, checkpointer]
+model.fit(inputArray,outputArray,
+          callbacks=callbacklist,
+          shuffle=False,
+          validation_split=0.15,
+          batch_size=4,
+          epochs=10, verbose=1)
+
+#Predict like this:
+newStep = model.predict(inputArray)`

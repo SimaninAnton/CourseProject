@@ -1,0 +1,37 @@
+dc7kr commented on 19 Jan 2016
+Commandline used:
+./letsencrypt-auto --apache -d somedomain.com
+The client (master branch at git commit 91b9d5f) has issues parsing the following ports.conf that contains an ipv6 address:
+Listen 80
+
+<IfModule ssl_module>
+  Listen 192.168.1.1:443
+  Listen [2a01:aaa:bbb:ccc::1]:443
+</IfModule>
+
+<IfModule mod_gnutls.c>
+  Listen 192.168.1.1:443
+  Listen [2a01:aaa:bbb:ccc::1]:443
+</IfModule>
+The client fails with this error message:
+MisconfigurationError: Error while running apache2ctl configtest.
+Action 'configtest' failed.
+The Apache error log may have more information.
+
+AH00526: Syntax error on line 2 of /etc/apache2/le_tls_sni_01_cert_challenge.conf:
+The address or port is invalid
+I grabbed the generated /etc/apache2/le_tls_sni_01_cert_challenge.conf file and found the following (invalid) contents:
+<VirtualHost [2a01:443>
+    ServerName **hexstring**.**hexstring**.acme.invalid
+    UseCanonicalName on
+    SSLStrictSNIVHostCheck on
+
+    LimitRequestBody 1048576
+
+    Include /etc/letsencrypt/options-ssl-apache.conf
+    SSLCertificateFile /var/lib/letsencrypt/*alphastring*-*alphastring*.crt
+    SSLCertificateKeyFile /var/lib/letsencrypt/alphastring-alphastring.pem
+
+    DocumentRoot /var/lib/letsencrypt/tls_sni_01_page/
+</VirtualHost>
+The IPv6 Address / Port combination [2a01:....]:443 is truncated - looks like a splt at ":" and then the first and last part are used which is correct for IPv4 but wrong for IPV6 addresses.

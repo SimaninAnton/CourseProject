@@ -1,0 +1,104 @@
+nishantprateek commented on 23 Dec 2015
+I am trying to implement a VGG-16 convnet for classification on the Clothing Attribute dataset. I am getting the following error:
+Traceback (most recent call last):
+File "vgg_16.py", line 84, in
+model.add(Dense())#fc6
+File "/usr/local/lib/python2.7/dist-packages/keras/layers/containers.py", line 32, in add
+self.layers[-1].set_previous(self.layers[-2])
+File "/usr/local/lib/python2.7/dist-packages/keras/layers/core.py", line 39, in set_previous
+self.build()
+File "/usr/local/lib/python2.7/dist-packages/keras/layers/core.py", line 654, in build
+self.W = self.init((input_dim, self.output_dim))
+File "/usr/local/lib/python2.7/dist-packages/keras/initializations.py", line 40, in glorot_uniform
+return uniform(shape, s)
+File "/usr/local/lib/python2.7/dist-packages/keras/initializations.py", line 13, in uniform
+return K.variable(np.random.uniform(low=-scale, high=scale, size=shape))
+File "mtrand.pyx", line 1177, in mtrand.RandomState.uniform (numpy/random/mtrand/mtrand.c:9148)
+File "mtrand.pyx", line 203, in mtrand.cont2_array_sc (numpy/random/mtrand/mtrand.c:2371)
+ValueError: negative dimensions are not allowed
+My code:
+import os
+import numpy as np
+import scipy.io
+from skimage import io, transform
+import random
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, Flatten
+from keras.layers.convolutional import Convolution2D, MaxPooling2D
+from keras.optimizers import SGD
+from keras.utils import np_utils, generic_utils
+from keras.callbacks import ModelCheckpoint
+images = os.listdir('ClothingAttributeDataset/images')
+images.sort()
+print images
+mat = scipy.io.loadmat('./ClothingAttributeDataset/labels/category_GT.mat')
+mat = mat['GT']
+print mat.shape
+os.chdir('ClothingAttributeDataset/images')
+im = np.zeros((1856, 266, 400, 3), dtype='float32')
+old_labels = np.zeros((1856, 1), dtype='int')
+j = 0
+trash = 0
+for i in images:
+inp = io.imread(i)
+inp = transform.resize(inp, (266, 400))
+im[j] = inp
+try:
+old_labels[j] = int(mat[j][0]-1)
+except:
+old_labels[j] = random.randint(1,7)-1
+trash+=1
+print old_labels[j]
+j+=1
+print trash
+n_classes = 8
+batch_size = 2
+nb_epoch = 300
+labels = np_utils.to_categorical(old_labels, n_classes)
+print labels.shape
+model = Sequential()
+model.add(Convolution2D(32, 3, 3, border_mode='valid', input_shape=(266, 400, 3), dim_ordering='tf')) #conv1_!
+model.add(Activation('relu')) #relu1_!
+model.add(Convolution2D(64, 3, 3))#conv1_2
+model.add(Activation('relu'))#relu1_2
+model.add(MaxPooling2D(pool_size=(2,2), strides=(2, 2)))#pool1
+model.add(Convolution2D(64, 3, 3))#conv2_!
+model.add(Activation('relu'))#relu2_!
+model.add(Convolution2D(128, 3, 3))#conv2_2
+model.add(Activation('relu'))#relu2_2
+model.add(MaxPooling2D(pool_size=(2,2), strides = (2,2)))#pool2
+model.add(Convolution2D(128, 3, 3)) #conv3_1
+model.add(Activation('relu'))#relu3_1
+model.add(Convolution2D(256, 3, 3)) #conv3_2
+model.add(Activation('relu'))#relu3_2
+model.add(Convolution2D(256, 3, 3))#conv3_3
+model.add(Activation('relu'))#relu3_3
+model.add(MaxPooling2D(pool_size=(2,2), strides=(2,2)))#pool3
+model.add(Convolution2D(256, 3, 3))#conv4_1
+model.add(Activation('relu'))#relu4_1
+model.add(Convolution2D(512, 3, 3))#conv4_2
+model.add(Activation('relu'))#relu4_2
+model.add(Convolution2D(512, 3, 3))#conv4_3
+model.add(Activation('relu'))#relu4_3
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2,2)))#pool4
+model.add(Convolution2D(256, 3, 3)) #conv5_1
+model.add(Activation('relu'))#relu5_1
+model.add(Convolution2D(512, 3, 3)) #conv5_2
+model.add(Activation('relu'))#relu5_2
+model.add(Convolution2D(512, 3, 3)) #conv5_3
+model.add(Activation('relu'))#relu5_3
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2,2)))#pool5
+model.add(Flatten())
+model.add(Dense(4096))#fc6
+model.add(Activation('relu'))#relu6
+model.add(Dropout(0.5))#drop6
+model.add(Dense(4096))#fc7
+model.add(Activation('relu'))#relu7
+model.add(Dropout(0.5))#drop7
+model.add(Dense(1000))#fc8
+model.add(Activation('softmax'))#prob
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+checkpointer = ModelCheckpoint(filepath="weights/weights.{epoch:02d}.hdf5", verbose=1, save_best_only=False)
+print("training starts...")
+model.fit(im, labels, batch_size=batch_size, nb_epoch=nb_epoch, callbacks=[checkpointer])

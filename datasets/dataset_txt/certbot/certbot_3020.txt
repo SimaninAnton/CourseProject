@@ -1,0 +1,53 @@
+wjdp commented on 7 Nov 2015
+Running 0.4.3, first attempt using cert and key of my own:
+root@d3:~/ntbot.flatcar.xyz# dokku certs:add ntbot < keyball.tar 
+server.crt
+server.key
+root@d3:~/ntbot.flatcar.xyz# dokku certs:info ntbot
+Nothing outputted, certs not in app tls directory, connecting on HTTPS fails.
+Tried again using the certs:generate option, I get a little further:
+root@d3:~/ntbot.flatcar.xyz# dokku certs:generate ntbot
+Generating RSA private key, 2048 bit long modulus...
+
+root@d3:~/ntbot.flatcar.xyz# dokku certs:info ntbot
+-----> Fetching SSL Endpoint info for ntbot...
+-----> Certificate details:
+=====> Common Name(s): 
+=====> Expires At: Nov  6 06:00:56 2016 GMT
+=====> Issuer: C=AU, ST=Some-State, O=Internet Widgits Pty Ltd
+=====> Starts At: Nov  7 06:00:56 2015 GMT
+=====> Subject: C=AU; ST=Some-State; O=Internet Widgits Pty Ltd
+=====> SSL certificate is self signed.
+But deployed app still doesn't have 443 open, looking at ~dokku/ntbot/nginx.conf:
+server {
+  listen      [::]:80;
+  listen      80;
+  server_name ntbot.***** ;
+  access_log  /var/log/nginx/ntbot-access.log;
+  error_log   /var/log/nginx/ntbot-error.log;
+
+  location    / {
+
+    gzip on;
+    gzip_min_length  1100;
+    gzip_buffers  4 32k;
+    gzip_types    text/css text/javascript text/xml text/plain text/x-component application/javascript application/x-javascript application/json application/xml  application/rss+xml font/truetype application/x-font-ttf font/opentype application/vnd.ms-fontobject image/svg+xml;
+    gzip_vary on;
+    gzip_comp_level  6;
+
+    proxy_pass  http://ntbot;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection upgrade;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Request-Start $msec;
+  }
+  include /home/dokku/ntbot/nginx.conf.d/*.conf;
+}
+upstream ntbot { 
+  server 172.17.0.44:8000;
+}
+There's nothing in here to make SSL work.

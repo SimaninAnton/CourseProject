@@ -1,0 +1,12 @@
+staab commented on 24 Feb 2015
+I'm not sure why I haven't run into this before - this error seems to be handled fine when using rest framework in a simple way as detailed in the docs. However, in digging in a little deeper with a more complex rest api project, I found the following:
+from rest_framework.serializers import ValidationError
+print ValidationError(ValidationError(ValidationError("asdf")))
+>>> [u'[u"[u\'asdf\']"]']
+This seems pretty silly, especially in contrast to regular exception behavior:
+print Exception(Exception(Exception("asdf")))
+>>> asdf
+I encountered this behavior when raising a Validation error in a serializer's run_validation method. The exception was caught in APIView.dispatch and transformed via handle_exception and exception_handler into a response.
+The place to wrap exceptions, I would contend, is not in the exception class. Propagation of an exception by re-throwing should not change the form of the exception. That should be done by the handler that changes an exception into a response. That way, I can override the error response format in one place - since ValidationError cannot be configured, I can't override this behavior. My current solution is to re-unwrap the error in my custom error handler (the stringification isn't happening in this situation):
+while isinstance(data, list):
+   data = data[0]

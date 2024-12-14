@@ -1,0 +1,68 @@
+kamelzcs commented on 19 Dec 2014
+If not, how to get around?
+The following code will not get the yahoo content.
+In the example, get_and_log want to get some content async in the __enter__ function, then return that content out, at last log some the exception in the __exit__.
+It seems the __enter__ will return at the first yield but not from the raise gen.Return(response).
+I guess the reason is __enter__ is called by the caller as a normal function which returns some value, but the current __enter__ is a future, could only return with yield.
+from functools import wraps
+
+import logging
+
+from tornado import gen
+from tornado.ioloop import IOLoop
+from tornado.httpserver import HTTPServer
+from tornado.web import asynchronous, RequestHandler, Application
+from tornado.httpclient import AsyncHTTPClient
+from tornado.log import enable_pretty_logging
+import tornado.options
+tornado.options.parse_command_line()
+
+def get_and_log(func):
+    @wraps(func)
+    def inner(*args, **kwargs):
+        with (Appender(AsyncHTTPClient)) as content:
+            logging.debug(content)
+            return ((func(*args, **kwargs)))
+    return(inner)
+
+class Appender(object):
+    def __init__(self, client):
+        self.client = client
+
+    @gen.coroutine
+    def __enter__(self):
+        logging.debug('__enter__ entered')
+        response = yield self.client.fetch("http://yahoo.com")
+        raise gen.Return(response)
+
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            logging.debug('exeption happened')
+        else:
+            logging.debug('no exeption')
+
+
+@gen.coroutine
+@get_and_log
+def test():
+    http_client = AsyncHTTPClient()
+    response = yield http_client.fetch("http://google.com")
+    raise gen.Return(response)
+
+class AsyncHandler(RequestHandler):
+    @gen.coroutine
+    def get(self):
+        result = yield test()
+        logging.debug(result)
+        self.finish()
+
+if __name__ == '__main__':
+
+    application = Application([
+        (r'/', AsyncHandler),
+    ], debug=True)
+
+    http_server = HTTPServer(application)
+    http_server.listen(8181, 'localhost')
+    IOLoop.instance().start()

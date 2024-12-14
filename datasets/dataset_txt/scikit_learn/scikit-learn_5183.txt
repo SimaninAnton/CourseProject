@@ -1,0 +1,26 @@
+Contributor
+mheilman commented on Oct 11, 2012
+The GridSearchCV class appears to run into trouble with some sparse matrix formats, in particular, the COO format that comes out of the CountVectorizer class. It looks like it tries to use integer indexing, and that isn't supported for all sparse matrix types (maybe just CSR?).
+I'm running into this with sklearn version 0.12 and scipy version 0.11.0.
+Here's some code that demonstrates it, modified from http://scikit-learn.org/0.11/_downloads/document_classification_20newsgroups2.py.
+import os
+import sys
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.svm import LinearSVC
+from sklearn.grid_search import GridSearchCV
+categories = None
+data_train_all = fetch_20newsgroups(subset='train', categories=categories,
+shuffle=True, random_state=42)
+n_all = len(data_train_all.data)
+categories = data_train_all.target_names
+y_train = data_train_all.target
+print "Extracting features from the training dataset using a sparse vectorizer"
+vectorizer = CountVectorizer(min_df=500, max_df=0.5, stop_words='english', dtype=float)
+X_train = vectorizer.fit_transform(data_train_all.data)
+svc = LinearSVC(loss='l2', penalty='l2', dual=False, tol=1e-3)
+gridsearch = GridSearchCV(estimator=svc, param_grid={'C': [0.1, 1.0]})
+print >> sys.stderr, "trying with csr..."
+gridsearch.fit(X_train.tocsr(), y_train)
+print >> sys.stderr, "trying with default coo... FAILS HERE"
+gridsearch.fit(X_train, y_train)

@@ -1,0 +1,137 @@
+faustomorales commented on 18 Sep 2019 •
+edited
+System information
+Have I written custom code (as opposed to using example directory): Some, but the issue arises with a relatively simple case.
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Ubuntu 16.04 in Docker on a Mac
+TensorFlow backend (yes / no): Yes
+TensorFlow version: 1.14.0 but also occurs in 2.0.0rc1
+Keras version: 2.3.0
+Python version: 3.7
+CUDA/cuDNN version: N/A
+GPU model and memory: N/A
+Describe the current behavior
+When calling a model during training (e.g., from a batch generator), an attribute error is raised related to thread-local data. This occurs in Keras 2.3.0 but not in Keras <= 2.2.5. It appears the thread-local storage elements were added in Keras 2.3.0.
+Describe the expected behavior
+I expect the model to be callable during training, as has been the case in prior Keras versions. The test code is intentionally trivial to demonstrate the issue. In practice, being able to call a model during batch generation is useful for cases where we generate batches based on current model behavior (e.g., selecting hard examples for a model using triplet loss).
+Code to reproduce the issue
+import keras
+import numpy as np
+
+input_layer = keras.layers.Input((1, ))
+x = keras.layers.Dense(1, activation='sigmoid')(input_layer)
+model = keras.models.Model(inputs=input_layer, outputs=x)
+model.compile(loss='binary_crossentropy', optimizer='sgd')
+model._make_predict_function() 
+def generate():
+    while True:
+        # If you comment this next line out, no error is raised.
+        yt = model.predict(np.random.randn(5, 1))
+        yield np.random.randn(5, 1), np.ones((5, 1))
+
+model.fit_generator(generate(), epochs=3, steps_per_epoch=10)
+Other info / logs
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+<ipython-input-1-79d7cb1668dc> in <module>
+     12         yield np.random.randn(5, 1), np.ones((5, 1))
+     13 
+---> 14 model.fit_generator(generate(), epochs=3, steps_per_epoch=10)
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/legacy/interfaces.py in wrapper(*args, **kwargs)
+     89                 warnings.warn('Update your `' + object_name + '` call to the ' +
+     90                               'Keras 2 API: ' + signature, stacklevel=2)
+---> 91             return func(*args, **kwargs)
+     92         wrapper._original_function = func
+     93         return wrapper
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/engine/training.py in fit_generator(self, generator, steps_per_epoch, epochs, verbose, callbacks, validation_data, validation_steps, validation_freq, class_weight, max_queue_size, workers, use_multiprocessing, shuffle, initial_epoch)
+   1730             use_multiprocessing=use_multiprocessing,
+   1731             shuffle=shuffle,
+-> 1732             initial_epoch=initial_epoch)
+   1733 
+   1734     @interfaces.legacy_generator_methods_support
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/engine/training_generator.py in fit_generator(model, generator, steps_per_epoch, epochs, verbose, callbacks, validation_data, validation_steps, validation_freq, class_weight, max_queue_size, workers, use_multiprocessing, shuffle, initial_epoch)
+    183             batch_index = 0
+    184             while steps_done < steps_per_epoch:
+--> 185                 generator_output = next(output_generator)
+    186 
+    187                 if not hasattr(generator_output, '__len__'):
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/utils/data_utils.py in get(self)
+    740                     "`use_multiprocessing=False, workers > 1`."
+    741                     "For more information see issue #1638.")
+--> 742             six.reraise(*sys.exc_info())
+
+/usr/src/.venv/lib/python3.7/site-packages/six.py in reraise(tp, value, tb)
+    691             if value.__traceback__ is not tb:
+    692                 raise value.with_traceback(tb)
+--> 693             raise value
+    694         finally:
+    695             value = None
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/utils/data_utils.py in get(self)
+    709                 try:
+    710                     future = self.queue.get(block=True)
+--> 711                     inputs = future.get(timeout=30)
+    712                     self.queue.task_done()
+    713                 except mp.TimeoutError:
+
+/usr/local/lib/python3.7/multiprocessing/pool.py in get(self, timeout)
+    655             return self._value
+    656         else:
+--> 657             raise self._value
+    658 
+    659     def _set(self, i, obj):
+
+/usr/local/lib/python3.7/multiprocessing/pool.py in worker(inqueue, outqueue, initializer, initargs, maxtasks, wrap_exception)
+    119         job, i, func, args, kwds = task
+    120         try:
+--> 121             result = (True, func(*args, **kwds))
+    122         except Exception as e:
+    123             if wrap_exception and func is not _helper_reraises_exception:
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/utils/data_utils.py in next_sample(uid)
+    648         The next value of generator `uid`.
+    649     """
+--> 650     return six.next(_SHARED_SEQUENCES[uid])
+    651 
+    652 
+
+<ipython-input-1-79d7cb1668dc> in generate()
+      9 def generate():
+     10     while True:
+---> 11         yt = model.predict(np.random.randn(5, 1))
+     12         yield np.random.randn(5, 1), np.ones((5, 1))
+     13 
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/engine/training.py in predict(self, x, batch_size, verbose, steps, callbacks, max_queue_size, workers, use_multiprocessing)
+   1460                                             verbose=verbose,
+   1461                                             steps=steps,
+-> 1462                                             callbacks=callbacks)
+   1463 
+   1464     def train_on_batch(self, x, y,
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/engine/training_arrays.py in predict_loop(model, f, ins, batch_size, verbose, steps, callbacks)
+    274             indices_for_conversion_to_dense.append(i)
+    275 
+--> 276     callbacks.model.stop_training = False
+    277     callbacks._call_begin_hook('predict')
+    278 
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/engine/network.py in __setattr__(self, name, value)
+    321                     'forgot to call `super(YourClass, self).__init__()`.'
+    322                     ' Always start with this line.')
+--> 323         super(Network, self).__setattr__(name, value)
+    324 
+    325     @property
+
+/usr/src/.venv/lib/python3.7/site-packages/keras/engine/base_layer.py in __setattr__(self, name, value)
+   1213         # We do this so that we can maintain the correct order of metrics by adding
+   1214         # the instance to the `metrics` list as soon as it is created.
+-> 1215         if not _DISABLE_TRACKING.value:
+   1216             from .. import metrics as metrics_module
+   1217             if isinstance(value, metrics_module.Metric):
+
+AttributeError: '_thread._local' object has no attribute 'value'
+1

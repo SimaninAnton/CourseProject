@@ -1,0 +1,54 @@
+Glueon commented on 10 Sep 2015
+Suppose there is a simple model:
+ class Server(Model):
+      ip = GenericIPAddressField(protocol='IPv4', unique=True)
+With a basic ModelSeriailzer serializer:
+class ServerSerialiser(ModelSerializer):
+    class Meta:
+        model = Server
+        fields = ['ip']
+So if I pass an incorrect ip like 123 Django will throw an exception on serializer.is_valid() call.
+PostgreSQL complains on a SELECT statement saying that you can't compare inet field with a 123 string.
+Here is a traceback:
+File "/usr/local/lib/python3.4/site-packages/rest_framework/serializers.py" in is_valid
+  197.                 self._validated_data = self.run_validation(self.initial_data)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/serializers.py" in run_validation
+  541.         value = self.to_internal_value(data)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/serializers.py" in to_internal_value
+  577.                 validated = self.child.run_validation(item)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/serializers.py" in run_validation
+  391.         value = self.to_internal_value(data)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/serializers.py" in to_internal_value
+  421.                 validated_value = field.run_validation(primitive_value)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/fields.py" in run_validation
+  689.         return super(CharField, self).run_validation(data)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/fields.py" in run_validation
+  479.         self.run_validators(value)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/fields.py" in run_validators
+  493.                 validator(value)
+File "/usr/local/lib/python3.4/site-packages/rest_framework/validators.py" in __call__
+  62.         if queryset.exists():
+File "/usr/local/lib/python3.4/site-packages/django/db/models/query.py" in exists
+  586.             return self.query.has_results(using=self.db)
+File "/usr/local/lib/python3.4/site-packages/django/db/models/sql/query.py" in has_results
+  484.         return compiler.has_results()
+File "/usr/local/lib/python3.4/site-packages/django/db/models/sql/compiler.py" in has_results
+  811.         return bool(self.execute_sql(SINGLE))
+File "/usr/local/lib/python3.4/site-packages/django/db/models/sql/compiler.py" in execute_sql
+  840.             cursor.execute(sql, params)
+File "/usr/local/lib/python3.4/site-packages/debug_toolbar/panels/sql/tracking.py" in execute
+  159.         return self._record(self.cursor.execute, sql, params)
+File "/usr/local/lib/python3.4/site-packages/debug_toolbar/panels/sql/tracking.py" in _record
+  101.             return method(sql, params)
+File "/usr/local/lib/python3.4/site-packages/django/db/backends/utils.py" in execute
+  79.             return super(CursorDebugWrapper, self).execute(sql, params)
+File "/usr/local/lib/python3.4/site-packages/django/db/backends/utils.py" in execute
+  64.                 return self.cursor.execute(sql, params)
+File "/usr/local/lib/python3.4/site-packages/django/db/utils.py" in __exit__
+  97.                 six.reraise(dj_exc_type, dj_exc_value, traceback)
+File "/usr/local/lib/python3.4/site-packages/django/utils/six.py" in reraise
+  658.             raise value.with_traceback(tb)
+File "/usr/local/lib/python3.4/site-packages/django/db/backends/utils.py" in execute
+  64.                 return self.cursor.execute(sql, params)
+So it dies trying to execute a query. DRF does not stop iterating over validators in run_validators even if one of them failed. I think it should stop as soon as data is bad. Because otherwise next validators can fail badly, like a UniqueValidator.
+Looks like Django does the same thing ... This is wrong.

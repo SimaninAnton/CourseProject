@@ -1,0 +1,188 @@
+rex-yue-wu commented on 9 Aug 2015
+Hi all,
+I tried to use keras to reproduce results for a very simple MLP model in lasagne. This simple MLP lasagne model is defined as follows
+'''
+lasagne model
+see net1 for more details
+from lasagne import layers
+from lasagne.updates import nesterov_momentum
+from nolearn.lasagne import NeuralNet
+
+net1 = NeuralNet(
+    layers=[  # three layers: one hidden layer
+        ('input', layers.InputLayer),
+        ('hidden', layers.DenseLayer),
+        ('output', layers.DenseLayer),
+        ],
+    # layer parameters:
+    input_shape=(None, 9216),  # 96x96 input pixels per batch
+    hidden_num_units=100,  # number of units in hidden layer
+    output_nonlinearity=None,  # output layer uses identity function
+    output_num_units=30,  # 30 target values
+
+    # optimization method:
+    update=nesterov_momentum,
+    update_learning_rate=0.01,
+    update_momentum=0.9,
+
+    regression=True,  # flag to indicate we're dealing with regression problem
+    max_epochs=400,  # we want to train this many epochs
+    verbose=1,
+    )
+
+X, y = load()
+net1.fit(X, y)
+And here is how I defined it in keras,
+keras model
+net1 = Sequential()
+net1.add( Dense( 9216, 100, init = 'glorot_uniform', activation = 'linear' ) );
+net1.add( Dense(  100,  30, init = 'glorot_uniform', activation = 'linear' ) );
+sgd = SGD( lr = 0.01, decay=1e-6, momentum=0.9, nesterov=True )
+net1.compile( loss='mse', optimizer=sgd );
+I have already ensured input data for both models are identical, but my keras model gives nan loss, which I noticed this loss quickly blow up as more batches are trained. This problem sill happens even if I use CPU mode.
+However, this problem will be disappear if I use clipnorm option in sgd. I tried many different clipnorm values, and the relationship between these clipnorm values are P(0.9) < P(0.95) < P(1) < P(10) < P(100), and P(1000) keeps oscillating and never converges, where P( . ) is the final validation loss in terms of MSE after 400 epochs. Another thing is that even though I achieved similar performance when clipnorm=100, its losses in the first 40 epochs also severely oscillated, while suddenly stabilized at epoch = 39. One may see detailed loss log in the end of this post.
+This raise up a question how to set clipnorm correctly. I really donot know how to do this. And I probably will early terminate my experiment with clipnorm=100 for its big oscillating. I will appreciate anyone can help on this. On the other hand, I guess it will better if there is a regression example in keras.
+Epoch 0
+1712/1712 [==============================] - 1s - loss: 163.1591 - acc: 0.0187 - val_loss: 362.6711 - val_acc: 0.0000
+Epoch 00000: val_loss improved from inf to 362.67107, saving model to net1.hd5
+Epoch 1
+1712/1712 [==============================] - 1s - loss: 344.2914 - acc: 0.0204 - val_loss: 47.4165 - val_acc: 0.0000
+Epoch 00001: val_loss improved from 362.67107 to 47.41648, saving model to net1.hd5
+Epoch 2
+1712/1712 [==============================] - 1s - loss: 218.6002 - acc: 0.0444 - val_loss: 17.3195 - val_acc: 0.0000
+Epoch 00002: val_loss improved from 47.41648 to 17.31948, saving model to net1.hd5
+Epoch 3
+1712/1712 [==============================] - 1s - loss: 188.3669 - acc: 0.1577 - val_loss: 186.6543 - val_acc: 0.0000
+Epoch 00003: val_loss did not improve
+Epoch 4
+1712/1712 [==============================] - 1s - loss: 287.7087 - acc: 0.0456 - val_loss: 526.4596 - val_acc: 0.0000
+Epoch 00004: val_loss did not improve
+Epoch 5
+1712/1712 [==============================] - 1s - loss: 193.6802 - acc: 0.0018 - val_loss: 157.5851 - val_acc: 0.0000
+Epoch 00005: val_loss did not improve
+Epoch 6
+1712/1712 [==============================] - 1s - loss: 223.6939 - acc: 0.0006 - val_loss: 326.0882 - val_acc: 0.0000
+Epoch 00006: val_loss did not improve
+Epoch 7
+1712/1712 [==============================] - 1s - loss: 279.8664 - acc: 0.0018 - val_loss: 212.9049 - val_acc: 0.0000
+Epoch 00007: val_loss did not improve
+Epoch 8
+1712/1712 [==============================] - 1s - loss: 160.8528 - acc: 0.0000 - val_loss: 451.8073 - val_acc: 0.0000
+Epoch 00008: val_loss did not improve
+Epoch 9
+1712/1712 [==============================] - 1s - loss: 170.5141 - acc: 0.0018 - val_loss: 207.6835 - val_acc: 0.0000
+Epoch 00009: val_loss did not improve
+Epoch 10
+1712/1712 [==============================] - 1s - loss: 196.9946 - acc: 0.0064 - val_loss: 366.2509 - val_acc: 0.0257
+Epoch 00010: val_loss did not improve
+...
+Epoch 23
+1712/1712 [==============================] - 1s - loss: 164.3835 - acc: 0.0660 - val_loss: 200.2631 - val_acc: 0.0000
+Epoch 00023: val_loss did not improve
+Epoch 24
+1712/1712 [==============================] - 1s - loss: 147.5225 - acc: 0.0140 - val_loss: 2.5901 - val_acc: 0.0000
+Epoch 00024: val_loss improved from 4.64222 to 2.59011, saving model to net1.hd5
+Epoch 25
+1712/1712 [==============================] - 1s - loss: 79.6273 - acc: 0.0158 - val_loss: 124.3254 - val_acc: 0.0000
+Epoch 00025: val_loss did not improve
+Epoch 26
+1712/1712 [==============================] - 1s - loss: 88.6625 - acc: 0.0093 - val_loss: 40.6571 - val_acc: 0.0000
+Epoch 00026: val_loss did not improve
+Epoch 27
+1712/1712 [==============================] - 1s - loss: 71.8660 - acc: 0.0035 - val_loss: 116.2407 - val_acc: 0.0000
+Epoch 00027: val_loss did not improve
+Epoch 28
+1712/1712 [==============================] - 1s - loss: 69.1368 - acc: 0.0012 - val_loss: 275.8056 - val_acc: 0.0000
+Epoch 00028: val_loss did not improve
+Epoch 29
+1712/1712 [==============================] - 1s - loss: 74.0961 - acc: 0.0000 - val_loss: 3.7747 - val_acc: 0.0000
+Epoch 00029: val_loss did not improve
+Epoch 30
+1712/1712 [==============================] - 1s - loss: 47.1788 - acc: 0.0134 - val_loss: 49.3204 - val_acc: 0.0000
+Epoch 00030: val_loss did not improve
+Epoch 31
+1712/1712 [==============================] - 1s - loss: 67.9290 - acc: 0.0041 - val_loss: 261.0698 - val_acc: 0.0000
+Epoch 00031: val_loss did not improve
+Epoch 32
+1712/1712 [==============================] - 1s - loss: 93.3433 - acc: 0.0000 - val_loss: 12.9750 - val_acc: 0.0000
+Epoch 00032: val_loss did not improve
+Epoch 33
+1712/1712 [==============================] - 1s - loss: 148.5333 - acc: 0.0000 - val_loss: 8.2675 - val_acc: 0.0000
+Epoch 00033: val_loss did not improve
+Epoch 34
+1712/1712 [==============================] - 1s - loss: 74.4089 - acc: 0.0397 - val_loss: 6.1564 - val_acc: 0.0047
+Epoch 00034: val_loss did not improve
+Epoch 35
+1712/1712 [==============================] - 1s - loss: 43.2944 - acc: 0.0111 - val_loss: 211.6185 - val_acc: 0.0000
+Epoch 00035: val_loss did not improve
+Epoch 36
+1712/1712 [==============================] - 1s - loss: 63.3051 - acc: 0.0239 - val_loss: 2.0388 - val_acc: 0.1565
+Epoch 00036: val_loss improved from 2.59011 to 2.03877, saving model to net1.hd5
+Epoch 37
+1712/1712 [==============================] - 1s - loss: 2.1608 - acc: 0.1081 - val_loss: 0.0581 - val_acc: 0.3692
+Epoch 00037: val_loss improved from 2.03877 to 0.05811, saving model to net1.hd5
+Epoch 38
+1712/1712 [==============================] - 1s - loss: 24.0825 - acc: 0.0864 - val_loss: 0.0602 - val_acc: 0.4019
+Epoch 00038: val_loss did not improve
+Epoch 39
+1712/1712 [==============================] - 1s - loss: 0.0324 - acc: 0.4217 - val_loss: 0.0151 - val_acc: 0.4883
+Epoch 00039: val_loss improved from 0.05811 to 0.01512, saving model to net1.hd5
+Epoch 40
+1712/1712 [==============================] - 1s - loss: 0.0147 - acc: 0.4790 - val_loss: 0.0121 - val_acc: 0.5093
+Epoch 00040: val_loss improved from 0.01512 to 0.01210, saving model to net1.hd5
+1712/1712 [==============================] - 1s - loss: 0.0121 - acc: 0.5251 - val_loss: 0.0104 - val_acc: 0.5397
+Epoch 00041: val_loss improved from 0.01210 to 0.01035, saving model to net1.hd5
+Epoch 42
+1712/1712 [==============================] - 1s - loss: 0.0105 - acc: 0.5362 - val_loss: 0.0094 - val_acc: 0.5234
+Epoch 00042: val_loss improved from 0.01035 to 0.00943, saving model to net1.hd5
+Epoch 43
+1712/1712 [==============================] - 1s - loss: 0.0096 - acc: 0.5496 - val_loss: 0.0087 - val_acc: 0.5958
+Epoch 00043: val_loss improved from 0.00943 to 0.00869, saving model to net1.hd5
+Epoch 44
+1712/1712 [==============================] - 1s - loss: 0.0090 - acc: 0.5666 - val_loss: 0.0082 - val_acc: 0.5631
+Epoch 00044: val_loss improved from 0.00869 to 0.00822, saving model to net1.hd5
+Epoch 45
+1712/1712 [==============================] - 1s - loss: 0.0085 - acc: 0.5672 - val_loss: 0.0079 - val_acc: 0.6028
+Epoch 00045: val_loss improved from 0.00822 to 0.00791, saving model to net1.hd5
+Epoch 46
+1712/1712 [==============================] - 1s - loss: 0.0081 - acc: 0.5900 - val_loss: 0.0075 - val_acc: 0.5724
+Epoch 00046: val_loss improved from 0.00791 to 0.00749, saving model to net1.hd5
+Epoch 47
+1712/1712 [==============================] - 1s - loss: 0.0077 - acc: 0.5923 - val_loss: 0.0073 - val_acc: 0.6028
+Epoch 00047: val_loss improved from 0.00749 to 0.00726, saving model to net1.hd5
+Epoch 48
+1712/1712 [==============================] - 1s - loss: 0.0075 - acc: 0.6051 - val_loss: 0.0070 - val_acc: 0.5841
+Epoch 00048: val_loss improved from 0.00726 to 0.00705, saving model to net1.hd5
+Epoch 49
+1712/1712 [==============================] - 1s - loss: 0.0072 - acc: 0.6028 - val_loss: 0.0069 - val_acc: 0.5935
+Epoch 00049: val_loss improved from 0.00705 to 0.00687, saving model to net1.hd5
+Epoch 50
+1712/1712 [==============================] - 1s - loss: 0.0070 - acc: 0.6098 - val_loss: 0.0066 - val_acc: 0.6168
+Epoch 00050: val_loss improved from 0.00687 to 0.00658, saving model to net1.hd5
+Epoch 51
+1712/1712 [==============================] - 1s - loss: 0.0067 - acc: 0.6203 - val_loss: 0.0064 - val_acc: 0.6215
+Epoch 00051: val_loss improved from 0.00658 to 0.00639, saving model to net1.hd5
+Epoch 52
+1712/1712 [==============================] - 1s - loss: 0.0065 - acc: 0.6308 - val_loss: 0.0063 - val_acc: 0.5794
+Epoch 00052: val_loss improved from 0.00639 to 0.00626, saving model to net1.hd5
+Epoch 53
+1712/1712 [==============================] - 1s - loss: 0.0064 - acc: 0.6232 - val_loss: 0.0061 - val_acc: 0.5888
+Epoch 00053: val_loss improved from 0.00626 to 0.00615, saving model to net1.hd5
+Epoch 54
+1712/1712 [==============================] - 1s - loss: 0.0062 - acc: 0.6379 - val_loss: 0.0060 - val_acc: 0.5748
+Epoch 00054: val_loss improved from 0.00615 to 0.00599, saving model to net1.hd5
+Epoch 55
+1712/1712 [==============================] - 1s - loss: 0.0061 - acc: 0.6250 - val_loss: 0.0059 - val_acc: 0.6565
+Epoch 00055: val_loss improved from 0.00599 to 0.00587, saving model to net1.hd5
+Epoch 56
+1712/1712 [==============================] - 1s - loss: 0.0059 - acc: 0.6466 - val_loss: 0.0057 - val_acc: 0.6355
+Epoch 00056: val_loss improved from 0.00587 to 0.00573, saving model to net1.hd5
+Epoch 57
+1712/1712 [==============================] - 1s - loss: 0.0058 - acc: 0.6454 - val_loss: 0.0056 - val_acc: 0.6168
+Epoch 00057: val_loss improved from 0.00573 to 0.00561, saving model to net1.hd5
+Epoch 58
+1712/1712 [==============================] - 1s - loss: 0.0057 - acc: 0.6501 - val_loss: 0.0056 - val_acc: 0.6192
+Epoch 00058: val_loss improved from 0.00561 to 0.00556, saving model to net1.hd5
+Epoch 59
+1712/1712 [==============================] - 1s - loss: 0.0056 - acc: 0.6489 - val_loss: 0.0055 - val_acc: 0.6028
+Epoch 00059: val_loss improved from 0.00556 to 0.00546, saving model to net1.hd5

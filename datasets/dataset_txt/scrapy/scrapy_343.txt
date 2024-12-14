@@ -1,0 +1,111 @@
+my8100 commented on Jul 12, 2018 •
+edited
+As we can see from the code of class LifoDiskQueue, when forcing unclean shutdown, the method close() may not be executed. And scrapy would wrongly take the previous size as self.size in the method init() when resuming crawl.
+site-packages/queuelib/queue.py
+class LifoDiskQueue(object):
+    """Persistent LIFO queue."""
+
+    SIZE_FORMAT = ">L"
+    SIZE_SIZE = struct.calcsize(SIZE_FORMAT)
+
+    def __init__(self, path):
+        self.path = path
+        if os.path.exists(path):
+            self.f = open(path, 'rb+')
+            qsize = self.f.read(self.SIZE_SIZE)
+            self.size, = struct.unpack(self.SIZE_FORMAT, qsize)
+            self.f.seek(0, os.SEEK_END)
+        else:
+            self.f = open(path, 'wb+')
+            self.f.write(struct.pack(self.SIZE_FORMAT, 0))
+            self.size = 0
+            
+    ...
+
+    def close(self):
+        if self.size:
+            self.f.seek(0)
+            self.f.write(struct.pack(self.SIZE_FORMAT, self.size))
+        self.f.close()
+        if not self.size:
+            os.remove(self.path)
+My own solution is overriding the method init() of class PickleLifoDiskQueue, where the bytes indicating the size of requests.queue would be set to 0 purposely right after the size is read.
+As a result, the method init() would update the actual size of requests.queue when needed when resuming crawl.
+Update settings.py of a project:
+SCHEDULER_DISK_QUEUE = 'my_squeues.MyPickleLifoDiskQueue'
+site-packages/my_squeues.py
+# -*- coding: utf-8 -*-
+import os
+import struct
+import logging
+
+from scrapy.squeues import PickleLifoDiskQueue
+
+logger = logging.getLogger(__name__)
+
+
+# SCHEDULER_DISK_QUEUE = 'scrapy.squeues.PickleLifoDiskQueue'
+class MyPickleLifoDiskQueue(PickleLifoDiskQueue):
+    """Persistent LIFO queue."""
+
+    SIZE_FORMAT = ">L"
+    SIZE_SIZE = struct.calcsize(SIZE_FORMAT)
+
+    # Override the method __init__() of class queue.LifoDiskQueue
+    def __init__(self, path):
+        self.path = path
+        if os.path.exists(path):
+            self.f = open(path, 'rb+')
+            qsize = self.f.read(self.SIZE_SIZE)
+            self.size, = struct.unpack(self.SIZE_FORMAT, qsize)
+
+            # Set to 0 purposely
+            self.f.seek(0)
+            self.f.write(struct.pack(self.SIZE_FORMAT, 0))
+
+            self.f.seek(0, os.SEEK_END)
+
+            ori_size = self.size
+            if self.size == 0:
+                while True:
+                    if self.f.tell() == self.SIZE_SIZE:
+                        break
+                    self.f.seek(-self.SIZE_SIZE, os.SEEK_CUR)
+                    size, = struct.unpack(self.SIZE_FORMAT, self.f.read(self.SIZE_SIZE))
+                    self.f.seek(-size-self.SIZE_SIZE, os.SEEK_CUR)
+                    self.size += 1
+                self.f.seek(0, os.SEEK_END)
+                logger.info('%s FIX size from %s to %s'%(self.path, ori_size, self.size))
+            else:
+                logger.info('%s ori_size: %s'%(self.path, ori_size))
+
+        else:
+            self.f = open(path, 'wb+')
+            self.f.write(struct.pack(self.SIZE_FORMAT, 0))
+            self.size = 0
+Scrapy log when resuming crawl from normal shutdown:
+2018-07-12 16:43:11 [scrapy.core.engine] INFO: Spider opened
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p0 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-1 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-2 ori_size: 26
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-3 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-4 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-5 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-6 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-7 ori_size: 25
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-8 ori_size: 16
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-9 ori_size: 1
+2018-07-12 16:43:11 [my_squeues] INFO: crawls/test\requests.queue\p-11 ori_size: 1
+2018-07-12 16:43:11 [scrapy.core.scheduler] INFO: Resuming crawl (219 requests scheduled)
+Scrapy log when resuming crawl from unclean shutdown:
+2018-07-12 16:43:18 [scrapy.core.engine] INFO: Spider opened
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p0 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-1 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-2 FIX size from 0 to 26
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-3 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-4 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-5 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-6 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-7 FIX size from 0 to 25
+2018-07-12 16:43:18 [my_squeues] INFO: crawls/test\requests.queue\p-8 FIX size from 0 to 15
+2018-07-12 16:43:18 [scrapy.core.scheduler] INFO: Resuming crawl (216 requests scheduled)

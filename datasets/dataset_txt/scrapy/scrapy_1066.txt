@@ -1,0 +1,55 @@
+Contributor
+yarikoptic commented on Dec 11, 2015
+Did not try yet to come up with minimal example to demonstrate this issue but it is reproducible for me:
+$> datalad --dbg crawl
+Traceback (most recent call last):
+  File "/home/yoh/proj/datalad/datalad/venv-tests/bin/datalad", line 9, in <module>
+    load_entry_point('datalad==0.1.dev0', 'console_scripts', 'datalad')()
+  File "/home/yoh/proj/datalad/datalad/datalad/cmdline/main.py", line 199, in main
+    cmdlineargs.func(cmdlineargs)
+  File "/home/yoh/proj/datalad/datalad/datalad/interface/base.py", line 151, in call_from_parser
+    return self(**kwargs)
+  File "/home/yoh/proj/datalad/datalad/datalad/interface/crawl.py", line 44, in __call__
+    from datalad.crawler.pipeline import load_pipeline_from_config, get_pipeline_config_path
+  File "/home/yoh/proj/datalad/datalad/datalad/crawler/pipeline.py", line 21, in <module>
+    from .newmain import lgr
+  File "/home/yoh/proj/datalad/datalad/datalad/crawler/newmain.py", line 21, in <module>
+    from .nodes.matches import *
+  File "/home/yoh/proj/datalad/datalad/datalad/crawler/nodes/matches.py", line 18, in <module>
+    from scrapy.selector import Selector
+  File "/home/yoh/proj/datalad/datalad/venv-tests/local/lib/python2.7/site-packages/scrapy/__init__.py", line 27, in <module>
+    from . import _monkeypatches
+  File "/home/yoh/proj/datalad/datalad/venv-tests/local/lib/python2.7/site-packages/scrapy/_monkeypatches.py", line 24, in <module>
+    and getattr(v, '__module__', '').startswith('twisted'):
+AttributeError: 'NoneType' object has no attribute 'startswith'
+()
+> /home/yoh/proj/datalad/datalad/venv-tests/local/lib/python2.7/site-packages/scrapy/_monkeypatches.py(24)<module>()
+-> and getattr(v, '__module__', '').startswith('twisted'):
+(Pdb) l
+ 19     # to prevent bugs like Twisted#7989 while serializing requests
+ 20     import twisted.persisted.styles  # NOQA
+ 21     # Remove only entries with twisted serializers for non-twisted types.
+ 22     for k, v in frozenset(copyreg.dispatch_table.items()):
+ 23         if not getattr(k, '__module__', '').startswith('twisted') \
+ 24  ->             and getattr(v, '__module__', '').startswith('twisted'):
+ 25             copyreg.dispatch_table.pop(k)
+[EOF]
+(Pdb) p k
+None
+(Pdb) p v
+None
+(Pdb) p copyreg
+None
+not sure it came to it but the issue is (if I pdb before this madness happens):
+(Pdb) p getattr(k, '__module__', '')
+'__builtin__'
+(Pdb) p getattr(v, '__module__', '')
+None
+(Pdb) p v
+<function mpq_reducer at 0x7f474bb4ab90>
+(Pdb) p v.__module__
+None
+(Pdb) p k, v
+(<type 'mpq'>, <function mpq_reducer at 0x7f474bb4ab90>)
+so assigned __module__ is None. As a quick resolution wrapped into str() call to assure str there
+and str(getattr(v, '__module__', '')).startswith('twisted'):

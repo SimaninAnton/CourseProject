@@ -1,0 +1,135 @@
+santtu commented on Jul 28, 2016
+I have run into a case where a session-based GET request fails:
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 376, in _make_request
+    httplib_response = conn.getresponse(buffering=True)
+TypeError: getresponse() got an unexpected keyword argument 'buffering'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 559, in urlopen
+    body=body, headers=headers)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 378, in _make_request
+    httplib_response = conn.getresponse()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 1197, in getresponse
+    response.begin()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 297, in begin
+    version, status, reason = self._read_status()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 266, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+http.client.RemoteDisconnected: Remote end closed connection without response
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/adapters.py", line 370, in send
+    timeout=timeout
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 609, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/util/retry.py", line 245, in increment
+    raise six.reraise(type(error), error, _stacktrace)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/packages/six.py", line 309, in reraise
+    raise value.with_traceback(tb)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 559, in urlopen
+    body=body, headers=headers)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 378, in _make_request
+    httplib_response = conn.getresponse()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 1197, in getresponse
+    response.begin()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 297, in begin
+    version, status, reason = self._read_status()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 266, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+requests.packages.urllib3.exceptions.ProtocolError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response',))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "test.py", line 11, in <module>
+    r = s.get(url, allow_redirects=False)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/sessions.py", line 480, in get
+    return self.request('GET', url, **kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/sessions.py", line 468, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/sessions.py", line 576, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/adapters.py", line 412, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response',))
+I finally narrowed the case to a situation where
+a request is made where the connection is kept open (Session) e.g. keep-alive is enabled
+the connection is to a host that is reverse-proxied by nginx
+nginx configuration is reloaded
+a new request is made using the session
+I believe this is because nginx will close the idle connection (at step 3) and when the next request is generated (step 4) it tries to write to the closed socket which in turn will generate connection abort exception.
+As far as I understand Keep-Alive nginx is doing everything correctly. From RFC2616:
+A client, server, or proxy MAY close the transport connection at any time. For example, a client might have started to send a new request at the same time that the server has decided to close the "idle" connection. From the server's point of view, the connection is being closed while it was idle, but from the client's point of view, a request is in progress.
+This means that clients, servers, and proxies MUST be able to recover from asynchronous close events. Client software SHOULD reopen the transport connection and retransmit the aborted sequence of requests without user interaction so long as the request sequence is idempotent (see section 9.1.2). Non-idempotent methods or sequences MUST NOT be automatically retried, although user agents MAY offer a human operator the choice of retrying the request(s). Confirmation by user-agent software with semantic understanding of the application MAY substitute for user confirmation. The automatic retry SHOULD NOT be repeated if the second sequence of requests fails.
+What nginx does on configuration reload is to iterate over connections and close any that it considers idle. (It will allow pending requests to finish, but will close them after completion, too.) So for the client it appears as if the remote end has just hung up. Since the socket state is checked only when a new request is being sent it appears at that point.
+I created a pair of test programs (https://gist.github.com/santtu/a38bb50c44623a162df72cb6d0a45f0a), a simple socket server which fakes a keep-alive HTTP/1.1 server but will terminate the connection after a short delay, and another program that will do busyloop GETs on an URL using a persistent session.
+Here are the results. First is the server (test2.py) and then the client (test.py):
+$ python3 test2.py
+127.0.0.1 wrote:
+b'GET / HTTP/1.1\r\nHost: localhost:8080\r\nAccept: */*\r\nAccept-Encoding: gzip, deflate\r\nUser-Agent: python-requests/2.8.1\r\nConnection: keep-alive'
+$ python3 test.py http://localhost:8080/
+200 OK
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 376, in _make_request
+    httplib_response = conn.getresponse(buffering=True)
+TypeError: getresponse() got an unexpected keyword argument 'buffering'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 559, in urlopen
+    body=body, headers=headers)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 378, in _make_request
+    httplib_response = conn.getresponse()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 1197, in getresponse
+    response.begin()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 297, in begin
+    version, status, reason = self._read_status()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 266, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+http.client.RemoteDisconnected: Remote end closed connection without response
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/adapters.py", line 370, in send
+    timeout=timeout
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 609, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/util/retry.py", line 245, in increment
+    raise six.reraise(type(error), error, _stacktrace)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/packages/six.py", line 309, in reraise
+    raise value.with_traceback(tb)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 559, in urlopen
+    body=body, headers=headers)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/packages/urllib3/connectionpool.py", line 378, in _make_request
+    httplib_response = conn.getresponse()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 1197, in getresponse
+    response.begin()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 297, in begin
+    version, status, reason = self._read_status()
+  File "/usr/local/Cellar/python3/3.5.2/Frameworks/Python.framework/Versions/3.5/lib/python3.5/http/client.py", line 266, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+requests.packages.urllib3.exceptions.ProtocolError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response',))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "test.py", line 11, in <module>
+    r = s.get(url, allow_redirects=False)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/sessions.py", line 480, in get
+    return self.request('GET', url, **kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/sessions.py", line 468, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/sessions.py", line 576, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests-2.8.1-py3.5.egg/requests/adapters.py", line 412, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response',))
+The first 200 OK comes from the faked response after which the client ends up blocking on the socket, finally getting connection abort when it is a few seconds later closed by the server side.
+Any thoughts on this?

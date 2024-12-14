@@ -1,0 +1,36 @@
+pabloppp commented on 28 Nov 2018 •
+edited
+
+I found out that this issue only happens in Keras version > 2.2.2 (so in 2.2.3 and 2.2.4 up to now).
+I downgraded to version 2.2.2 (and Tensorflow 1.10.0) and the error doesn't happen anymore. But still this should be fixed because I want to be able to use the latest Tensorflow T__T
+I found an issue when trying to fit a RNN model with sparse_categorical_crossentropy loss and metrics=["accuracy"]. I created simple example in order to reproduce consistently this error.
+This is the input data: a simple fibonacci series where given a 3 number sequence, the model will try to predict the following 3 numbers.
+x = np.array([[1, 1, 2], [1, 2, 3], [2, 3, 5], [3, 5, 8], [5, 8, 13], [8, 13, 21]])
+y = np.array([[3, 5, 8], [5, 8, 13], [8, 13, 21], [13, 21, 34], [21, 34, 55], [34, 55, 89]])
+y = y.reshape((-1, y.shape[1], 1))
+It's just a silly example so I treated the inputs as tokens, like if it was a text to text network.
+Now, here's the model I used
+input_layer = Input(shape=x.shape[1:])
+rnn = Embedding(90, 200)(input_layer)
+rnn = Bidirectional(GRU(64, return_sequences=True))(rnn)
+rnn = TimeDistributed(Dense(90))(rnn)
+rnn = Activation("softmax")(rnn)
+
+model = Model(inputs=input_layer, outputs=rnn)
+model.compile(loss=sparse_categorical_crossentropy, optimizer="adam", metrics=['accuracy'])
+
+model.summary()
+It doesn't really matter what kind of model I use, the importat thing is that this 4 things are true:
+The model predicts a times series with shape: (BatchSize, SeriesLength, VocabSize) in this case, the shape is (3, 3, 90) as the numbers are treated as tokens so there are 90 possible values (0 to 89).
+The model uses sparse_categorical_crossentropy as its loss function
+The model uses accuracy as one of its metrics
+The batch size is bigger than 1 (if it's 1 everything works )
+Then, I just fit the model.
+model.fit(x, y, epochs=1000, batch_size=3)
+After the first batch is processed, when tring to calculate the accuracy I get the following error:
+InvalidArgumentError: Incompatible shapes: [9] vs. [3,3]
+  [[{{node metrics_16/acc/Equal}} = Equal[T=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"](metrics_16/acc/Reshape, metrics_16/acc/Cast)]]
+If I remove the accuracy metric, the model is able to train and predict without any issue (except that I have no feedback about how the model is performing).
+I had just done an identical model in a Notebook from a Udacity Nanodegree and there was no such error, so it's probably something related with either the Keras version, the Tensorflow version (I'm using the last version of both) or something else in my installation, in which case maybe you won't be able to reproduce it in your machine.
+Does anybody have any idea of why is this happening? Thank you.
+7

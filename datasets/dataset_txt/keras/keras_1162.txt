@@ -1,0 +1,91 @@
+pierluigiferrari commented on 16 Mar 2018 •
+edited
+Keras version: 2.1.5
+TensorFlow version: 1.6.0
+Trying to use an Adam optimizer gives the following error below. This error does not occur with TensorFlow 1.4.1 with everything else being exactly the same.
+I guess it has to do with the following change that is documented in the TensorFlow 1.6.0 release notes:
+New Optimizer internal API for non-slot variables. Descendants of AdamOptimizer that access _beta[12]_power will need to be updated.
+This is the error:
+WARNING:tensorflow:Variable *= will be deprecated. Use variable.assign_mul if you want assignment to the variable value or 'x = x * y' if you want a new python Tensor object.
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-24-22d018627654> in <module>()
+     21                                                              cooldown=0)],
+     22                               validation_data = val_generator,
+---> 23                               validation_steps = ceil(num_val_samples/batch_size))
+     24 
+     25 # TODO: Set the filename (without the .h5 file extension!) under which to save the model and weights.
+
+~/Code/tensorflow/lib/python3.6/site-packages/keras/legacy/interfaces.py in wrapper(*args, **kwargs)
+     89                 warnings.warn('Update your `' + object_name +
+     90                               '` call to the Keras 2 API: ' + signature, stacklevel=2)
+---> 91             return func(*args, **kwargs)
+     92         wrapper._original_function = func
+     93         return wrapper
+
+~/Code/tensorflow/lib/python3.6/site-packages/keras/engine/training.py in fit_generator(self, generator, steps_per_epoch, epochs, verbose, callbacks, validation_data, validation_steps, class_weight, max_queue_size, workers, use_multiprocessing, shuffle, initial_epoch)
+   2078 
+   2079         do_validation = bool(validation_data)
+-> 2080         self._make_train_function()
+   2081         if do_validation:
+   2082             self._make_test_function()
+
+~/Code/tensorflow/lib/python3.6/site-packages/keras/engine/training.py in _make_train_function(self)
+    988                     training_updates = self.optimizer.get_updates(
+    989                         params=self._collected_trainable_weights,
+--> 990                         loss=self.total_loss)
+    991                 updates = self.updates + training_updates + self.metrics_updates
+    992                 # Gets loss and metrics. Updates weights at each call.
+
+~/Code/tensorflow/lib/python3.6/site-packages/keras/legacy/interfaces.py in wrapper(*args, **kwargs)
+     89                 warnings.warn('Update your `' + object_name +
+     90                               '` call to the Keras 2 API: ' + signature, stacklevel=2)
+---> 91             return func(*args, **kwargs)
+     92         wrapper._original_function = func
+     93         return wrapper
+
+~/Code/tensorflow/lib/python3.6/site-packages/keras/optimizers.py in get_updates(self, loss, params)
+    452 
+    453         t = K.cast(self.iterations, K.floatx()) + 1
+--> 454         lr_t = lr * (K.sqrt(1. - K.pow(self.beta_2, t)) /
+    455                      (1. - K.pow(self.beta_1, t)))
+    456 
+
+~/Code/tensorflow/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py in sqrt(x)
+   1459     zero = _to_tensor(0., x.dtype.base_dtype)
+   1460     inf = _to_tensor(np.inf, x.dtype.base_dtype)
+-> 1461     x = tf.clip_by_value(x, zero, inf)
+   1462     return tf.sqrt(x)
+   1463 
+
+~/Code/tensorflow/lib/python3.6/site-packages/tensorflow/python/ops/clip_ops.py in clip_by_value(t, clip_value_min, clip_value_max, name)
+     58   """
+     59   with ops.name_scope(name, "clip_by_value",
+---> 60                       [t, clip_value_min, clip_value_max]) as name:
+     61     t = ops.convert_to_tensor(t, name="t")
+     62 
+
+~/Code/tensorflow/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in __enter__(self)
+   5614       if self._values is None:
+   5615         self._values = []
+-> 5616       g = _get_graph_from_inputs(self._values)
+   5617       self._g_manager = g.as_default()
+   5618       self._g_manager.__enter__()
+
+~/Code/tensorflow/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in _get_graph_from_inputs(op_input_list, graph)
+   5282         graph = graph_element.graph
+   5283       elif original_graph_element is not None:
+-> 5284         _assert_same_graph(original_graph_element, graph_element)
+   5285       elif graph_element.graph is not graph:
+   5286         raise ValueError("%s is not from the passed-in graph." % graph_element)
+
+~/Code/tensorflow/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in _assert_same_graph(original_item, item)
+   5218   if original_item.graph is not item.graph:
+   5219     raise ValueError("%s must be from the same graph as %s." % (item,
+-> 5220                                                                 original_item))
+   5221 
+   5222 
+
+ValueError: Tensor("training/Adam/Const:0", shape=(), dtype=float32) must be from the same graph as Tensor("sub:0", shape=(), dtype=float32).
+Steps to reproduce:
+Just compile any model with an Adam optimizer and try to train it.

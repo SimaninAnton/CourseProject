@@ -1,0 +1,135 @@
+Panache1 commented on 3 Mar 2017
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+I'm trying to do time series prediction, and I'll apologize in advance if I'm doing this wrong. From what I understand, there are basically 3 different ways to do it.
+First, you can use a sliding windows approach which inserts the look-back data between each row of data, ie. if you have 100 rows of data and a look-back period of 10, using the sliding windows results in a matrix which is [1100, 1, 1]. All of the implementations of this that I have seen use an iterative process to insert the rows of look-back data, so I would prefer not to use this method.
+Second, you can insert the look-back data as features. In the example above, x becomes a [100, 1, 11] matrix. The downside of this approach is that it is difficult to add additional "real" features.
+Third, you can insert the look-back data as time steps. In the example above, x becomes a [100, 11, 1] matrix. This seems like it should be the best implementation, because real features can easily be added.
+When I tried to implement the third approach, I am finding that it is much more memory intensive and I am getting Out of Memory errors with even a modest number of epochs. In contrast, inserting the look-back data as features is much less memory intensive and runs much faster. It is not obvious to me why that happens.
+I created a toy example to demonstrate this. Toggling line 21 from True to False switches the look-back data from being inserted as features to being inserted as time steps. I would be most appreciative if someone could explain what I am doing wrong.
+I'm currently running this on a cpu in Windows with 16GB of memory, and the toy example using time steps uses about 13.5 GB of memory after about 150 epochs. (Without using TimeDistributed in the output layer.) I plan to buy a high end gpu to run Keras, but I'm concerned that no gpu has enough memory to handle even this relatively simple model using time steps.
+Here is my toy example:
+"""
+Comparison of using time steps vs features
+In line 21, change features = True to features = False to see the difference in performance
+"""
+
+### DEPENDENCIES ###
+import numpy
+from keras.models import Sequential
+from keras.layers import GRU
+from keras.layers import Activation, Dense, TimeDistributed
+
+### MODEL INPUTS ###
+look_back = 10 # How much data to include in the time series
+look_forward = 2 # How far into the future to make predictions
+
+nodes = 4 * look_back # Number of outputs in each layer of the model (except the last)
+sequential_type = GRU
+stateful = True # Whether the model should be stateful
+return_sequences = True # Whether sequences should be returned
+
+features = True # Whether the model uses features for the time series
+if (features):
+    time_distributed = False
+else:
+    time_distributed = True # Slower and much more memory intensive. Can result in OUT OF MEMORY ERRORS
+
+shuffle_data = False # Whether or not to shuffle training data at each epoch
+activation = 'relu'
+initialization = 'he_normal' 
+batch_size = 100 # Number of rows per batch
+
+# Create some random data
+dataset = numpy.random.rand(4343, 1)
+
+dataset = dataset.astype('float16') # Use float16 to save memory
+
+# Remove the last 20% of the dataset which will be used for testing later
+# Also make sure dataset conforms to batch_size
+new_size = int(len(0.8 * dataset) / batch_size) * batch_size + look_back + look_forward
+dataset = numpy.delete(dataset, numpy.s_[new_size:len(dataset)], 0)
+
+trainX = numpy.copy(dataset)
+
+if(features):
+    # lagged is just the next column being added to x_train
+    lagged = numpy.copy(trainX) # Copy the list of values
+    # Each time we go through the loop, we delete the first row of x_train.
+    #   Then we delete the last row of lagged, to keep them the same shape, and
+    #     the new lagged is the next column of x_train
+    # This requires far fewer iterations than the window method
+    for c in range (look_back):
+        trainX = numpy.delete(trainX, 0, 0) # Delete the first row of x_train
+        lagged = numpy.delete(lagged, lagged.shape[0] - 1, 0) # Delete the last row of lagged, to keep them the same shape
+        trainX = numpy.append(lagged, trainX, axis=1) # Append lagged to X
+
+    # ADD 3RD DIMENSION TO x_train
+    trainX = trainX.reshape(trainX.shape[0], 1, trainX.shape[1])                
+
+    # fill in the y data
+    trainY = numpy.copy(trainX[:, 0, trainX.shape[2] - 1])   
+    trainY = trainY.reshape(len(trainY), 1) # Turn the list into a 2 dimensional array
+    time_steps = 1
+    features = look_back + 1
+else:
+    lagged = numpy.copy(trainX)
+    for c in range (look_back):
+        trainX = numpy.delete(trainX, 0, 0) 
+        lagged = numpy.delete(lagged, lagged.shape[0] - 1, 0)
+        trainX = numpy.append(lagged, trainX, axis=1)
+
+    # ADD 3RD DIMENSION TO x_train
+    trainX = trainX.reshape(trainX.shape[0], trainX.shape[1], 1)                
+
+    # fill in the y data
+    if(time_distributed):
+        trainY = numpy.copy(trainX)
+    else:
+        trainY = numpy.copy(trainX[:, trainX.shape[1] - 1])   
+        trainY = trainY.reshape(len(trainY), 1)
+    time_steps = look_back + 1
+    features = 1
+
+# Adjust for look_forward
+for c in range (look_forward):
+    trainX = numpy.delete(trainX, trainX.shape[0] - 1, 0) # Delete the last row of x_train
+    trainY = numpy.delete(trainY, 0, 0) # Delete the first row of y_train
+      
+# Round train_size
+train_size = round(0.75 * new_size / batch_size) * batch_size
+test_size = round(0. * new_size / batch_size) * batch_size
+
+# Split data into train and validation sets
+trainX, testX = trainX[0:train_size,:], trainX[train_size:new_size,:]
+trainY, testY = trainY[0:train_size], trainY[train_size:new_size]
+
+# Create the model
+model = Sequential()
+# Input Layer
+model.add(sequential_type(nodes, batch_input_shape=(batch_size, time_steps, features)
+    , stateful=stateful, return_sequences=return_sequences, init=initialization
+    , activation=activation))
+# Hidden layer
+if(time_distributed): 
+    model.add(sequential_type(nodes, stateful=stateful, return_sequences=return_sequences
+        , init=initialization, activation=activation))
+else:
+    model.add(sequential_type(nodes, stateful=stateful, init=initialization
+        , activation=activation))
+# Output layer
+#if(time_distributed):
+#    model.add(TimeDistributed(Dense(1, activation=activation)))
+#else:
+model.add(Dense(1, activation=activation))
+
+model.compile(loss='mean_squared_error', optimizer='rmsprop')
+
+model.fit(trainX, trainY, nb_epoch=200, batch_size=batch_size)
+1

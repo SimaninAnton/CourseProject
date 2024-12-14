@@ -1,0 +1,56 @@
+pc2000sg commented on May 28, 2019
+Trying to scrape data from 'https://redmart.lazada.sg/meat-and-seafood/?m=redmart&page=102&spm=a2o42.redmart_channel.nav_category_tree.30.2e5d48a6aXcB49', 'https://redmart.lazada.sg/shop-Groceries-DairyChilled/?. After a few pages items received back start repeating. Looks like there are some protection from the web to stop people gettings all items data. Tried the followings but it only help to get more items but not all. Not sure what more can be done to get around this issue. Appreciate any inputs or suggestions. Thanks.
+1.) Set the followings 'CONCURRENT_REQUESTS': 1, 'CONCURRENT_REQUESTS_PER_DOMAIN':1, 'RANDOMIZE_DOWNLOAD_DELAY':True,
+'CONCURRENT_REQUESTS_PER_IP': 1,
+2.) Include headers in request for example: yield scrapy.Request(url=next_page, headers={'JSESSIONID':'2DE61BF1E734471FBB8C768B21D47D85'}
+3.) Set page from 102 to 1 instead of 1 to 102
+My code is like this:
+def parse_category(self, response):
+print("@@@ Parsing: %s " % (response.url))
+if len(response.body) == 0:
+print("@@@ Response empty, retry parsing: %s" % (response.url))
+yield scrapy.Request(url=response.url,callback=self.parse_category, meta={'cat_link': response.meta['cat_link'], 'cat_name': response.meta['cat_name'],'page': response.meta['page']}, dont_filter=True)
+else:
+#print("debug url %s" % response.url)
+data=response.xpath("//script[contains(.,'mod')]/text()").extract_first()
+sdata=re.sub('window.pageData=','',data)
+json_response=json.loads(sdata)
+#checksuccess=json_response['msg'] json_response is a dict with len 2 //json_response.keys
+#> a['mods'].keys()
+if ('mods' in json_response.keys()):
+print("@@@ %s: It's got %d items" % (response.url,len(json_response['mods']['listItems'])))
+for product in range(len(json_response['mods']['listItems'])):
+yield self.parse_item(response, json_response['mods']['listItems'][product], json_response['mainInfo']['title'])
+next_page=response.xpath("//link[@rel='prev']//@href").extract_first()
+page=int(response.meta['page'])
+if (next_page is not None):
+pre_page='page='+str(page)
+#print("debug 1 pre-page %s" % pre_page)
+next_page='page='+str(page-1)
+#print("debug 1 next-page %s" % next_page)
+next_page=re.sub(pre_page,next_page,response.url)
+#print("debug next page %s" % next_page)
+#yield scrapy.Request(url=next_page, callback=self.parse_category, meta={'cat_link': response.meta['cat_link'], 'cat_name': response.meta['cat_name'],'page': next_page}, dont_filter=True)
+yield scrapy.Request(url=next_page, headers={'JSESSIONID':'2DE61BF1E734471FBB8C768B21D47D85'},callback=self.parse_category, meta={'page': response.meta['page']-1})
+def parse_item(self, response, json_product, cat_name):
+item_loader = ProductLoader(DiffmartsItem(), None)
+item_loader.add_value('id', str(json_product['itemId']))
+#print("debug url %s" % response.url)
+#print("debug ID %s" % json_product['name'])
+item_loader.add_value('cat_name', cat_name)
+item_loader.add_value('name', json_product['name'], Compose(to_name))
+if 'originalPrice' in json_product.keys():
+item_loader.add_value('price', re.sub('$','',json_product['priceShow']), Compose(to_price))
+item_loader.add_value('prev_price', json_product['originalPrice'], Compose(to_price))
+item_loader.add_value('promotion', json_product['discount'])
+else:
+item_loader.add_value('price',json_product['price'], Compose(to_price))
+item_loader.add_value('prev_price', '0')
+item_loader.add_value('link', json_product['productUrl'], Compose(lambda v:to_link(v, response)))
+item_loader.add_value('image_link', json_product['image'], Compose(lambda v:to_link(v, response)))
+checksoldout=json_product['inStock']
+if checksoldout=='Yes':
+item_loader.add_value('sold_out', 1)
+else:
+item_loader.add_value('sold_out', 0)
+return item_loader.load_item()

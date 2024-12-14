@@ -1,0 +1,103 @@
+pzajec commented on 27 Oct 2019
+I think the line from the DocBin class should be changed from:
+doc.user_data.update(srsly.msgpack_loads(self.user_data[i]))
+to
+doc.user_data.update(srsly.msgpack_loads(self.user_data[i], use_list=False))
+to match the one from the Doc class.
+Consider the following two examples:
+Using Doc.to_bytes() / Doc.from_bytes()
+# file serialize_doc.py
+import spacy
+from spacy.tokens import Doc
+
+nlp = spacy.load('en')
+Doc.set_extension("my_custom_attr", default=None)
+text = "Hello from New York!"
+
+doc = nlp(text)
+doc._.my_custom_attr = "hello"
+
+with open('test_doc.bin', 'wb') as f:
+    f.write(doc.to_bytes())
+# file deserialize_doc.py
+import spacy
+from spacy.tokens import Doc
+
+nlp = spacy.blank("en")
+with open('test_doc.bin', 'rb') as f:
+    bytes_data = f.read()
+
+doc = Doc(nlp.vocab).from_bytes(bytes_data)
+Doc.set_extension("my_custom_attr", default=None)
+
+print(doc._.my_custom_attr)
+Output: "hello" as expected
+Using DocBin.to_bytes() / DocBin.from_bytes()
+import spacy
+from spacy.tokens import Doc, DocBin
+
+nlp = spacy.load('en')
+Doc.set_extension("my_custom_attr", default=None)
+text = "Hello from New York!"
+
+doc = nlp(text)
+doc._.my_custom_attr = "hello"
+doc_bin = DocBin(attrs=None, store_user_data=True)
+doc_bin.add(doc)
+
+with open('test_docbin.bin', 'wb') as f:
+    f.write(doc_bin.to_bytes())
+import spacy
+from spacy.tokens import DocBin
+
+nlp = spacy.blank("en")
+with open('test_docbin.bin', 'rb') as f:
+    bytes_data = f.read()
+
+doc_bin = DocBin(store_user_data=True).from_bytes(bytes_data)
+Output: TypeError: unhashable type: 'list'
+Reason
+The following code which reads serialized DocBin first prints the correct output when use_list=False and crashes when use_list=True
+import srsly
+import zlib
+
+with open('test_docbin.bin', 'rb') as f:
+    bytes_data = f.read()
+
+msg = srsly.msgpack_loads(zlib.decompress(bytes_data))
+print(srsly.msgpack_loads(msg['user_data'][0], use_list=False))
+srsly.msgpack_loads(msg['user_data'][0], use_list=True)
+Output:
+> {('._.', 'my_custom_attr', None, None): 'hello'}
+> TypeError: unhashable type: 'list'
+How to reproduce the behaviour
+First serialize the DocBin instance using:
+import spacy
+from spacy.tokens import Doc, DocBin
+
+nlp = spacy.load('en')
+Doc.set_extension("my_custom_attr", default=None)
+text = "Hello from New York!"
+
+doc = nlp(text)
+doc._.my_custom_attr = "hello"
+doc_bin = DocBin(attrs=None, store_user_data=True)
+doc_bin.add(doc)
+
+with open('test_docbin.bin', 'wb') as f:
+    f.write(doc_bin.to_bytes())
+Then de-serialize using:
+import spacy
+from spacy.tokens import DocBin
+
+nlp = spacy.blank("en")
+with open('test_docbin.bin', 'rb') as f:
+    bytes_data = f.read()
+
+doc_bin = DocBin(store_user_data=True).from_bytes(bytes_data)
+Info about spaCy
+spaCy version: 2.2.1
+Platform: Linux-5.0.0-31-generic-x86_64-with-Ubuntu-18.04-bionic
+Python version: 3.6.8
+Models: en
+1

@@ -1,0 +1,87 @@
+muhasturk commented on Jul 22, 2014
+Here is my spider
+from scrapy.contrib.linkextractors import LinkExtractor
+from scrapy.contrib.spiders import CrawlSpider, Rule
+from scrapy.selector import Selector
+from vitrinbot.items import ProductItem
+from vitrinbot.base import utils
+import hashlib
+
+removeCurrency = utils.removeCurrency
+getCurrency = utils.getCurrency
+
+class NautilusSpider(CrawlSpider):
+    name = 'nautilus'
+    allowed_domains = ['nautilusconcept.com']
+    start_urls = ['http://www.nautilusconcept.com/']
+    xml_filename = 'nautilus-%d.xml'
+    xpaths = {
+        'category' :'//tr[@class="KategoriYazdirTabloTr"]//a/text()',
+        'title':'//h1[@class="UrunBilgisiUrunAdi"]/text()',
+        'price':'//hemenalfiyat/text()',
+        'images':'//td[@class="UrunBilgisiUrunResimSlaytTd"]//div/a/@href',
+        'description':'//td[@class="UrunBilgisiUrunBilgiIcerikTd"]//*/text()',
+        'currency':'//*[@id="UrunBilgisiUrunFiyatiDiv"]/text()',
+        'check_page':'//div[@class="ayrinti"]'
+    }
+
+    rules = (
+
+        Rule(
+            LinkExtractor(allow=('com/[\w_]+',),
+
+                          deny=('asp$',
+                                'login\.asp'
+                                'hakkimizda\.asp',
+                                'musteri_hizmetleri\.asp',
+                                'iletisim_formu\.asp',
+                                'yardim\.asp',
+                                'sepet\.asp',
+                                'catinfo\.asp\?brw',
+                          ),
+            ),
+            callback='parse_item',
+            follow=True
+        ),
+
+    )
+
+
+    def parse_item(self, response):
+        i = ProductItem()
+        sl = Selector(response=response)
+
+        if not sl.xpath(self.xpaths['check_page']):
+            return i
+
+        i['id'] = hashlib.md5(response.url.encode('utf-8')).hexdigest()
+        i['url'] = response.url
+        i['category'] = " > ".join(sl.xpath(self.xpaths['category']).extract()[1:-1])
+        i['title'] = sl.xpath(self.xpaths['title']).extract()[0].strip()
+        i['special_price'] = i['price'] = sl.xpath(self.xpaths['price']).extract()[0].strip().replace(',','.')
+
+        images = []
+        for img in sl.xpath(self.xpaths['images']).extract():
+            images.append("http://www.nautilusconcept.com/"+img)
+        i['images'] = images
+
+        i['description'] = (" ".join(sl.xpath(self.xpaths['description']).extract())).strip()
+
+        i['brand'] = "Nautilus"
+
+        i['expire_timestamp']=i['sizes']=i['colors'] = ''
+
+        i['currency'] = sl.xpath(self.xpaths['currency']).extract()[0].strip()
+
+        return i
+Here is the peace of log
+2014-07-22 17:39:31+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=0&cid=64&direction=&kactane=100&mrk=1&offset=-1&order=&src=&typ=> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=0&cid=64&direction=&kactane=100&mrk=1&offset=&offset=&order=&src=&stock=1)
+2014-07-22 17:39:31+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=0&chkBeden=&chkMarka=&chkRenk=&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=prc&src=&stock=1&typ=> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=0&cid=64&direction=&kactane=100&mrk=1&offset=&offset=&order=&src=&stock=1)
+2014-07-22 17:39:32+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=0&chkBeden=&chkMarka=&chkRenk=&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=name&src=&stock=1&typ=> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=0&cid=64&direction=&kactane=100&mrk=1&offset=&offset=&order=&src=&stock=1)
+2014-07-22 17:39:32+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=&chkBeden=&chkMarka=&chkRenk=&cid=64&direction=2&kactane=100&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7)
+2014-07-22 17:39:32+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=&chkBeden=&chkMarka=&chkRenk=&cid=64&direction=2&kactane=100&mrk=1&offset=-1&order=name&src=&stock=1&typ=7> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7)
+2014-07-22 17:39:33+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=0&chkBeden=&chkMarka=&chkRenk=&cid=64&cmp=&direction=1&grp=&kactane=100&model=&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7)
+2014-07-22 17:39:33+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=1&chkBeden=&chkMarka=&chkRenk=&cid=64&cmp=&direction=1&grp=&kactane=100&model=&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=prc&src=&stock=1&typ=7)
+2014-07-22 17:39:33+0300 [nautilus] DEBUG: Crawled (200) <GET http://www.nautilusconcept.com/catinfo.asp?brw=1&cid=64&direction=1&kactane=100&mrk=1&offset=-1&order=name&src=&typ=7> (referer: http://www.nautilusconcept.com/catinfo.asp?brw=1&chkBeden=&chkMarka=&chkRenk=&cid=64&cmp=&direction=1&grp=&kactane=100&model=&mrk=1&offset=-1&order=name&src=&stock=1&typ=7)
+I don't want spider to try to crawl links that contains /" catinfo.asp?brw "/ but spider doesn't listen deny rule. Where is the problem?
+I'm using Scrapy==0.24.2 and python 2.7.6

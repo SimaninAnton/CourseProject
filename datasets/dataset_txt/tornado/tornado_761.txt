@@ -1,0 +1,37 @@
+scoder commented on 14 Sep 2014
+I profiled the tornado benchmark in CPython's test suite
+https://hg.python.org/benchmarks/file/9a1136898539/performance/bm_tornado_http.py
+and it gave me this (CPython 3.4 on Ubuntu 14.04):
+         1297716 function calls (1277262 primitive calls) in 1.355 seconds
+
+   Ordered by: internal time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+36663/20463    0.082    0.000    1.288    0.000 stack_context.py:269(wrapped)
+    48605    0.061    0.000    0.096    0.000 stack_context.py:253(wrap)
+    36663    0.048    0.000    0.054    0.000 stack_context.py:227(_remove_deactivated)
+    15602    0.041    0.000    0.082    0.000 ioloop.py:713(add_callback)
+    16200    0.039    0.000    0.053    0.000 iostream.py:980(_merge_prefix)
+    13200    0.039    0.000    0.132    0.000 iostream.py:337(_run_callback)
+     4200    0.039    0.000    0.039    0.000 {method 'send' of '_socket.socket' objects}
+    43856    0.037    0.000    0.037    0.000 {built-in method hasattr}
+        1    0.035    0.035    1.349    1.349 ioloop.py:549(start)
+...
+I found it a bit surprising that so much time was spent in a helper module like stack_context.py, so I compiled the module with Cython (0.21) and the picture changed to this (some C calls add into their caller's timings now):
+         1061674 function calls (1057420 primitive calls) in 1.191 seconds
+
+   Ordered by: internal time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    13200    0.057    0.000    0.107    0.000 iostream.py:337(_run_callback)
+    15602    0.054    0.000    0.057    0.000 ioloop.py:713(add_callback)
+        1    0.044    0.044    1.188    1.188 ioloop.py:549(start)
+     4200    0.038    0.000    0.038    0.000 {method 'send' of '_socket.socket' objects}
+    13200    0.037    0.000    0.749    0.000 iostream.py:338(wrapper)
+    15602    0.036    0.000    0.958    0.000 ioloop.py:452(_run_callback)
+    16200    0.035    0.000    0.048    0.000 iostream.py:980(_merge_prefix)
+    15600    0.031    0.000    0.031    0.000 {method 'recv' of '_socket.socket' objects}
+...
+This resulted in a speedup of about 7% for the overall benchmark.
+I recommend doing that officially, i.e. run cythonize("tornado/stack_context.py") before a release and ship the resulting .c file as additional extension module.
+http://docs.cython.org/src/reference/compilation.html#compiling-with-distutils

@@ -1,0 +1,59 @@
+pswpswpsw commented on 22 Sep 2017
+Conclusion: Observation of keras cosine proximity stuck as -1/3
+As noted by numerous post, Keras seriously currently has an issue with cosine proximity:
+#3031
+#5046
+Here is the code in jupyter notebook for simple test:
+import keras
+from keras.layers import Input, Dense
+from keras.models import Model
+import numpy as np
+
+# --> print keras version
+print keras.__version__
+
+# --> compute average cosine between all angles samples
+def computeMeanConsineAngle(x,y):
+    cosMean = 0
+    numSample = x.shape[0]
+    for i in xrange(numSample):
+        cosMean += np.dot(x[i,:],y[i,:])/np.sqrt(np.dot(x[i,:],x[i,:])*np.dot(y[i,:],y[i,:]))
+        
+    return cosMean/float(numSample)
+
+X = np.random.random((1000,3))
+Y = X
+
+inputs = Input(shape=(3,))
+preds = Dense(3,activation='linear')(inputs)
+model = Model(inputs=inputs,outputs=preds)
+
+sgd=keras.optimizers.Adam(lr=1e-2)
+model.compile(optimizer=sgd ,loss='mse',metrics=['cosine_proximity'])
+model.fit(X,Y, batch_size=1000, epochs=500, shuffle=False)
+
+pred = model.predict(X)
+
+from sklearn.metrics import mean_squared_error
+mse = mean_squared_error(X, pred)
+
+
+%pylab
+%matplotlib inline
+plt.scatter(pred,Y)
+
+print 'mse = ', mse
+print computeMeanConsineAngle(pred, Y)
+
+testX = np.array([[1,0]])
+testY = np.array([[1,0]])
+- computeMeanConsineAngle(testX,testY)
+The printed result is
+Epoch 500/500
+1000/1000 [==============================] - 0s - loss: 7.1132e-04 
+- cosine_proximity: -0.3329
+Using matplotlib backend: TkAgg
+Populating the interactive namespace from numpy and matplotlib
+mse =  0.000703760391565
+0.998615947541
+So the true cosine proximity is actually 0.9986, but keras shows near -1/3. Of course keras would use the negative of cosine proximity for minimization purpose, but it should be -0.9986.., in any case, don't trust the outcome of metric in keras cosine proximity

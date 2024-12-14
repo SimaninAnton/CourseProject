@@ -1,0 +1,27 @@
+Contributor
+minrk commented on 28 Jun 2019
+We are seeing reliably reproducible HTTPStreamClosedErrors with SimpleHTTPClient attempting to make a POST request as the final step of an OAuth login with GitHub. I've tracked it down to using old-style @gen.coroutine instead of async def. When using async def there is no error.
+I haven't been able to reproduce it fully self-contained, unfortunately, but this sample application reproduces it if you set up a dummy GitHub OAuth application.
+The failure occurs in:
+        params = dict(client_id=client_id, client_secret=client_secret, code=code)
+        url = url_concat("https://github.com/login/oauth/access_token", params)
+        req = HTTPRequest(
+            url,
+            method="POST",
+            headers={"Accept": "application/json"},
+            body='',  # Body is required for a POST...
+        )
+        resp = yield http_client.fetch(req)  
+Traceback:
+Traceback (most recent call last):
+  File "/Users/benjaminrk/dev/py/test-oauth/lib/python3.7/site-packages/tornado/web.py", line 1699, in _execute
+    result = await result
+  File "/Users/benjaminrk/dev/py/test-oauth/lib/python3.7/site-packages/tornado/gen.py", line 742, in run
+    yielded = self.gen.throw(*exc_info)  # type: ignore
+  File "test-auth.py", line 43, in get
+    resp = yield http_client.fetch(req)
+  File "/Users/benjaminrk/dev/py/test-oauth/lib/python3.7/site-packages/tornado/gen.py", line 735, in run
+    value = future.result()
+tornado.simple_httpclient.HTTPStreamClosedError: Stream closed
+This is with tornado 6.0.3 and Python 3.7.2 on a mac. No error with tornado 5.1.1, or using async def instead of @gen.coroutine.
+1

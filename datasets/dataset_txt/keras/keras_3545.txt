@@ -1,0 +1,47 @@
+Contributor
+faroit commented on 5 Jan 2017
+This is probably a duplicate of #4302 (where only tensorflow was tested).
+Problem
+when using the Reshape layer it is not clear if one can use an unknown dimension (-1) like in numpy. Using it results in an error. See the following example (please bare with we that this is not a useful example, but it's just to show the actual problem):
+from keras.layers.core import Dense, Reshape
+from keras.models import Sequential
+import numpy as np
+
+X = np.random.random((1000, 50))
+y = np.random.random((1000, 1))
+
+model = Sequential()
+model.add(Dense(30, input_shape=(50,)))
+model.add(Reshape((-1, 6)))
+model.add(Reshape((30,)))
+model.add(Dense(1))
+model.compile(loss='mse', optimizer='sgd')
+model.fit(X, y)
+This results in the following error (tested with Keras 1.2.0 and Theano-0.9.0.dev4)
+  File "test.py", line 10, in <module>
+    model.add(Reshape((-1, 6)))
+  File "keras/models.py", line 327, in add
+    output_tensor = layer(self.outputs[0])
+  File "keras/engine/topology.py", line 569, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "keras/engine/topology.py", line 632, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "keras/engine/topology.py", line 164, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "keras/layers/core.py", line 354, in call
+    return K.reshape(x, (-1,) + target_shape)
+  File "keras/backend/theano_backend.py", line 567, in reshape
+    return T.reshape(x, shape)
+  File "theano/tensor/basic.py", line 4722, in reshape
+    newshape = as_tensor_variable(newshape)
+  File "theano/tensor/basic.py", line 212, in as_tensor_variable
+    raise AsTensorError("Cannot convert %s to TensorType" % str_x, type(x))
+theano.tensor.var.AsTensorError: ('Cannot convert (-1, None, 5, 6) to TensorType', <type 'tuple'>)
+where as
+model.add(Reshape((5, 6))) 
+instead of
+model.add(Reshape((-1, 6))) 
+would work as expected.
+To me it looks like the keras backend supports -1 dims so the question is why can't users access it from the reshape layer? Is there any way around it? Where should I look to implement this feature?
+Applications
+Connecting the output of a 2D CNN and a RNN is difficult because the exact output shape after pooling/downsampling operations need to be known. See the the following keras builtin application. If the input dimension would change or even just the pooling stride, the reshape operation would need to be adjusted manually, which could be cumbersome in a network with many layers.

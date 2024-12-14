@@ -1,0 +1,61 @@
+Contributor
+gsemet commented on 28 Aug 2018 •
+edited
+Hello
+I see a weird behavior on the version resolution on pipenv update, for dependencies where the latest version is to be avoided by another dependency.
+Given a Pipfile with no special restriction:
+[dev-packages]
+"flake8" = "*"
+pycodestyle = "*"
+pyflakes = "*"
+pylint = "*"
+yapf = "*"
+cryptography = "*"
+isort = "*"
+PyYAML = "*"
+pytest = "*"
+tox = "*"
+"flake8-comprehensions" = "*"
+asynctest = "*"
+rope = "*"
+pytest-sugar = "*"
+pytest-mock = "*"
+pytest-watch = "*"
+mock = "*"
+"autopep8" = "*"
+pytest-cov = "*"
+bandit = "*"
+
+[packages]
+For example, pycodestyle latest version is 2.4.0. Some dependencies such as flake8 adds the restriction "<2.4.0". Another one ask for "pycodestyle<1.7.0". But the resolver fails at the end with the message
+Could not find a version that matches pyflakes<1.7.0,==2.0.0,>=1.5.0
+While reasonably the "==2.0.0" have nothing to do here since no one ever restrict or freeze to this version. This looks like the latest found version on pypi in the previous resolver stage is taken are a hard restriction (with ==), so any later resolution stager should follow it, or fail.
+This appears to me as a bug since later stages can only add new dependencies, not restrict the version of a package already resolved.
+To me, each resolver stage should keep the resolution context (for pycodestyle, keep the "require=*" information instead of "require==2.4.0").
+We can see this behavior in the logs:
+$ pipenv update --clear --verbose
+...
+pycodestyle (from -r /tmp/pipenv-bvm1pyac-requirements/pipenv-jtt7r2p0-constraints.txt (line 4))
+...
+
+Finding the best candidates
+...
+  found candidate pycodestyle==2.4.0 (constraint was <any>)
+...
+
+Finding secondary dependencies:
+..
+  flake8-comprehensions==1.4.1 requires flake8!=3.2.0, flake8-comprehensions==1.4.1, mccabe<0.7.0,>=0.6.0, pycodestyle<2.4.0,>=2.0.0, pyflakes<1.7.0,>=1.5.0
+...
+pycodestyle==2.4.0        requires pycodestyle==2.4.0
+  ^=== This is were the issue happen, the ==2.4.0 should not be, it should be something like pycodestyle==2.4.0 (restriction="*"), to keep the information
+...
+  flake8==3.5.0             requires flake8==3.5.0, mccabe<0.7.0,>=0.6.0, pycodestyle<2.4.0,>=2.0.0, pyflakes<1.7.0,>=1.5.0
+...
+
+New dependencies found in this round:
+...
+  adding ['pycodestyle', '<2.4.0,==2.4.0,>=2.0.0,>=2.3', '[]']
+From now on, the resolution couldn't succeed since "<2.4.0" and =="2.4.0" are obviously incompatible.
+Workaround: recopy the restriction "<2.4.0" in my Pipfile. From now, the resolver will take the latest version that respect <2.4.0 and everybody will be happy later on.
+Happens with pycodestyle and pyflakes (restricted to "<1.7.0" by flake8 3.5.0)

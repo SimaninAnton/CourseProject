@@ -1,0 +1,210 @@
+cui-xiaoang96 commented on 11 Nov 2019 •
+edited
+System information
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Windows 10
+TensorFlow backend (yes / no): yes
+TensorFlow version: 1.10.0
+Keras version: 2.1.6
+Python version: 3.6
+CUDA/cuDNN version: 9.0/ v7.6
+GPU model and memory: navida geforce gtx 965M / 16G
+You can obtain the TensorFlow version with:
+python -c "import tensorflow as tf; print(tf.GIT_VERSION, tf.VERSION)"
+You can obtain the Keras version with:
+python -c 'import keras as k; print(k.version)'
+Describe the current behavior
+this is the neural network model.
+def CommonModel(input_size = (384, 30, 1), af = 'relu', cs = 5, ki = 'he_normal', bi = 'he_normal', sd = 1, verbose = 0):
+# 输入层
+inputs = Input(input_size)
+print(inputs.shape)
+
+# 第一层
+conv1_01 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(inputs)
+conv1_b1 = BatchNormalization()(conv1_01)
+conv1_02 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv1_b1)
+conv1_b2 = BatchNormalization()(conv1_02)
+
+conv1_p1 = MaxPooling2D(pool_size=(2, 1))(conv1_b2)
+print(conv1_p1.shape)
+
+# 第二层
+conv2_01 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv1_p1)
+conv2_b1 = BatchNormalization()(conv2_01)
+conv2_02 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv2_b1)
+conv2_b2 = BatchNormalization()(conv2_02)
+
+conv2_p1 = MaxPooling2D(pool_size=(2, 2))(conv2_b2)
+print(conv2_p1.shape)
+
+# 第三层
+conv3_01 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv2_p1)
+conv3_b1 = BatchNormalization()(conv3_01)
+conv3_02 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv3_b1)
+conv3_b2 = BatchNormalization()(conv3_02)
+print(conv3_b2.shape)
+
+# 第四层
+conv4_u1 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(UpSampling2D(size = (2, 2))(conv3_b2))
+conv4_m1 = concatenate([conv4_u1, conv2_b2], axis = 3)
+
+conv4_01 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv4_m1)
+conv4_b1 = BatchNormalization()(conv4_01)
+conv4_02 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv4_b1)
+conv4_b2 = BatchNormalization()(conv4_02)
+print(conv4_b2.shape)
+
+# 第五层
+conv5_u1 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(UpSampling2D(size = (2, 0))(conv4_b2))
+conv5_m1 = concatenate([conv5_u1, conv1_b2], axis = 2)
+
+conv5_01 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv5_m1)
+conv5_b1 = BatchNormalization()(conv5_01)
+conv5_02 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(conv5_b1)
+conv5_b2 = BatchNormalization()(conv5_02)
+print(conv5_b2.shape)
+
+# 输出层
+conv6_01 = Conv2D(filters = 4, kernel_size = 3, strides = sd, padding = 'same', activation = 'tanh', kernel_initializer = ki, bias_initializer = bi)(conv5_b2)
+conv6_b1 = BatchNormalization()(conv6_01)
+conv6_02 = Conv2D(filters = 4, kernel_size = 3, strides = sd, padding = 'same', activation = 'tanh', kernel_initializer = ki, bias_initializer = bi)(conv6_b1)
+conv6_b2 = BatchNormalization()(conv6_02)
+print(conv6_b2.shape)
+
+conv6_03 = Conv2D(filters = 1, kernel_size = 1, strides = sd, padding = 'same', activation = 'tanh', kernel_initializer = ki, bias_initializer = bi)(conv6_b2)
+conv6_04 = Conv2D(filters = 1, kernel_size = 1, strides = sd, padding = 'same', activation = 'tanh', kernel_initializer = ki, bias_initializer = bi)(conv6_03)
+print(conv6_04.shape)
+
+model = Model(input = inputs, output = conv6_04)
+
+if verbose == 1:
+    model.summary()
+
+return model
+def mse_8mae_2scc(y_true, y_pred, e=0.00003):
+return mean_squared_error(y_true, y_pred) + 2 * binary_crossentropy(y_true, y_pred) + 8 * mean_absolute_error(y_true, y_pred)
+input_size = (384,30, 1)
+verbose = 0
+af = 'relu'
+cs = 5
+ki = 'he_normal'
+bi = 'he_normal'
+print('\n### Noise Model')
+noise_model = CommonModel(input_size = input_size, af = af, cs = cs, ki = ki, bi = bi, verbose = verbose)
+noise_model.compile(loss = mse_8mae_2scc, optimizer = Adam(lr = 0.0001), metrics = ['mae'])
+The error :
+print(train_x.shape)
+(1359, 384, 30, 1)
+print(train_y.shape)
+(1359, 384, 30, 1)
+When I run the code "noise_model.train_on_batch(train_x, train_y)", the error is :
+Traceback (most recent call last):
+File "", line 1, in
+runfile('D:/2019下半学期/AvoDenoise/GenerateTrainingDataset2D.py', wdir='D:/2019下半学期/AvoDenoise')
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\spyder_kernels\customize\spydercustomize.py", line 827, in runfile
+execfile(filename, namespace)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\spyder_kernels\customize\spydercustomize.py", line 110, in execfile
+exec(compile(f.read(), filename, 'exec'), namespace)
+File "D:/2019下半学期/AvoDenoise/GenerateTrainingDataset2D.py", line 253, in
+noise_loss = noise_model.train_on_batch(batch_x, batch_y)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\keras\engine\training.py", line 1883, in train_on_batch
+outputs = self.train_function(ins)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\keras\backend\tensorflow_backend.py", line 2482, in call
+**self.session_kwargs)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\client\session.py", line 877, in run
+run_metadata_ptr)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\client\session.py", line 1100, in _run
+feed_dict_tensor, options, run_metadata)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\client\session.py", line 1272, in _do_run
+run_metadata)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\client\session.py", line 1291, in _do_call
+raise type(e)(node_def, op, message)
+InvalidArgumentError: output dimensions must be positive
+[[Node: up_sampling2d_2/ResizeNearestNeighbor = ResizeNearestNeighbor[T=DT_FLOAT, _class=["loc:@training/Adam/gradients/batch_normalization_38/cond/Merge_grad/cond_grad"], align_corners=false, _device="/job:localhost/replica:0/task:0/device:GPU:0"](batch_normalization_38/cond/Merge-0-0-TransposeNCHWToNHWC-LayoutOptimizer, up_sampling2d_2/mul)]]
+[[Node: metrics_1/mean_absolute_error/Mean_1/_1777 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_5708_metrics_1/mean_absolute_error/Mean_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]
+Caused by op 'up_sampling2d_2/ResizeNearestNeighbor', defined at:
+File "E:\Anaconda\envs\tensorflow-gpu\lib\runpy.py", line 193, in _run_module_as_main
+"main", mod_spec)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\runpy.py", line 85, in run_code
+exec(code, run_globals)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\spyder_kernels\console_main.py", line 11, in
+start.main()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\spyder_kernels\console\start.py", line 318, in main
+kernel.start()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\ipykernel\kernelapp.py", line 563, in start
+self.io_loop.start()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\platform\asyncio.py", line 148, in start
+self.asyncio_loop.run_forever()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\asyncio\base_events.py", line 438, in run_forever
+self._run_once()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\asyncio\base_events.py", line 1451, in _run_once
+handle._run()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\asyncio\events.py", line 145, in _run
+self._callback(*self._args)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\ioloop.py", line 690, in
+lambda f: self._run_callback(functools.partial(callback, future))
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\ioloop.py", line 743, in _run_callback
+ret = callback()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\gen.py", line 787, in inner
+self.run()
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\gen.py", line 748, in run
+yielded = self.gen.send(value)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\ipykernel\kernelbase.py", line 365, in process_one
+yield gen.maybe_future(dispatch(*args))
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\gen.py", line 209, in wrapper
+yielded = next(result)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\ipykernel\kernelbase.py", line 272, in dispatch_shell
+yield gen.maybe_future(handler(stream, idents, msg))
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\gen.py", line 209, in wrapper
+yielded = next(result)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\ipykernel\kernelbase.py", line 542, in execute_request
+user_expressions, allow_stdin,
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tornado\gen.py", line 209, in wrapper
+yielded = next(result)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\ipykernel\ipkernel.py", line 294, in do_execute
+res = shell.run_cell(code, store_history=store_history, silent=silent)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\ipykernel\zmqshell.py", line 536, in run_cell
+return super(ZMQInteractiveShell, self).run_cell(*args, **kwargs)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\IPython\core\interactiveshell.py", line 2855, in run_cell
+raw_cell, store_history, silent, shell_futures)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\IPython\core\interactiveshell.py", line 2881, in _run_cell
+return runner(coro)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\IPython\core\async_helpers.py", line 68, in pseudo_sync_runner
+coro.send(None)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\IPython\core\interactiveshell.py", line 3058, in run_cell_async
+interactivity=interactivity, compiler=compiler, result=result)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\IPython\core\interactiveshell.py", line 3249, in run_ast_nodes
+if (await self.run_code(code, result, async=asy)):
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\IPython\core\interactiveshell.py", line 3326, in run_code
+exec(code_obj, self.user_global_ns, self.user_ns)
+File "", line 1, in
+runfile('D:/2019下半学期/AvoDenoise/GenerateTrainingDataset2D.py', wdir='D:/2019下半学期/AvoDenoise')
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\spyder_kernels\customize\spydercustomize.py", line 827, in runfile
+execfile(filename, namespace)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\spyder_kernels\customize\spydercustomize.py", line 110, in execfile
+exec(compile(f.read(), filename, 'exec'), namespace)
+File "D:/2019下半学期/AvoDenoise/GenerateTrainingDataset2D.py", line 187, in
+noise_model = CommonModel(input_size = input_size, af = af, cs = cs, ki = ki, bi = bi, verbose = verbose)
+File "D:/2019下半学期/AvoDenoise/GenerateTrainingDataset2D.py", line 129, in CommonModel
+conv5_u1 = Conv2D(filters = 16, kernel_size = cs, strides = sd, padding = 'same', activation = af, kernel_initializer = ki, bias_initializer = bi)(UpSampling2D(size = (2, 0))(conv4_b2))
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\keras\engine\topology.py", line 619, in call
+output = self.call(inputs, **kwargs)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\keras\layers\convolutional.py", line 1829, in call
+self.data_format)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\keras\backend\tensorflow_backend.py", line 1944, in resize_images
+x = tf.image.resize_nearest_neighbor(x, new_shape)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\ops\gen_image_ops.py", line 3040, in resize_nearest_neighbor
+align_corners=align_corners, name=name)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\framework\op_def_library.py", line 787, in _apply_op_helper
+op_def=op_def)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\util\deprecation.py", line 454, in new_func
+return func(*args, **kwargs)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\framework\ops.py", line 3155, in create_op
+op_def=op_def)
+File "E:\Anaconda\envs\tensorflow-gpu\lib\site-packages\tensorflow\python\framework\ops.py", line 1717, in init
+self._traceback = tf_stack.extract_stack()
+InvalidArgumentError (see above for traceback): output dimensions must be positive
+[[Node: up_sampling2d_2/ResizeNearestNeighbor = ResizeNearestNeighbor[T=DT_FLOAT, _class=["loc:@training/Adam/gradients/batch_normalization_38/cond/Merge_grad/cond_grad"], align_corners=false, _device="/job:localhost/replica:0/task:0/device:GPU:0"](batch_normalization_38/cond/Merge-0-0-TransposeNCHWToNHWC-LayoutOptimizer, up_sampling2d_2/mul)]]
+[[Node: metrics_1/mean_absolute_error/Mean_1/_1777 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_5708_metrics_1/mean_absolute_error/Mean_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]
+And should I do what to remove the error?
+Thanks for your replying! Thank you so much.

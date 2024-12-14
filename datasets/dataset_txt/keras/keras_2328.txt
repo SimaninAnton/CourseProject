@@ -1,0 +1,150 @@
+Losspost commented on 21 May 2017 •
+edited
+Hello i am trying to predict the Speed of a car via Video. I am using an Timdistributed CNN.
+Right now i get the following error message: i appreciate any ideas to solve the Problem and are open to changes in the codes aswell if someone know how i can get a Regression with CNN instead of to category for every Speed value
+`classifier.fit(picture_data_1,speed_values,batch_size = 32, epochs = 2)
+Traceback (most recent call last):
+
+  File "<ipython-input-10-011956497c2a>", line 1, in <module>
+    classifier.fit(picture_data_1,speed_values,batch_size = 32, epochs = 2)
+
+  File "C:\Users\tobia\Anaconda3\envs\tensorflow\lib\site-packages\keras\models.py", line 856, in fit
+    initial_epoch=initial_epoch)
+
+  File "C:\Users\tobia\Anaconda3\envs\tensorflow\lib\site-packages\keras\engine\training.py", line 1429, in fit
+    batch_size=batch_size)
+
+  File "C:\Users\tobia\Anaconda3\envs\tensorflow\lib\site-packages\keras\engine\training.py", line 1309, in _standardize_user_data
+    exception_prefix='target')
+
+  File "C:\Users\tobia\Anaconda3\envs\tensorflow\lib\site-packages\keras\engine\training.py", line 139, in _standardize_input_data
+    str(array.shape))
+
+ValueError: Error when checking target: expected dense_1 to have shape (None, 1, 5001) but got array with shape (5001, 1, 1)`
+
+My Code:
+`"""
+Creator: Tobias
+Date: 15.05.17
+"""
+#Initialising video preprocessing
+import cv2
+import numpy as np
+import pandas as pd
+import os,glob,shutil
+from PIL import *
+import PIL.Image
+import h5py
+
+
+#Initialising all Libarys for Deep Learning
+from keras.models import Sequential
+from keras.layers import Flatten,Dense,Conv2D,MaxPooling2D
+from keras.layers.wrappers import TimeDistributed
+
+
+file = h5py.File("picture_data_1.h5", 'r')
+picture_data_1 = file['init'][:]
+file.close()
+file = h5py.File("picture_data_2.h5", 'r')
+picture_data_2 = file['init'][:]
+file.close()
+file = h5py.File("picture_data_3.h5", 'r')
+picture_data_3 = file['init'][:]
+file.close()
+file = h5py.File("picture_data_4.h5", 'r')
+picture_data_4 = file['init'][:]
+file.close()
+
+input_values = pd.read_csv('data/train.txt',header = None)
+input_values = input_values.iloc[0:5001].values
+speed_values = np.asarray(input_values,dtype='float64')
+speed_values = np.reshape(speed_values,(5001,1,1))
+print(speed_values.shape)
+def CreatClasses(folder):
+        #Preprocessing the video data for CNN part 2
+    
+    os.chdir("data/training/"+folder)
+    for file in glob.glob("*.jpg"):
+        name = list(file)
+        name = name[:-4]
+      
+        conv = " ".join(name)
+        s = conv.replace(" ","")
+
+        try:
+            os.stat("data/training/train_data/"+s)
+        except:
+            os.makedirs(s)
+            shutil.move(s+".jpg", s+"/"+s+".jpg")
+def ConvertVideo():
+    #Loading .txt with speed values
+    
+    
+    #Loading Video in Python
+    video = cv2.VideoCapture('data/train.mp4')
+    success,image = video.read()
+    count = 0
+    success = True
+    #Splitting video in single images in jpg
+    while success:
+        success,image = video.read()
+        #cv2.imwrite('data/video_jpg/',speed_values[success],'.jpg')
+        cv2.imwrite("data/training/train_data/%f.jpg"%count,image) 
+        count += 1 
+    print('Video Succefully Converted to jpg')
+def ConvertVideo_Test():
+    #Loading Video in Python
+    video_2 = cv2.VideoCapture('data/test.mp4')
+    success_2,image_2 = video_2.read()
+    count_2 = 0
+    success_2 = True
+    #Splitting video in single images in jpg
+    while success_2:
+        success_2,image_2 = video_2.read()
+        #cv2.imwrite('data/video_jpg/',speed_values[success],'.jpg')
+        cv2.imwrite("data/video_jpg/%f.jpg" %count_2,image_2) 
+        count_2 += 1 
+    print('Video Succefully Converted to jpg')
+
+ConvertVideo()
+#ConvertVideo_Test()
+#CreatClasses("test_data")
+classifier = Sequential()
+classifier.add(TimeDistributed(Conv2D(64, (3, 3),activation = 'relu'), input_shape = (1,480,640,3)))
+classifier.add(TimeDistributed(MaxPooling2D(pool_size = (2, 2))))
+classifier.add(TimeDistributed(Flatten()))
+classifier.add(Dense(units = 5001,activation = 'softmax'))
+classifier.compile(optimizer ='adam', loss = 'mean_squared_error',metrics = ['accuracy'])
+classifier.summary()
+
+
+filelist  = glob.glob('data/training/train_data/*.jpg')
+picture_data_1 = np.array([np.array(Image.open(fname)) for fname in filelist[0:5001]])
+picture_data_2 = np.array([np.array(Image.open(fname)) for fname in filelist[5001:10001]])
+picture_data_3 = np.array([np.array(Image.open(fname)) for fname in filelist[10001:15001]])
+picture_data_4 = np.array([np.array(Image.open(fname)) for fname in filelist[15001:20400]])
+
+picture_data_1 = np.reshape(picture_data_1, (5001,1,480,640,3))
+picture_data_2 = np.reshape(picture_data_2, (5000,1,480,640,3))
+picture_data_3 = np.reshape(picture_data_3, (5000,1,480,640,3))
+picture_data_4 = np.reshape(picture_data_4, (5398,1,480,640,3))
+
+
+np.savez('picture_data',picture_data_1,picture_data_2,picture_data_3,picture_data_4)
+i = h5py.File('picture_data_1.h5','w')
+test = i.create_dataset('init',data=picture_data_1)
+i.close()
+i2 = h5py.File('picture_data_2.h5','w')
+test = i2.create_dataset('init',data=picture_data_2)
+i2.close()
+i3 = h5py.File('picture_data_3.h5','w')
+test = i3.create_dataset('init',data=picture_data_3)
+i3.close()
+i4 = h5py.File('picture_data_4.h5','w')
+test = i4.create_dataset('init',data=picture_data_4)
+i4.close()
+
+classifier.fit(picture_data_1,speed_values,batch_size = 32, epochs = 2)
+
+classifier.save("Modell.h5")`

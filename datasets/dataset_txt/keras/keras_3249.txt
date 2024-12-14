@@ -1,0 +1,41 @@
+nasimrahaman commented on 10 Feb 2017
+Since 295bfe4e3ae7e98655b3630a9f83b2df4a82234f, output tensors in the Container class (from which Model inherits) are cached to prevent rebuilding the graph. However, this cache does not respect the tensorflow context managers under which the Container object is being called. A minimal working example follows:
+import tensorflow as tf
+import keras
+
+x = keras.layers.Input(shape=[1, 1, 1])
+y = keras.layers.Conv2D(1, 1, 1)(x)
+
+foo = keras.models.Model(input=x, output=y)
+
+with tf.device('/cpu'):
+    a = tf.placeholder(tf.float32)
+
+with tf.device('/cpu'):
+    b_cpu = foo(a)
+
+with tf.device('/gpu:0'):
+    b_gpu = foo(a)
+
+print(a.device)
+print(b_cpu.device)
+print(b_gpu.device)
+prints the following:
+/device:CPU:*
+/device:CPU:*
+/device:CPU:*
+What's happening is this line reading from the cache instead of running the internal graph anew. Indeed, when we add the following line:
+# ...
+
+with tf.device('/cpu'):
+    b_cpu = foo(a)
+    foo._output_tensor_cache = {}
+
+# ...
+the result is as expected:
+/device:CPU:*
+/device:CPU:*
+/device:GPU:0
+The present behaviour may stall e.g. multi-gpu training/inference, when there is e.g. one dequeue op a on which the model foo operates multiple times under different device context managers. Possible solutions include:
+get rid of the cache.
+give users the option of deactivating the cache (e.g. a disable_cache=True keyword arg).

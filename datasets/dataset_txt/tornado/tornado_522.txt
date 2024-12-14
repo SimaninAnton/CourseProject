@@ -1,0 +1,82 @@
+Contributor
+mrocklin commented on 7 Apr 2016
+I notice that when I send large messages over a TCP IOStream I get considerably less bandwidth than my network provides (about 10% of total). A bit of profiling shows that a large fraction of time is spent in str.join and str.find.
+Below follows a tiny example to replicate this on localhost.
+Server
+from tornado.tcpserver import TCPServer
+from tornado.ioloop import IOLoop
+from tornado import gen
+
+import numpy as np
+data = bytes(np.random.randint(0, 255, dtype='u1', size=100000000).data) # 100M
+
+sentinel = b'--my-sentinel--'
+
+class MyServer(TCPServer):
+    @gen.coroutine
+    def handle_stream(self, stream, address):
+        yield stream.write(data + sentinel)
+
+s = MyServer()
+s.listen(8000)
+
+IOLoop.current().start()
+Client
+from tornado.tcpclient import TCPClient
+from tornado.ioloop import IOLoop
+from tornado import gen
+
+sentinel = b'--my-sentinel--'
+
+@gen.coroutine
+def f(): 
+    client = TCPClient()
+    stream = yield client.connect('localhost', 8000,
+                                  max_buffer_size=int(1e9))
+    msg = yield stream.read_until(sentinel)
+    print(len(msg))
+
+if __name__ == '__main__':
+    IOLoop().run_sync(f)
+Add a bit of network delay
+This adds 10ms on to localhost, just to simulate being in a real network
+# tc qdisc add dev lo root netem delay 10ms
+Remove network delay when done
+# tc qdisc del dev lo root netem
+Profiler output
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       92    0.430    0.005    0.430    0.005 {method 'find' of 'str' objects}
+       46    0.249    0.005    0.249    0.005 {method 'join' of 'str' objects}
+       25    0.216    0.009    0.216    0.009 {method 'poll' of 'select.epoll' objects}
+     1553    0.019    0.000    0.019    0.000 {method 'recv' of '_socket.socket' objects}
+       46    0.008    0.000    0.259    0.006 iostream.py:1501(_double_prefix)
+     1553    0.002    0.000    0.022    0.000 iostream.py:721(_read_to_buffer)
+       22    0.002    0.000    0.715    0.032 iostream.py:585(_read_to_buffer_loop)
+       47    0.001    0.000    0.251    0.005 iostream.py:1510(_merge_prefix)
+     1553    0.001    0.000    0.020    0.000 iostream.py:1010(read_from_fd)
+        1    0.001    0.001    0.934    0.934 ioloop.py:746(start)
+       48    0.001    0.000    0.690    0.014 iostream.py:772(_find_read_pos)
+     6549    0.000    0.000    0.000    0.000 {len}
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.957    0.957 <string>:1(<module>)
+        1    0.000    0.000    0.957    0.957 ioloop.py:400(run_sync)
+        1    0.001    0.001    0.957    0.957 ioloop.py:746(start)
+       29    0.000    0.000    0.757    0.026 stack_context.py:271(null_wrapper)
+       23    0.000    0.000    0.756    0.033 iostream.py:497(_handle_events)
+       22    0.000    0.000    0.755    0.034 iostream.py:645(_handle_read)
+       23    0.002    0.000    0.755    0.033 iostream.py:585(_read_to_buffer_loop)
+       49    0.001    0.000    0.727    0.015 iostream.py:772(_find_read_pos)
+       94    0.454    0.005    0.454    0.005 {method 'find' of 'str' objects}
+       47    0.008    0.000    0.272    0.006 iostream.py:1501(_double_prefix)
+       48    0.002    0.000    0.264    0.005 iostream.py:1510(_merge_prefix)
+       47    0.261    0.006    0.261    0.006 {method 'join' of 'str' objects}
+       26    0.198    0.008    0.198    0.008 {method 'poll' of 'select.epoll' objects}
+     1553    0.002    0.000    0.026    0.000 iostream.py:721(_read_to_buffer)
+     1553    0.001    0.000    0.023    0.000 iostream.py:1010(read_from_fd)
+     1553    0.022    0.000    0.022    0.000 {method 'recv' of '_socket.socket' objects}
+        5    0.000    0.000    0.001    0.000 ioloop.py:594(_run_callback)
+        3    0.000    0.000    0.001    0.000 client.py:7(f)
+1

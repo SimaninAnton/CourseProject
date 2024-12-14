@@ -1,0 +1,167 @@
+candlerb commented on Feb 7, 2018
+Problem description:
+I am running code in AWS Lambda. It uses simple_salesforce, which in turn uses requests[security], to make HTTPS connections to the Salesforce REST API.
+If the Lambda function makes a request to Salesforce, sits idle for more than 10 minutes, and then makes another request, the second request fails with the following error:
+When not using pyOpenSSL
+ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+
+Backtrace:
+        [
+            "/var/task/simple_salesforce/api.py",
+            721,
+            "_call_salesforce",
+            "result = self.session.request(method, url, headers=headers, **kwargs)"
+        ],
+        [
+            "/var/task/requests/sessions.py",
+            508,
+            "request",
+            "resp = self.send(prep, **send_kwargs)"
+        ],
+        [
+            "/var/task/requests/sessions.py",
+            618,
+            "send",
+            "r = adapter.send(request, **kwargs)"
+        ],
+        [
+            "/var/task/requests/adapters.py",
+            490,
+            "send",
+            "raise ConnectionError(err, request=request)"
+        ]
+    ]
+When using pyOpenSSL
+ConnectionError: ('Connection aborted.', OSError("(104, 'ECONNRESET')",))
+
+Backtrace:
+        [
+            "/var/task/simple_salesforce/api.py",
+            721,
+            "_call_salesforce",
+            "result = self.session.request(method, url, headers=headers, **kwargs)"
+        ],
+        [
+            "/var/task/requests/sessions.py",
+            508,
+            "request",
+            "resp = self.send(prep, **send_kwargs)"
+        ],
+        [
+            "/var/task/requests/sessions.py",
+            618,
+            "send",
+            "r = adapter.send(request, **kwargs)"
+        ],
+        [
+            "/var/task/requests/adapters.py",
+            490,
+            "send",
+            "raise ConnectionError(err, request=request)"
+        ]
+My suspicion is that the idle HTTPS connection is being closed by the Salesforce server (*) after 10 minutes, but the client doesn't notice this, tries to re-use it, and then fails. This is hard to prove directly because running tcpdump inside AWS Lambda is hard - you don't get root.
+Possibly related to urllib3/urllib3#728, which also involved OpenSSL and keepalive timeouts. That issue was fixed; also it had OpenSSL.SSL.SysCallError propagating upwards rather than the ECONNRESET that I see now.
+(*) Or by the AWS NAT gateway. I am running Lambda functions inside a VPC, and the VPC has a NAT gateway for accessing the outside world. However the documented timeout is 5 minutes, not 10 minutes.
+Expected Result
+I expected that closed HTTPS connections would be silently closed and removed from the keepalive pool, and fresh connections opened when needed. This may not be possible if the problem is NAT gateway dropping state without actually sending a RST.
+If the client had a configurable keepalive timeout and actively closed idle connections after that time, that would provide a workaround. However that idea was rejected in #3661
+Maybe the solution is to mount HTTPAdapter with max_retries > 0, if I can push this option down through simple_salesforce somehow.
+Setting the socket option to enable TCP keepalives might help if this is the NAT gateway timing out. Again, this needs to be pushed down through simple_salesforce and requests to urllib3.
+Actual Result
+See above
+Reproduction Steps
+If I write a Lambda function which does a single simple_salesforce call, and invoke it twice with an interval of 600 seconds between, the second one raises an exception as shown above. With an interval of 500 seconds, the second call works fine.
+I cannot fully reproduce outside AWS, on local Ubuntu 16.04. I can get something similar like this (requires a Salesforce account):
+import simple_salesforce
+import datetime
+import time
+
+sf = simple_salesforce.Salesforce(
+  username="XXXXXX",
+  password="XXXXXX",
+  security_token="XXXXXX",
+  sandbox=True,
+)
+
+while True:
+    print(datetime.datetime.now().isoformat())
+    sf.Account.get_by_custom_id("Account_Number__c", "XXX")   # customise
+    print("ok")
+    time.sleep(3)
+and then in a different window run tcpkill -9 'tcp port 443' (tcpkill is in the "dsniff" package). Since tcpkill will kill every connection it sees, even if requests were to automatically retry it would probably kill those as well.
+But this does appear to give a more useful backtrace:
+Traceback (most recent call last):
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 601, in urlopen
+    chunked=chunked)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 387, in _make_request
+    six.raise_from(e, None)
+  File "<string>", line 2, in raise_from
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 383, in _make_request
+    httplib_response = conn.getresponse()
+  File "/usr/lib/python3.5/http/client.py", line 1197, in getresponse
+    response.begin()
+  File "/usr/lib/python3.5/http/client.py", line 297, in begin
+    version, status, reason = self._read_status()
+  File "/usr/lib/python3.5/http/client.py", line 258, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+  File "/usr/lib/python3.5/socket.py", line 575, in readinto
+    return self._sock.recv_into(b)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/contrib/pyopenssl.py", line 285, in recv_into
+    raise SocketError(str(e))
+OSError: (104, 'ECONNRESET')
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/requests/adapters.py", line 440, in send
+    timeout=timeout
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 639, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/util/retry.py", line 357, in increment
+    raise six.reraise(type(error), error, _stacktrace)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/packages/six.py", line 685, in reraise
+    raise value.with_traceback(tb)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 601, in urlopen
+    chunked=chunked)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 387, in _make_request
+    six.raise_from(e, None)
+  File "<string>", line 2, in raise_from
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/connectionpool.py", line 383, in _make_request
+    httplib_response = conn.getresponse()
+  File "/usr/lib/python3.5/http/client.py", line 1197, in getresponse
+    response.begin()
+  File "/usr/lib/python3.5/http/client.py", line 297, in begin
+    version, status, reason = self._read_status()
+  File "/usr/lib/python3.5/http/client.py", line 258, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+  File "/usr/lib/python3.5/socket.py", line 575, in readinto
+    return self._sock.recv_into(b)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/urllib3/contrib/pyopenssl.py", line 285, in recv_into
+    raise SocketError(str(e))
+urllib3.exceptions.ProtocolError: ('Connection aborted.', OSError("(104, 'ECONNRESET')",))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "test_delay_sa.py", line 14, in <module>
+    sf.Account.get_by_custom_id("Account_Number__c", "A-0000002094")   # customise
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/simple_salesforce/api.py", line 579, in get_by_custom_id
+    method='GET', url=custom_url, headers=headers
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/simple_salesforce/api.py", line 721, in _call_salesforce
+    result = self.session.request(method, url, headers=headers, **kwargs)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/requests/sessions.py", line 508, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/requests/sessions.py", line 618, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/ubuntu/test/venv/lib/python3.5/site-packages/requests/adapters.py", line 490, in send
+    raise ConnectionError(err, request=request)
+System Information
+These values obtained by printing requests.help.info() inside AWS Lambda.
+When not using pyOpenSSL
+{'platform': {'system': 'Linux', 'release': '4.9.77-31.58.amzn1.x86_64'}, 'implementation': {'name': 'CPython', 'version': '3.6.1'}, 'system_ssl': {'version': '10000003'}, 'using_pyopenssl': False, 'pyOpenSSL': {'version': None, 'openssl_version': ''}, 'urllib3': {'version': '1.22'}, 'chardet': {'version': '3.0.4'}, 'cryptography': {'version': ''}, 'idna': {'version': '2.6'}, 'requests': {'version': '2.18.4'}}
+When using pyOpenSSL
+{'platform': {'system': 'Linux', 'release': '4.9.77-31.58.amzn1.x86_64'}, 'implementation': {'name': 'CPython', 'version': '3.6.1'}, 'system_ssl': {'version': '10000003'}, 'using_pyopenssl': True, 'pyOpenSSL': {'version': '17.5.0', 'openssl_version': '1010007f'}, 'urllib3': {'version': '1.22'}, 'chardet': {'version': '3.0.4'}, 'cryptography': {'version': '2.1.4'}, 'idna': {'version': '2.6'}, 'requests': {'version': '2.18.4'}}
+NOTE: getting requests in AWS Lambda to use pyOpenSSL is a bit tricky. I am building the code under Ubuntu 16.04 (which has python 3.5) and uploading it using serverless. However AWS has python 3.6, and ignores the cffi built for 3.5, which means pyOpenSSL cannot dynamically link to libssl.
+It's therefore necessary to build cffi inside a container which has the same libraries as Lambda:
+docker run -v $(pwd):/outputs -it lambci/lambda:build-python3.6 pip install cffi -t /outputs/
+Then include the generated _cffi_backend.cpython-36m-x86_64-linux-gnu.so and libffi-d78936b1.so.6.0.4 as part of the serverless bundle, along with the rest of the requirements.

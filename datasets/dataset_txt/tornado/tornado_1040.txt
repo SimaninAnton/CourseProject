@@ -1,0 +1,13 @@
+ssadler commented on 29 Oct 2012
+I'm trying to write an SQLAlchemy style connection pool for psycopg2 which uses weakref to detect when connections are unused and recycle them. It's working nicely except in the case that it's used in a gen.engine and an exception is thrown from the poller. The code is StackContext aware so the exceptions are propagated to the generator, but due to a circular reference the cursor wrapper "fairy" instances are not dereferenced and the ConnectionPool is exhausted.
+This is the code: https://github.com/ssadler/squirrel/
+The method test_100_queries in the tests times out.
+Here's an objgraph render which shows what's referencing the CursorFairy in the bottom right:
+http://imgur.com/gYeCk
+I did find 2 ways to overcome the issue:
+Judicious use of gc.collect() after exceptions are propagated, to force collection of the contexts.
+Continually return new CursorFairy instances which reference the same cursors, to avoid cursors getting caught in complicated sets of references so they can be freed the normal way.
+I tried to fix it in Tornado by never holding the traceback from sys.exc_info(), and by always calling sys.exc_clear(), it didn't work.
+Any ideas? Are circular references a known issue using gen.engine? Thanks
+EDIT:
+This is using Tornado master (2.4.0.1), Python 2.7.2, Mac OSX.

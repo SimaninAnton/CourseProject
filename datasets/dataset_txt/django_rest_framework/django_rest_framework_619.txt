@@ -1,0 +1,85 @@
+haos616 commented on 12 Oct 2017 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Send at the same time many requests for a point with throttle
+Expected behavior
+Throttle will not miss more requests than set
+Actual behavior
+Throttle can skip a large number of requests
+More
+Throttle logic save history request in the django cache.
+django-rest-framework/rest_framework/throttling.py
+Lines 125 to 143 in c674687
+         self.history = self.cache.get(self.key, []) 
+         self.now = self.timer() 
+            # Drop any requests from the history which have now passed the 
+         # throttle duration 
+         while self.history and self.history[-1] <= self.now - self.duration: 
+             self.history.pop() 
+         if len(self.history) >= self.num_requests: 
+             return self.throttle_failure() 
+         return self.throttle_success() 
+        def throttle_success(self): 
+         """ 
+         Inserts the current request's timestamp along with the key 
+         into the cache. 
+         """ 
+         self.history.insert(0, self.now) 
+         self.cache.set(self.key, self.history, self.duration) 
+         return True 
+
+Because of this, it is possible to lose some requests. Example:
+mport threading
+import logging
+
+from django.core.management.base import BaseCommand
+from django.core.cache import cache as default_cache
+
+logger = logging.getLogger('app')
+
+
+class Command(BaseCommand):
+    def handle(self, *args, **options):
+        cache_key = 'test'
+
+        def test_cache(i):
+            history = default_cache.get(cache_key, [])
+            logger.debug('Old: %s', history)
+            history.insert(0, i)
+            logger.debug('New: %s', history)
+            default_cache.set(cache_key, history)
+
+        default_cache.set(cache_key, [])
+        logger.debug('Start: %s', default_cache.get(cache_key, []))
+
+        for _ in xrange(5):
+            thread_ = threading.Thread(target=test_cache, args=(_,))
+            thread_.start()
+
+        while threading.active_count() > 1:
+            pass
+
+
+        logger.debug('End: %s', default_cache.get(cache_key, []))
+DEBUG app Start: []
+DEBUG app Old: []
+DEBUG app New: [0]
+DEBUG app Old: []
+DEBUG app New: [1]
+DEBUG app Old: [1]
+DEBUG app New: [2, 1]
+DEBUG app Old: [2, 1]
+DEBUG app Old: [2, 1]
+DEBUG app New: [3, 2, 1]
+DEBUG app New: [4, 2, 1]
+DEBUG app End: [4, 2, 1]
+Lost requests 0 and 3
+I recommend using lists at storage level. For example, we can use rpush in redis (https://redis.io/commands/rpush).
+But for this, we need to add support for lists in the django cache or make your own.

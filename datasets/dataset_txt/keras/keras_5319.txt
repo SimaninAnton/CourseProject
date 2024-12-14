@@ -1,0 +1,51 @@
+prinsherbert commented on 28 Apr 2016
+Continuing on #2516 , with two experiments.
+I noticed that even though theano can use multicore, keras in general doesn't (on my machine). That is if I run fit, only one core is used.
+I've made a minimal working example of theano using multiple cores (it has a speedup around 9x w.r.t. no os.environ settings and 1 core):
+import os
+os.environ['MKL_NUM_THREADS'] = '8'
+os.environ['GOTO_NUM_THREADS'] = '8'
+os.environ['OMP_NUM_THREADS'] = '8'
+os.environ['THEANO_FLAGS'] = 'device=cpu,blas.ldflags=-lblas -lgfortran'
+
+import numpy
+import theano
+import theano.tensor as T
+
+M=2000
+N=2000
+K=2000
+iters=100
+order='C'
+
+a = theano.shared(numpy.ones((M, N), dtype=theano.config.floatX, order=order))
+b = theano.shared(numpy.ones((N, K), dtype=theano.config.floatX, order=order))
+c = theano.shared(numpy.ones((M, K), dtype=theano.config.floatX, order=order))
+f = theano.function([], updates=[(c, 0.4 * c + .8 * T.dot(a, b))])
+
+for i in range(iters):
+    f(y)
+And altered this script for a Keras experiment which does not use multiple cores (even though I want it so badly):
+import os
+os.environ['MKL_NUM_THREADS'] = '8'
+os.environ['GOTO_NUM_THREADS'] = '8'
+os.environ['OMP_NUM_THREADS'] = '8'
+os.environ['THEANO_FLAGS'] = 'device=cpu,blas.ldflags=-lblas -lgfortran'
+
+import numpy
+from keras.models import Sequential
+from keras.layers import Dense
+
+coeffs = numpy.random.randn(100)
+
+x = numpy.random.randn(100000, 100);
+y = numpy.dot(x, coeffs) + numpy.random.randn(100000) * 0.01
+
+model = Sequential()
+model.add(Dense(20, input_shape=(100,)))
+model.add(Dense(1, input_shape=(20,)))
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
+model.fit(x, y, verbose=0, nb_epoch=10)
+The output Using Theano backend. indicates that theano was used as a backend, yet only one core was used during the entire run of the script. I get that the BLAS-implementation is responsible for the use of multiple cores, but what I do not get is why fit doesn't apply multiple cores when the theano experiment shows that it is possible?
+Why is fit not executed on multiple cores, even though 0.4 * c + .8 * T.dot(a, b) is?

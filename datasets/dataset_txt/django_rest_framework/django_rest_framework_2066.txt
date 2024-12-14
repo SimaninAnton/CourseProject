@@ -1,0 +1,43 @@
+chrismcband commented on 22 Jan 2015
+If you use a viewset with a queryset using prefetch_related, any update to those prefetched many to many fields is not reflected in the response to the client, although the changes have been saved to the database.
+See below code for very simple example:
+from django.conf.urls import patterns, include, url
+from django.contrib import admin
+from django.contrib.auth.models import User
+from rest_framework import serializers, viewsets, routers
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'email', 'groups')
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all().prefetch_related('groups')
+    serializer_class = UserSerializer
+
+
+router = routers.DefaultRouter()
+router.register(r'users', UserViewSet)
+
+urlpatterns = patterns('',
+    url(r'^', include(router.urls)),
+    url(r'^api-auth/', include('rest_framework.urls',
+                               namespace='rest_framework')),
+    url(r'^admin/', include(admin.site.urls)),
+)
+With the above code, assume there is an existing user with 2 groups assigned:
+{
+    "id": 1, 
+    "username": "chris", 
+    "email": "chris@example.com", 
+    "groups": [
+        1,
+        2
+    ]
+}
+Submitting a PUT to /users/1/ changing groups to [1], the response will still show groups as [1, 2], but if you then did a GET request for /users/1/ you would see the reflected changes.
+You can see this behaviour using the browseable api also.
+Removing prefetch_related from the queryset restores normal behaviour and edits are again reflected in the response.
+This example is very trivial, but if people are using prefetch_related to try and optimise their database queries they may encounter this issue.

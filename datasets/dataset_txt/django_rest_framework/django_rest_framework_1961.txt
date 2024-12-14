@@ -1,0 +1,40 @@
+DavidMuller commented on 9 Mar 2015
+These 3 lines in serializers.py currently map a postgres HstoreField to a custom DRF DictField called CharMappingField:
+class CharMappingField(DictField):
+    child = CharField()
+
+ModelSerializer.serializer_field_mapping[postgres_fields.HStoreField] = CharMappingField
+I believe, however, to mirror the default implementation of HstoreField, the child CharField() should have allow_blank=True. Consider how the current implementation behaves:
+class DummyModel(models.Model):
+    name = HStoreField()
+
+class DummyModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TestModel
+
+# empty string is a valid 'value' in the model
+In [6]: TestModel.objects.create(name={'key': ''})
+Out[6]: <TestModel: TestModel object>
+
+# serializer rejects the same input
+In [5]: TestModelSerializer().run_validation({'key': ''})
+---------------------------------------------------------------------------
+ValidationError                           Traceback (most recent call last)
+<ipython-input-5-5d6d39e24f3e> in <module>()
+----> 1 TestModelSerializer().run_validation({'key': ''})
+
+/usr/local/etc/virtualenvs/gears/local/lib/python2.7/site-packages/rest_framework/serializers.pyc in run_validation(self, data)
+    365             return data
+    366 
+--> 367         value = self.to_internal_value(data)
+    368         try:
+    369             self.run_validators(value)
+
+/usr/local/etc/virtualenvs/gears/local/lib/python2.7/site-packages/rest_framework/serializers.pyc in to_internal_value(self, data)
+    411 
+    412         if errors:
+--> 413             raise ValidationError(errors)
+    414 
+    415         return ret
+
+ValidationError: {'name': [u'This field is required.']}

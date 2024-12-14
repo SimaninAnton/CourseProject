@@ -1,0 +1,67 @@
+Member
+ogrisel commented on Jul 5, 2018
+It seems that test_dtype_match has recently starte to fail on windows / appveyor builds:
+    def test_dtype_match():
+        # Test that np.float32 input data is not cast to np.float64 when possible
+    
+        X_32 = np.array(X).astype(np.float32)
+        y_32 = np.array(Y1).astype(np.float32)
+        X_64 = np.array(X).astype(np.float64)
+        y_64 = np.array(Y1).astype(np.float64)
+        X_sparse_32 = sp.csr_matrix(X, dtype=np.float32)
+    
+        for solver in ['newton-cg']:
+            for multi_class in ['ovr', 'multinomial']:
+    
+                # Check type consistency
+                lr_32 = LogisticRegression(solver=solver, multi_class=multi_class)
+                lr_32.fit(X_32, y_32)
+                assert_equal(lr_32.coef_.dtype, X_32.dtype)
+    
+                # check consistency with sparsity
+                lr_32_sparse = LogisticRegression(solver=solver,
+                                                  multi_class=multi_class)
+                lr_32_sparse.fit(X_sparse_32, y_32)
+                assert_equal(lr_32_sparse.coef_.dtype, X_sparse_32.dtype)
+    
+                # Check accuracy consistency
+                lr_64 = LogisticRegression(solver=solver, multi_class=multi_class)
+                lr_64.fit(X_64, y_64)
+                assert_equal(lr_64.coef_.dtype, X_64.dtype)
+>               assert_almost_equal(lr_32.coef_, lr_64.coef_.astype(np.float32))
+E               AssertionError: 
+E               Arrays are not almost equal to 7 decimals
+E               
+E               (mismatch 100.0%)
+E                x: array([[0.6324632, 0.4584147]], dtype=float32)
+E                y: array([[0.6325136, 0.4583441]], dtype=float32)
+X_32       = array([[-1.,  0.],
+       [ 0.,  1.],
+       [ 1.,  1.]], dtype=float32)
+X_64       = array([[-1.,  0.],
+       [ 0.,  1.],
+       [ 1.,  1.]])
+X_sparse_32 = <3x2 sparse matrix of type '<class 'numpy.float32'>'
+ with 4 stored elements in Compressed Sparse Row format>
+lr_32      = LogisticRegression(C=1.0, class_weight=None, dual=False, fit_intercept=True,
+          intercept_scaling=1, max_iter=1...bs=1,
+          penalty='l2', random_state=None, solver='newton-cg', tol=0.0001,
+          verbose=0, warm_start=False)
+lr_32_sparse = LogisticRegression(C=1.0, class_weight=None, dual=False, fit_intercept=True,
+          intercept_scaling=1, max_iter=1...bs=1,
+          penalty='l2', random_state=None, solver='newton-cg', tol=0.0001,
+          verbose=0, warm_start=False)
+lr_64      = LogisticRegression(C=1.0, class_weight=None, dual=False, fit_intercept=True,
+          intercept_scaling=1, max_iter=1...bs=1,
+          penalty='l2', random_state=None, solver='newton-cg', tol=0.0001,
+          verbose=0, warm_start=False)
+multi_class = 'ovr'
+solver     = 'newton-cg'
+y_32       = array([0., 1., 1.], dtype=float32)
+y_64       = array([0., 1., 1.])
+Observed on 32-bit Python 3.6:
+https://ci.appveyor.com/project/raghavrv/scikit-learn/build/1.0.10326/job/q26cgwt9ht2k4g8o?fullLog=true
+but also on 32-bit Python 3.6 on the 0.19.X branch when trying to build the wheels:
+https://ci.appveyor.com/project/sklearn-wheels/scikit-learn-wheels/build/1.0.49/job/jlegi2bhlm1rl02w?fullLog=true
+Maybe the 32-bit compiler used by the Python 3 builds on appveyor has changed recently?
+This is with the newton CG solver of scipy. Maybe we should just relax the tolerance but having to go from 7 decimals to just 3 decimals seems a bit fishy.

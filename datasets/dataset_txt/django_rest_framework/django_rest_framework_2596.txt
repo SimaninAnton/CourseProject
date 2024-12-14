@@ -1,0 +1,35 @@
+vesterbaek commented on 20 Feb 2014
+Tried posting on StackOverflow with no reply (http://stackoverflow.com/questions/21848095/adding-filtering-changes-ordering) => decided to open bug here
+I have a ModelViewSet that I want to add filtering to. My simple model looks like
+class Article(models.Model):
+    date = = models.DateField()
+    language = models.CharField(max_length=10)
+
+    class Meta:
+        ordering = ['-date']
+And the ModelViewSet (read only):
+class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Article.objects.all()
+    serializer_class = ArticleSerializer
+Articles on the API are now ordered by date descending as I would expect. Now I wich to allow filtering on language. I've set the filter backend to DjangoFilterBackend in settings.py. My updated ModelViewSet now looks like:
+class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Article.objects.all()
+    serializer_class = ArticleSerializer
+    filter_fields = ['language']
+This changes the ordering to language ASC. Adding order_by('-date') to queryset does not change anything. Adding ordering = ('-date', ) does not change anything. => How do I specify both filtering and ordering (or simply use default ordering while allowing filtering)?
+EDIT:
+Current functionality seems to come from AutoFilterSet created in Rest Framework by default:
+https://github.com/tomchristie/django-rest-framework/blob/822eb39599b248c68573c3095639a831ab6df99a/rest_framework/filters.py#L53
+... where order_by=True and the handing of this in django-filter get_ordering_field here: https://github.com/alex/django-filter/blob/d88b98dd2b70551deb9c128b209fcf783b325acc/django_filters/filterset.py#L325
+=> Seems I have to create a FilterSet class:
+class LanguageFilter(django_filters.FilterSet):
+    class Meta:
+        model = Article
+        fields = ['language']
+        order_by = model()._meta.ordering
+
+class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Article.objects.all()
+    serializer_class = ArticleSerializer
+    filter_class = LanguageFilter
+Does this look correct? Seems a bit "much"/verbose/counter-intuitive to retain default ordering.

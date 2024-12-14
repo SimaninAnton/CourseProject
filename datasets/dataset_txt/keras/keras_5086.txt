@@ -1,0 +1,87 @@
+mininaNik commented on 26 May 2016 •
+edited
+I want to use RNN(LSTM) to predict multiple future values by using multiple historical (previous) values . I have a time series which is shown in the following plot:
+
+Indeed I wan to predict 'nxt_time' in future in 'nxt_step_number' step numbers with equal distance by using 'prev_time' previous values in 'prev_step_number' step numbers.
+My implementation is as follows:
+ nxt_time = 1000 
+ nxt_step_number = 5
+ prev_time = 10000
+ prev_step_number = 500
+ batch_size = 500
+ epochs = 30
+ hidden_neurons = 50
+
+ (X_train, y_train), (X_test, y_test) = train_test_split(data)
+ model = Sequential()
+ model.add(LSTM(hidden_neurons,
+           batch_input_shape=(batch_size, prev_step_number, 1),
+           forget_bias_init='one',
+           return_sequences=False,
+           stateful=True))
+  model.add(Dense(hidden_neurons))
+  model.add(Dropout(0.2))
+  model.add(RepeatVector(nxt_step_number))
+  model.add(LSTM(hidden_neurons,
+           batch_input_shape=(batch_size, prev_step_number, 1),
+           forget_bias_init='one',
+           return_sequences=True,
+           stateful=True))
+  model.add(TimeDistributed(Dense(1)))
+  model.compile(loss='mse', optimizer='rmsprop')
+
+ print('Training')
+ numIteration = len(X_train)/batch_size
+ for i in range(epochs):
+     print('Epoch', i, '/', epochs)
+     for j in range(numIteration):
+        print('Batch', j, '/',numIteration,'Epoch', i)
+        model.train_on_batch(X_train[j*batch_size:j*batch_size+batch_size,], y_train[j*batch_size:j*batch_size+batch_size,])
+    model.reset_states()
+
+
+ print('Predicting')
+ predicted_output = model.predict(X_test, batch_size=batch_size)
+
+########
+
+ def train_test_split(df, test_size=0.3):  
+    ntrn = int(round(len(df) * (1 - test_size)))
+    X_train, y_train = _load_data(df[0:ntrn])
+    X_test, y_test = _load_data(df[ntrn:])
+    return (X_train, y_train), (X_test, y_test)
+
+  def _load_data(data):  
+      prev_interval_length = prev_time/prev_step_number
+      nxt_interval_length = nxt_time/nxt_step_number
+      cols = len(data[0])
+      rows = len(data)-(nxt_time+prev_time)
+      docX = np.empty([rows,prev_step_number,cols]) 
+      docY = np.empty([rows,nxt_step_number,cols])
+
+      for i in range(len(data)-(nxt_time+prev_time)):
+          for j in range(prev_step_number):
+              docX[i,j,] = data[i+prev_interval_length*(j),].reshape([1,cols])
+         for j in range(nxt_step_number):
+               docY[i,j,] = data[i+(prev_interval_length*prev_step_number)+nxt_interval_length*(j),].reshape([1,cols])
+
+     return docX, docY
+If I reset the states after each training epoch, then sth close to a constant value is predicted for all 5 future values, But if I don't reset it then the predicted values increase but don't follow the right patterns. In the following figures you can find the plots for 5 future predicted values separately vs their real values.
+
+
+Then I started to use stateless mode. I changed my model as follows:
+model = Sequential()
+model.add(LSTM(hidden_neurons,
+           input_shape=(prev_step_number, 1),
+           forget_bias_init='one',
+           return_sequences=False))
+  model.add(Dense(hidden_neurons))
+  model.add(Dropout(0.2))
+  model.add(RepeatVector(nxt_step_number))
+  model.add(LSTM(hidden_neurons,
+           forget_bias_init='one',
+           return_sequences=True))
+  model.add(TimeDistributed(Dense(1)))
+  model.compile(loss='mse', optimizer='rmsprop')
+  model.fit(X_train,y_train,batch_size = batch_size, nb_epoch = epochs, validation_data = (X_valid,y_valid),shuffle = False)
+In the following figures you can find the plots for 5 future predicted values separately vs their real values by using this model. These plots show that always we can predict the first future value with high accuracy in stateless mode, although the second ones' pattern is similar to the first ones but I don't know why the prediction accuracy starts to decrease (the predicted values start to shrink)!! Could anyone help me to fix this problem? What is the right policy for resetting? Which model is right here (stateful or stateless)?

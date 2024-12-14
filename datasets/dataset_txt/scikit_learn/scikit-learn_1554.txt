@@ -1,0 +1,26 @@
+geekoverdose commented on Feb 15, 2018 •
+edited
+Hi,
+a suggestion for sklearn.utils.resample(): currently it does not allow upsampling (n_samples > len(array_to_choose_from) when replace=False. While I understand that this is most likely by design (it should be impossible to "choose more samples than available"), in practice this has considerable drawbacks, for which it might be worth to consider other options. Consider this frequent use case: one wants to upsample a smaller class "0", e.g. to the same size as a bigger class "1". When forced to use replace=True to do this, all samples will be chosen with replacement, hence it becomes unlikely that all samples of class "0" are actually chosen at least once and show up in the upsampled data. With small classes this might mean losing valuable information. One way to prevent this might be to at first repeatedly use the complete partition of 0-samples, and only for the last portion to reach the desired amount of samples randomly sample from this partition.
+Minimal example:
+from sklearn.utils import resample
+import numpy as np
+
+# some test data: 15 samples of 0, 30 of 1
+tmp = np.array([1,1,1,1,1,1,1,0,0,0,1,1,1,0,0,1,1,1,1,1,1,1,0,0,0,1,1,1,0,0,1,1,1,1,1,1,1,0,0,0,1,1,1,0,0]) 
+i = np.arange(len(tmp)) # original indexes of data
+i0 = i[tmp == 0] # indexes of class 0, len 15
+i1 = i[tmp == 1] # indexes of class 1, len 30
+
+# upsampling of class 0
+i0_new = resample(i0, replace=True, n_samples=len(i1))
+len(i0_new) # 30 samples, but...
+[x in i0_new for x in i0] # ...not all samples of 0 have been chosen at least once
+
+# upsampling without replacement is currently not allowed when
+# n_samples > len(array_to_chose_from)
+i0_new = resample(i0, replace=False, n_samples=len(i1))
+# raises a ValueError: Cannot sample 30 out of arrays with dim 15 when replace is False
+# this could instead use the complete partition at first and only for the last portion perform sampling
+PS: if desired an additional parameter could be introduced to allow this behavior. I'm not aware of if anything currently relies on resample() to fail in the scenario above - instead of silently cooping with it.
+PPS: I recall this whole thing already being mentioned in connection with rewriting the resampling code in the past (I believe to recall that possible performance issues when at first using complete partitions have been mentioned back then) - but I can't seem to find the corresponding post/issue anymore.

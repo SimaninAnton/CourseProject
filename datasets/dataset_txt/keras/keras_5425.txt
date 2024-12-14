@@ -1,0 +1,77 @@
+Contributor
+lukovkin commented on 19 Apr 2016
+Hi,
+If we implement fully convolutional net in Keras, we want it to be able to work with input of arbitrary size.
+In our case of 1D data - with arbitrary number of timesteps.
+We can use None as an instruction that input could be of any size on the 1st dimension, e.g.:
+main_input = Input(name='input', shape=(None, features))
+But in the last layer(s) of fully CN model we have to use actual length of the sequence as the filter_length in order to obtain sequence of labels correctly distributed along original timespan, e.g.:
+conv9 = Convolution1D(nb_filter=output_dim, filter_length=sequence_length, border_mode='same', init=init)(relu8)
+As soon as we don't know actual sequence length before runtime, we have the following options:
+Omit this parameter - but it's mandatory and it will not work
+Use None value for the filter_length in order to tell Keras that this value will be available on runtime only (see input shape above) - it will cause an error (see output below)
+Use some kind of placeholder value during network buildup and hope that it will be magically replaced by the real sequence length during runtime. We use this option and it looks like it works, but I wonder if it's correct and how other developers deal with this issue?
+May be it's worth implementing filter_length = None as an option for arbitrary sequence?
+Example code is here - https://gist.github.com/lukovkin/e57dc3d40c9148a65c2bf40ea6360e45
+Environment - Python 3.4, TF 0.8, Keras 1.0.1
+AttributeError Traceback (most recent call last)
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/numpy/core/fromnumeric.py in prod(a, axis, dtype, out, keepdims)
+2488 try:
+-> 2489 prod = a.prod
+2490 except AttributeError:
+AttributeError: 'tuple' object has no attribute 'prod'
+During handling of the above exception, another exception occurred:
+TypeError Traceback (most recent call last)
+in ()
+1 model_d = ufcnn_model_deconv(regression = False, output_dim=3, features=4,
+----> 2 loss="categorical_crossentropy", sequence_length=500, optimizer=rmsprop )
+/notebook/ufcnn-keras/models/UFCNN_functional.py in ufcnn_model_deconv(sequence_length, features, nb_filter, filter_length, output_dim, optimizer, loss, regression, class_mode, activation, init)
+285
+286 else:
+--> 287 conv9 = Convolution1D(nb_filter=output_dim, filter_length=None, border_mode='same', init=init, name='conv9')(relu8)
+288 activation = Activation('softmax', name='activation')(conv9)
+289 output = activation
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/engine/topology.py in call(self, x, mask)
+456 'layer.build(batch_input_shape)')
+457 if len(input_shapes) == 1:
+--> 458 self.build(input_shapes[0])
+459 else:
+460 self.build(input_shapes)
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/layers/convolutional.py in build(self, input_shape)
+118 input_dim = input_shape[2]
+119 self.W_shape = (self.nb_filter, input_dim, self.filter_length, 1)
+--> 120 self.W = self.init(self.W_shape, name='{}_W'.format(self.name))
+121 self.b = K.zeros((self.nb_filter,), name='{}_b'.format(self.name))
+122 self.trainable_weights = [self.W, self.b]
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/initializations.py in lecun_uniform(shape, name, dim_ordering)
+41 http://yann.lecun.com/exdb/publis/pdf/lecun-98b.pdf
+42 '''
+---> 43 fan_in, fan_out = get_fans(shape, dim_ordering=dim_ordering)
+44 scale = np.sqrt(3. / fan_in)
+45 return uniform(shape, scale, name=name)
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/initializations.py in get_fans(shape, dim_ordering)
+13 # TF kernel shape: (..., input_depth, depth)
+14 if dim_ordering == 'th':
+---> 15 fan_in = np.prod(shape[1:])
+16 fan_out = shape[0]
+17 elif dim_ordering == 'tf':
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/numpy/core/fromnumeric.py in prod(a, axis, dtype, out, keepdims)
+2490 except AttributeError:
+2491 return _methods._prod(a, axis=axis, dtype=dtype,
+-> 2492 out=out, keepdims=keepdims)
+2493 return prod(axis=axis, dtype=dtype, out=out)
+2494 else:
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/numpy/core/_methods.py in _prod(a, axis, dtype, out, keepdims)
+33
+34 def _prod(a, axis=None, dtype=None, out=None, keepdims=False):
+---> 35 return umr_prod(a, axis, dtype, out, keepdims)
+36
+37 def _any(a, axis=None, dtype=None, out=None, keepdims=False):
+TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+1

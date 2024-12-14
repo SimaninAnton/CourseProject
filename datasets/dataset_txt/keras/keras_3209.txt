@@ -1,0 +1,75 @@
+shwetgarg commented on 15 Feb 2017
+I have used the ZSumLayer from here to average all of the word embeddings from the embedding layer. I am able to train the model and save it successfully. But when I am loading it back for scoring, it is throwing following error:
+  File "/home/shwegarg/anaconda2/lib/python2.7/site-packages/keras/models.py", line 197, in model_from_json
+    return layer_from_config(config, custom_objects=custom_objects)
+  File "/home/shwegarg/anaconda2/lib/python2.7/site-packages/keras/utils/layer_utils.py", line 36, in layer_from_config
+    return layer_class.from_config(config['config'])
+  File "/home/shwegarg/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 2375, in from_config
+    process_layer(layer_data)
+  File "/home/shwegarg/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 2353, in process_layer
+    custom_objects=custom_objects)
+  File "/home/shwegarg/anaconda2/lib/python2.7/site-packages/keras/utils/layer_utils.py", line 36, in layer_from_config
+    return layer_class.from_config(config['config'])
+  File "/home/shwegarg/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 929, in from_config
+    return cls(**config)
+TypeError: __init__() takes exactly 2 arguments (1 given)
+The full code is as follows:
+ZSumLayer code:
+from keras.layers import Layer
+from keras import backend as K
+class ZSumLayer(Layer):
+    def __init__(self, output_dim, **kwargs):
+        self.supports_masking = True
+        self.output_dim = output_dim
+        super(ZSumLayer, self).__init__(**kwargs)
+
+    def call(self, x, mask=None):
+        count = K.sum(mask, axis=1)[:, np.newaxis]
+        avg = K.sum(K.switch(mask[:, :, np.newaxis], x, 0), axis=1) / count
+        return K.cast(avg, x.dtype)
+
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0], self.output_dim)
+
+    def compute_mask(self, input, mask):
+Training code
+from keras.layers.embeddings import Embedding
+from keras.layers import Masking, Activation, Input, LSTM, merge
+from keras.models import Model
+import numpy as np
+
+wt = np.array([[0,0,0,0,0],
+              [1,2,0,3,6],
+              [4,6,0,5,7],
+              [4,5,7,0,4]])
+            
+def s(x):
+    return K.mean(x, axis=1)
+
+sen = Input(shape=(4,), dtype='int32')
+
+embedding = Embedding(
+    input_dim = 4, 
+    output_dim = 5,
+    mask_zero = True, 
+    trainable=False, 
+    weights=[wt]
+)(sen)
+
+out = ZSumLayer(5)(embedding)
+
+model = Model(input=sen, output=out)
+
+model.compile(loss='mse', optimizer='rmsprop')
+
+print model.summary()
+
+with open('/home/shwegarg/data_files/model_arch.json', 'w') as mfp:
+    mfp.write(model.to_json())
+model.save_weights('/home/shwegarg/data_files/model_wts.hdf5')
+Scoring code:
+from keras.models import model_from_json
+
+mfp = open('/home/shwegarg/data_files/model_arch.json','r')
+mj = mfp.read()
+model2 = model_from_json(mj, {'ZSumLayer': ZSumLayer})

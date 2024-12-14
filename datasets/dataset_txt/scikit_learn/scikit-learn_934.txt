@@ -1,0 +1,45 @@
+Member
+ogrisel commented on Nov 9, 2018 •
+edited
+Here is a minimal case to reproduce the cause of the failure (to reproduce with pypy3):
+import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.utils import parallel_backend
+import cloudpickle
+import pickle
+parallel_backend('loky')
+
+X = np.random.randn(3, 1)
+y = X[:, 0] > 0
+knn = KNeighborsClassifier(algorithm="ball_tree").fit(X, y)
+
+pickle.loads(cloudpickle.dumps(knn._tree.query))
+which results in:
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-36-9fc0a20fa010> in <module>
+----> 1 pickle.loads(cloudpickle.dumps(knn._tree.query))
+
+~/pypy3-v6.0.0-linux64/lib-python/3/pickle.py in _loads(s, fix_imports, encoding, errors)
+   1585     file = io.BytesIO(s)
+   1586     return _Unpickler(file, fix_imports=fix_imports,
+-> 1587                       encoding=encoding, errors=errors).load()
+   1588 
+   1589 # Use the faster _pickle if possible
+
+~/pypy3-v6.0.0-linux64/lib-python/3/pickle.py in load(self)
+   1061                     raise EOFError
+   1062                 assert isinstance(key, bytes_types)
+-> 1063                 dispatch[key[0]](self)
+   1064         except _Stop as stopinst:
+   1065             return stopinst.value
+
+~/pypy3-v6.0.0-linux64/lib-python/3/pickle.py in load_newobj(self)
+   1345         args = self.stack.pop()
+   1346         cls = self.stack.pop()
+-> 1347         obj = cls.__new__(cls, *args)
+   1348         self.append(obj)
+   1349     dispatch[NEWOBJ[0]] = load_newobj
+
+TypeError: object.__new__(getset_descriptor) is not safe, use getset_descriptor.__new__()
+This is probably a bug in cloudpickle but I don't have time to investigate further tonight. We could skip the failing tests under PyPy in the mean time if they are to noisy.

@@ -1,0 +1,17 @@
+ClementC commented on Apr 25, 2017 •
+edited
+Description
+Hi there,
+I recently started to use the pipeline construct with cross_val_predict.
+Since then, I noticed a large increase of processing on a chunk of my code.
+After investigation, it seems that the call to clone() in the code of cross_val_predict is the culprit.
+What happens is that I'm using a pipeline with steps including rather large chunks of data, related to a ~10M x 10M sparse matrix.
+Here's a reproducible example: https://gist.github.com/ClementC/6bc1824e363741fa023ef3b245422270
+It also includes two proposals to improve this part, as well as system and libs versions.
+The clone() method uses copy.deepcopy() under the hood, which is really inefficient, in practice completely blocking the parallelized setting, since clone() calls are made in a loop when building the delayed calls.
+I feel that cloning the estimator is a bit too cautious anyway, as it is going to be used in a CV loop no matter what, and its internal state is going to change.
+So one solution is simply to drop the cloning step altogether. Another solution to keep the cloning aspect would be to serialize the estimator first, then loading it for each worker.
+I tested both solutions, and got 1m28s for the first one, and 52s for the second one, down from 11m57s for the original setting.
+The second solution pickles the estimator in the shared memory (/dev/shm), mimicking joblib.dump.
+I can submit a PR if it seems like a good idea, and modify cross_val_score as well as cross_val_predict, since the same problem exists there.
+This is my first contribution to scikit-learn, I tried to do things by the book, but please tell me if I missed something :)

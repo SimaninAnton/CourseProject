@@ -1,0 +1,54 @@
+Lukasa commented on 4 Apr 2017
+Summary
+In basic Flask applications, the body data of chunked uploads appears to go missing: that is, they do not appear in request.data. I have reproduced this with two different WSGI servers (gunicorn and twisted), both of which handle chunked data appropriately. Non-chunked data does not suffer this problem. I've reproduced this problem on both Python 2.7 and Python 3.6.
+Reproduction
+The following Flask application demonstrates the problem:
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route('/', methods=['GET', 'POST'])
+def hello_world():
+    return request.data
+when run like this: gunicorn -w 4 example:app.
+The following test script can be run:
+import requests
+
+def gen():
+    yield b"hello"
+    yield b"world"
+
+print("Making first request")
+r = requests.post('http://localhost:8000/', data=b'helloworld')
+print("Got: %s" % r.content.decode('utf-8'))
+print("Making second request")
+r = requests.post('http://localhost:8000/', data=gen())
+print("Got: %s" % r.content.decode('utf-8'))
+Expected Output
+Making first request
+Got: helloworld
+Making second request
+Got: helloworld
+Actual Output
+Making first request
+Got: helloworld
+Making second request
+Got: 
+Environment
+% python -VV                                      
+Python 3.6.0 (default, Jan 18 2017, 18:08:34) 
+[GCC 4.2.1 Compatible Apple LLVM 8.0.0 (clang-800.0.42.1)]
+% pip freeze                                      
+appdirs==1.4.3
+click==6.7
+Flask==0.12.1
+gunicorn==19.7.1
+itsdangerous==0.24
+Jinja2==2.9.6
+MarkupSafe==1.0
+packaging==16.8
+pyparsing==2.2.0
+six==1.10.0
+Werkzeug==0.12.1
+References
+This was spotted at httpbin. See postmanlabs/httpbin#340 for more.
+4

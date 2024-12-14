@@ -1,0 +1,22 @@
+napalmer7 commented on Sep 8, 2016
+I am working on an app for ThreatConnect using their python SDK. If I use requests v2.11.0 it works fine, but testing against v2.11.1 caused an error in check_header_validity. This issue is easily reproducible with any call against requests where you specify a Content-Length header using an integer.
+The check_header_validity method in requests/utils.py currently expects values to be either byte or string types using an isinstance check against the type 'bytes'. If an integer value was specified for a header (i.e. Content-Length) it would fail the isinstance check and is then assumed to be a string.
+The call to re.match requires an input type of byte/string so when an integer is passed in it fails throwing an InvalidHeader exception.
+Considering that this check is in place to ensure that there is no leading spaces, it should be acceptable to positively validate all numerical values without a re.match call. Alternatively you could do a hard conversion 'value = str(value)'.
+ThreatConnect request object
+{'_content_type': None, '_request_uri': '/v2/indicators/files', '_headers': {'Content-Length': 142, 'Content-Type': 'application/json'}, '_remaining_results': 1, '_path_url': None, '_description': u'adding indicator 868CB6B12D319973349D8A7752C23C05.', '_body': '{"size": "6657", "rating": 5, "confidence": 95, "sha1": "19D049110800D02F15956CE90E76CE429FC4DB9F", "md5": "868CB6B12D319973349D8A7752C23C05"}', '_payload': {'createActivityLog': 'false'}, '_resource_type': <ResourceType.FILES: 535>, '_owner': None, '_success_callback': None, '_result_start': 0, '_http_method': 'POST', '_failure_callback': None, '_owner_allowed': True, '_track': False, '_resource_pagination': False, '_result_limit': 0}
+Trace:
+Traceback (most recent call last):
+  File "dg_tc.py", line 173, in <module>
+    "TLP Red")
+  File "dg_tc.py", line 78, in process_data
+    indicator.commit()
+  File "/home/tester/.local/lib/python2.7/site-packages/threatconnect/IndicatorObject.py", line 1193, in commit
+    api_response = self._tc.api_request(ro)
+  File "/home/tester/.local/lib/python2.7/site-packages/threatconnect/ThreatConnect.py", line 289, in api_request
+    request_prepped.prepare_headers(ro.headers)
+  File "/home/tester/.local/lib/python2.7/site-packages/requests/models.py", line 409, in prepare_headers
+    check_header_validity(header)
+  File "/home/tester/.local/lib/python2.7/site-packages/requests/utils.py", line 800, in check_header_validity
+    "not %s" % (value, type(value)))
+requests.exceptions.InvalidHeader: Header value 142 must be of type str or bytes, not <type 'int'>

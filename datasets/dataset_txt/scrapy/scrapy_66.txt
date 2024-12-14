@@ -1,0 +1,34 @@
+Contributor
+Lukas0907 commented on Sep 9, 2019
+Description
+Using the DummyStatsCollector results in an exception:
+2019-09-09 13:51:23 [scrapy.utils.signal] ERROR: Error caught on signal handler: <bound method CoreStats.spider_closed of <scrapy.extensions.corestats.CoreStats object at 0x7f86269cac18>>
+Traceback (most recent call last):
+  File ".../lib/python3.6/site-packages/twisted/internet/defer.py", line 150, in maybeDeferred
+    result = f(*args, **kw)
+  File ".../lib/python3.6/site-packages/pydispatch/robustapply.py", line 55, in robustApply
+    return receiver(*arguments, **named)
+  File ".../lib/python3.6/site-packages/scrapy/extensions/corestats.py", line 28, in spider_closed
+    elapsed_time = finish_time - self.stats.get_value('start_time')
+TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'NoneType'
+This problem has been introduced in aa46e19.
+Steps to Reproduce
+Set STATS_CLASS = "scrapy.statscollectors.DummyStatsCollector" in the settings module as described in the documentation (https://docs.scrapy.org/en/latest/topics/stats.html#dummystatscollector).
+Expected behavior: no exception
+Actual behavior: exception thrown
+Reproduces how often: always
+Versions
+At least master as of 534de73
+Fix
+A possible fix is to use the elapsed time as a default argument so that get_value() does not return None. I can prepare a PR if needed.
+--- a/scrapy/extensions/corestats.py
++++ b/scrapy/extensions/corestats.py
+@@ -25,7 +25,7 @@ class CoreStats(object):
+ 
+     def spider_closed(self, spider, reason):
+         finish_time = datetime.datetime.utcnow()
+-        elapsed_time = finish_time - self.stats.get_value('start_time')
++        elapsed_time = finish_time - self.stats.get_value('start_time', finish_time)
+         elapsed_time_seconds = elapsed_time.total_seconds()
+         self.stats.set_value('elapsed_time_seconds', elapsed_time_seconds, spider=spider)
+         self.stats.set_value('finish_time', finish_time, spider=spider)

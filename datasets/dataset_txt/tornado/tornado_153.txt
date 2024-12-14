@@ -1,0 +1,22 @@
+Contributor
+mrocklin commented on 6 Aug 2018
+Currently calling add_callback with Tornado's asyncio backend eventually calls call_soon_threadsafe, which incurs a bit of a cost (see this stack overflow question)
+Would it be cheaper to call asyncio's call_soon instead when scheduling a callback from code operating on the same thread as the event loop?
+If yes, then is there any Tornado API that allows this. By grepping through the codebase I think that there isn't. Should there be?
+Also, I modified tornado's add_callback to include a threadsafe keyword to try this out and got a reduction of overhead, but also a surprising increase in latency that I can't explain. I suspect that this is something to do with my system, but thought I'd mention it in case someone else could explain it easily.
++++ b/tornado/platform/asyncio.py
+@@ -146,8 +146,13 @@ class BaseAsyncIOLoop(IOLoop):
+         timeout.cancel()
+ 
+     def add_callback(self, callback, *args, **kwargs):
++        threadsafe = kwargs.pop('threadsafe', False)
++        if threadsafe:
++            call_soon = self.asyncio_loop.call_soon
++        else:
++            call_soon = self.asyncio_loop.call_soon_threadsafe
+         try:
+-            self.asyncio_loop.call_soon_threadsafe(
++            call_soon(
+                 self._run_callback,
+                 functools.partial(callback, *args, **kwargs))
+         except RuntimeError:

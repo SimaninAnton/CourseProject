@@ -1,0 +1,44 @@
+Contributor
+jerheff commented on 11 Dec 2016 •
+edited
+I have a script that previously would freeze pre-trained weights from the ResNet50 model and train the new layers I placed on top of the base model. Now, the model summary is reporting that all weights are trainable (counted in the total params).
+Keras at 4c1353c
+Theano at ae36be011c98b1a2f30753162db01f6588ff8be3
+# Example code:
+
+base_model = ResNet50(weights='imagenet', include_top=False, input_tensor=input_tensor)
+
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dropout(0.5)(x)
+
+# random projection idea
+x = Dense(256, trainable=False)(x)
+x = BatchNormalization(axis=bn_axis)(x)
+x = LeakyReLU(leaky_relu_slope)(x)
+x = Dropout(0.5)(x)
+
+# regular dense layer
+x = Dense(128, W_constraint=maxnorm(4))(x)
+x = LeakyReLU(leaky_relu_slope)(x)
+x = Dropout(0.5)(x)
+
+x = Dense(nb_classes, activation='softmax')(x)
+
+model = Model(input=input_tensor, output=x)
+
+# first: train only the top layers (which were randomly initialized)
+# i.e. freeze all convolutional layers
+for layer in base_model.layers:
+    layer.trainable = False
+
+nadam_custom = Nadam(lr=0.0001, clipnorm=1., clipvalue=0.25)
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=nadam_custom,
+              metrics=['accuracy', 'top_k_categorical_accuracy'])
+
+model.summary()
+
+# reports all layers having parameters whereas previously the ResNet layers were zeros:
+# Total params: 24170041

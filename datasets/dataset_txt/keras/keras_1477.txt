@@ -1,0 +1,50 @@
+nayansinghal commented on 18 Nov 2017 •
+edited
+I want a behavior in which during the forward pass, it will do quantization and for the backward pass, it will behave as an identity and pass the gradients as it is without considering the gradient of that layer.
+I am using tensorflow as backend and write the custom ops in tensorflow and try to write a wrapper using it.
+# Define custom py_func which takes also a grad op as argument:  
+def py_func(func, inp, Tout, stateful=True, name=None, grad=None):  
+      
+    # Need to generate a unique name to avoid duplicates:  
+    rnd_name = 'PyFuncGrad' + str(np.random.randint(0, 1E+8))  
+      
+    tf.RegisterGradient(rnd_name)(grad)  # see _MySquareGrad for grad example  
+    g = tf.get_default_graph()  
+    with g.gradient_override_map({"PyFunc": rnd_name, "PyFuncStateless": rnd_name}):
+        return tf.py_func(func, inp, Tout, stateful=stateful, name=name)  
+  
+# Core logic of quantization function  
+def quantization(x): 
+    power = tf.pow(2.0,5.0)
+    return tf.divide(tf.ceil(tf.scalar_mul(power, x)), power)
+
+# function that binds forward and backward pass of tensorflow ops  
+def tf_quantization(x, name=None):  
+        
+    with ops.op_scope([x], name, "quantize") as name:  
+        y = py_func(quantization,  
+                        [x],  
+                        [tf.float32],  
+                        name=name,  
+                        grad=_quantizationGrad)  # <-- here's the call to the gradient  
+        return y[0]
+
+# Define Actual gradient  
+def _quantizationGrad(op, grad):  
+    return grad`
+And then I define my custom Quantization Layer
+class QuantizeLayer(Layer):
+
+    def __init__(self, **kwargs):
+        super(QuantizeLayer, self).__init__(**kwargs)
+
+    def call(self, x):
+        return tf_quantization(x)
+
+    def get_output_shape_for(self, input_shape):
+     shape = list(input_shape)
+        return tuple(input_shape)`
+But when I include this layer in my model and train the model using train_on_batch, it throws an error:
+raise type(e)(node_def, op, message) tensorflow.python.framework.errors_impl.UnknownError: exceptions.AttributeError: 'numpy.dtype' object has no attribute 'base_dtype' [[Node: Wave_One/quantization/quantize = PyFunc[Tin=[DT_FLOAT], Tout=[DT_FLOAT], _gradient_op_type="PyFuncGrad34352844", token="pyfunc_1"
+Am I missing something here?
+1

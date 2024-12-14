@@ -1,0 +1,49 @@
+enginoid commented on Jul 18, 2012
+The files parameter can be used to submit multipart form data. I'm not certain whether files is a misnomer (since multipart form data doesn't necessary) or whether the implementation purposefully limits itself to supporting files as multipart data. However, there are valid use cases for multipart forms where some of the fields are not files.
+Take for example an API that allows you to POST a file along with a description of that file:
+>>> url = 'http://httpbin.org/post'
+>>> files = {
+    'file': open('report.xls', 'rb'),
+    'description': 'The PKIs that will drive synergy for the quarterly social'
+                   'media campaign in the cloud.'
+}
+>>> r = requests.post(url, files=files)
+In this case, the description field is not being used for file data.
+The problem is that this field is nevertheless treated as being file data, as filename is added to Content-Disposition header of the subpart, defaulting to the value of name (or using file.name if available.)
+urllib3 supports subparts that don't have file names (in urllib3.filepost.encode_multipart_formdata), and appropriately omits the filename parameter:
+def encode_multipart_formdata(fields, boundary=None):
+    # ...
+    for fieldname, value in iter_fields(fields):
+        # ...
+        if isinstance(value, tuple):
+            filename, data = value
+            writer(body).write('Content-Disposition: form-data; name="%s"; '
+                               'filename="%s"\r\n' % (fieldname, filename))
+            body.write(b('Content-Type: %s\r\n\r\n' %
+                       (get_content_type(filename))))
+        else:
+            data = value
+            writer(body).write('Content-Disposition: form-data; name="%s"\r\n'
+                               % (fieldname))
+            body.write(b'Content-Type: text/plain\r\n\r\n')
+However, isinstance(value, tuple) in this function is always true, courtesy of this code in the library:
+class Request(object):
+    # ...
+    def _encode_files(self, files):
+        # ...
+        for (k, v) in list(files.items()):
+            # support for explicit filename
+            if isinstance(v, (tuple, list)):
+                fn, fp = v
+            else:
+                fn = guess_filename(v) or k
+                fp = v
+            if isinstance(fp, (bytes, str)):
+                fp = StringIO(fp)
+            fields.update({k: (fn, fp.read())})
+
+        (body, content_type) = encode_multipart_formdata(fields)
+
+        return (body, content_type)
+I'd like to suggest that if no filename is provided (and it can't be read from file.name), the default behavior is to not include the filename parameter in the Content-Disposition subpart header. This is simply a matter of not passing encode_multipart_formdata a filename for a given field if one is not provided in the Request.files parameter (instead of providing a default, as is now done.)
+I'm posting this because a service I'm interfacing with changes its behavior if the filename is provided for a non-file field. After reading through RFC 2388, I determined that the right place to fix this is probably in requests instead of the original library. I can elaborate if necessary.

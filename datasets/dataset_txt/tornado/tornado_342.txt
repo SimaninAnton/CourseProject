@@ -1,0 +1,160 @@
+zhiephie commented on 6 May 2017
+Tornado: as server and client
+Tornado send to client not problem and not slow
+but Tornado write event from another server is slow
+this is function on_message
+class ClientWSConnection(websocket.WebSocketHandler):
+
+    def initialize(self, room_handler):
+        self.__rh = room_handler
+        self.atg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.atg.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.atg.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.atg.connect((atghost, atgport))
+
+    def open(self, client_id):
+        self.__clientID = client_id
+        self.__rh.add_client_wsconn(client_id, self)
+        logger.info("[REQ-CLIENT] >> ClientID = %s connected" %
+                    self.__clientID)
+
+    def on_message(self, message):
+        msg = json.loads(message)
+        logger.info("[REQ-CTI] >> ClientID %s request %s" %
+                    (msg['userid'], msg['payload']))
+        msg['username'] = self.__rh.client_info[self.__clientID]['nick']
+
+        # query data profile agent
+        userid = msg['userid']
+        try:
+            conn = MySQLdb.connect(host=mysqlhost,
+                                   user=mysqluser,
+                                   passwd=mysqlpass,
+                                   db=mysqldbnm)
+            dbconn = conn.cursor()
+
+            dbconn.execute(
+                "SELECT cti_agentpabx, cti_password, cti_extension, cti_afterstatus, cti_vdn FROM m_user WHERE muser_id = %s", ([userid]))
+            for i in range(dbconn.rowcount):
+                row = dbconn.fetchone()
+                pabx_agent = row[0]
+                pabx_pass = row[1]
+                pabx_ext = row[2]
+                pabx_afsta = row[3]
+                pabx_vdn = row[4]
+        except MySQLdb.Error:
+            print ("Error %d: %s" % (e.args[0], e.args[1]))
+            sys.exit(1)
+        finally:
+            if dbconn:
+                dbconn.close()
+
+        varcommand = msg['payload']
+
+        if varcommand == 'login':
+            msg_do_login = msg['userid'] + ';do_user_login;' + \
+                pabx_agent + ';' + pabx_pass + ';' + pabx_ext + ';' + pabx_vdn
+            self.atg.send(msg_do_login)
+            call_do_login = self.atg.recv(1024)
+            logger.info("[MSG-CTI] >> Login to device %s" % (msg_do_login))
+            logger.info("[RES-CTI] >>  %s" % (call_do_login))
+
+            msg_do_run_device = pabx_ext + ';do_run_device'
+            self.atg.send(msg_do_run_device)
+            call_do_run_device = self.atg.recv(1024)
+            logger.info("[MSG-CTI] >> Run to device %s" % (msg_do_run_device))
+            logger.info("[RES-CTI] >>  %s" % (call_do_run_device))
+
+            # msg_acd_login = msg['userid'] + ';do_ag_login;' + pabx_ext + \
+            #     ';' + pabx_agent + ';' + pabx_pass + ';' + pabx_afsta
+            # self.atg.send(msg_acd_login)
+            # call_acd_login = self.atg.recv(1024)
+            # logger.info("[MSG-CTI] >> ACD Login %s" % (msg_acd_login))
+            # logger.info("[RES-CTI] >>  %s" % (call_acd_login))
+
+            msg_replay = {
+                "msgtype": "login", "sec": msg['userid'], "agent_id": pabx_agent, "agent_ext": pabx_ext}
+            pmessage2 = json.dumps(msg_replay)
+
+            # query insert to agent activity
+            #dbconn.execute("INSERT INTO Writers(Name) VALUES('Jack London')")
+
+        elif varcommand == 'ready':
+            msg_acd_ready = msg['userid'] + ';do_ag_ready;' + \
+                pabx_ext + ';' + pabx_agent + ';' + pabx_pass + ';0'
+            self.atg.send(msg_acd_ready)
+            call_acd_ready = self.atg.recv(1024)
+            logger.info("[MSG-CTI] >> ACD Ready %s" % (msg_acd_ready))
+            # logger.info("[REP-CTI] >>  %s" % (call_do_run_device))
+            logger.info("[RES-CTI] >>  %s" % (call_acd_ready))
+
+            msg_replay = {
+                "msgtype": "ready", "sec": msg['userid'], "agent_id": pabx_agent, "agent_ext": pabx_ext}
+            pmessage2 = json.dumps(msg_replay)
+
+        elif varcommand == 'notready':
+            msg_acd_not_ready = msg['userid'] + ';do_ag_aux;' + \
+                pabx_ext + ';' + pabx_agent + ';' + pabx_pass + ';0'
+            self.atg.send(msg_acd_not_ready)
+            call_acd_not_ready = self.atg.recv(1024)
+            logger.info("[MSG-CTI] >> ACD Not Ready %s" % (msg_acd_not_ready))
+            logger.info("[RES-CTI] >>  %s" % (call_acd_not_ready))
+
+            msg_replay = {"msgtype": "not ready",
+                          "sec": msg['userid'], "agent_id": pabx_agent, "agent_ext": pabx_ext}
+            pmessage2 = json.dumps(msg_replay)
+
+        elif varcommand == 'logout':
+            # msg_do_shutdown = pabx_ext + ';do_user_shutdown'
+            # self.atg.send(msg_do_shutdown)
+            # call_do_shutdown = self.atg.recv(1024)
+            # logger.info("[MSG-CTI] >> Run to device %s" % (msg_do_shutdown))
+            # logger.info("[RES-CTI] >>  %s" % (call_do_shutdown))
+
+            msg_acd_shutdown = msg['userid'] + ';do_ag_logout;' + \
+                pabx_ext + ';' + pabx_agent + ';' + pabx_pass + ';0'
+            self.atg.send(msg_acd_shutdown)
+            call_acd_shutdown = self.atg.recv(1024)
+            logger.info("[MSG-CTI] >> ACD Not Ready %s" % (msg_acd_shutdown))
+            logger.info("[RES-CTI] >>  %s" % (call_acd_shutdown))
+
+            msg_replay = {"msgtype": "shutdown",
+                          "sec": msg['userid'], "agent_id": pabx_agent, "agent_ext": pabx_ext}
+            pmessage2 = json.dumps(msg_replay)
+
+        elif varcommand == 'makecall':
+            msg_do_make_call = msg['userid'] + ';do_dev_make_call;' + '202'
+            self.atg.send(msg_do_make_call)
+            call_do_make_call = self.atg.recv(1024)
+            logger.info("[MSG-CTI] >> Make Call %s" % (msg_do_make_call))
+            logger.info("[RES-CTI] >>  %s" % (call_do_make_call))
+
+            msg_replay = {"msgtype": "makecall",
+                          "sec": msg['userid'], "agent_id": pabx_agent, "agent_ext": pabx_ext}
+            pmessage2 = json.dumps(msg_replay)
+            
+        # elif varcommand  == 'hangup':
+        #     msg_do_hangup = msg['userid'] + ';do_dev_hangup_call'
+        #     self.atg.send(msg_do_hangup)
+        #     res_do_hangup = self.atg.recv(1024)
+        #     logger.info("[MSG-CTI] >> Hangup Call %s" % (msg_do_hangup))
+        #     logger.info("[RES-CTI] >>  %s" % (res_do_hangup))
+
+            # msg_replay = {"msgtype": "hangup",
+            #             "sec": msg['userid'], "agent_id": pabx_agent, "agent_ext": pabx_ext}
+            # pmessage2 = json.dumps(msg_replay)
+
+        else:
+            msg2 = {"msgtype": "text", "username": 'sss',
+                    "payload": 'message not define'}
+            pmessage2 = json.dumps(msg2)
+
+        # atg.send('4;do_user_login;107;109;107;7100')
+        #data = atg.recv(size)
+
+        rconns = self.__rh.roomate_cwsconns(self.__clientID)
+        for conn in rconns:
+            # conn.write_message(pmessage)
+            conn.write_message(pmessage2)
+            logger.info("[RPY-CLIENT] >>  %s" % (pmessage2))
+            # conn.write_message(data)

@@ -1,0 +1,16 @@
+Contributor
+snemes commented on 8 Jan 2016
+Steps to reproduce the problem:
+You need to have a configuration with at least 3 network interfaces. Let's say that the three interfaces are eth0 (with IP 10.0.0.1 - has no internet access), eth1 (with IP 10.1.0.1 - has access to the internet) and vboxnet0 (a VirtualBox host-only network with address 192.168.1.254) - the last interface does not need to be a VirtualBox host-only interface at all, it was just easier to use that as an example and it reflects my current configuration.
+Have an iptables rule that forwards traffic from the VirtualBox interface to eth1 (the interface with access to the Internet):
+iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -j SNAT --to-source 10.1.0.1
+Also have the required iptables rules for mitmproxy:
+iptables -t nat -A PREROUTING -i vboxnet0 -p tcp -m tcp --dport 443 -j REDIRECT --to-ports 8080
+iptables -t nat -A PREROUTING -i vboxnet0 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8080
+Launch mitmproxy/mitmdump with the arguments "-T -b 192.168.1.254"
+The netstat command shows that the python script is listening on 192.168.1.254, which is fine.
+However a Wireshark/tcpdump session quickly shows that the bind address is not respected when mitmproxy tries to contact the upstream HTTPS server, because the TCP packets use the source IP 10.0.0.1 (eth0 - the 1st interface, which is a network with no Internet access) - instead of the IP address 192.168.1.254 (which would be then forwarded by iptables to eth1 - the interface having internet access).
+What is the expected behavior?
+When the --bind-address or -b command line argument is used, mitmproxy should use that address as the source address when contacting the upstream servers.
+mitmproxy version: 0.15
+Operating System: Ubuntu 15.10

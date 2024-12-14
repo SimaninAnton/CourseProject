@@ -1,0 +1,35 @@
+segevfiner commented on 19 Jul 2017
+Expected Behavior
+The reloader should work correctly even for an app in a package's __init__.py file.
+In hello/__init__.py:
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello_world():
+    return 'Hello, World!'
+set FLASK_APP=hello
+set FLASK_DEBUG=1
+flask run
+Than edit __init__.py and introduce a syntax error.
+Actual Behavior
+I get the SyntaxError the first time I try to browse and afterwards get:
+Traceback (most recent call last):
+  File "flask\cli.py", line 48, in find_best_app
+    'using a factory function.' % modules.__name__)
+NoAppException: Failed to find application in module "hello". Are you sure it contains a Flask application? Maybe you wrapped it in WSGI middleware or you are using a factory function.
+Cause
+This is caused by weird CPython behavior which might be a bug:
+>>> __import__('syntax_error')
+...
+SyntaxError: ...
+>>> a = __import__('syntax_error')  # woot it works?!
+>>> a.__file__
+'<path to the directory containing __init__.py>'  # Instead of path to __init__.py
+After the SyntaxError in the app, the Wekzeug reloader won't know about the __init__.py file any more since it iterates sys.modules and the entry there contains the path to the directory instead of the path to the __init__.py file, and Flask will call __import__ repeatedly but will get the weird empty module and will fail to find an app in it, leading to the described exception.
+Environment
+Python version: 2.7.13
+Flask version: 0.12.2
+Werkzeug version: 0.12.2
+Not sure if this happens in Python 3.
+2

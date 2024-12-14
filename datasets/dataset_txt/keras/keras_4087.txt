@@ -1,0 +1,59 @@
+mxbi commented on 24 Oct 2016
+I'm trying to train a simple MLP model on numerical data for binary classification, and when I train it this is what I see:
+Train on 9600 samples, validate on 2400 samples
+Epoch 1/100
+9600/9600 [==============================] - 4s - loss: 7.1742 - val_loss: 6.9442
+Epoch 2/100
+9600/9600 [==============================] - 3s - loss: 7.1726 - val_loss: 6.9442
+Epoch 3/100
+9600/9600 [==============================] - 3s - loss: 7.1726 - val_loss: 6.9442
+This continues forever...
+You can view the code in question here, without the data loading portion:
+import pandas as pd
+import numpy as np
+from sklearn.cross_validation import KFold
+import keras as k
+import keras.layers as l
+from keras.layers.advanced_activations import PReLU
+
+# Issue occurs regardless of architecture
+def keras_model(dim):
+    m = k.models.Sequential()
+    m.add(l.Dense(1024, input_dim=dim))
+    m.add(PReLU())
+    m.add(l.Dense(512))
+    m.add(PReLU())
+    m.add(l.Dense(1))
+    m.add(l.Activation('sigmoid'))
+
+    m.compile(loss='binary_crossentropy', optimizer='adam')
+    return m
+
+# Data loading.
+# One Pandas dataframe 'train' with only numerical data, with two lists 'features' and 'target' to denote X/y split
+
+kf = KFold(len(train.index), n_folds=nfolds, shuffle=True, random_state=37)
+for train_index, test_index in kf:
+    X_train, X_valid = train[features].loc[train_index], train[features].loc[test_index]
+    y_train, y_valid = train[target].loc[train_index], train[target].loc[test_index]
+
+    model = keras_model(X_train.shape[1])
+
+    print(X_train.isnull().any().any()) # False, there are no NaNs/Infs in the matrix.
+
+    # Convert to numpy array before training.
+    # y_train is a 1-dimensional array of binary values
+    model.fit(X_train.values, y_train.values, verbose=1, validation_data=[X_valid.values, y_valid.values], batch_size=64, nb_epoch=100)
+If I look at the output of the model, I can see that this is what it predicts:
+[[ 0.]    
+ [ 0.]    
+ [ 0.]    
+ ...,     
+ [ 0.]    
+ [ 0.]    
+ [ 0.]]   
+Things I have tried:
+I have tried on several machines with different hardware and Ubuntu versions, with different combinations of Keras (1.0.7, 1.0.8, latest commit) & Theano (0.8.2 & latest commit) versions, and both CPU and GPU training - with the same result in every case.
+I've tried removing the sigmoid activation and optimising MSE instead, but that results in a loss about 10 digits long. I've tried having a single dense neuron with no activation (and other various simplified architecures), and I've tried several different optimizers (Adam, sgd, rmsprop). No matter how I change the model, I cannot seem to get anything else.
+I've verified that there are no NaNs or Infs in the matrix, and that the y values are binary. The matrix passed to Keras is a numpy array.
+Any help would be very much appreciated, as I have been labouring over this problem for hours without being able to fix it.

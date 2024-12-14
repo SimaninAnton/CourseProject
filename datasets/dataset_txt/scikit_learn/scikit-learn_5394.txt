@@ -1,0 +1,13 @@
+Member
+GaelVaroquaux commented on Apr 17, 2012
+As discussed on the mailing list, the way the regularization parameter is scaled in linear models can be fragile to some simple variations of the data, such as when the number of training samples vary. This is the case of libsvm, for which we tried to come up with a rescaling of the C parameter, that ends up being a burden as the resulting API no longer matches closely the libsvm API.
+The problem is more general than libsvm, and I propose that an optional 'scale_params' parameter be added to some linear models, to put the regularization parameter in a more adimensional form. In the future, it can be added to other estimators.
+For l1-penalized models, the way C should be scaled is fairly natural and given by the KKT conditions, as implemented in svm.l1_min_c (note that to convert the C parameter of SVMs/logreg to alpha in lasso and enet, you have to take something like alpha = n_samples/C). For l2-penalized model, there is no such abrupt change, and I suggest to investigate using the l2 norm of Xy instead of the l_inf (max) in svm.l1_min_c.
+Here is the battle plan:
+Transform @amueller 's gist into a scikit-learn example https://gist.github.com/2354823
+Implement scale_params for l1 models (logistic regression and lasso), add these models to the example, check that scale_params works
+Factor out the logic of l1_min_c into a '_penalty_min_heuristic' function that works for l1 and l2 and use it to implement l1_minc and l2_min_c
+Implement scale_params for l2 models (SVM, ridge), add these models to the example, check that the scaling does work
+Add a warning in GridSearchCV that check if an estimator has a scale_params attribute and that raises a warning if it is set to False
+Remove the scale_C parameter from SVMs
+This should be it. And I heard that @jaquesgrobler was volunteered to do this :)

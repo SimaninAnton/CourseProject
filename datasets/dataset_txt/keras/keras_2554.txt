@@ -1,0 +1,56 @@
+Imorton-zd commented on 25 Apr 2017 •
+edited
+I want to modify the computing functions of the LSTM layer, just as following formulas:
+
+where the equations are the same as in standard LSTM networks except that equation 14 has an extra term about y.
+I have tried to modify the source code of LSTM layer, but it seems not easy to achieve my expectation:
+class AttentionLSTM(Recurrent):
+        def __init__(self, output_dim, y,
+                 init='glorot_uniform', inner_init='orthogonal',
+                 forget_bias_init='one', activation='tanh',
+                 inner_activation='hard_sigmoid',
+                 W_regularizer=None, U_regularizer=None, b_regularizer=None,
+                 dropout_W=0., dropout_U=0., **kwargs):
+                 self.y = y
+       def build(self, input_shape):
+                 self.U_m = self.inner_init((self.output_dim, self.output_dim),
+                                   name='{}_U_m'.format(self.name))
+       def step(self, x, states):
+                 h_tm1 = states[0]
+                 c_tm1 = states[1]
+                 B_U = states[2]
+                 B_W = states[3]
+                 y = states[4]
+
+                if self.consume_less == 'cpu':
+                     x_i = x[:, :self.output_dim]
+                     x_f = x[:, self.output_dim: 2 * self.output_dim]
+                     x_c = x[:, 2 * self.output_dim: 3 * self.output_dim]
+                     x_o = x[:, 3 * self.output_dim:]
+               else:
+                     x_i = K.dot(x * B_W[0], self.W_i) + self.b_i
+                     x_f = K.dot(x * B_W[1], self.W_f) + self.b_f
+                     x_c = K.dot(x * B_W[2], self.W_c) + self.b_c
+                     x_o = K.dot(x * B_W[3], self.W_o) + self.b_o
+
+                     i = self.inner_activation(x_i + K.dot(h_tm1 * B_U[0], self.U_i))
+                     f = self.inner_activation(x_f + K.dot(h_tm1 * B_U[1], self.U_f))
+#Here I want to add a term, I do not know if the formula I gave is correct.
+                     c = f * c_tm1 + i * self.activation(x_c + K.dot(h_tm1 * B_U[2], self.U_c)) + K.tanh(K.dot(y,self.U_m))
+                     o = self.inner_activation(x_o + K.dot(h_tm1 * B_U[3], self.U_o))
+
+                h = o * self.activation(c)
+                return h, [h, c]
+But the error is:
+ValueError: dimension mismatch in args to gemm (50,1)x(128,128)->(50,128)
+Apply node that caused the error: GpuDot22(GpuFromHost.0, attentionlstm_20_U_m)
+Toposort index: 94
+Inputs types: [CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix)]
+Inputs shapes: [(50, 1), (128, 128)]
+Inputs strides: [(1, 0), (128, 1)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[GpuDot22(GpuDot22.0, attentionlstm_20_U_m)]]
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Where is the mistake? Please give me some advice.

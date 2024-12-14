@@ -1,0 +1,35 @@
+Miserlou commented on 7 Sep 2016
+Flask + Zappa users are complaining about an error stemming from Flask's logging of exceptions.
+We can reproduce this by generating an unhandled exception in a Flask application that breaks our handler's behavior, but which works for other frameworks (Django, Pyramid, etc.).
+It looks like something in Flask is treating a string as if it were a stream, but I've been trying to disable all possible logging and I still see this error. I don't know what's happening. This is occurring with the Flask==0.11.1.
+Here is an example:
+[1473180521973] Traceback (most recent call last):
+[1473180521973] File "/usr/lib64/python2.7/logging/init.py", line 880, in emit
+[1473180521992] stream.write(fs % msg)
+[1473180521992] File "/private/var/folders/00/vp4bg2md3ng4sqkg3hrz_j1003frjd/T/pip-build-RmqRtJ/Werkzeug/werkzeug/local.py", line 343, in getattr
+[1473180521992] AttributeError: 'str' object has no attribute 'write'
+[1473180521992] Logged from file app.py, line 1587
+[1473180521992] [ERROR] 2016-09-06T16:48:41.973Z c29bebc5-7451-11e6-a6f9-bdc91c60ab58 Exception on /fail [GET]
+Traceback (most recent call last):
+File "/private/var/folders/00/vp4bg2md3ng4sqkg3hrz_j1003frjd/T/pip-build-KC9Xdu/flask/flask/app.py", line 1988, in wsgi_app
+File "/private/var/folders/00/vp4bg2md3ng4sqkg3hrz_j1003frjd/T/pip-build-KC9Xdu/flask/flask/app.py", line 1641, in full_dispatch_request
+File "/private/var/folders/00/vp4bg2md3ng4sqkg3hrz_j1003frjd/T/pip-build-KC9Xdu/flask/flask/app.py", line 1544, in handle_user_exception
+File "/private/var/folders/00/vp4bg2md3ng4sqkg3hrz_j1003frjd/T/pip-build-KC9Xdu/flask/flask/app.py", line 1639, in full_dispatch_request
+File "/private/var/folders/00/vp4bg2md3ng4sqkg3hrz_j1003frjd/T/pip-build-KC9Xdu/flask/flask/app.py", line 1625, in dispatch_request
+File "/var/task/app.py", line 22, in fail
+return 1/0
+ZeroDivisionError: integer division or modulo by zero
+Here is an example using Pyramid instead, failing as expected:
+https://css89s7off.execute-api.us-east-1.amazonaws.com/dev/hello/asdf
+and the same error in Flask, failing with the stream writing error:
+https://pxzhirpoxd.execute-api.us-east-1.amazonaws.com/devor/fail
+I am not sure what exactly is happening, and nobody in our little community has been able to figure it out either. We use Werkzeug for some middleware functionality, but since the other frameworks use this same code, I don't think this is the issue, unless there is a specific interaction between Flask and WZ, which I don't think there is.
+So, I have a few theories:
+* A log handler has been configured to write to a file by default. Since Lambda is (essentially) a read-only environment, this will fail.
+* Code written for Python 3 isn't properly working in Python 2.
+* Something related to this is happening: #1995
+Does anybody have any ideas what might be happening here?
+Related tickets and discussion:
+Miserlou/Zappa#283
+Miserlou/Zappa#302
+1

@@ -1,0 +1,70 @@
+matiasbattocchia commented on Aug 26, 2018
+Description
+I found this issue while working with OneHotEncoder which output is a sparse matrix by default.
+In order to reproduce the issue using mock data I am forcing sparse_threshold=1.0. The issue does not occur if the input of ColumnTransformer are all sparse matrix or all dense matrix, nor if the output is a dense matrix. It happens when the input is mixed (a sparse matrix and a dense matrix for example) and the output is sparse.
+Note below that one the inputs has columns of mixed types. This is key in reproducing the issue as if the types were shared, it will work as expected.
+Maybe related: scikit-learn-contrib/sklearn-pandas#51
+Steps/Code to Reproduce
+df = pd.DataFrame([['a',1,True,0],['b',2,False,0]],
+                  columns=['categorical', 'numerical', 'boolean', 'shall_not_pass'])
+
+ct = make_column_transformer(
+    (['categorical'], OneHotEncoder()),
+    (['numerical', 'boolean'], 'passthrough')
+)
+
+ct.sparse_threshold=1.0
+
+ct.fit_transform(df)
+Expected Results
+<2x4 sparse matrix of type '<class 'numpy.float64'>'
+ with 5 stored elements in Compressed Sparse Row format>
+Actual Results
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-18-ee6fd5a237c5> in <module>()
+----> 1 ct.fit_transform(df)
+
+/home/matias/scikit-learn/sklearn/compose/_column_transformer.py in fit_transform(self, X, y)
+    447         self._validate_output(Xs)
+    448 
+--> 449         return self._hstack(list(Xs))
+    450 
+    451     def transform(self, X):
+
+/home/matias/scikit-learn/sklearn/compose/_column_transformer.py in _hstack(self, Xs)
+    488         """
+    489         if self.sparse_output_:
+--> 490             return sparse.hstack(Xs).tocsr()
+    491         else:
+    492             Xs = [f.toarray() if sparse.issparse(f) else f for f in Xs]
+
+/home/matias/.pyenv/versions/3.5.2/lib/python3.5/site-packages/scipy/sparse/construct.py in hstack(blocks, format, dtype)
+    462 
+    463     """
+--> 464     return bmat([blocks], format=format, dtype=dtype)
+    465 
+    466 
+
+/home/matias/.pyenv/versions/3.5.2/lib/python3.5/site-packages/scipy/sparse/construct.py in bmat(blocks, format, dtype)
+    598     if dtype is None:
+    599         all_dtypes = [blk.dtype for blk in blocks[block_mask]]
+--> 600         dtype = upcast(*all_dtypes) if all_dtypes else None
+    601 
+    602     row_offsets = np.append(0, np.cumsum(brow_lengths))
+
+/home/matias/.pyenv/versions/3.5.2/lib/python3.5/site-packages/scipy/sparse/sputils.py in upcast(*args)
+     50             return t
+     51 
+---> 52     raise TypeError('no supported conversion for types: %r' % (args,))
+     53 
+     54 
+
+TypeError: no supported conversion for types: (dtype('float64'), dtype('O'))
+Versions
+Linux-4.17.11-arch1-x86_64-with-arch-Arch-Linux
+Python 3.5.2 (default, Nov 17 2016, 21:45:04) 
+[GCC 6.2.1 20160830]
+NumPy 1.15.1
+SciPy 1.1.0
+Scikit-Learn 0.20.dev0

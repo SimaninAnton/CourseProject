@@ -1,0 +1,22 @@
+Member
+ncoghlan commented on 28 Apr 2018
+Kenneth recently dropped the pipsi based installation instructions, presumably because they were causing confusion (65a2106#diff-62c330cd8da31d476bb63b51bb8b1307).
+As far as I'm aware, there are three main ways for things to go wrong with pipsi:
+The same PATH bootstrapping issues that affect all Python CLI applications
+See pypa/packaging.python.org#396 for more discussion of that problem.
+Getting it to use the right Python version
+If you use python3 -m pip --user pipsi (or an equivalent) to bootstrap it, then it will default to creating Python 3.x virtual environments. However, if pipsi ends up being installed with Python 2.7, then it will also default to that for all of the applications it installs (which is a hassle for pipenv, since it really prefers to have Python 3.x as the host Python).
+Getting the pew CLI installed correctly
+Even if folks don't run into the above two issues, pipsi install pipenv doesn't quite work as desired, because pipenv's shell integration also has a CLI dependency on pew, not just a Python API dependency.
+That distinction doesn't matter for a regular pipenv installation with pip, since that installs everything to a common destination, so the pew CLI automatically comes along with the Python level dependency declaration.
+However, it doesn't work for pipsi, since breaking the per-app venv isolation is an extra step in the installation process, so the installation currently needs to be spelled as pipsi install pew && pipsi install pipenv.
+This isn't an urgent issue, but I think it could be a good design driver for adding "CLI dependency declaration" support to the packaging metadata formats, as we some clear constraints that we'd like to adhere to in solving this problem:
+updating pipenv to publish new CLI dependency declaration metadata would be fine
+updating pipsi to consume new CLI dependency declaration metadata would be fine
+requiring updates to pew to make things work would not be fine (since it creates a major barrier to adoption if a dependency management feature doesn't already work with previously published packages - a concrete example of that would be PEP 345's failed attempt to move away from the de facto standard established by setuptools for spelling dependency declarations vs PEP 508's pragmatic adoption of the established setuptools conventions)
+https://github.com/pypa/interoperability-peps/pull/30/files would be an interesting proposal to consider on this front, as it aimed to tackle the problem of declaring external dependencies in general. As far as I can tell, given suitable adjustments to pipsi, it could potentially work for pipenv's use case as long as external requirements were listed in a separate field:
+pipenv would add bin!pew as a new external requirement
+pip and other existing installers would ignore it, since it would be in a different field added by metadata 2.2
+pipsi could be updated to check for the external binary dependencies listed in the installed project, and if they weren't already available on the system, check if they could be exported from one of the app's declared Python level dependencies.
+1
+1

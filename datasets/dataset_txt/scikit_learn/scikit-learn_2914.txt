@@ -1,0 +1,32 @@
+mirosval commented on Jul 15, 2016
+I posted this to the mailing list, but I got no response, so I will try here as well.
+I have been using scikit-learn for a while, but I have run into a problem that does not seem to have any good solutions.
+Basically I would like to:
+build my pipeline in a Jupyter Notebook
+persist it (to json or hdf5)
+load it in production and execute the prediction there
+The problem is that for persisting estimators such as the RobustScaler for example, the recommended way is to pickle them. Now I don't want to do this, for three reasons:
+Security, pickle is potentially dangerous
+Portability, I can't unpickle it in scala for example
+Pickle stores a lot of details and information which is not strictly necessary to reconstruct the RobustScaler and therefore might prevent it from being reconstructed correctly if a different version is used.
+Another option I would seem to have is to access the private members of each serialiser that I want to use and store them on my own, but this is inconvenient, because:
+It forces me as a user to understand how the robust scaler works and how it stores its internal state, which is generally bad for usability
+The internal implementation could change, leaving me to fix my serialisers (see #1)
+I would need to do this for each new Estimator I decide to use
+Now, to me it seems the solution is quite obvious:
+Write a Mixin or update the BaseEstimator class to include two additional methods:
+to_dict() - will return a dictionary such, that when passed to
+from_dict(dictionary) - it will reconstruct the original object
+these dictionaries could be passed to the JSON module or the YAML module or stored elsewhere. We could provide more convenience methods to do this for the user.
+In case of the RobustScaler the dict would look something like:
+{ 
+    "center": "0.0", 
+    "scale": "1.0"
+}
+or in case of multiple features:
+{ 
+    "center": ["0,0", "0.1"], 
+    "scale": ["1.0", "2.0"]
+}
+Now the bulk of the work is writing these serialisers and deserialisers for all of the estimators, but that can be simplified by adding a method that could do that automatically via reflection and the estimator would only need to specify which fields to serialise.
+I am happy to start working on this and create a pull request on Github, but before I do that I wanted to get some initial thoughts and reactions from the community, so please let me know what you think.

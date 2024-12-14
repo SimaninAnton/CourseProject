@@ -1,0 +1,44 @@
+crvogt commented on 30 Jan 2019 •
+edited
+Hi there,
+I'm struggling to understand why the model isn't learning in this case. More accurately, it seems to have no effect at all on the input when opened later. It effectively is supposed to calculate a depth map, pass that to a lambda layer, then use dense_image_warp to warp the image which then becomes the output.
+What I think is happening is, the image is going into the lambda layer, coming out, and no weights are being updated, like the warp field is zero consistently. The depth map should be changing, but doesn't at all. perhaps requiring a weights initialization?
+def warpImage(args):
+    depth_map, refImg, refPos = args
+
+    curX = tf.multiply(depth_map, refPos[:, :, :, :1])
+    curY = tf.multiply(depth_map, refPos[:, :, :, 1:])
+    dMove = tf.concat([curX, curY], axis=3)
+    # dense_image_warp(img, flow)
+    warped = tfc.image.dense_image_warp(refImg, dMove)
+
+    return warped
+
+
+def depth_net(input):
+    cLayer1 = Conv2D(100, (7, 7), padding='same', activation='relu')(input)
+    # cLayer1 = Conv2DTranspose(100, (7, 7), strides=(2, 2), padding='same', activation='relu')(cLayer1)
+    cLayer2 = Conv2D(100, (5, 5), padding='same', activation='relu')(cLayer1)
+    cLayer3 = Conv2D(50, (3, 3), padding='same', activation='relu')(cLayer2)
+    cLayer4 = Conv2D(1, (1, 1), padding='same', activation='relu')(cLayer3)
+    return cLayer4
+
+# Input
+dFeatures = Input(batch_shape=(batch_size, dHEIGHT, dWIDTH, dCHANNELS))
+refPos = Input(batch_shape=(batch_size, 100, 100, 2))
+refImg = Input(batch_shape=(batch_size, 100, 100, 1))
+
+# Passing values to depth net
+depthMap = depth_net(dFeatures)
+
+# Lambda function layer taking depthMap to warp img2D to the refPos position to be compared with refImg
+warpedOutput = Lambda(warpImage, output_shape=(100, 100, 1))([depthMap, refImg, refPos])
+
+# refImg is used as the yVal to compare against
+model1 = Model(inputs=[dFeatures, refPos, refImg], outputs=[warpedOutput])
+model2 = Model(inputs=[dFeatures, refPos, refImg], outputs=[warpedOutput, depthMap])
+# The loss is used to optimize, metrics are used only as the visual for the user
+model1.compile(optimizer='adam', loss='mse')
+model2.compile(optimizer='adam', loss='mse')
+
+# Only fitting model1

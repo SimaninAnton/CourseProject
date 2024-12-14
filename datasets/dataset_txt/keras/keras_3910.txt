@@ -1,0 +1,91 @@
+Contributor
+keunwoochoi commented on 17 Nov 2016
+I think I am missing some rules about creating keras custom layers. This error only shows up in model.fit(), i.e., backward pass. It's forward pass works well.
+It's on Keras 1.1.0 and Theano.
+The layer is designed to do some matrix multiplication on each row. The multiplied matrix is parametrized by self.means and self.stds and I want to train them.
+error
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+<ipython-input-13-48559f88a8c1> in <module>()
+      1 print x.shape
+      2 print y.shape
+----> 3 model.fit(x, y)
+
+/Users/gnu/anaconda/lib/python2.7/site-packages/keras/models.pyc in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, **kwargs)
+    638                               shuffle=shuffle,
+    639                               class_weight=class_weight,
+--> 640                               sample_weight=sample_weight)
+    641 
+    642     def evaluate(self, x, y, batch_size=32, verbose=1,
+
+/Users/gnu/anaconda/lib/python2.7/site-packages/keras/engine/training.pyc in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight)
+   1100         else:
+   1101             ins = x + y + sample_weights
+-> 1102         self._make_train_function()
+   1103         f = self.train_function
+   1104 
+
+/Users/gnu/anaconda/lib/python2.7/site-packages/keras/engine/training.pyc in _make_train_function(self)
+    717             training_updates = self.optimizer.get_updates(self._collected_trainable_weights,
+    718                                                           self.constraints,
+--> 719                                                           self.total_loss)
+    720             updates = self.updates + training_updates
+    721 
+
+/Users/gnu/anaconda/lib/python2.7/site-packages/keras/optimizers.pyc in get_updates(self, params, constraints, loss)
+    384         lr_t = lr * K.sqrt(1. - K.pow(self.beta_2, t)) / (1. - K.pow(self.beta_1, t))
+    385 
+--> 386         shapes = [K.get_variable_shape(p) for p in params]
+    387         ms = [K.zeros(shape) for shape in shapes]
+    388         vs = [K.zeros(shape) for shape in shapes]
+
+/Users/gnu/anaconda/lib/python2.7/site-packages/keras/backend/theano_backend.pyc in get_variable_shape(x)
+    786 
+    787 def get_variable_shape(x):
+--> 788     return x.get_value(borrow=True, return_internal_type=True).shape
+    789 
+    790 
+
+AttributeError: 'TensorVariable' object has no attribute 'get_value'
+custom layer
+init
+I set some attributes of the layers with numpy arrays.
+    def __init__(self, n_mels, means, stds, center_freqs, **kwargs):
+        assert n_mels == np.array(means).shape[0]
+        assert n_mels == np.array(stds).shape[0]
+        self.supports_masking = True
+        
+        self.n_mels = n_mels
+        self.means = means
+        self.stds = stds
+        self.center_freqs = center_freqs
+
+        super(ParametricMel, self).__init__(**kwargs)
+build
+I set the attributes with tensorvariables. I also set trainable_weights.
+    def build(self, input_shape):
+        self.means = K.expand_dims(K.variable(np.array(self.means), 
+                                              name='{}_means'.format(self.name)), 
+                                   dim=1) # (n_mels, 1)
+        self.stds = K.expand_dims(K.variable(np.array(self.stds),
+                                             name='{}_stds'.format(self.name)),
+                                  dim=1)
+        self.center_freqs = np.array(self.center_freqs)[np.newaxis, :] # (1, n_freq)
+        self.center_freqs = np.tile(self.center_freqs, (self.n_mels, 1)) # (n_mels, n_freq)
+        self.center_freqs = K.variable(self.center_freqs,
+                                       name='{}_center_freqs'.format(self.name))
+        self.trainable_weights = [self.means, self.stds]
+        self.n_freq = input_shape[1]
+        self.n_time = input_shape[2]
+call
+Gaussian kernels, FYI.
+    def call(self, x, mask=None):
+        x = K.permute_dimensions(x, (0, 2, 1)) # (None, n_time, n_freq)
+        freq_to_mel = K.square(self.center_freqs - self.means)
+        freq_to_mel = -1. * freq_to_mel / (2. * K.square(self.stds))
+        freq_to_mel = K.exp(freq_to_mel)
+        freq_to_mel = freq_to_mel / (np.sqrt(2 * np.pi) * self.stds)
+        freq_to_mel = K.transpose(freq_to_mel) # (n_freq, n_mel)
+        out = K.dot(x, freq_to_mel) # (None, n_time, n_mel)
+        return K.permute_dimensions(out, (0, 2, 1)) # (None, n_mel, n_time)
+Does anyone have any idea?

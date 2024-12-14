@@ -1,0 +1,26 @@
+fcharras commented on Nov 28, 2019 •
+edited
+Description
+At inference in QuantileTransformer, np.interp is used. The documentation of this function states: Does not check that the x-coordinate sequence xp is increasing. If xp is not increasing, the results are nonsense. Within QuantileTransformer xp are quantiles. To ensure that np.interp behaves correctly we must ensure that quantiles stored in self.quantiles_ are ordered i.e that np.all(np.diff(self.quantiles_, axis=0) >= 0) holds true.
+I've found that because of rounding errors, sometimes this does not hold. It is actually a very big issue because it causes inference to behave very erratically (for instance, a sample will not be transformed the same way depending on its position within the input), it is very confusing and very hard to debug.
+Steps/Code to Reproduce
+Finding a minimal example is really hard, I will provide an example I've managed to isolate that reproduces the issue with 100% reproducibility, however since it happens because of a very tiny rounding error and this feature make use of randomness (for sampling), I hope it is not dependent on hardware.
+Here is a gist that defines an array of size (300,2), I can reproduce the bug with the following code:
+import numpy as np
+from sklearn.preprocessing import QuantileTransformer
+X = np.loadtxt('gistfile1.txt', delimiter=',')
+quantile_transformer = QuantileTransformer(n_quantiles=150).fit(X)
+print(np.all(np.diff(quantile_transformer.quantiles_, axis=0) >= 0))
+Expected Results
+The previous code should print True
+Actual Results
+It prints False
+Versions
+I have taken note of the fixes of QuantileTransformer in 21.3 (ensuring that n_quantiles <= n_samples) and I have already checked that it is unrelated. It can be seen in the minimal example that the input has 300 samples and the parameter n_quantiles is set to 150 anyway.
+[GCC 5.4.0 20160609]
+NumPy 1.15.4
+SciPy 1.3.3
+Scikit-Learn 0.19.2
+Quickfix
+I haven't investigated more deeply to understand the cause of the rounding error. Here is a suggestion of a quick, dirty fix to anyone that would meet the same issue: if quantile is unordered, replace it with something like np.minimum.accumulate(quantile_transformer.quantiles_[::-1])[::-1] (i think it's better than forcing a sort).
+👍 2

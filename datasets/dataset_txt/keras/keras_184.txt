@@ -1,0 +1,97 @@
+un-lock-me commented on 8 Jun 2019 •
+edited
+System information
+Have I written custom code (as opposed to using example directory): Yes
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Ubuntu 16.04
+TensorFlow backend (yes / no): yes
+TensorFlow version: 1.10
+Keras version: 2.2.4
+Python version: 3.5
+CUDA/cuDNN version:
+GPU model and memory:
+Describe the current behavior
+I want to have a statefull LSTM over the custom layer which I faced with this error.
+Describe the expected behavior
+I expect the code run without error as it is working fine without adding return_state= True.
+Code to reproduce the issue
+Provide a reproducible test case that is the bare minimum necessary to generate the problem.
+this is the reproducible example:
+please note that if you remove the return_state= True it will work fine
+from keras.layers import Lambda
+import keras
+import numpy as np
+import tensorflow as tf
+SEQUENCE_LEN = 45
+LATENT_SIZE = 20
+EMBED_SIZE = 50
+VOCAB_SIZE = 100
+BATCH_SIZE = 10
+def rev_entropy(x):
+        def row_entropy(row):
+            _, _, count = tf.unique_with_counts(row)
+            count = tf.cast(count,tf.float32)
+            prob = count / tf.reduce_sum(count)
+            prob = tf.cast(prob,tf.float32)
+            rev = -tf.reduce_sum(prob * tf.log(prob))
+            return rev
+
+        nw = tf.reduce_sum(x,axis=1)
+        rev = tf.map_fn(row_entropy, x)
+        rev = tf.where(tf.is_nan(rev), tf.zeros_like(rev), rev)
+        rev = tf.cast(rev, tf.float32)
+        max_entropy = tf.log(tf.clip_by_value(nw,2,LATENT_SIZE))
+        concentration = (max_entropy/(1+rev))
+        new_x = x * (tf.reshape(concentration, [BATCH_SIZE, 1]))
+        return new_x
+
+inputs = keras.layers.Input(shape=(SEQUENCE_LEN,), name="input")
+
+embedding = keras.layers.Embedding(output_dim=EMBED_SIZE, input_dim=VOCAB_SIZE, input_length=SEQUENCE_LEN, trainable=True)(inputs)
+encoded = keras.layers.Bidirectional(keras.layers.LSTM(LATENT_SIZE,return_state=True), merge_mode="sum", name="encoder_lstm")(embedding)
+
+encoded = Lambda(rev_entropy)(encoded)
+decoded = keras.layers.RepeatVector(SEQUENCE_LEN, name="repeater")(encoded)
+decoded = keras.layers.Bidirectional(keras.layers.LSTM(EMBED_SIZE, return_sequences=True,return_state=True), merge_mode="sum", name="decoder_lstm")(decoded)
+autoencoder = keras.models.Model(inputs, decoded)
+autoencoder.compile(optimizer="sgd", loss='mse')
+autoencoder.summary()
+
+x = np.random.randint(0, 90, size=(10, 45))
+print(x.shape)
+
+y = np.random.normal(size=(10, 45, 50))
+print(y.shape)
+history = autoencoder.fit(x, y, epochs=1)
+Other info / logs
+/home/sgnbx/anaconda3/envs/py3/bin/python3 /home/sgnbx/Downloads/projects/LSTM_autoencoder/lk.py
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "/home/sgnbx/Downloads/projects/LSTM_autoencoder/lk.py", line 34, in <module>
+    encoded = Lambda(rev_entropy)(encoded)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/keras/engine/base_layer.py", line 457, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/keras/layers/core.py", line 687, in call
+    return self.function(inputs, **arguments)
+  File "/home/sgnbx/Downloads/projects/LSTM_autoencoder/lk.py", line 21, in rev_entropy
+    rev = tf.map_fn(row_entropy, x)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/ops/functional_ops.py", line 459, in map_fn
+    maximum_iterations=n)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/ops/control_flow_ops.py", line 3232, in while_loop
+    return_same_structure)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/ops/control_flow_ops.py", line 2952, in BuildLoop
+    pred, body, original_loop_vars, loop_vars, shape_invariants)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/ops/control_flow_ops.py", line 2887, in _BuildLoop
+    body_result = body(*packed_vars_for_body)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/ops/control_flow_ops.py", line 3201, in <lambda>
+    body = lambda i, lv: (i + 1, orig_body(*lv))
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/ops/functional_ops.py", line 449, in compute
+    nest.assert_same_structure(dtype or elems, packed_fn_values)
+  File "/home/sgnbx/anaconda3/envs/py3/lib/python3.5/site-packages/tensorflow/python/util/nest.py", line 185, in assert_same_structure
+    _pywrap_tensorflow.AssertSameStructure(nest1, nest2, check_types)
+ValueError: The two structures don't have the same nested structure.
+
+First structure: type=list str=[tf.float32, tf.float32, tf.float32, tf.float32, tf.float32]
+
+Second structure: type=Tensor str=Tensor("lambda_1/map/while/Neg:0", shape=(), dtype=float32)
+
+More specifically: Substructure "type=list str=[tf.float32, tf.float32, tf.float32, tf.float32, tf.float32]" is a sequence, while substructure "type=Tensor str=Tensor("lambda_1/map/while/Neg:0", shape=(), dtype=float32)" is not

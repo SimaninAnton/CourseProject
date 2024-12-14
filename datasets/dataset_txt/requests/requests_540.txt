@@ -1,0 +1,225 @@
+CJOak commented on Aug 18, 2017
+Preface: I have a feeling that this isn't an issue with requests itself, but it did up come while I was using it, so I was hoping that you could offer some insight. This issue might even be the same one that hellt had in #3212 , but there are a few differences that made me uncertain whether that is actually the case. My apologies if it's a duplicate.
+The error in question:
+Traceback (most recent call last):
+  File "ALT_post_api.py", line 177, in <module>
+    main()
+  File "ALT_post_api.py", line 96, in main
+    response = requests.get(url, headers=headers, verify="/path/to/ssl/DigiCertCA.crt")
+  File "/export/software/lib/python2.7/site-packages/requests/api.py", line 72, in get
+    return request('get', url, params=params, **kwargs)
+  File "/export/software/lib/python2.7/site-packages/requests/api.py", line 58, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/export/software/lib/python2.7/site-packages/requests/sessions.py", line 502, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/export/software/lib/python2.7/site-packages/requests/sessions.py", line 612, in send
+    r = adapter.send(request, **kwargs)
+  File "/export/software/lib/python2.7/site-packages/requests/adapters.py", line 514, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: ("bad handshake: Error([('SSL routines', 'tls_process_server_certificate', 'certificate verify failed')],)",)
+Looking at the Apache config, an SSLCertificateFile, an SSLCertificateKeyFile, and an SSLCertificateChainFile are specified. The above uses the SSLCertificateChainFile (DigiCertCA.crt) in the verify parameter, though both True and the SSLCertificateFile throw the same exact error. I tried appending those two files to a copy of the file given by certifi.where() (named cacert.pem) as seems to be suggested in the linked issue, but it also throws the same error.
+Versions:
+Python 2.7.12
+>>> requests.__version__
+'2.18.1'
+>>> certifi.__version__
+'2017.04.17'
+>>> ssl.OPENSSL_VERSION
+'OpenSSL 1.0.1e-fips 11 Feb 2013'
+This is the result of running openssl s_client -connect my_host:443 -showcerts -servername my_host, HOWEVER, I later ran openssl version and got OpenSSL 0.9.8za 5 Jun 2014; this isn't the version Python is using:
+CONNECTED(00000003)
+depth=0 /C=US/ST=[redacted; local area + host]
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 /C=US/ST=[redacted; local area + host]
+verify error:num=27:certificate not trusted
+verify return:1
+depth=0 /C=US/ST=[redacted; local area + host]
+verify error:num=21:unable to verify the first certificate
+verify return:1
+---
+Certificate chain
+ 0 s:/C=US/ST=[redacted; local area + host]
+   i:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+-----BEGIN CERTIFICATE-----
+MIIFmzC[redacted]
+-----END CERTIFICATE-----
+ 1 s:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance CA-3
+   i:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance EV Root CA
+-----BEGIN CERTIFICATE-----
+MIIGWDC[redacted]
+-----END CERTIFICATE-----
+---
+Server certificate
+subject=/C=US/ST=[redacted; local area + host]
+issuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+---
+No client certificate CA names sent
+---
+SSL handshake has read 3980 bytes and written 329 bytes
+---
+New, TLSv1/SSLv3, Cipher is DHE-RSA-AES128-SHA
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+SSL-Session:
+    Protocol  : TLSv1
+    Cipher    : DHE-RSA-AES128-SHA
+    Session-ID: 400E[etc]
+    Session-ID-ctx:
+    Master-Key: E536[etc.]
+    Key-Arg   : None
+    TLS session ticket:
+    0000 - 48 39 0b 54 3d 88 e3 bf-69 71 ac ea 7e aa fe 9a   H9.T=...iq..~...
+    [etc.]
+    00d0 - b7 23 f5 ed a7 6c 9a 56-09 c2 ac 32 11 6e 5c c6   .#...l.V...2.n\.
+
+    Start Time: 1503002301
+    Timeout   : 300 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+---
+But specifying -CAfile with the SSLCertificateFile, DigiCertCA.crt, or cacert.pem returns '0 (ok)':
+depth=2 /C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance EV Root CA
+verify return:1
+depth=1 /C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+verify return:1
+depth=0 /C=US/ST=[redacted; local area + host]
+verify return:1
+---
+Certificate chain
+ 0 s:/C=US/ST=[redacted; local area + host]
+   i:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+-----BEGIN CERTIFICATE-----
+MIIFmzC[redacted]
+-----END CERTIFICATE-----
+ 1 s:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance CA-3
+   i:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance EV Root CA
+-----BEGIN CERTIFICATE-----
+MIIGWDC[redacted]
+-----END CERTIFICATE-----
+---
+Server certificate
+subject=/C=US/ST=[redacted; local area + host]
+issuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+---
+No client certificate CA names sent
+---
+SSL handshake has read 3980 bytes and written 329 bytes
+---
+New, TLSv1/SSLv3, Cipher is DHE-RSA-AES128-SHA
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+SSL-Session:
+    Protocol  : TLSv1
+    Cipher    : DHE-RSA-AES128-SHA
+    Session-ID: 0EFE[etc.]
+    Session-ID-ctx:
+    Master-Key: 856A[etc.]
+    Key-Arg   : None
+    TLS session ticket:
+    0000 - 48 39 0b 54 3d 88 e3 bf-69 71 ac ea 7e aa fe 9a   H9.T=...iq..~...
+    [etc.]
+    00d0 - 1e 0c ac a4 32 6d 57 6b-64 19 32 69 6b 62 a4 f3   ....2mWkd.2ikb..
+
+    Start Time: 1503002938
+    Timeout   : 300 (sec)
+    Verify return code: 0 (ok)
+---
+Now for the output of the OpenSSL version that Python is actually using:
+CONNECTED(00000003)
+depth=0 C = US, ST = [redacted; local area + host]
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 C = US, ST = [redacted; local area + host]
+verify error:num=27:certificate not trusted
+verify return:1
+depth=0 C = US, ST = [redacted; local area + host]
+verify error:num=21:unable to verify the first certificate
+verify return:1
+---
+Certificate chain
+ 0 s:/C=US/ST=[redacted; local area + host]
+   i:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+-----BEGIN CERTIFICATE-----
+MIIFmzC[redacted]
+-----END CERTIFICATE-----
+ 1 s:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance CA-3
+   i:/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert High Assurance EV Root CA
+-----BEGIN CERTIFICATE-----
+MIIGWDC[redacted]
+-----END CERTIFICATE-----
+---
+Server certificate
+subject=/C=US/ST=[redacted; local area + host]
+issuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert SHA2 High Assurance Server CA
+---
+No client certificate CA names sent
+Server Temp Key: DH, 1024 bits
+---
+SSL handshake has read 3980 bytes and written 492 bytes
+---
+New, TLSv1/SSLv3, Cipher is DHE-RSA-AES128-SHA
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+SSL-Session:
+    Protocol  : TLSv1
+    Cipher    : DHE-RSA-AES128-SHA
+    Session-ID: D4AD[redacted]
+    Session-ID-ctx:
+    Master-Key: 7732[redacted]
+    Key-Arg   : None
+    Krb5 Principal: None
+    PSK identity: None
+    PSK identity hint: None
+    TLS session ticket:
+    0000 - 48 39 0b 54 3d 88 e3 bf-69 71 ac ea 7e aa fe 9a   H9.T=...iq..~...
+    [etc.]
+    00d0 - 3f ff 52 7a 03 a7 ee f3-7f d0 f0 ae f2 b3 46 a0   ?.Rz..........F.
+
+    Start Time: 1503072674
+    Timeout   : 300 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+(One difference I noticed was "Server Temp Key: DH, 1024 bits")
+The reason I included the outputs of both versions of openssl is because the version Python is using always seems to return 21, even when -CAfile is specified.
+I tried compiling Python with the other version of OpenSSL, but ran into issues, so I figured I should ask if that has a good chance of fixing my problem before continuing.
+Expected Result
+A GET request should be made and retrieve some data. This does work with verify=False.
+Actual Result
+Request seems to fail verifying the certificate.
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  }, 
+  "cryptography": {
+    "version": "2.0.3"
+  }, 
+  "implementation": {
+    "name": "CPython", 
+    "version": "2.7.12"
+  }, 
+  "platform": {
+    "release": "2.6.32-642.11.1.el6.x86_64", 
+    "system": "Linux"
+  }, 
+  "pyOpenSSL": {
+    "openssl_version": "1010006f", 
+    "version": "17.2.0"
+  }, 
+  "requests": {
+    "version": "2.18.1"
+  }, 
+  "system_ssl": {
+    "version": "1000105f"
+  }, 
+  "urllib3": {
+    "version": "1.21.1"
+  }, 
+  "using_pyopenssl": true
+}

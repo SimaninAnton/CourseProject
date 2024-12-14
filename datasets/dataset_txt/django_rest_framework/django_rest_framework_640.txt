@@ -1,0 +1,54 @@
+MadWombat commented on 21 Sep 2017 •
+edited
+Checklist
+[ ✓] I have verified that that issue exists against the master branch of Django REST framework.
+[ ✓] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[✓ ] This is not a usage question. (Those should be directed to the discussion group instead.)
+[✓ ] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[ ✓] I have reduced the issue to the simplest possible case.
+[ ] I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+from rest_framework import serializers
+
+class CustomSerializer(serializers.Serializer):
+    f1 = serializers.IntegerField()
+    f2 = serializers.CharField()
+
+    def to_internal_value(self, data):
+        raise serializers.ValidationError('Never Valid!')
+
+
+s = CustomSerializer(data={'f1': 1, 'f2': 2})
+if not s.is_valid():
+    print(s.errors)
+Expected behavior
+Get the validation errors dict
+Actual behavior
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+~/bug_report.py in <module>()
+     11 s = CustomSerializer(data={'f1': 1, 'f2': 2})
+     12 if not s.is_valid():
+---> 13     print(s.errors)
+
+/usr/local/lib/python3.6/site-packages/rest_framework/serializers.py in errors(self)
+    543             detail = ErrorDetail('No data provided', code='null')
+    544             ret = {api_settings.NON_FIELD_ERRORS_KEY: [detail]}
+--> 545         return ReturnDict(ret, serializer=self)
+    546 
+    547 
+
+/usr/local/lib/python3.6/site-packages/rest_framework/utils/serializer_helpers.py in __init__(self, *args, **kwargs)
+     19     def __init__(self, *args, **kwargs):
+     20         self.serializer = kwargs.pop('serializer')
+---> 21         super(ReturnDict, self).__init__(*args, **kwargs)
+     22 
+     23     def copy(self):
+
+ValueError: too many values to unpack (expected 2)
+Technically, the docs do say (http://www.django-rest-framework.org/api-guide/serializers/#advanced-serializer-usage)
+If any of the validation fails, then the method should raise a serializers.ValidationError(errors).
+Typically the errors argument here will be a dictionary mapping field names to error messages.
+but at the same time in another place a string is passed into the exception in the docs (http://www.django-rest-framework.org/api-guide/exceptions/#validationerror)
+The detail argument may be a list or dictionary of error details, and may also be a nested data structure. By convention you should import the serializers module and use a fully qualified ValidationError style, in order to differentiate it from Django's built-in validation error. For example. raise serializers.ValidationError('This field must be an integer value.')
+The exception above happens when serializer is trying to build an OrderedDict from a list of one error. Either ValidationError needs to do a better type coercion (it converts details argument to a list, but it expects a dict or a list with keys and values) or it should not allow string literal as details.

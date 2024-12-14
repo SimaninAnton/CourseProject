@@ -1,0 +1,144 @@
+splashx commented on Nov 20, 2019 •
+edited
+Disclaimer: this has been seen while using python-glanceclient.
+When sending chunked data using requests and proxy settings, it fails.
+This should have been fixed in #5128 / #3844 but apparently it's not 🤔
+This has not been solved in 3.0 - for example, when adding:
+pip install git+https://github.com/psf/requests.git@3.0 pysocks
+Expected Result
+requests should be able to handle the request using chunked data and no Exception should be thrown.
+Actual Result
+When using pyOpenSSL
+requests.exceptions.ConnectionError: ("bad handshake: Error([('SSL routines', 'ssl3_get_record', 'wrong version number')],)",)
+When using urllib3 built-in SSL:
+requests.exceptions.ConnectionError: [SSL: UNKNOWN_PROTOCOL] unknown protocol (_ssl.c:833)
+Reproduction Steps
+Create requests_chunked_proxy.py
+# Run squid
+# docker run --name squid -d --restart=always \
+#   --publish 3128:3128 \
+#   sameersbn/squid:3.5.27-2
+
+import requests
+
+# in case you want to switch to pyopenssl, comment the lines below
+# from urllib3.contrib import pyopenssl
+# pyopenssl.extract_from_urllib3()
+
+CHUNKSIZE = 1024 * 64  # 64kB
+
+def _chunk_body(body):
+    chunk = body
+    while chunk:
+        chunk = body.read(CHUNKSIZE)
+        if not chunk:
+            break
+        yield chunk
+
+s = requests.Session()
+
+proxies = {
+ "http": "http://localhost:3128",
+ "https": "http://localhost:3128",
+}
+
+# test file should be created, any file will do
+# e.g.: dd if=/dev/zero of=file.txt count=1024 bs=1024
+
+data = open("file.txt", 'rb')
+
+headers = { 'Accept-Encoding': 'gzip, deflate',
+            'Accept': '*/*',
+            'Connection': 'application/octet-stream'}
+
+resp = s.request("PUT","https://jsonplaceholder.typicode.com/posts/1",
+                            headers=headers,
+                            data=_chunk_body(data),
+                            proxies=proxies,
+                            timeout=600)
+
+print(resp.text)
+On a Mac:
+pip install requests==2.22.0
+unset http_proxy
+unset https_proxy
+unset HTTP_PROXY
+unset HTTPS_PROXY
+export | grep -i proxy
+dd if=/dev/zero of=file.txt count=1024 bs=1024
+docker run --name squid -d --restart=always -p 3128:3128 sameersbn/squid:3.5.27-2
+python requests_chunked_proxy.py
+Cleanup
+docker stop squid
+docker rm squid
+System Information
+requests==2.x
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.8"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.5"
+  },
+  "platform": {
+    "release": "19.0.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.22.0"
+  },
+  "system_ssl": {
+    "version": "1000213f"
+  },
+  "urllib3": {
+    "version": "1.25.7"
+  },
+  "using_pyopenssl": false
+}
+requests==3.0
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.5"
+  },
+  "platform": {
+    "release": "19.0.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "3.0.0"
+  },
+  "system_ssl": {
+    "version": "1000213f"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+} 

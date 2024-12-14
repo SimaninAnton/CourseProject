@@ -1,0 +1,50 @@
+sant527 commented on 18 Nov 2017 •
+edited
+I want to have a case-insensitive orderingfilter for name field so i have created a class CaseInsensitiveOrderingFilter which extends OrderingFilter:
+class CaseInsensitiveOrderingFilter(OrderingFilter):
+ ordering_fields = ('name')
+
+ def filter_queryset(self, request, queryset, view):
+  ordering = self.get_ordering(request, queryset, view)
+
+  if ordering:
+   new_ordering = []
+   for field in ordering:
+    if field.startswith('-'):
+     new_ordering.append(Lower(field[1:]).desc())
+    else:
+     new_ordering.append(Lower(field).asc())
+   return queryset.order_by(*new_ordering)
+
+  return queryset
+and then use it in the ListApiView
+class IngredientListAPIView(ListAPIView):
+ queryset = Ingredient.objects.all()
+ serializer_class = IngredientListSerializer
+ filter_backends = [SearchFilter,CaseInsensitiveOrderingFilter]
+then i try the endpoint:
+http://127.0.0.1:8000/api/ingredients/?ordering=-name
+It does not sort the queryset w.r.t name field.
+When i debig I found that:
+           fields = [param.strip() for param in params.split(',')]  -- ['name]
+           ordering = self.remove_invalid_fields(queryset, fields, view)  ---- []
+why ordering = []
+where as removing ordering_filters inside CaseInsensitiveOrderingFilter, sorts any field with CaseInsensitiveOrderingFilter
+class CaseInsensitiveOrderingFilter(OrderingFilter):
+ ### ordering_fields = ('name')
+ print(ordering_fields)
+
+ def filter_queryset(self, request, queryset, view):
+  ordering = self.get_ordering(request, queryset, view)
+
+  if ordering:
+   new_ordering = []
+   for field in ordering:
+    if field.startswith('-'):
+     new_ordering.append(Lower(field[1:]).desc())
+    else:
+     new_ordering.append(Lower(field).asc())
+   return queryset.order_by(*new_ordering)
+
+  return queryset
+HOw to pass the ordering_fields to the extended class of OrderingFilter

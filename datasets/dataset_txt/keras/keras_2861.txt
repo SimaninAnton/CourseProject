@@ -1,0 +1,19 @@
+smodlich commented on 25 Mar 2017 •
+edited
+Hello,
+I’m trying to build a seq2seq Model as in this paper. I want to use a bidirectional GRU as Encoder and an unidirectional GRU as Decoder. The decoder receives the correct labels y_t-1 as input for training (Teacher Forcing). The loss is computed via time distributed softmax over a large vocabulary.
+In the model the encoders hidden state represents a summary of the input data. The last hidden state of the encoder is transferred to the decoder and used as initial hidden state. With #5559 included in 2.0.2 I think it should be possible, to build such a model with keras. My model currently is:
+main_input = Input(shape=(SEQ_LEN,), name="main_input", dtype="int32")
+forced_input = Input(shape=(TARGET_LEN,), name="forced_input", dtype="int32")
+encoder=Embedding(INPUT_VOC_SIZE,EMBEDDING_SIZE,input_length=SEQ_LEN,mask_zero=True)(main_input)
+encoder=Bidirectional(GRU(return_sequences=False,units=HIDDEN))(encoder)
+target_embedding=Embedding(TARGET_VOC_SIZE + 2, EMBEDDING_SIZE, input_length=TARGET_LEN, mask_zero=True)(forced_input)
+decoder=GRU(units=HIDDEN,return_sequences=True)(target_embedding,initial_state=[encoder])
+output=TimeDistributed(Dense(TARGET_VOC_SIZE,activation="softmax"))(decoder)
+model = Model(inputs=[main_input, forced_input], outputs=[output])
+The encoder should be connected to the decoder only by the transfer of the last hidden state (which is the output of the BGRU encoder) from encoder to decoder. The model trains, but as it turns out, the encoder is not connected to the decoder and doesn’t get trained. This can be seen when using tensorboard. There are no connections from gradients to the encoder or from encoder to decoder. This happens, because the specification of the initial state as list is incorrect in this case. I tried the specification as list because it was suggested in this PR #5559. However, when I try to specify the initial hidden state of the decoder byinitial_state=encoder (without brackets) I get the Exception:
+Layer gru_2 expects 1 inputs, but it received 2 input tensors. Input received: <built-in function input>
+I believe that happens because internally, in the class recurrent in _call_, the initial state is then treated as an additional input. When specifying initial state as list (with brackets) the state is not treated as additional input and therefore the model compiles, but the encoder is not connected to the decoder.
+Is this a bug or intended behavior? What is the correct way to specify the initial hidden state in such a way that the layer which generates it, is connected to the graph and gets trained? I believe this is related to PR #5795.
+Thank you for your help.
+1

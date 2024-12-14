@@ -1,0 +1,44 @@
+Contributor
+akornilo commented on 17 Jul 2019 •
+edited
+How to reproduce the behaviour
+I am trying to train a new spacy NER model, my training data is spread across multiple jsonlines files in one directory. I created each example using from spacy.gold import docs_to_json.
+Using this data, I tried to run python -m spacy train en testtest train_docs/ test_docs/ -b en
+and got the error:
+My train_docs and test_docs directories look like:
+0000.jsonl
+0001.jsonl
+Your Environment
+Operating System: Ubuntu 16.04.5 LTS (Xenial Xerus)
+Python Version Used: Python 3.6.5 :: Anaconda, Inc.
+spaCy Version Used: 2.1.5
+Environment Information:
+A fix?
+I made a custom fix - but I would like to know if there is a better solution.
+I was able to fix this issue locally, by modifying the gold.pyx file as follows:
+@@ -142,7 +142,7 @@ class GoldCorpus(object):
+                 continue
+             elif path.is_dir():
+                 paths.extend(path.iterdir())
+-            elif path.parts[-1].endswith(".json"):
++            elif path.parts[-1].endswith(".json") or path.parts[-1].endswith(".jsonl"):
+                 locs.append(path)
+         return locs
+
+@@ -154,7 +154,7 @@ class GoldCorpus(object):
+             if loc.parts[-1].endswith("json"):
+                 gold_tuples = read_json_file(loc)
+             elif loc.parts[-1].endswith("jsonl"):
+-                gold_tuples = srsly.read_jsonl(loc)
++                gold_tuples = jsonl_to_tuples(srsly.read_jsonl(loc))
+             elif loc.parts[-1].endswith("msg"):
+                 gold_tuples = srsly.read_msgpack(loc)
+             else:
+@@ -311,6 +311,10 @@ def json_to_tuple(doc):
+         if sents:
+             yield [paragraph.get("raw", None), sents]
+
++def jsonl_to_tuples(docs):
++    for doc in docs:
++        for json_tuple in json_to_tuple(doc):
++            yield json_tuple

@@ -1,0 +1,86 @@
+sergiimk commented on 29 Oct 2015
+Hi! Recently I was a bit puzzled by the error handling logic in Tornado's StackContext.
+I've been implementing a simple logic that should prevent request handlers from making async calls to other services while they still holding the DB connection checked out from the connection pool. StackContext seemed like the natural choice for this.
+Code below illustrates the solution:
+import contextlib
+from tornado.ioloop import IOLoop
+from tornado.gen import coroutine, sleep
+from tornado.stack_context import StackContext, run_with_stack_context
+
+
+holds_db_connection = False
+
+
+def ensure_does_not_hold_db_connection_when_yielding():
+    @contextlib.contextmanager
+    def ctx():
+        global holds_db_connection
+
+        print '> ctx'
+        yield
+        print '< ctx'
+
+        if holds_db_connection:
+            holds_db_connection = False
+            raise Exception('DB connection is checked out!')
+
+    return StackContext(ctx)
+
+@coroutine
+def logic():
+    global holds_db_connection
+    print '> logic'
+
+    try:
+        holds_db_connection = True
+        print '  < logic yields'
+        yield sleep(1)  # Simulates external call
+        print '  > logic activated'
+    except Exception as e:
+        print '< exc logic', e
+        raise
+    else:
+        print '< ret logic'
+
+@coroutine
+def request_handler():
+    print '> request'
+
+    try:
+        yield run_with_stack_context(
+            ensure_does_not_hold_db_connection_when_yielding(),
+            logic
+        )
+    except Exception as e:
+        print '< exc request', e
+    else:
+        print '< ret request'
+
+
+io_loop = IOLoop.current()
+io_loop.add_callback(request_handler)
+io_loop.start()
+When running this however the output was not what I expected:
+> request            # request starts
+> ctx                # entering stack context
+> logic
+  < logic yields     # we got to the yield point in logic()
+< ctx                # check raises exception in stack context
+< exc request DB connection is checked out!  # exception propagates to request()
+> ctx
+< ctx
+> ctx
+  > logic activated  # logic() coroutine is activated again
+< ret logic          # and continues to execute to completion??
+< ctx
+So essentially when exception is raised in StackContext it propagates to the request(), but makes logic() coroutine an orphan. And since its Runner is still registered - it is scheduled for execution even though request() already returned.
+The way I think about StackContext is as of a hook that executes before coroutine is suspended and activated again, so I expected all exceptions to be re-raised into the coroutine itself using generator.throw(). So exceptions that can happen when you yield would be a union of exceptions that the thing you are yielding to can raise, plus all the exceptions that can be raised from active StackContexts.
+And the output I expected to see would look like this:
+> request     # request starts
+> ctx         # entering stack context
+> logic
+  < logic yields  # we got to the yield point in logic()
+< ctx             # check raises exception in stack context
+< exc logic ...   # exception is re-raised in logic() coroutine
+< exc request ... # exception propagates to request()
+Would you agree with this, or am I missing something?

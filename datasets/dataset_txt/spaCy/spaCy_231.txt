@@ -1,0 +1,42 @@
+haratyma commented on 20 Oct 2019
+I have a general question regarding the way of textcategorizer in spacy works.
+From different pieces of information on the spacy documentation and my tests it seems that it doesn't use the pretrained models and their features at least in languages that have small models like German or of course are so called apha supported languages like Polish without models.
+I am using spacy 2.1.8 and my categorization task is to categorize German text to 18 exclusive categories.
+It works well and I gained surprisingly well cross validated accuracy, however while trying to understand the mechanics I found some surprising things when testing
+I am not loading the model as using spacy.blank
+The core of my code looks like follows:
+`
+nlp = spacy.blank("de")
+textcat = nlp.create_pipe(
+            "textcat",
+            config={
+                "exclusive_classes": True,
+                "architecture": "simple_cnn",
+            }
+        )
+nlp.add_pipe(textcat, last=True)
+for c in categories:
+    textcat.add_label(c)  
+
+other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "textcat"]
+with nlp.disable_pipes(*other_pipes):  
+    optimizer = nlp.begin_training()
+    print("what vectors:",nlp.vocab.vectors.name)
+    #here I get always the output spacy_pretrained_vectors,f.e. if I call "pl" instead "de"
+`
+Then I am using nlp.update in minibatches and optimizing with averages
+`
+nlp.update(texts, annotations, sgd=optimizer, drop=0.2, losses=losses)
+with textcat.model.use_params(optimizer.averages):
+# evaluate on the dev data split off in load_data()
+scores = eval_save_multi_scores(nlp.tokenizer, textcat, x_dev_skf, y_dev_skf)
+`
+First strange things was that switch to completly different language like Polish and doing the same categorization on German texts doesn't change the results, final accuracy is the same after 5folds CV.
+I also tried Finnish and Spanish even also the same.
+So it proves for me it doesn't use the properties of the pretrained models even if there are available context-sensitive tensors that are shared across the pipeline like for German (from issue #2523)
+As per description from spacy.io for the architecture that I am using:
+"A neural network model where token vectors are calculated using a CNN. The vectors are mean pooled and used as features in a feed-forward network."
+so from that I understand that it uses tokenizer( specific for the language only and then calculate ! (so not using the ones from model pretrained)the so context-specific token vectors for texts and this enough for NN to adjust weights to have right categorization even if the token are not so true while choosing other lang than text is.
+Could you confirm it works like that?
+it mainly refers to :
+https://spacy.io/api/textcategorizer

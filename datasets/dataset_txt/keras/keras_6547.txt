@@ -1,0 +1,56 @@
+psmaragdis commented on 18 Oct 2015
+There seems to be some inconsistency when freezing weight updates in graphs. For example, the following code works as expected if I use a Sequential() model:
+# Simple input
+x = reshape( [1,2,3,4,5,6,7,8], (1,8,1))
+
+# Filter with a delta, does nothing to the input
+w = array( zeros( (1,1,4,1) )); w[0,0,1,0] = 1
+cl = Convolution1D( 1, 4, weights=[w, array([0])], border_mode='same', input_dim=1)
+
+# Don't update the weights during training
+cl.params = []
+cl.updates = []
+
+# Compile and train
+model = Sequential()
+model.add( cl)
+model.compile( loss='mse', optimizer='rmsprop')
+model.fit( x, 2*x, nb_epoch=1000, verbose=0)
+
+# Output should be the same as input
+y = model.predict( x).T
+print vstack( (squeeze(x),squeeze(y)))
+I essentially made a convolutional layer which doesn't update, so the output is the same as input even after training (the layer weights stay as initialized).
+If I try to do the same thing using a Graph() it doesn't seem to produce the same result:
+x = reshape( [1,2,3,4,5,6,7,8], (1,8,1))
+
+# Simple convolution layer as before
+w = array( zeros( (1,1,4,1) )); w[0,0,1,0] = 1
+cl = Convolution1D( 1, 4, weights=[w, array([0])], border_mode='same')
+cl.params = []
+cl.updates = []
+
+# Make the graph
+model = Graph()
+model.add_input( name='in', input_shape=(x.shape[1],x.shape[2]))
+model.add_node( cl, name='conv', input='in')
+model.add_output( name='output', input='conv')
+
+# Why is this defined now??
+print model.nodes['conv'].get_params()
+
+# Compile and train
+model.compile( RMSprop(), {'output':'mse'})
+model.fit({'in':x, 'output':2*x}, nb_epoch=2000, verbose=0)
+
+# Predict. Outputs are now close to the targets and not the same the as the input
+y = model.predict( {'in':x})['output']
+print vstack( (squeeze(x),squeeze(y)))
+
+# Not what I initialized with
+print model.nodes['conv'].get_weights()[0]
+I would have assumed that the convolutive layer parameters wouldn't be updated, but they clearly are.
+Outside of changing the code to use a graph, I also had to drop the input_dim parameter when refining the convolutional layer. If I define it and also define the weights then I get the error: AttributeError: 'Convolution1D' object has no attribute 'initial_weights' (presumably a bug?)
+I speculate that by not defining input_dim the parameters are somehow reinitialized internally so my preceding setting of params and updates to [] doesn't hold anymore.
+Am I missing something, or is this a bug of some sort? It would be very valuable to be able to freeze updates for layers this way.
+Thanks!

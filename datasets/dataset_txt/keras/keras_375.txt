@@ -1,0 +1,80 @@
+nanoxas commented on 18 Feb 2019 •
+edited
+Please make sure that the boxes below are checked before you submit your issue.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+Thank you!
+[ x] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+[x ] Check that your version of TensorFlow is up-to-date. The installation instructions can be found here.
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Here is the model I'm trying to train
+def ATSc(pretrained_weights=None, input_size=(1081,), embedding_layer=None):
+    inputs = Input(input_size)
+    embedding = embedding_layer(inputs)
+    embmax = EmbeddingMax()(embedding)
+    embmax._keras_history[0].kernel._trainable=False
+    convs = []
+    ngram_filters = [9, 18, 27, 36]
+    n_filters = 64
+    counter = 0
+    for n_gram in ngram_filters:
+        l_conv1 = Conv1D(filters=n_filters, kernel_size=1)(embmax)
+        #l_conv1 = BatchNormalization()(l_conv1)
+        l_relu1 = Activation("relu")(l_conv1)
+        l_conv2 = Conv1D(
+            filters=n_filters,
+            kernel_size=n_gram,
+            padding='same')(l_relu1)
+
+        #l_conv2 = BatchNormalization()(l_conv2)
+        l_relu2 = Activation("relu")(l_conv2)
+        convs.append(l_relu2)
+
+    l_concat = Concatenate()(convs)
+    print(l_concat._keras_shape)
+    l_blstm = Bidirectional(
+        LSTM(
+            units=10,
+            activation="tanh",
+            return_sequences=True))(l_concat)
+    l_flatten = Flatten()(l_blstm)
+    l_dropout = Dropout(0.5)(l_flatten)
+    l_softmax = Dense(1, activation='sigmoid')(l_dropout)
+    model = Model(input=inputs, output=l_softmax)
+    metric = 'mean_absolute_error'
+    loss_f = percent_error
+    opt = Adam(lr=1e-3)
+    # plot_model(model, to_file='model.png')
+    model.summary()
+    model.compile(optimizer=opt, loss=loss_f, metrics=[metric])
+    if(pretrained_weights):
+        model.load_weights(pretrained_weights, by_name=True)
+    return model
+Class Embmax:
+from keras import backend as K
+from keras.layers import Layer
+import keras.initializers
+
+
+class EmbeddingMax(Layer):
+
+    def __init__(self ,**kwargs):
+        super(EmbeddingMax, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        # Create a trainable weight variable for this layer.
+        self.kernel = self.add_weight(name='kernel', 
+                                      shape=(input_shape[1],input_shape[2]),
+                                      initializer=keras.initializers.Zeros(),
+                                      trainable=True)
+        super(EmbeddingMax, self).build(input_shape)  # Be sure to call this at the end
+
+    def call(self, x):
+        return x+self.kernel
+    
+    def change_trainable(self, value):
+        self.kernel.trainable=value
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+I need embmax to be False on the first training, but when the model finishes training I need to set it to true. The thing is it won't change the number of trainable params. And if I try to set embmax.kernel.trainable=False I get AttributeError: can't set attribute. How do I change the property of that layer.

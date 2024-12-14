@@ -1,0 +1,104 @@
+wedojava commented on 11 Dec 2018
+error source code:
+https://github.com/wedojava/exloger
+Expected Behavior
+There is a form with email and ip at index for search and show response, the response should be paginated.
+from flask import render_template, flash, redirect, url_for, request, g, current_app, session
+from app.main import bp
+from app.main.forms import SearchForm
+
+@bp.before_app_request
+def before_request():
+    if current_user.is_authenticated:
+        current_user.last_seen = datetime.utcnow()
+        db.session.commit()
+    
+    try:
+        session['email'] = session['email'] if session['email'] else 'example@example.com'
+    except KeyError as ke:
+        session['email'] = 'example@example.com'
+
+
+@bp.route('/', methods=['GET', 'POST'])
+@bp.route('/index', methods=['GET', 'POST'])
+def index():
+    form = SearchForm()
+    page = request.args.get('page', 1, type=int)
+    if form.validate_on_submit():
+        words_email = ["%" + form.email.data + "%"]
+        rule_email = and_(*[LogImported.sender_address.like(w) for w in words_email])
+        # pay attention these two lines below:
+        l = LogImported.query.filter(rule_email)
+        pagination = l.paginate(page, per_page=50, error_out=True)
+        pageitems = pagination.items
+        session['email'] = form.email.data
+        return render_template('index.html', title=_('Home'), form=form, loglist = l, \
+        pageitems = pageitems, pagination = pagination)
+    elif session['email'] is not 'example@example.com':
+        words_email = ["%" + form.email.data + "%"]
+        rule_email = and_(*[LogImported.sender_address.like(w) for w in words_email])
+        # pay attention these two lines below:
+        l = LogImported.query.filter(rule_email)
+        pagination = l.paginate(page, per_page=50, error_out=True)
+        pageitems = pagination.items
+        session['email'] = form.email.data
+        return render_template('index.html', title=_('Home'), form=form, loglist = l, \
+        pageitems = pageitems, pagination = pagination)
+    else:
+        return render_template('index.html', title=_('Home'), form=form)
+main/forms.py:
+class SearchForm(FlaskForm):
+    email = StringField(_l('Email'))
+    ip = StringField('IP', validators=[Length(min=0, max=140)])
+    submit = SubmitField(_l('Submit'))
+main/__init__.py:
+from flask import Blueprint
+
+bp = Blueprint('main', __name__)
+
+from app.main import routes
+/models.py:
+class LogImported(db.Model):
+    id = db.Column(db.Integer, index=True, primary_key=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow)
+    sender_address = db.Column(db.String(255), index=True)
+    recipient_address = db.Column(db.String(255))
+    recipient_count = db.Column(db.Integer)
+    return_path = db.Column(db.String(255))
+    client_hostname = db.Column(db.String(255))
+    client_ip = db.Column(db.String(100))
+    server_hostname = db.Column(db.String(255))
+    server_ip = db.Column(db.String(100))
+    original_client_ip = db.Column(db.String(100))
+    original_server_ip = db.Column(db.String(100))
+    event_id = db.Column(db.String(50))
+    total_bytes = db.Column(db.Integer)
+    connector_id = db.Column(db.String(50))
+    message_subject = db.Column(db.String(255))
+    source = db.Column(db.String(50))
+templates/index.html:
+{% extends "base.html" %}
+{% from 'bootstrap/form.html' import render_form %}
+{% from 'bootstrap/pagination.html' import render_pagination %}
+
+
+...
+
+{{ render_pagination(pagination) }}
+
+...
+Actual Behavior
+In short, get result from index's form then paginated,but any paginated links cannot work right.
+I set email and ip to session as session['email'] and session['ip'].
+Then,I click page 2,search these keywords by session to a object and paginate,but paginate() cannot work right, link like http://127.0.0.1:5000/index?page=2,response an error page:404.
+elif in routes.py:
+l = LogImported.query.filter(rule)
+pagination = l.paginate(page, per_page=50, error_out=True)
+Return type of l = LogImported.query.filter(rule) is right, but l.paginate(page, per_page=50, error_out=True) throw an error.
+code blocked by if is work right, by in elif,same code response error.
+parameter rule is same at these two place. Why these bug raised?
+127.0.0.1 - - [11/Dec/2018 12:44:51] "GET /index?page=2 HTTP/1.1" 404 -
+Environment
+Python version: 3.7.1
+Flask version:1.0.2
+Werkzeug version:0.14.1

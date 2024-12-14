@@ -1,0 +1,125 @@
+deckbsd commented on Oct 8, 2019 •
+edited
+Description
+Hello,
+If i use a custom transformer i have an error when i'm using model which don't like nan, inf value, but normally there shouldn't be there.
+The error is :
+Input contains NaN, infinity or a value too large for dtype('float64').
+If i remove this line : ('addfeature', SimplifyNumericalFestureAdd()) (and the ',' before of course ^^ ) in the code below, it works like a charm. As soon as i add it, i get the error, even if i just do a "return X" whitout any modification of the data. If i try with the FunctionTransformer method, i'm getting the same result. As soon as i'm using a custom transformer it crash !
+So i just don't get it !
+And for the record, if i use a XGB model, it works correctly
+Steps/Code to Reproduce
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+from sklearn.model_selection import train_test_split
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
+from sklearn.metrics import mean_absolute_error
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import cross_val_score, KFold
+from scipy import stats
+from xgboost import XGBRegressor
+import lightgbm as lgb
+from scipy.stats import norm, skew
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
+from sklearn.kernel_ridge import KernelRidge
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# Read the data
+X_full = pd.read_csv('../input/home-data-for-ml-course/train.csv', index_col='Id')
+X_test_full = pd.read_csv('../input/home-data-for-ml-course/test.csv', index_col='Id')
+
+# remove outliers according the documentation :
+X_full = X_full.drop(X_full[(X_full['GrLivArea']>4000) &amp; (X_full['SalePrice']<300000)].index)
+
+# Remove rows with missing target, separate target from predictors
+X_full.dropna(axis=0, subset=['SalePrice'], inplace=True)
+y = X_full.SalePrice
+X_full.drop(['SalePrice'], axis=1, inplace=True)
+
+X_full = X_full.drop(['Utilities'], axis=1)
+
+categorical_cols = [cname for cname in X_full.columns if
+                    X_full[cname].dtype == "object"]
+
+# Select numerical columns
+numerical_cols = [cname for cname in X_full.columns if 
+                X_full[cname].dtype in ['int64', 'float64']]
+
+# Keep selected columns only
+my_cols = categorical_cols + numerical_cols
+X = X_full[my_cols].copy()
+X_test = X_test_full[my_cols].copy()
+
+class SimplifyNumericalFestureAdd(BaseEstimator, TransformerMixin):
+    """Takes in dataframe, extracts road name column, outputs average word length"""
+
+    def __init__(self):
+        pass
+
+    def transform(self, X):
+        #X['HasFireplace'] = X['Fireplaces'].apply(lambda x: 1 if x > 0 else 0)
+        # EVEN IF I DO NOTHING !!
+        return X
+
+def fit(self, df, y=None):
+        """Returns `self` unless something different happens in train and test"""
+        return self
+
+# Define model
+RandomForest = RandomForestRegressor(n_estimators=100, random_state=0)
+
+# Preprocessing for numerical data
+numerical_transformer = Pipeline(steps=[
+    ('features', FeatureUnion([
+        ('numerical', SimpleImputer(strategy='constant', fill_value=0.0)),
+        ('addfeature', SimplifyNumericalFestureAdd())
+        #('addfeature', FunctionTransformer(FestureAdd))
+    ])
+    )
+])
+# Preprocessing for categorical data
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='constant', fill_value='none')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
+
+# Bundle preprocessing for numerical and categorical data
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numerical_transformer, numerical_cols),
+        ('cat', categorical_transformer, categorical_cols)
+    ])
+
+# Bundle preprocessing and modeling code in a pipeline
+my_pipeline = Pipeline(steps=[('preprocessor', preprocessor),
+                              ('model', RandomForest)
+                             ])
+
+kfolds = KFold(n_splits=18, shuffle=True, random_state=0)
+scores = cross_val_score(my_pipeline, X, y, scoring='neg_mean_absolute_error', cv=kfolds)
+print('Mean Absolute Error {:.4f} ({:.4f})\n'.format(-1 * scores.mean(), scores.std()))
+Expected Results
+No error is thrown.
+Actual Results
+i get Input contains NaN, infinity or a value too large for dtype('float64'). .
+Versions
+python: 3.6.6 |Anaconda, Inc.| (default, Oct 9 2018, 12:34:16) [GCC 7.3.0]
+executable: /opt/conda/bin/python
+machine: Linux-4.9.0-11-amd64-x86_64-with-debian-9.9
+Python deps:
+pip: 19.2.3
+setuptools: 41.2.0
+sklearn: 0.21.3
+numpy: 1.16.4
+scipy: 1.2.1
+Cython: 0.29.13
+pandas: 0.25.1

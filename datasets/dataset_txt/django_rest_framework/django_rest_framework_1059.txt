@@ -1,0 +1,67 @@
+dilyanpalauzov commented on 9 Sep 2016
+SchemaGenerator.get_schema contains content[category][action] = link, which might delete another objects stored there, e.g. in cases of "custom actions", but also when having URL conf like:
+/groups
+/users
+/users/groups/
+The latter URL pattern has overwritten the former one, because they shared the same category "groups". The patch below fixes the problem, be generating unique (category,action) for inclusion in the content dictionary, so that no collisions happen and no data there is overwritten. I verified the output using django-rest-swagger and it shows exactly what it is supposed to do.
+Caveats:
+In our configuration, the URLs for the application reside under http://fsafd/rest/urls-patterns (https://fsafd/rest/orange, http://fsafd/rest/peper, etc.), hence I took the constants 1 and 2 below to generate the categories "orange" and "peper"), but in other configurations this constants might be unsuitable. However I found no way to substract the prefix (here /rest/) from the URL and to use the first part of the remainder for the category. I have not invested too much time, maybe someone reading this will have a ready answer.
+diff --git a/rest_framework/schemas.py b/rest_framework/schemas.py
+index 1b89945..54fb1ea 100644
+--- a/rest_framework/schemas.py
++++ b/rest_framework/schemas.py
+@@ -129,7 +129,8 @@ class SchemaGenerator(object):
+                 if self.should_include_endpoint(path, callback):
+                     for method in self.get_allowed_methods(callback):
+                         action = self.get_action(path, method, callback)
+-                        category = self.get_category(path, method, callback, action)
++                        category, action = self.get_category(path, method,
++                                                             callback, action)
+                         endpoint = (path, method, category, action, callback)
+                         api_endpoints.append(endpoint)
+
+@@ -186,32 +187,32 @@ class SchemaGenerator(object):
+
+     def get_category(self, path, method, callback, action):
+         """
+-        Return a descriptive category string for the endpoint, eg. 'users'.
++        Return a tuple with a descriptive category string for the endpoint, eg.
++        'users', and the new action.  The returned tuple is designed to avoid
++        collisions, when inserted to the content dictionary.
+
+         Examples of category/action pairs that should be generated for various
+         endpoints:
+
++        /groups/                    [groups][list], [groups][create]
+         /users/                     [users][list], [users][create]
+         /users/{pk}/                [users][read], [users][update], [users][destroy]
+-        /users/enabled/             [users][enabled]  (custom action)
+-        /users/{pk}/star/           [users][star]     (custom action)
+-        /users/{pk}/groups/         [groups][list], [groups][create]
+-        /users/{pk}/groups/{pk}/    [groups][read], [groups][update], [groups][destroy]
++        /users/enabled/             [users][enabled]  (custom actions)
++        /users/{pk}/star/           [users][star]     (custom actions)
++        /users/{pk}/groups/         [users][groups/list], [users][groups/create]
++        /users/{pk}/groups/{pk}/    [users][groups/read], [users[groups/update],
++                                    [users][groups/destroy]
+         path_components = path.strip('/').split('/')
+         path_components = [
+             component for component in path_components
+             if '{' not in component
+         ]
+-        if action in self.known_actions:
+-            # Default action, eg "/users/", "/users/{pk}/"
+-            idx = -1
+-        else:
+-            # Custom action, eg "/users/{pk}/activate/", "/users/active/"
+-            idx = -2
+
++        new_action = path_components[2:]
++        new_action.append(action if action in self.known_actions else method)
+         try:
+-            return path_components[idx]
++            return path_components[1], "/".join(new_action)
+         except IndexError:
+             return None
+
+         """

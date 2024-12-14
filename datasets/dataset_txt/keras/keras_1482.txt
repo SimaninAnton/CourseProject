@@ -1,0 +1,87 @@
+MuadDev commented on 16 Nov 2017
+I'm trying run the multi gpu example from keras:
+import tensorflow as tf
+from keras.applications import Xception
+from keras.utils import multi_gpu_model
+import numpy as np
+
+num_samples = 1000
+height = 224
+width = 224
+num_classes = 1000
+
+# Instantiate the base model (or "template" model).
+# We recommend doing this with under a CPU device scope,
+# so that the model's weights are hosted on CPU memory.
+# Otherwise they may end up hosted on a GPU, which would
+# complicate weight sharing.
+with tf.device('/cpu:0'):
+    model = Xception(weights=None,
+                     input_shape=(height, width, 3),
+                     classes=num_classes)
+
+# Replicates the model on 8 GPUs.
+# This assumes that your machine has 8 available GPUs.
+parallel_model = multi_gpu_model(model, gpus=8)
+parallel_model.compile(loss='categorical_crossentropy',
+                       optimizer='rmsprop')
+
+# Generate dummy data.
+x = np.random.random((num_samples, height, width, 3))
+y = np.random.random((num_samples, num_classes))
+
+# This `fit` call will be distributed on 8 GPUs.
+# Since the batch size is 256, each GPU will process 32 samples.
+parallel_model.fit(x, y, epochs=20, batch_size=256)
+
+# Save model via the template model (which shares the same weights):
+model.save('my_model.h5')
+But I get the error:
+ValueError: To call `multi_gpu_model` with `gpus=8`, we expect the following devices to be available: ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2', '/gpu:3', '/gpu:4', '/gpu:5', '/gpu:6', '/gpu:7']. However this machine only has: ['/cpu:0']. Try reducing gpus.
+However, nvidia-smi shows I have all gpus available:
+18:59 $ nvidia-smi
+Thu Nov 16 18:59:27 2017
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 384.81                 Driver Version: 384.81                    |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|===============================+======================+======================|
+|   0  GeForce GTX TIT...  Off  | 00000000:04:00.0 Off |                  N/A |
+| 22%   41C    P0    72W / 250W |      0MiB / 12207MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   1  GeForce GTX 980 Ti  Off  | 00000000:05:00.0 Off |                  N/A |
+| 22%   41C    P0    61W / 250W |      0MiB /  6078MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   2  GeForce GTX 980 Ti  Off  | 00000000:08:00.0 Off |                  N/A |
+| 22%   39C    P0    61W / 250W |      0MiB /  6078MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   3  GeForce GTX 980 Ti  Off  | 00000000:09:00.0 Off |                  N/A |
+| 22%   41C    P0    62W / 250W |      0MiB /  6078MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   4  GeForce GTX 980 Ti  Off  | 00000000:85:00.0 Off |                  N/A |
+| 22%   40C    P0    61W / 250W |      0MiB /  6078MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   5  GeForce GTX TIT...  Off  | 00000000:86:00.0 Off |                  N/A |
+| 22%   40C    P0    70W / 250W |      0MiB / 12207MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   6  GeForce GTX 980 Ti  Off  | 00000000:89:00.0 Off |                  N/A |
+| 22%   41C    P0    63W / 250W |      0MiB /  6078MiB |      0%   E. Process |
++-------------------------------+----------------------+----------------------+
+|   7  GeForce GTX 980 Ti  Off  | 00000000:8A:00.0 Off |                  N/A |
+| 22%   38C    P0    60W / 250W |      0MiB /  6078MiB |      2%   E. Process |
++-------------------------------+----------------------+----------------------+
+
++-----------------------------------------------------------------------------+
+| Processes:                                                       GPU Memory |
+|  GPU       PID   Type   Process name                             Usage      |
+|=============================================================================|
+|  No running processes found                                                 |
++-----------------------------------------------------------------------------+
+And I have the latest in tf en keras:
+18:59 $ pip3 list | grep Keras
+Keras (2.1.1)
+19:00 $ pip3 list | grep tensorflow
+tensorflow (1.4.0)
+tensorflow-tensorboard (0.4.0rc3)
+I'm a bit lost at what the problem could be here, especially since running on a single GPU works fine.

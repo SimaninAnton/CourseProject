@@ -1,0 +1,32 @@
+clarkewd commented on 27 Jul 2014
+If started with an upstream server, this inline script will skip using the upstream server if the User-Agent header has "curl" in it.
+def request(context, flow):
+
+    # create a global (persistent) variable for the upstream proxy
+    global upstream_server_backup
+
+    # get the current upstream proxy
+    upstream = context._master.server.config.get_upstream_server
+
+    # make a backup of the initial value of the upstream proxy
+    try:
+        upstream_server_backup
+    except:
+        upstream_server_backup = upstream
+
+    # return if no upstream proxy is available
+    if upstream == None and upstream == upstream_server_backup:
+        return
+
+    # check the request headers, matching 'curl' in the User-Agent
+    if "curl" in str(flow.request.headers['User-Agent']):
+        # if this request is from curl, skip the upstream proxy
+        context._master.server.config.get_upstream_server = None
+    else:
+        # if not, put the upstream proxy value back the way it was
+        context._master.server.config.get_upstream_server = upstream_server_backup
+This works with the current master branch ( v0.11 ), however there is sort of an
+"off-by-one" error...
+Whichever part of the libmproxy code that checks for and decides to use the upstream proxy appears to occur before the script callback self.run_script_hook("request", f) runs - so this sets the upstream proxy, but for the next request.
+I also looked at possibly trying to call del_server_connection after making the configuration change in order to force the connection to be re-established.
+I realize this may be pushing the limits of the inline scripts. Is this possible? Is there a better way to do it?

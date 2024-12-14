@@ -1,0 +1,75 @@
+MdAsifKhan commented on 11 May 2016 •
+edited
+Hi I am implementing residual net model using keras. Here is my code:
+`def _conv_bn_relu(nb_filter, nb_row, nb_col, subsample=(1, 1)):
+    def f(input):
+        conv = Convolution2D(nb_filter=nb_filter, nb_row=nb_row, nb_col=nb_col, subsample=subsample,
+                             init="he_normal", border_mode="same")(input)
+        norm = BatchNormalization(mode=0, axis=1)(conv)
+        return Activation("relu")(norm)
+    return f
+def residual_block(l, increase_dim=False, projection=False):
+        input_num_filters = l._keras_shape[1]
+        if increase_dim:
+            first_stride = (2,2)
+            out_num_filters = input_num_filters*2
+        else:
+            first_stride = (1,1)
+            out_num_filters = input_num_filters
+        conv = Convolution2D(nb_filter=out_num_filters,nb_row=3,nb_col=3, subsample=first_stride, init="he_normal", border_mode="same")(l)
+        norm = BatchNormalization(mode=0, axis=1)(conv)
+        stack_1 = Activation("relu")(norm)
+
+        conv1 = Convolution2D(nb_filter=out_num_filters,nb_row=3,nb_col=3, subsample=(1,1), init="he_normal", border_mode="same")(stack_1)
+        norm = BatchNormalization(mode=0, axis=1)(conv)
+        stack_2 = Activation("relu")(norm)
+
+        # add shortcut connections
+        if increase_dim:
+            if projection:
+                # projection shortcut, as option B in paper
+                conv2 = Convolution2D(nb_filter=out_num_filters,nb_row=1, nb_col=1, subsample=(2,2) ,init="he_normal", border_mode="same")(l)
+                norm = BatchNormalization(mode=0, axis=1)(conv2)
+                projection = Activation("relu")(norm)
+                block  = merge([stack_2, projection], mode="sum")
+            else:
+                # identity shortcut, as option A in paper
+                identity = Lambda(lambda X: X[:, :, ::2, ::2], lambda s: (s[0], s[1], s[2]//2, s[3]//2))(l)
+                increasesize = Convolution2D(nb_filter=out_num_filters//2, nb_row=1, nb_col=1,init="he_normal", border_mode="valid")(identity)
+                block  = merge([identity, increasesize], mode="sum")
+        else:
+            block  = merge([stack_2, l], mode="sum")
+        return block
+
+def create_model(num_classes):
+    print "Creating the model...\n"
+    num= 5
+    inp = Input(shape=(3, 128, 128))
+    layer1 = _conv_bn_relu(nb_filter=64, nb_row=3, nb_col=3, subsample=(2, 2))(inp)
+    # Build residual blocks..
+    # first stack
+    for _ in range(num):
+        layer1 = residual_block(layer1)
+    # second stack of residual blocks
+    layer1 = residual_block(layer1, increase_dim=True)
+    for _ in range(1,num):
+        layer1 = residual_block(layer1)
+    # third stack of residual blocks
+    layer1 = residual_block(layer1, increase_dim=True)
+    for _ in range(1,num):
+        layer1 = residual_block(layer1)
+    # Classifier block
+    pool = AveragePooling2D(pool_size=(7, 7), strides=(1, 1), border_mode="same")(layer1)
+    flatten1 = Flatten()(pool)
+    dense3 = Dense(output_dim=num_classes, init="he_normal", activation="softmax")(flatten1)
+    model = Model(input=inp, output=dense3)
+    return model`
+While running the script I get the following error. If I remove/replace AveragePooling Layer it works fine:
+NotImplementedError:
+Apply node that caused the error: AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}(Elemwise{Composite{((i0 * (Abs(i1) + i2 + i3)) + i4 + i5 + i6 + i7 + i8 + i9)}}[(0, 1)].0, IncSubtensor{InplaceInc;::, ::, :int64:, :int64:}.0)
+Toposort index: 735
+Inputs types: [TensorType(float32, 4D), TensorType(float32, 4D)]
+Inputs shapes: [(60, 64, 16, 16), (60, 64, 20, 20)]
+Inputs strides: [(65536, 1024, 64, 4), (102400, 1600, 80, 4)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[Elemwise{Composite{((i0 * i1) + (i0 * i1 * i2))}}(TensorConstant{(1, 1, 1, 1) of 0.5}, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0, Elemwise{sgn,no_inplace}.0), Elemwise{Composite{((i0 * i1 * i2) + (i0 * i1 * i2 * i3))}}[(0, 3)](TensorConstant{%281, 1, 1, 1%29 of 0.5}, AveragePoolGrad{ds=%287, 7%29, ignore_border=True, st=%281, 1%29, padding=%285, 5%29, mode='average_exc_pad'}.0, Elemwise{Composite{Switch%28i0, %28i1 / i2%29, %28%28i3 - i4%29 / i5%29%29}}.0, Elemwise{sgn,no_inplace}.0), Elemwise{Composite{((i0 * i1 * i2) + (i0 * i1 * i2 * i3))}}(TensorConstant{(1, 1, 1, 1) of 0.5}, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0, Reshape{4}.0, Elemwise{sgn,no_inplace}.0), Elemwise{add,no_inplace}(CorrMM_gradInputs{half, (1, 1)}.0, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0), Elemwise{add,no_inplace}(CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0), Elemwise{add,no_inplace}(CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0), Elemwise{add,no_inplace}(CorrMM_gradInputs{valid, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0), Elemwise{add,no_inplace}(CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, CorrMM_gradInputs{half, (1, 1)}.0, AveragePoolGrad{ds=(7, 7), ignore_border=True, st=(1, 1), padding=(5, 5), mode='average_exc_pad'}.0)]]

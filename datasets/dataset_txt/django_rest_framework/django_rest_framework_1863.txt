@@ -1,0 +1,43 @@
+bakaat commented on 20 Apr 2015
+Hi all,
+Before 3.1 it was possible to define a field in Serializer that is not defined in the model, add a value to it and serialize like so:
+class MyModel(models.Model):
+    some_field = models.IntegerField()
+
+class Serializer(serializers.ModelSerializer):
+    new_field = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        fields = ('some_field', 'new_field')
+
+
+# after that get model instance and set attribute on the fly
+objs = MyModel.objects.filter(some_field=10)
+for obj in objs:
+    obj.new_field = 123
+data = Serializer(instance=objs, many=True).data
+Current version returns an AttributeError, breaking commit being: d219fc0
+  File "/usr/local/lib/python2.7/dist-packages/rest_framework/serializers.py", line 568, in to_representation
+    self.child.to_representation(item) for item in iterable
+  File "/usr/local/lib/python2.7/dist-packages/rest_framework/serializers.py", line 426, in to_representation
+    attribute = field.get_attribute(instance)
+  File "/usr/local/lib/python2.7/dist-packages/rest_framework/fields.py", line 307, in get_attribute
+    raise type(exc)(msg)
+AttributeError: Got AttributeError when attempting to get a value for field `message` on serializer `ExceptionCodeSerializer`.
+The serializer field might be named incorrectly and not match any attribute or key on the `ExceptionCode` instance.
+Original exception text was: 'ExceptionCode' object has no attribute 'message'.
+Furthermore, I think that commit d219fc0 causes queries passed directly to the Serializer to be reevaluated and objects in the query to be re-initialized (whether this hits the DB is a different matter). Following my example from before:
+objs = MyModel.objects.filter(some_field=10)
+for obj in objs:
+    print id(obj)
+data = Serializer(instance=objs, many=True).data
+in "/usr/local/lib/python2.7/dist-packages/rest_framework/fields.py", line 307, in get_attribute add
+def get_attribute(self, instance):
+        """
+        Given the *outgoing* object instance, return the primitive value
+        that should be used for this field.
+        """
+        print id(instance)
+The ids for objects before they hit Serializer will be different from objects that are being serialized
+Quick fix
+Serializer(instance=list(objs), many=True)

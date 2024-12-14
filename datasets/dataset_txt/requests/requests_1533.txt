@@ -1,0 +1,20 @@
+cameron314 commented on Jan 9, 2015
+As I gather from various web searches, there's currently no way to manage the underlying TCP connections directly, since they're supposed to "just work" and be auto-recycled, etc. However, I have found one use case where this is not enough, and the sanest way to make it work would be to instruct requests to discard all open connections.
+Here's the use case: I have a web API I've written that I'd like to test using requests. Each test case starts a new instance of the API server, runs the test code, then stops the server. Because the tests run in quick succession, there's a race condition between the time the server exits (and Linux cleans up the socket) and the time that requests sees that the connection was closed. So, when the second test runs and starts a new instance of the server, requests thinks it can reuse the previous connection, which then fails (throws an exception) because the remote socket no longer exists. This is not really the fault of requests (technically the behaviour is correct -- the connection was closed, after all), but this lack of control on the client side of the connection in face of asynchronous cleanup makes it difficult to to these types of connection tests.
+There's many workarounds I could use (currently I've inserted a sleep of 75ms between test runs, which works, as does using a different port for each test, or reusing the same instance of the server for all tests). But none of them are very elegant.
+Note that this doesn't happen on Windows, for some reason, only Linux (Fedora 21).
+Sample exception from the second test case (if I don't sleep):
+Traceback (most recent call last):
+  File "tests.py", line 52, in setUp
+    requests.get(api, cookies=cookies)
+  File "/usr/lib/python2.7/site-packages/requests-2.5.0-py2.7.egg/requests/api.py", line 65, in get
+    return request('get', url, **kwargs)
+  File "/usr/lib/python2.7/site-packages/requests-2.5.0-py2.7.egg/requests/api.py", line 49, in request
+    response = session.request(method=method, url=url, **kwargs)
+  File "/usr/lib/python2.7/site-packages/requests-2.5.0-py2.7.egg/requests/sessions.py", line 461, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/lib/python2.7/site-packages/requests-2.5.0-py2.7.egg/requests/sessions.py", line 573, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/lib/python2.7/site-packages/requests-2.5.0-py2.7.egg/requests/adapters.py", line 415, in send
+    raise ConnectionError(err, request=request)
+ConnectionError: ('Connection aborted.', error(111, 'Connection refused'))

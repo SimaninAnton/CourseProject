@@ -1,0 +1,36 @@
+sergeyf commented on 3 May 2016
+Hello,
+I've got the latest pulls of keras and theano.
+I am trying to reproduce the code from this blog post.
+What I have so far is in a gist here.
+The issue is that after a few batch updates (on the order of 10), the loss becomes nan.
+Here is a repaste of the most likely culprit: the negative log-likelihood loss function:
+def neg_beta_mixture_likelihood(true, parameters):
+    m = K.shape(parameters)[-1] // 3
+
+    alphas = parameters[:, 0 * m: 1 * m] # nbatch by m
+    betas = parameters[:, 1 * m: 2 * m] # nbatch by m 
+    pis = parameters[:, 2 * m: 3 * m] # nbatch by m
+
+    # true is nbatch by 1
+    # true_repeated is nbatch by m
+    true_repeated = K.repeat_elements(true, m, axis=-1)
+
+    d1 = (alphas - 1.0) * K.log(true_repeated)
+    d2 = (betas - 1.0) * K.log(1.0 - true_repeated)
+    f1 = d1 + d2
+    f2 = gammaln(alphas)      
+    f3 = gammaln(betas)      
+    f4 = gammaln(alphas + betas) 
+    exponent = f1 + f4 - f2 - f3
+
+    # log sum exp trick to prevent numerical issues
+    max_exponent = K.max(exponent, axis=-1, keepdims=True)
+    max_exponent_repeated = K.repeat_elements(max_exponent, m, axis=-1)
+    likelihood = pis * K.exp( exponent - max_exponent_repeated  )  
+
+    return K.mean( -(K.log(K.sum(likelihood,axis=-1)) + max_exponent), axis=-1 )
+I've tried to alter various parts of this function, and can't spot any specific issues.
+I've added the log-sum-exp trick to prevent underflow in there, and when I check out values of each intermediate variable within the loss function during any of the batches before the nan loss, they all seem very well behaved.
+Any ideas?
+Thanks for your help, and the fabulous package.

@@ -1,0 +1,310 @@
+AdrianKubica commented on Oct 31, 2018 •
+edited by TomDLT
+Description
+I have got a problem with Pipelines. It looks like Pipeline doesn't work properly with OneHotEncoder if you have nested Pipelines (something wrong with synchronization):
+Steps/Code to Reproduce
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
+
+class DataFrameSelector(BaseEstimator, TransformerMixin):
+    def __init__(self, include=None, exclude=None):
+        if include is None and exclude is None:
+            raise AttributeError('Include / exclude need to be set')
+        self.include = include
+        self.exclude = exclude
+        
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X, y=None):
+        if self.include:
+            self.columns_ = X.select_dtypes(include=self.include).columns
+        elif self.exclude:
+            self.columns_ = X.select_dtypes(exclude=self.exclude).columns
+        return X[self.columns_]
+    
+num_pipeline = Pipeline([
+    ('selector', DataFrameSelector(exclude=np.object)),
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
+
+cat_pipeline = Pipeline([
+    ('selector', DataFrameSelector(include=np.object)),
+    ('imputer', SimpleImputer(strategy='constant', fill_value='None')),
+    ('one_hot', OneHotEncoder()),
+])
+
+full_pipeline = FeatureUnion([
+    ('num_pipeline', num_pipeline),
+    ('cat_pipeline', cat_pipeline)
+])
+
+main_pipeline = Pipeline([
+    ('preparation', full_pipeline),
+    ('forest_reg', RandomForestRegressor())
+])
+
+param_grid = [{
+     'forest_reg__n_estimators': range(10, 50, 10),
+     'forest_reg__bootstrap': [True, False]
+}]
+
+grid_search = GridSearchCV(main_pipeline, param_grid, scoring='neg_mean_squared_error', cv=5, verbose=10)
+grid_search.fit(X_train, y_train)
+I have got error like this:
+ValueError: Found unknown categories ['Membran', 'Metal'] in column 14 during transform
+But if i check categories it looks fine (column 14 has appropriate categories) :
+cat_pipeline.fit_transform(X_train)
+cat_pipeline.named_steps['one_hot'].categories_
+[array(['C (all)', 'FV', 'RH', 'RL', 'RM'], dtype=object),
+ array(['Grvl', 'Pave'], dtype=object),
+ array(['Grvl', 'Pave'], dtype=object),
+ array(['IR1', 'IR2', 'IR3', 'Reg'], dtype=object),
+ array(['Bnk', 'HLS', 'Low', 'Lvl'], dtype=object),
+ array(['AllPub', 'NoSeWa'], dtype=object),
+ array(['Corner', 'CulDSac', 'FR2', 'FR3', 'Inside'], dtype=object),
+ array(['Gtl', 'Mod', 'Sev'], dtype=object),
+ array(['Blmngtn', 'Blueste', 'BrDale', 'BrkSide', 'ClearCr', 'CollgCr',
+        'Crawfor', 'Edwards', 'Gilbert', 'IDOTRR', 'MeadowV', 'Mitchel',
+        'NAmes', 'NPkVill', 'NWAmes', 'NoRidge', 'NridgHt', 'OldTown',
+        'SWISU', 'Sawyer', 'SawyerW', 'Somerst', 'StoneBr', 'Timber',
+        'Veenker'], dtype=object),
+ array(['Artery', 'Feedr', 'Norm', 'PosA', 'PosN', 'RRAe', 'RRAn', 'RRNe',
+        'RRNn'], dtype=object),
+ array(['Artery', 'Feedr', 'Norm', 'PosA', 'PosN', 'RRAe', 'RRAn', 'RRNn'],
+       dtype=object),
+ array(['1Fam', '2fmCon', 'Duplex', 'Twnhs', 'TwnhsE'], dtype=object),
+ array(['1.5Fin', '1.5Unf', '1Story', '2.5Fin', '2.5Unf', '2Story',
+        'SFoyer', 'SLvl'], dtype=object),
+ array(['Flat', 'Gable', 'Gambrel', 'Hip', 'Mansard', 'Shed'], dtype=object),
+ array(['ClyTile', 'CompShg', 'Membran', 'Metal', 'Roll', 'Tar&Grv',
+        'WdShake', 'WdShngl'], dtype=object),
+ array(['AsbShng', 'AsphShn', 'BrkComm', 'BrkFace', 'CBlock', 'CemntBd',
+        'HdBoard', 'ImStucc', 'MetalSd', 'Plywood', 'Stone', 'Stucco',
+        'VinylSd', 'Wd Sdng', 'WdShing'], dtype=object),
+Moreover if i skip fragment with main_pipeline and change it with code below all works fine but i cant tune hiperparameters in custom pipeline in that way:
+X_train_prepared = full_pipeline.fit_transform(X_train)
+param_grid = [{
+     'n_estimators': range(10, 50, 10),
+     'bootstrap': [True, False]
+}]
+grid_search = GridSearchCV(RandomForestRegressor(), param_grid, scoring='neg_mean_squared_error', cv=5, verbose=10)
+grid_search.fit(X_train_prepared, y_train)
+Traceback:
+ValueError                                Traceback (most recent call last)
+<ipython-input-174-1aa15c5b05cd> in <module>
+     52 
+     53 grid_search = GridSearchCV(main_pipeline, param_grid, scoring='neg_mean_squared_error', cv=5, verbose=10)
+---> 54 grid_search.fit(X_train, y_train)
+     55 
+     56 # X_train_prepared = full_pipeline.fit_transform(X_train)
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\model_selection\_search.py in fit(self, X, y, groups, **fit_params)
+    720                 return results_container[0]
+    721 
+--> 722             self._run_search(evaluate_candidates)
+    723 
+    724         results = results_container[0]
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\model_selection\_search.py in _run_search(self, evaluate_candidates)
+   1189     def _run_search(self, evaluate_candidates):
+   1190         """Search all candidates in param_grid"""
+-> 1191         evaluate_candidates(ParameterGrid(self.param_grid))
+   1192 
+   1193 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\model_selection\_search.py in evaluate_candidates(candidate_params)
+    709                                for parameters, (train, test)
+    710                                in product(candidate_params,
+--> 711                                           cv.split(X, y, groups)))
+    712 
+    713                 all_candidate_params.extend(candidate_params)
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self, iterable)
+    981             # remaining jobs.
+    982             self._iterating = False
+--> 983             if self.dispatch_one_batch(iterator):
+    984                 self._iterating = self._original_iterator is not None
+    985 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in dispatch_one_batch(self, iterator)
+    823                 return False
+    824             else:
+--> 825                 self._dispatch(tasks)
+    826                 return True
+    827 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in _dispatch(self, batch)
+    780         with self._lock:
+    781             job_idx = len(self._jobs)
+--> 782             job = self._backend.apply_async(batch, callback=cb)
+    783             # A job can complete so quickly than its callback is
+    784             # called before we get here, causing self._jobs to
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in apply_async(self, func, callback)
+    180     def apply_async(self, func, callback=None):
+    181         """Schedule a func to be run"""
+--> 182         result = ImmediateResult(func)
+    183         if callback:
+    184             callback(result)
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in __init__(self, batch)
+    543         # Don't delay the application, to avoid keeping the input
+    544         # arguments in memory
+--> 545         self.results = batch()
+    546 
+    547     def get(self):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self)
+    259         with parallel_backend(self._backend):
+    260             return [func(*args, **kwargs)
+--> 261                     for func, args, kwargs in self.items]
+    262 
+    263     def __len__(self):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in <listcomp>(.0)
+    259         with parallel_backend(self._backend):
+    260             return [func(*args, **kwargs)
+--> 261                     for func, args, kwargs in self.items]
+    262 
+    263     def __len__(self):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\model_selection\_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, return_n_test_samples, return_times, return_estimator, error_score)
+    566         fit_time = time.time() - start_time
+    567         # _score will return dict if is_multimetric is True
+--> 568         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
+    569         score_time = time.time() - start_time - fit_time
+    570         if return_train_score:
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\model_selection\_validation.py in _score(estimator, X_test, y_test, scorer, is_multimetric)
+    603     """
+    604     if is_multimetric:
+--> 605         return _multimetric_score(estimator, X_test, y_test, scorer)
+    606     else:
+    607         if y_test is None:
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\model_selection\_validation.py in _multimetric_score(estimator, X_test, y_test, scorers)
+    633             score = scorer(estimator, X_test)
+    634         else:
+--> 635             score = scorer(estimator, X_test, y_test)
+    636 
+    637         if hasattr(score, 'item'):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\metrics\scorer.py in __call__(self, estimator, X, y_true, sample_weight)
+     89         """
+     90 
+---> 91         y_pred = estimator.predict(X)
+     92         if sample_weight is not None:
+     93             return self._sign * self._score_func(y_true, y_pred,
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\utils\metaestimators.py in <lambda>(*args, **kwargs)
+    116 
+    117         # lambda, but not partial, allows help() to work with update_wrapper
+--> 118         out = lambda *args, **kwargs: self.fn(obj, *args, **kwargs)
+    119         # update the docstring of the returned function
+    120         update_wrapper(out, self.fn)
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\pipeline.py in predict(self, X, **predict_params)
+    329         for name, transform in self.steps[:-1]:
+    330             if transform is not None:
+--> 331                 Xt = transform.transform(Xt)
+    332         return self.steps[-1][-1].predict(Xt, **predict_params)
+    333 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\pipeline.py in transform(self, X)
+    820         Xs = Parallel(n_jobs=self.n_jobs)(
+    821             delayed(_transform_one)(trans, X, None, weight)
+--> 822             for name, trans, weight in self._iter())
+    823         if not Xs:
+    824             # All transformers are None
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self, iterable)
+    984                 self._iterating = self._original_iterator is not None
+    985 
+--> 986             while self.dispatch_one_batch(iterator):
+    987                 pass
+    988 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in dispatch_one_batch(self, iterator)
+    823                 return False
+    824             else:
+--> 825                 self._dispatch(tasks)
+    826                 return True
+    827 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in _dispatch(self, batch)
+    780         with self._lock:
+    781             job_idx = len(self._jobs)
+--> 782             job = self._backend.apply_async(batch, callback=cb)
+    783             # A job can complete so quickly than its callback is
+    784             # called before we get here, causing self._jobs to
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in apply_async(self, func, callback)
+    180     def apply_async(self, func, callback=None):
+    181         """Schedule a func to be run"""
+--> 182         result = ImmediateResult(func)
+    183         if callback:
+    184             callback(result)
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in __init__(self, batch)
+    543         # Don't delay the application, to avoid keeping the input
+    544         # arguments in memory
+--> 545         self.results = batch()
+    546 
+    547     def get(self):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self)
+    259         with parallel_backend(self._backend):
+    260             return [func(*args, **kwargs)
+--> 261                     for func, args, kwargs in self.items]
+    262 
+    263     def __len__(self):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\externals\joblib\parallel.py in <listcomp>(.0)
+    259         with parallel_backend(self._backend):
+    260             return [func(*args, **kwargs)
+--> 261                     for func, args, kwargs in self.items]
+    262 
+    263     def __len__(self):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\pipeline.py in _transform_one(transformer, X, y, weight, **fit_params)
+    603 
+    604 def _transform_one(transformer, X, y, weight, **fit_params):
+--> 605     res = transformer.transform(X)
+    606     # if we have a weight for this transformer, multiply output
+    607     if weight is None:
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\pipeline.py in _transform(self, X)
+    449         for name, transform in self.steps:
+    450             if transform is not None:
+--> 451                 Xt = transform.transform(Xt)
+    452         return Xt
+    453 
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\preprocessing\_encoders.py in transform(self, X)
+    589                                        copy=True)
+    590         else:
+--> 591             return self._transform_new(X)
+    592 
+    593     def inverse_transform(self, X):
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\preprocessing\_encoders.py in _transform_new(self, X)
+    551         n_samples, n_features = X.shape
+    552 
+--> 553         X_int, X_mask = self._transform(X, handle_unknown=self.handle_unknown)
+    554 
+    555         mask = X_mask.ravel()
+
+c:\users\adrian\desktop\machin~1\venv\lib\site-packages\sklearn\preprocessing\_encoders.py in _transform(self, X, handle_unknown)
+    107                     msg = ("Found unknown categories {0} in column {1}"
+    108                            " during transform".format(diff, i))
+--> 109                     raise ValueError(msg)
+    110                 else:
+    111                     # Set the problematic rows to an acceptable value and
+
+ValueError: Found unknown categories ['Membran', 'Metal'] in column 14 during transform

@@ -1,0 +1,74 @@
+Contributor
+kmike commented on Mar 24, 2014
+Hi,
+Several months ago @tpeng pointed me to https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/feature_extraction/text.py#L966 - why is 1.0 added to idf?
+This 1.0 makes idf positive when n_samples==df, and the comment is suggesting it is to avoid some division errors. What I don't understand is what are these division errors - idf is a multiplier, not a divisor in tf*idf, and we're calculating logarithm for idf - why divide by logarithm?
+When this 1.0 summand is commented out sklearn.feature_extraction.tests.test_text start to fail, as expected:
+..............FF...........F........
+======================================================================
+FAIL: sklearn.feature_extraction.tests.test_text.test_tf_idf_smoothing
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/Users/kmike/svn/scikit-learn/sklearn/feature_extraction/tests/test_text.py", line 322, in test_tf_idf_smoothing
+    assert_array_almost_equal((tfidf ** 2).sum(axis=1), [1., 1., 1.])
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/numpy/testing/utils.py", line 811, in assert_array_almost_equal
+    header=('Arrays are not almost equal to %d decimals' % decimal))
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/numpy/testing/utils.py", line 644, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not almost equal to 6 decimals
+
+(mismatch 33.3333333333%)
+ x: array([ 1.,  1.,  0.])
+ y: array([ 1.,  1.,  1.])
+>>  raise AssertionError('\nArrays are not almost equal to 6 decimals\n\n(mismatch 33.3333333333%)\n x: array([ 1.,  1.,  0.])\n y: array([ 1.,  1.,  1.])')
+
+
+======================================================================
+FAIL: sklearn.feature_extraction.tests.test_text.test_tfidf_no_smoothing
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/Users/kmike/svn/scikit-learn/sklearn/feature_extraction/tests/test_text.py", line 342, in test_tfidf_no_smoothing
+    assert_array_almost_equal((tfidf ** 2).sum(axis=1), [1., 1., 1.])
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/numpy/testing/utils.py", line 811, in assert_array_almost_equal
+    header=('Arrays are not almost equal to %d decimals' % decimal))
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/numpy/testing/utils.py", line 644, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not almost equal to 6 decimals
+
+(mismatch 33.3333333333%)
+ x: array([ 1.,  1.,  0.])
+ y: array([ 1.,  1.,  1.])
+>>  raise AssertionError('\nArrays are not almost equal to 6 decimals\n\n(mismatch 33.3333333333%)\n x: array([ 1.,  1.,  0.])\n y: array([ 1.,  1.,  1.])')
+
+
+======================================================================
+FAIL: sklearn.feature_extraction.tests.test_text.test_vectorizer_inverse_transform
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/Users/kmike/svn/scikit-learn/sklearn/feature_extraction/tests/test_text.py", line 695, in test_vectorizer_inverse_transform
+    assert_array_equal(terms, inversed_terms)
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/numpy/testing/utils.py", line 718, in assert_array_equal
+    verbose=verbose, header='Arrays are not equal')
+  File "/Users/kmike/envs/scraping/lib/python2.7/site-packages/numpy/testing/utils.py", line 599, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+(shapes (4,), (3,) mismatch)
+ x: array([u'beer', u'copyright', u'pizza', u'the'], 
+      dtype='<U9')
+ y: array([u'beer', u'copyright', u'pizza'], 
+      dtype='<U9')
+>>  raise AssertionError("\nArrays are not equal\n\n(shapes (4,), (3,) mismatch)\n x: array([u'beer', u'copyright', u'pizza', u'the'], \n      dtype='<U9')\n y: array([u'beer', u'copyright', u'pizza'], \n      dtype='<U9')")
+What fails is normalization checks, and the inverse transform test. If I comment out normalization checks the rest of test_text.test_tfidf_no_smoothing as well as test_tf_idf_smoothing passes. As I read it, the rest of these tests is supposed to check some zero division errors, and these errors are not present.
+By the way, SkipTest exceptions in these tests are likely useless because they should happen before assert_warns_message - this looks like a bug introduced in e1bdd99.
+It is not clear for me what do these failing normalization tests mean. But the comment about zero division errors doesn't explain why is the formula non-standard. There are smoothing terms inside logarithm, but what is +1 outside logaritm for? Maybe it is explained in Yates2011, but I don't have an access to it, and it is better to add some more notes to the source code then.
+Existing behavior was introduced by 0d1daad, so maybe @ogrisel knows the answer?

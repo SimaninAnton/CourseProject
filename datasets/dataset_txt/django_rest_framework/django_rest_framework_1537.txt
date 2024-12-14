@@ -1,0 +1,41 @@
+andrewyoung1991 commented on 23 Sep 2015
+I'm writing a serialize that validates nested relations using the validate_ method for a nested relation. I'm banging my head against the wall attempting to validate my OneToOneField Account -> User relation with this method.
+# UserSerializer defined above
+class AccountSerializer(serializers.ModelSerializer):
+    user = UserSerializer(required=False)
+    .....
+    def validate_user(self, data):
+        if self.instance is not None:
+            user = self.instance.user
+        else:
+            user = None
+        serializer = UserSerializer(user, data, partial=self.partial)
+        if serializer.is_valid(raise_exception=True):
+            return serializer.save()
+        raise serializers.ValidationError(serializer.error_messages)
+when i send the AccountSerializer an instance and the following json,
+{
+    "user": {"username": "something", ....rest of user stuff....},
+    "last_seen_datetime": ".... a time stamp ....",
+    "tags": ["a tag 1", "a tag 2"]  // i've updated this field
+}
+I get the error: "user":{"username":["This field must be unique."]}}
+... Surely that can't be right, I'm only updating the instance, not attempting to save an entirely new User instance...
+After debugging I've found this to be the culprit... My custom validation method is being bypassed completely because the UserSerializer without the related instance errors out before validating the data I've passed in.
+Why is the default (un-aware of the user instance) method run before the custom (relation aware) method? shouldn't it look like this?
+for field in fields:
+    validate_method = getattr(self, 'validate_' + field.field_name, None)
+    primitive_value = field.get_value(data)
+    try:
+        if validate_method is not None:
+            validated_value = validate_method(primitive_value)
+        else:
+            validated_value = field.run_validation(primitive_value)
+    except ValidationError as exc:
+        errors[field.field_name] = exc.detail
+    except DjangoValidationError as exc:
+        errors[field.field_name] = list(exc.messages)
+    except SkipField:
+         pass
+    else:
+         set_value(ret, field.source_attrs, validated_value)

@@ -1,0 +1,83 @@
+charlescearl commented on Nov 19, 2017 •
+edited
+The DummyClassifier predict method gives an incorrectly formatted result for most_frequent and prior strategies when the number of labels per instance vary.
+In many multiple label cases, the number of labels associated with an instance will vary. The prior and most_frequent strategies produce inconsistently formatted predictions in these cases. In the current implementation, label array outputs for each instance are appended, producing one array instead of N label arrays, where N is the number of instances.
+Steps/Code to Reproduce
+Using the test code as a starting point, look at the behavior on output labels of varying length
+from sklearn.model_selection import train_test_split
+from sklearn.dummy import DummyClassifier
+from sklearn.utils.testing import assert_array_equal
+
+X = [[0]]*4  # ignored
+y = np.array([[1, 0],
+                  [2, 0],
+                  [1, 0],
+                  [3,4,5]])
+
+n_samples = len(X)
+for strategy in ("most_frequent", "prior", ):
+    clf = DummyClassifier(strategy=strategy, random_state=0)
+    clf.fit(X, y)
+    assert_array_equal(clf.predict(X),
+                       np.hstack([np.ones((n_samples, 1)),
+                                  np.zeros((n_samples, 1))]))
+Expected Results
+In the above case, we expect the output of the predictor to be
+y: array([[ 1.,  0.],
+       [ 1.,  0.],
+       [ 1.,  0.],
+       [ 1.,  0.]])
+That is, for the multi-label case, each test instance should produce one array of labels. For N instances, we should expect N label arrays.
+For the example, the response for the stratified strategy produces correct response
+n_samples = len(X)
+for strategy in ("stratified", ):
+    clf = DummyClassifier(strategy=strategy, random_state=0)
+    clf.fit(X, y)
+    y = clf.predict(X)
+    print(y)  
+> [[1.0, 0.0] [1.0, 0.0] [1.0, 0.0] [1.0, 0.0]]
+Actual Results
+---------------------------------------------------------------------------
+AssertionError                            Traceback (most recent call last)
+<ipython-input-178-52b93c1e650b> in <module>()
+      5     assert_array_equal(clf.predict(X),
+      6                        np.hstack([np.ones((n_samples, 1)),
+----> 7                                   np.zeros((n_samples, 1))]))
+
+/opt/cloudera/parcels/anaconda3_plus-1.0.4/lib/python3.6/site-packages/numpy/testing/utils.py in assert_array_equal(x, y, err_msg, verbose)
+    869     """
+    870     assert_array_compare(operator.__eq__, x, y, err_msg=err_msg,
+--> 871                          verbose=verbose, header='Arrays are not equal')
+    872 
+    873 
+
+/opt/cloudera/parcels/anaconda3_plus-1.0.4/lib/python3.6/site-packages/numpy/testing/utils.py in assert_array_compare(comparison, x, y, err_msg, verbose, header, precision, equal_nan)
+    745                                 names=('x', 'y'), precision=precision)
+    746             if not cond:
+--> 747                 raise AssertionError(msg)
+    748 
+    749         if isnumber(x) and isnumber(y):
+
+AssertionError: 
+Arrays are not equal
+
+(shapes (8,), (4, 2) mismatch)
+ x: array([ 1.,  0.,  1.,  0.,  1.,  0.,  1.,  0.])
+ y: array([[ 1.,  0.],
+       [ 1.,  0.],
+       [ 1.,  0.],
+       [ 1.,  0.]])
+Versions
+Linux-3.16.0-4-amd64-x86_64-with-debian-8.8
+Python 3.6.1 |Anaconda custom (64-bit)| (default, May 11 2017, 13:09:58) 
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+NumPy 1.12.1
+SciPy 0.19.0
+Scikit-Learn 0.18.1
+and
+Darwin-17.2.0-x86_64-i386-64bit
+Python 3.6.3 (v3.6.3:2c5fed86e0, Oct  3 2017, 00:32:08)
+[GCC 4.2.1 (Apple Inc. build 5666) (dot 3)]
+NumPy 1.13.3
+SciPy 1.0.0
+Scikit-Learn 0.19.1

@@ -1,0 +1,30 @@
+Contributor
+kingjr commented on Sep 9, 2017
+On v0.19, the concatenation of a list of BaggingClassifier is inconsistent before and after fitting each of them.
+Here is an example where we manually run 4 bagging classifiers, a would like to concatenate them into a single list:
+import numpy as np
+from sklearn.ensemble import BaggingClassifier
+
+X = np.random.randn(200, 20)
+y = np.random.randint(0, 2, 200)
+
+clf_1 = BaggingClassifier(None, 2)
+clf_2 = BaggingClassifier(None, 2)
+clf_3 = BaggingClassifier(None, 2)
+clf_4 = BaggingClassifier(None, 2)
+
+clfs = np.concatenate([[clf_1, clf_2], [clf_3, clf_4]], axis=0)
+as expected, clfs is an array of 4 bagging classifiers.
+However, after fitting the classifiers, the concatenation returns an array of the base estimators of each bagging classifier:
+clf_1.fit(X, y)
+clf_2.fit(X, y)
+clf_3.fit(X, y)
+clf_4.fit(X, y)
+clfs = np.concatenate([[clf_1, clf_2], [clf_3, clf_4]], axis=0)
+unexpectedly, clfs is now an array of 4 x 2 decision trees.
+In other words, the concatenation of lists of bagging classifiers extracts the internal estimators of each bagging classifier; we thus lose the higher level function. e.g:
+clfs[0].score(X, y)
+I suspect that this is because np.concatenate calls a __getitem__ and BaggingClassifier inherits from BaseEnsemble which has:
+    def __getitem__(self, index):
+        """Returns the index'th estimator in the ensemble."""
+        return self.estimators_[index]

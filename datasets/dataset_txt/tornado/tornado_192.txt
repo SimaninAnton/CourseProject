@@ -1,0 +1,126 @@
+LiangXianSen commented on 26 Apr 2018 •
+edited
+development environment:
+python 3.5.1
+tornado 4.5.2
+used ThreadPoolExecutor :
+import time
+import datetime
+import os
+import tornado.web
+from tornado import gen
+from tornado.concurrent import run_on_executor
+from concurrent.futures import ThreadPoolExecutor
+
+
+class IndexHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write('index')
+        print('index')
+
+
+class NonBlockingHandler(tornado.web.RequestHandler):
+    executor = ThreadPoolExecutor(4)
+
+    @gen.coroutine
+    def get(self):
+        try:
+            start = time.time()
+            result1, result2 = yield gen.with_timeout(datetime.timedelta(seconds=1), [self.doing(), self.doing()], quiet_exceptions=tornado.gen.TimeoutError)
+            self.write("NO Timeout")
+            print(result1, result2)
+            print(time.time() - start)
+        except gen.TimeoutError:
+            self.write("Timeout")
+            print("Timeout")
+            print(time.time() - start)
+
+    @run_on_executor
+    def doing(self):
+        # time.sleep(10)
+        # yield gen.sleep(10)
+        os.system("ping -c 20 www.baidu.com")  # 模拟I/O 任务
+        return 'Non-Blocking'
+
+
+application = tornado.web.Application([
+    (r"/index", IndexHandler),
+    (r"/nonblocking", NonBlockingHandler),
+])
+
+if __name__ == "__main__":
+    application.listen(8888)
+    tornado.ioloop.IOLoop.instance().start()
+output:
+/usr/local/bin/python3 /Users/lianliang/Desktop/yisuo-faceid/learning/futures-threadpool-timeout.py
+PING www.a.shifen.com (61.135.169.121): 56 data bytes
+64 bytes from 61.135.169.121: icmp_seq=0 ttl=52 time=53.593 ms
+Timeout
+1.0016818046569824
+64 bytes from 61.135.169.121: icmp_seq=1 ttl=52 time=92.630 ms
+64 bytes from 61.135.169.121: icmp_seq=2 ttl=52 time=100.531 ms
+64 bytes from 61.135.169.121: icmp_seq=3 ttl=52 time=17.301 ms
+64 bytes from 61.135.169.121: icmp_seq=4 ttl=52 time=13.203 ms
+index
+64 bytes from 61.135.169.121: icmp_seq=5 ttl=52 time=40.333 ms
+64 bytes from 61.135.169.121: icmp_seq=6 ttl=52 time=81.788 ms
+... ...
+that is correct. After that I used coroutine :
+import time
+import datetime
+import os
+import tornado.web
+from tornado import gen
+from tornado.concurrent import run_on_executor
+from concurrent.futures import ThreadPoolExecutor
+
+
+class IndexHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write('index')
+        print('index')
+
+
+class NonBlockingHandler(tornado.web.RequestHandler):
+    executor = ThreadPoolExecutor(4)
+
+    @gen.coroutine
+    def get(self):
+        try:
+            start = time.time()
+            result1, result2 = yield gen.with_timeout(datetime.timedelta(seconds=1), [self.doing(), self.doing()], quiet_exceptions=tornado.gen.TimeoutError)
+            self.write("NO Timeout")
+            print(result1, result2)
+            print(time.time() - start)
+        except gen.TimeoutError:
+            self.write("Timeout")
+            print("Timeout")
+            print(time.time() - start)
+
+    @gen.coroutine
+    def doing(self):
+        # time.sleep(10)
+        # yield gen.sleep(10)
+        os.system("ping -c 20 www.baidu.com")  # 模拟I/O 任务
+        return 'Non-Blocking'
+
+
+application = tornado.web.Application([
+    (r"/index", IndexHandler),
+    (r"/nonblocking", NonBlockingHandler),
+])
+
+if __name__ == "__main__":
+    application.listen(8888)
+    tornado.ioloop.IOLoop.instance().start()
+output:
+... ...
+64 bytes from 61.135.169.121: icmp_seq=19 ttl=52 time=24.226 ms
+
+--- www.a.shifen.com ping statistics ---
+20 packets transmitted, 20 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 4.867/41.387/82.361/22.810 ms
+Non-Blocking Non-Blocking
+38.22840881347656
+index
+tornado.gen.with_timeout dose not work, I don't know why?

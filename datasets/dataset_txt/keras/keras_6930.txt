@@ -1,0 +1,53 @@
+ghost commented on 24 Jun 2015
+Hi,
+I created a toy lstm model to produce alternating sequences of 0's and 1's. However, although I believe the model below is valid to learn this task, the predictions it produces do not converge. Occasionally it will produce alternating 0's and 1's, but then revert to something else. I would like to be able to give the model the start symbol and have it produce the alternating sequence.
+I find it strange that the model below can't learn this simple task. Could you verify if it is correct Keras code? Or perhaps the sampling procedure I use is not valid for lstm's in Keras?
+Thanks for your time and help
+from __future__ import print_function
+from keras.models import Sequential
+from keras.layers.core import TimeDistributedDense, Activation
+from keras.layers.recurrent import LSTM
+import numpy as np
+
+text = ['1', '0']
+chars = set(text)
+chars.add('S') #start and end symbol
+chartoix = dict((c, i) for i, c in enumerate(chars))
+ixtochar = dict((i, c) for i, c in enumerate(chars))
+
+maxlen = 30
+
+X = np.zeros((1, maxlen+1, len(chars)))
+y = np.zeros((1, maxlen+1, len(chars)))
+
+
+X[0, 0, chartoix['S']] = 1.
+for t in range(maxlen):
+    if t % 2 == 0:
+        char = '0'
+    else:
+        char = '1'
+    X[0, t+1, chartoix[char]] = 1.
+    y[0, t, chartoix[char]] = 1.
+y[0, t+1, chartoix['S']] = 1.
+
+print('Build model...')
+model = Sequential()
+model.add(TimeDistributedDense(len(chars), 10))
+model.add(LSTM(10, 10, return_sequences=True))
+model.add(TimeDistributedDense(10, len(chars)))
+model.add(Activation('time_distributed_softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+for iteration in range(5000):
+    model.fit(X,y, batch_size=1, nb_epoch=1, verbose=True)
+    x = np.zeros((1, maxlen, len(chars)))
+    x[0, 0, chartoix['S']] = 1.
+    generated = []
+    preds = model.predict(x, verbose=False)[0]
+    for t in range(maxlen):
+        ix = np.argmax(preds[t,:])
+        generated.append(ixtochar[ix])
+
+    print(''.join(generated))

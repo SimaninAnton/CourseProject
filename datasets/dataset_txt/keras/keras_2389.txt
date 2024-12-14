@@ -1,0 +1,45 @@
+Contributor
+gokceneraslan commented on 14 May 2017 •
+edited
+K.switch converts ops to python callables by default:
+def switch(condition, then_expression, else_expression):
+...
+    if not callable(then_expression):
+        def then_expression_fn():
+            return then_expression
+...
+This can be misleading for the users, especially if ops have side effects, like update_add and if they are using TF backend:
+import keras
+import keras.backend as K
+
+pred = K.placeholder([], dtype='bool')
+count = K.variable(10)
+
+my_op = K.switch(pred, lambda: K.update_add(count, 1),
+                       lambda: K.update_sub(count, 2))
+
+print('case 1')
+print(K.function([pred], [my_op])([True]))
+print(K.function([pred], [my_op])([False]))
+
+######################################################
+
+pred2 = K.placeholder([], dtype='bool')
+count2 = K.variable(10)
+
+my_op2 = K.switch(pred2, K.update_add(count2, 1),
+                         K.update_sub(count2, 2))
+
+print('case 2')
+print(K.function([pred2], [my_op2])([True]))
+print(K.function([pred2], [my_op2])([False]))
+this code prints:
+❯ KERAS_BACKEND=tensorflow python keras_cond.py 2>/dev/null                                                                                                                                                                                                           [13:34:11]
+case 1
+[11.0]
+[9.0]
+case 2
+[9.0]
+[8.0]
+Output of case 2 is quite wrong, as we can see.
+As Theano works fine with or without lambdas, wouldn't it make sense if we force users to provide only lambdas, by removing op-to-lambda conversion in K.switch() on tf backend? (See this and this for some discussions about that)

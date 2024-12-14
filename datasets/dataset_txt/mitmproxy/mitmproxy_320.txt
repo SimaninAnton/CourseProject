@@ -1,0 +1,31 @@
+Member
+cortesi commented on 24 Apr 2018
+The aim of this ticket is to come up with an on-paper design for an extension to the mitmproxy command language, before @kajojify moves to implementation. This is a GSoC project, but anyone should feel free to contribute to the discussion.
+Context
+The most significant change to mitmproxy in the last few years has been the shift to a modular core. Under this system, functionality is implemented in completely self-contained addons. Users interact with addons (and by extension with mitmproxy itself) ONLY through commands and options. Commands have globally unique names, a set of typed arguments, and a single typed return value. The command language we're discussing here is strictly the textual language users use to invoke and combine these typed addon commands.
+At the moment, the command language is used in two places:
+The interactive command prompt of the console app.
+Console key bindings, where all user interaction occurs through commands bound to keys.
+In coming releases, the command language will be even more prominent:
+There will be a new key binding configuration file for customizing key bindings. #2963
+All tools will support commands passed on the command-line, to be run at startup and shutdown. See discussion in #2963.
+We're considering a new primitive called Actions. These are compound commands, like key bindings, but not bound to keys. See discussion in #2718.
+Mitmweb will need to expose commands in some form to users. We'll have to discuss how to do this without re-implementing parsing on the client side.
+Aims
+What we're trying to achieve here is a language that works at two extrema:
+On the interactive prompt and the command-line, it has to be terse and minimal. Any extra keystroke here has to be very clearly motivated. The current expression for short commands is literally as simple as possible, and probably can't be improved.
+For commands can be composed of multiple subcommands - we have examples of up to 4 combined commands in key bindings - the language has to be readable, clear and minimise error.
+We should also keep in mind that it is explicitly not an aim to replace Python. Complicated commands are best expressed as full addons written in Python. This means that I want to be cautious about flow control in the command language - it might never be needed at all. There is a separate discussion to be had about making cross-addon invocation of commands better from within Python.
+Current language
+Commands support a small number of predefined argument and return value types. For each type, we define a parser, which converts a textual representation given by the user to the underlying type, a tab completer for interactive use, and a validator that checks whether an arbitrary Python value is a valid value. We know the arity of all functions up-front (with the exception of varargs as the last argument to a command). That lets us have a complete parser with no grouping operators.
+Syntactically, the language is very simple. It consists of a list of possibly quoted strings that can either be command names or arguments (as interpreted through the appropriate type parser).
+The text representation of a type value can be expanded in complex ways. For instance, mitmproxy's core primitive is the flow, and the current language supports sophisticated ways to select flows from the current session on the command-line. Another example is the cuts mechanism, which will be much more prominent in future releases. This expressiveness is a critical feature that I would like to maintain.
+Let's structure discussion around a set of examples that cover common use-cases. Below, I give a set of definitions in terms of the current language, along with a motivation and explanation. Please accompany concrete language suggestions with a similar table expressing the same examples, and any new ones you think are relevant.
+Command Description
+view.remove @marked Interactive. Remove all marked flows.
+replay.client "~h google.com" Interactive. Replay all flows for host google.com.
+cut.save @all server_conn.address.host ~/hosts.csv Complex interactive. Select the server host from all flows, and save to file.
+console.choose.cmd Format export.formats console.command export.file {choice} @focus Complex key binding. This composes 4 commands - console.choose.cmd takes a prompt, a command to invoke to retrieve a set of options, and a command to invoke once the user has selected an option with a selected argument. A good example of something that is hard to parse in the current language, and which may in fact be hard in any variant. Anything much more complicated than this should be expressed in Python.
+Implementation
+Implementations should maintain current usability features like tab expansion and syntax highlighting for partial commands. This means that parsers must be incremental. It also means that a parser needs to be reversible - we should be able to parse a command string, annotate it with syntax highlighting, and then recompose it on the command line for the user to continue editing. Please see the current implementation for how all of this works.
+We should aim to elaborate the language that's currently there step-by-step, rather than attempting a wholesale re-implementation. Please try to make proposals incremental, and tease separable ideas out into separate proposals.

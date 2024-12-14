@@ -1,0 +1,43 @@
+mitgr81 commented on 2 Apr 2014
+In doing a test upgrade to python 3.4 I encountered the following traceback (snippet)
+  File "/my/virtualenv/wonderboom34/lib/python3.4/site-packages/flask/app.py", line 319, in __init__
+    template_folder=template_folder)
+  File "/my/virtualenv/wonderboom34/lib/python3.4/site-packages/flask/helpers.py", line 742, in __init__
+    self.root_path = get_root_path(self.import_name)
+  File "/my/virtualenv/wonderboom34/lib/python3.4/site-packages/flask/helpers.py", line 631, in get_root_path
+    loader = pkgutil.get_loader(import_name)
+  File "/usr/local/Cellar/python3/3.4.0/Frameworks/Python.framework/Versions/3.4/lib/python3.4/pkgutil.py", line 467, in get_loader
+    return find_loader(fullname)
+  File "/usr/local/Cellar/python3/3.4.0/Frameworks/Python.framework/Versions/3.4/lib/python3.4/pkgutil.py", line 488, in find_loader
+    return spec.loader
+AttributeError: 'NoneType' object has no attribute 'loader'
+I was able to resolve it with the following:
+diff --git a/helpers.py b/helpers.py
+index 62a64bb..f671c27 100644
+--- a/helpers.py
++++ b/helpers.py
+@@ -628,7 +628,10 @@ def get_root_path(import_name):
+         return os.path.dirname(os.path.abspath(mod.__file__))
+
+     # Next attempt: check the loader.
+-    loader = pkgutil.get_loader(import_name)
++    try:
++        loader = pkgutil.get_loader(import_name)
++    except AttributeError:
++        loader = None
+
+     # Loader does not exist or we're referring to an unloaded main module
+     # or a main module without path (interactive sessions), go with the
+@@ -658,7 +661,10 @@ def find_package(import_name):
+     folder structure exists (lib, share etc.).
+     """
+     root_mod_name = import_name.split('.')[0]
+-    loader = pkgutil.get_loader(root_mod_name)
++    try:
++        loader = pkgutil.get_loader(root_mod_name)
++    except AttributeError:
++        loader = None
+
+     if loader is None or import_name == '__main__':
+         # import name is not found, or interactive/main module
+If you want a formal pull request, I'd be happy to provide one, and do it "right", this feels pretty brute-force, I'm sure there's a better way.

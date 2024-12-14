@@ -1,0 +1,24 @@
+jeff1evesque commented on 14 Jan 2017
+I attempted to replace flask's internal session by implementing redis. I thought this was a good idea, since it would mean more secure sessions, since they are not stored as cookies, rather on the redis-server:
+http://flask.pocoo.org/snippets/75/
+https://github.com/mrichman/flask-redis/blob/master/redissession.py
+After copying the latter reference, as redis_session.py, followed by adjusting factory.py:
+            # replace default cookie session with server-side redis
+            app.session_interface = RedisSessionInterface()
+My travis ci indicated a failed build:
+E ConnectionError: Error 111 connecting to localhost:6379. Connection refused.
+I'm not sure why my application failed to connect to redis. The redis-server should have properly started via redis.dockerfile, which is implemented by the overall travis.yaml. Prior to actually implementing redis_session.py, my application was already using redis successfully for other things (like serializing sciki-learn objects, and storing it into redis), as indicated by prior builds. Specifically, the test_model_generate function from pytest_svm_file_upload.py, basically computes a prediction object, then stores it into redis via a custom cache method:
+    def cache(self, hash_name, key):
+        '''@cache
+        This method serializes, then caches the provided model into a redis
+        hash cache.
+        '''
+
+        try:
+            serialized = Serialize_Model(self.model).serialize()
+            self.myRedis.hset(hash_name, key, serialized)
+        except Exception, error:
+            self.list_error.append(str(error))
+            print self.list_error
+If the model was not properly cached into redis, then my successive unit test, test_model_predict which uncaches the same model, in order to perform corresponding computation, would fail.
+Because my travis ci builds began breaking with the introduction of overloading app.session_interface = RedisSessionInterface() in my app factory, I'm wondering if the problem is redis, flask, docker, or a combination of the three?

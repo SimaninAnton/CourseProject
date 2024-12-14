@@ -1,0 +1,42 @@
+NGillet commented on 8 Jun 2017
+Hello, I am trying to deal with deep learning and large dataset.
+DATA: I have 'classical' large images (200,2200) (float32) and I have 13000 of them (enough to make a good learning). I use a large computer with ~200 cores and a tera of shared memory (large enough to play seriously), so all the data can be load in memory (22GB in total = 200*2200* 4 * 13000/1000/1000).
+NET: I want to build a CNN, with regression, outputting on number [0-1] corresponding to the parameter learned (the label). I work on jupyter notebook ((0) should I do direct script? I do not sure if it make a difference).
+FIRST TRY: I made preliminary tests on reduced data (averaged 20*220 images), and everything works perfectly. I notice that it needed about ~20 epochs and batch size of ~100 to have good result.
+IMPROVEMENT: The reduced images represent just a 100th of the data and I would like to try with the full resolution to learn finer labels (image shape 200*2200).
+(1) My question is what is the smart/efficient way to learn this full resolution images set?
+So far I try the direct brute force learning like for the reduced images, model.fit( all the data ), batchsize=107 on one core. After ~10min of no signal, the learning began with an estimation of ~70000s for 1 epoch.
+Then I try to increase OMP(and MKL)_NUM_THREADS=2 it reduces to 48000s for 1 epoch. With 4cores 21000s for 1 epoch. Cool, it kind of scales! But it is still too long for 20 epochs. When I try 10 threads the kernel crash...
+(2) A reformulation of the question can be, how can I parallelize the learning phase?
+(3) I do not understand the difference between 'data parallelism' and 'model parallelism', and most of the exemple use tensorFlow. ((4)Should I change to TF ?)
+REMARKS: In htop the kernel tries to use 70GB of memory, this should not be a problem, but I do not understand this number, I suppose it is internal .fit data copy/management(?).
+OTHER EQUIVALENT TOPIC/QUESTIONS: Most of the similar topic are focused on GPU(s). A very similar topic one is here, the solution is using fit_generator. I try it, but it does not help because my data fit in memory.
+ALTERNATIVE: use GPUs. I do not have access to that for the moment, but I may manage to have some in the future.
+keras: 2.0.2
+theano: '0.9.0.dev-c697eeab84e5b8a74908da654b66ec9eca4f1291'
+I activate the openmp flag, and I try different OMP_NUM_THREADS(1-200).
+THE BONUS FINAL DREAM: I lie, the data are not images, but cubic, with shape (200,200,2200). I just use one random slice per cube in the learning for the moment. But the final goal would be to do a CNN directly on the cube.
+Thank you!
+The network I biuld for (200,2200) images:
+### input layer
+model.add( Convolution2D( 32, (5,5), activation='relu', input_shape=input_shape, name='Conv-1' ) )
+model.add( Convolution2D( 32, (5,5), activation='relu', name='Conv-2' ) )
+model.add( MaxPooling2D( pool_size=(3,3), name='Pool-1' ) )
+
+model.add( Convolution2D( 64, (3,3), activation='relu', name='Conv-3' ) )
+model.add( Convolution2D( 64, (3,3), activation='relu', name='Conv-4' ) )
+
+model.add( MaxPooling2D( pool_size=(3,3), name='Pool-2' ) )  
+model.add( Convolution2D( 128, (3,3), activation='relu', name='Conv-5' ) )
+model.add( Convolution2D( 128, (3,3), activation='relu', name='Conv-6' ) )
+model.add( MaxPooling2D( pool_size=(2,2), name='Pool-3' ) )    
+
+model.add( Convolution2D( 128, (3,3), activation='relu', name='Conv-7' ) )
+model.add( Convolution2D( 128, (3,3), activation='relu', name='Conv-8' ) )
+model.add( MaxPooling2D( pool_size=(4,16*7), name='Pool-4' ) )    
+
+model.add( Flatten( name='Flat' ) )
+model.add( Dense( 128, activation='relu', name='Dense-1' ) )
+
+model.add( Dense( 64, activation='relu', name='Dense-2' ) )
+model.add( Dense( 1, activation='linear', name='Out' ) ) # , kernel_initializer='normal' ?

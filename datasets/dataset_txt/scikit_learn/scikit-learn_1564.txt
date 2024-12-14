@@ -1,0 +1,53 @@
+StefanTheWiz commented on Feb 9, 2018
+I've only used the library for half a year and I've been amazed by the amount of useful stuff there is in here.
+I happened to have found a bottleneck in BaseSearchCV. I'm raising the issue instead of starting a pull request in case there's a reason it's done this way and in case there's a better way of doing it.
+Line 619 turns a generator into a list, loading all param combinations into memory. Introduced in commit 3dcb873 @jnothman @raghavrv
+candidate_params = list(self._get_param_iterator()) # no need for list()
+Lines 639-640 use itertools.product which is not a generator. Introduced in commit 7ce7134 @lesteve @jnothman .
+for parameters, (train, test) in product(candidate_params,
+                                         cv.split(X, y, groups)))
+should be
+for parameters in candidate_params
+  for train, test in cv.split(X, y, groups )
+The documentation for itertools.product can be misleading:
+This function is roughly equivalent to the following code, except that the actual implementation does not build up intermediate results in memory [...]
+Example code
+import sys
+import sklearn, numpy as np
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.datasets import load_iris
+
+print( sys.version_info )
+print( 'scikit-learn', sklearn.__version__ )
+
+# Just as an example. I'm using a different data set of similar size
+iris = load_iris()
+X, y = iris.data, iris.target
+
+param_grid = {
+    'criterion': [ "gini", "entropy" ],
+    'splitter': [ "best", "random" ],
+    'max_depth': range( 2, 153 ),
+    'min_samples_split': range( 2, 438 ),
+    'min_samples_leaf': range( 1, 437 ),
+    'max_leaf_nodes': range(6, 307),
+    'min_impurity_decrease': np.linspace( 0, 1, 101 ),
+}
+# print( param_grid )
+
+grid_search = GridSearchCV(
+    DecisionTreeClassifier( random_state = 0 ), param_grid, cv = 23, verbose = 1, 
+    n_jobs = 5, pre_dispatch = 'n_jobs'
+)
+grid_search.fit( X, y )
+Yes, it's quite a large parameter grid, but it's a critical application and need to care for this as part of the requirements.
+Output
+sys.version_info(major=3, minor=6, micro=2, releaselevel='final', serial=0)
+scikit-learn 0.19.1
+Traceback (most recent call last):
+  File "......./grid_search_cv_bug.py", line 28, in <module>
+    grid_search.fit( X, y )
+  File "/usr/lib64/python3.6/site-packages/sklearn/model_selection/_search.py", line 618, in fit
+    candidate_params = list(self._get_param_iterator())
+MemoryError

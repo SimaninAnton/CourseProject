@@ -1,0 +1,83 @@
+XMaster96 commented on 5 Apr 2018
+I defin a model in Keras, and yous a Tensorflow backend to set a graph.
+The model compiles just fine, the problem, happens when i try to call the "predict" function.
+The Problem seemsto by the second Input. If I remove the second Input, the model works just fine.
+I can print the dates, so I think my dates isn't the problem either.
+        self.session = tf.Session()
+        K.set_session(self.session)
+        K.manual_variable_initialization(True)
+
+        self.model = self._build_model()
+        self.graph = self._build_graph(self.model)
+
+        self.session.run(tf.global_variables_initializer())
+        self.default_graph = tf.get_default_graph()
+
+        self.default_graph.finalize()
+    def _build_model(self):
+
+        image_input = Input(batch_shape=(3, 120, 160,), dtype='float32')
+        misc_input = Input(batch_shape=(1, 2,), dtype='float32')
+
+        conv = Reshape((120, 160, 3))(image_input)
+
+        conv = Conv2D(kernel_size=5, strides=4, filters=16, padding='valid',
+                     activation='relu', name='layer_conv1', input_shape=(None, 120, 160, 3))(conv)
+        conv = Conv2D(kernel_size=7, strides=2, filters=32, padding='valid',
+                     activation='relu', name='layer_conv2', input_shape=((None, 120, 160, 3)))(conv)
+        conv = Flatten()(conv)
+
+        dense = concatenate([conv, misc_input])
+        dense = Dense(1600, activation='relu')(dense)
+        dense = Dense(1200, activation='relu')(dense)
+        dense = Dense(800, activation='relu')(dense)
+        dense = Dense(400, activation='relu')(dense)
+        dense = Dense(200, activation='relu')(dense)
+
+
+        out_actions = Dense(4, activation='softmax')(dense)
+        out_value = Dense(1, activation='linear')(dense)
+
+        model = Model(inputs=[image_input, misc_input], outputs=[out_actions, out_value])
+        model._make_predict_function()
+
+        return model
+    def _build_graph(self, model):
+
+        image_tensor = tf.placeholder(tf.float32, shape=(3, 120, 160))
+        misc_tensor = tf.placeholder(tf.float32, shape=(1, 2))
+        action_tensor = tf.placeholder(tf.float32, shape=(4,1))
+        v_reword_tensor = tf.placeholder(tf.float32, shape=(None, 1))
+
+        predict, value = model([image_tensor, misc_tensor])
+
+        log_prob = tf.log(tf.reduce_sum(predict * action_tensor, axis=1, keep_dims=True) + 1e-10)
+        advantage = v_reword_tensor - value
+        loss_policy = - log_prob * tf.stop_gradient(advantage)
+
+        loss_value = self.LOSS_V * tf.square(advantage)
+
+        entropy = self.LOSS_ENTROPY * tf.reduce_sum(predict * tf.log(predict + 1e-10),axis=1,
+        keep_dims=True)
+
+        loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
+
+        optimizer = tf.train.RMSPropOptimizer(self.LEARNING_RATE, decay=.99)
+        minimize = optimizer.minimize(loss_total)
+
+        return image_tensor, misc_tensor, action_tensor, v_reword_tensor, minimize
+p, v = Agent.model.predict([np.array([img_s[0], img_s[2], img_s[4]]), np.array(misc).reshape(1,2)], batch_size=3)
+Traceback (most recent call last):
+  File "X:/PyProjects/Domm_Lerner/A3C_Doom.py", line 368, in <module>
+    env.Work()
+  File "X:/PyProjects/Domm_Lerner/A3C_Doom.py", line 304, in Work
+    p, v = Agent.model.predict([np.array([img_s[0], img_s[2], img_s[4]]), np.array(misc).reshape(1,2)], batch_size=3)
+  File "X:\PyProjects\Domm_Lerner\venv\lib\site-packages\tensorflow\python\keras\_impl\keras\engine\training.py", line 1739, in predict
+    f, ins, batch_size=batch_size, verbose=verbose, steps=steps)
+  File "X:\PyProjects\Domm_Lerner\venv\lib\site-packages\tensorflow\python\keras\_impl\keras\engine\training.py", line 1279, in _predict_loop
+    ins_batch = _slice_arrays(ins, batch_ids)
+  File "X:\PyProjects\Domm_Lerner\venv\lib\site-packages\tensorflow\python\keras\_impl\keras\engine\training.py", line 400, in _slice_arrays
+    return [None if x is None else x[start] for x in arrays]
+  File "X:\PyProjects\Domm_Lerner\venv\lib\site-packages\tensorflow\python\keras\_impl\keras\engine\training.py", line 400, in <listcomp>
+    return [None if x is None else x[start] for x in arrays]
+IndexError: index 1 is out of bounds for axis 0 with size 1

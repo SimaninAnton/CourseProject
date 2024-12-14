@@ -1,0 +1,80 @@
+davidfischer-ch commented on 31 Mar 2014
+Hello,
+I am trying hard to write my first class based on APITestCase to unit-test my API.
+Unfortunately I am not able to request a token by POSTing to the corresponding oauth API url. I investigated this by adding an explicit exception into the code of django-oauth-toolkit to inspect the content of the request. The POST data is empty even if I set it explicitly during the call to the self.client.post(...). Please help me. I know this may not be a bug of rest framework but my own mistake or even oauth-toolkit.
+Thanks.
+...
+class AccountTests(APITestCase):
+    ...
+
+    def update_credentials(self, user, password):
+        u"""Return a dictionary with the HTTP basic authentication header."""
+        auth_string = base64.b64encode(u'{0}:{1}'.format(user, password).encode(u'utf-8'))
+        self.client.credentials(HTTP_AUTHORIZATION=u'Basic ' + auth_string.decode(u'utf-8'))
+
+    def get_user_with_token(self, username, password, **kwargs):
+        user = User(username=username, password=password, **kwargs)
+        user.save()
+        application = Application(user=user, name=u'{0} Token'.format(username),
+                                  client_type=Application.CLIENT_PUBLIC,
+                                  authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS)
+        application.save()
+
+        self.update_credentials(application.client_id, application.client_secret)
+        data = {
+            u'grant_type': u'client_credentials',
+        }
+        response = self.client.post(reverse(u'oauth2_provider:token'), data=data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        return user, application, response.content
+This will return, python manage.py test, this :
+Traceback (most recent call last):
+  File "/home/david/bitbucket/cloudncode/server/cloudncode_base/tests/test_api.py", line 57, in setUp
+    self.admin = self.get_user_with_token(u'admin', u'admin', is_staff=True, is_superuser=True)
+  File "/home/david/bitbucket/cloudncode/server/cloudncode_base/tests/test_api.py", line 48, in get_user_with_token
+    self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+AssertionError: {"error": "unsupported_grant_type"}
+Content of modified oauth2_backends.py:
+    def _extract_params(self, request):
+        """
+        Extract parameters from the Django request object. Such parameters will then be passed to
+        OAuthLib to build its own Request object
+        """
+        uri = self._get_escaped_full_path(request)
+        http_method = request.method
+        headers = request.META.copy()
+        ----> raise ValueError(request) <----
+        if 'wsgi.input' in headers:
+            del headers['wsgi.input']
+        if 'wsgi.errors' in headers:
+            del headers['wsgi.errors']
+        if 'HTTP_AUTHORIZATION' in headers:
+            headers['Authorization'] = headers['HTTP_AUTHORIZATION']
+        body = urlencode(request.POST.items())
+        return uri, http_method, body, headers
+Result :
+ <WSGIRequest
+path:/oauth2/token/,
+GET:<QueryDict: {}>,
+POST:<QueryDict: {}>,
+COOKIES:{},
+META:{u'CONTENT_LENGTH': 36,
+ u'CONTENT_TYPE': 'application/json; charset=None',
+ u'CSRF_COOKIE': u's69pfOC4TeztGDRq9ehCJcM1TeISToru',
+ 'HTTP_AUTHORIZATION': u'Basic T2RlODhGLmNVSTBvLXNiMFRLa0M9QC16U3RaQktxZ0xOST1QZEZwUDp0WkVASVh0S29TQHJXMnlKMzRxVy5qaTlqbzloeTg7Sjh2cUhKVV9DYlZvOldSdE9VP1MtaC0wWlE9aW5PPUJVb0JjQE0/eFIyOUpISVNpOWVuWE4yZk1KVUhpS25HX21zaUtGLW9JRlVDVWMyNjljV2tmaURJa3ZkUWp0Sm5FZQ==',
+ u'HTTP_COOKIE': u'',
+ u'PATH_INFO': u'/oauth2/token/',
+ u'QUERY_STRING': u'',
+ u'REMOTE_ADDR': '127.0.0.1',
+ u'REQUEST_METHOD': 'POST',
+ u'SCRIPT_NAME': u'',
+ u'SERVER_NAME': 'testserver',
+ u'SERVER_PORT': '80',
+ u'SERVER_PROTOCOL': 'HTTP/1.1',
+ u'wsgi.errors': <_io.BytesIO object at 0x38ed950>,
+ u'wsgi.input': <django.test.client.FakePayload object at 0x38fd310>,
+ u'wsgi.multiprocess': True,
+ u'wsgi.multithread': False,
+ u'wsgi.run_once': False,
+ u'wsgi.url_scheme': 'http',
+ u'wsgi.version': (1, 0)}>

@@ -1,0 +1,49 @@
+hus787 commented on 3 Aug 2017 •
+edited
+To replicate use
+spawn a proxy server (e.g. tinyproxy)
+pip2 install tornado
+vi foo.py
+Add 5. to it
+# lifted mostly from https://stackoverflow.com/a/14830911
+import tornado.httpserver                                                    
+import tornado.ioloop                                                        
+import tornado.options                                                       
+import tornado.web                                                           
+import tornado.httpclient                                                    
+
+from tornado.options import define, options                                  
+define("port", default=8000, help="run on the given port", type=int)         
+
+config = {"request_timeout":5,"connect_timeout":1,  "proxy_host":"localhost", "proxy_port":8888}                                                                           
+turl="http://image.shutterstock.com:8092/z/photo-slug-467388059.jpg"
+tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+
+
+class IndexHandler(tornado.web.RequestHandler):                          
+    @tornado.web.asynchronous                                                
+    def get(self):                                                           
+        client = tornado.httpclient.AsyncHTTPClient()                        
+        client.fetch(turl, self.handle_request, **config)   
+    def handle_request(self, response):                                      
+        if response.error:                                                   
+            print("Error:", response.error)                                  
+        else:                                                                
+            self.write(response.body)                                        
+        self.finish()                                                        
+
+
+if __name__ == "__main__":                                                   
+    tornado.options.parse_command_line()                                     
+    app = tornado.web.Application(handlers=[(r"/", IndexHandler)], debug=True)
+    httpserver = tornado.httpserver.HTTPServer(app)
+    httpserver.listen(8000) 
+    tornado.ioloop.IOLoop.instance().start()
+python foo.py &
+curl localhost:8000/
+Result:
+root@320a5f66940a:/# curl localhost:8000/
+('Error:', HTTP 599: Operation timed out after 5001 milliseconds with 0 bytes received)
+root@320a5f66940a:/# [I 170803 00:22:28 web:2063] 200 GET / (127.0.0.1) 5007.07ms
+I think it's because of the initial connection to the proxy that overrides the connection timeout.
+Can it be fixed?

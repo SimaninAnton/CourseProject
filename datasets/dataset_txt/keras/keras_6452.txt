@@ -1,0 +1,64 @@
+Contributor
+tzachar commented on 10 Nov 2015
+Hello.
+It seems there is a bug (??) in TimeDistributedDense, or I may be doing something wrong.
+Loading a model from file gives different predictions that the same model b4 saving to file.
+I've been banging my head over this for the last couple of days.
+Sorry for cross posting in keras-users.
+Here is the code:
+from __future__ import print_function
+import numpy as np
+from keras.models import Sequential
+from keras.layers.core import Dense, TimeDistributedDense, TimeDistributedMerge
+from keras.models import model_from_json
+
+
+def create_model(n_features):
+    model = Sequential()
+
+    model.add(
+        TimeDistributedDense(
+            input_dim=n_features, output_dim=10, init="one",
+        ))
+    model.add(TimeDistributedMerge(mode='ave'))
+    model.add(Dense(output_dim=1, init="one"))
+    return model
+
+
+def save_model(model, fname):
+    json_string = model.to_json()
+    open(fname, 'w').write(json_string)
+    model.save_weights(fname + '.h5', overwrite=True)
+
+
+def load_model(fname):
+    model = model_from_json(open(fname).read())
+    model.load_weights(fname + '.h5')
+    return model
+
+
+if __name__ == '__main__':
+    np.random.seed(1337)
+    n_features = 4000
+
+    model = create_model(n_features)
+    model.compile(loss='mse',
+                class_mode="categorical",
+                optimizer='rmsprop')
+
+    input_matrix = np.random.random((1000, 5, n_features))
+    ys = np.random.random(1000)
+
+    for i in xrange(5):
+        loss = model.train_on_batch(input_matrix, ys)
+        print(i, loss)
+
+    probs = model.predict(input_matrix)
+    print(probs[:10])
+    save_model(model, 'tmp_model')
+    model_loaded = load_model('tmp_model')
+    print('='*20)
+    probs_after = model_loaded.predict(input_matrix)
+    print(probs_after[:10])
+
+    print('total diffs:', sum(probs != probs_after))

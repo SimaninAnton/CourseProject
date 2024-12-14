@@ -1,0 +1,53 @@
+calvin620707 commented on 29 Aug 2019
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Purpose
+This is a feature request to add a new option, changeable, for fields to decide whether the field is changeable during put/patch.
+Proposal
+import requests
+from rest_framework import serializers
+
+class FooSerializer(serializers.Serializer):
+    unchangeable = serializers.CharField(changeable=False)
+Expected behavior
+resp = requests.post('/foo', json={'unchangeable': 'abc'})
+assert resp.status_code == 200
+
+foo_id = resp.json()['id']
+
+resp = requests.patch(f"/foo/{foo_id}", json={'unchangeable': 'changed!'})
+assert resp.status_code == 400
+assert resp.json() == {'errors': {'unchangeable': 'This field is unchangeable'}}
+
+resp = requests.patch(f'/foo/{foo_id}', json={'unchangeable': 'abc'})
+assert resp.status_code == 200
+
+# expected the same behavior for put.
+Pseudo code
+class Field(object):
+    def __init__(self, ..., changeable=True):
+        self.changeable = changeable
+        # ...
+    
+    def validate_changeable(self, data):
+        if self.changeable or self.parent is None or self.parent.instance is None:
+            return
+        
+        original_data = getattr(self.parent.instance, self.field_name)
+        if self.compare:
+            is_changed = self.compare(original_data, data) != 0
+        else:
+            is_changed = original_data != data
+        
+        if is_changed:
+            raise ValidationError("This field is unchangeable.")
+
+    def run_valdations(self, data=empty):
+        self.validate_changeable(data)
+        ...
+I can help to send the MR for this feature if the feature is acceptable.

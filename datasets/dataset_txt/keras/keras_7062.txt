@@ -1,0 +1,34 @@
+Contributor
+jfsantos commented on 19 Apr 2015
+This discussion started in #51, but as things can get complicated I decided to start another issue.
+It seems to be a good idea to store weights for a model separately in an HDF5 file (or even a Numpy npy file, but HDF5 would be more portable). I wanted to compare how large is a serialized model with and without the weights, so I did the following test:
+    model = Sequential()
+    model.add(Dense(n_input, 2048, init='uniform', activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(2048, 2048, init='uniform', activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(2048, 2048, init='uniform', activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(2048, 2048, init='uniform', activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(2048, n_output, init='uniform', activation='linear'))
+(the model is intentionally large!)
+I then compiled the model, serialized it after compilation, and removed the weights and post-compilation Theano objects/functions as follows:
+    for l in model.layers:
+        weights.append(l.get_weights())
+        l.params = []
+        try:
+            l.W = None
+            l.b = None
+        except ValueError:
+            pass
+    model.X = None
+    model.y = None
+    model.y_test = None
+    model.y_train = None
+    model._train  = None
+    model._train_with_acc  = None
+    model._test = None
+    model._test_with_acc = None
+    model._predict = None
+The full compiled model ends up with 243 MB, and the cleaned-up model with 120 MB (which is exacly the same we would get from pickling the non-compiled models with the weight matrices deleted). Is there anything else we could remove to make the serialized model smaller?

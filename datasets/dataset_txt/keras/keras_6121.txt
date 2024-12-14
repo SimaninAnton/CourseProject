@@ -1,0 +1,32 @@
+sunshineatnoon commented on 14 Jan 2016
+I use Keras to run a forward pass with weights pre-trained on another network, but the forward pass is terribly slow. While it takes only 2~3 seconds on Darknet, It takes me 27 seconds to run a forward pass. The result is as expected, so I don't know what I've done wrong here. Here is my model in keras:
+def SimpleNet(googleNet):
+    model = Sequential()
+
+    #Convolution Layer 2 & Max Pooling Layer 3
+    model.add(ZeroPadding2D(padding=(3,3),input_shape=(3,224,224)))
+    model.add(Convolution2D(64, 7, 7, weights=[googleNet.layers[1].weights,googleNet.layers[1].biases],border_mode='valid',subsample=(2,2)))
+    model.add(LeakyReLU(alpha=0.1))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    #Use a for loop to replace all manually defined layers
+    for i in range(3,27):
+        l = googleNet.layers[i]
+        if(l.type == "CONVOLUTIONAL"):
+            model.add(ZeroPadding2D(padding=(l.size//2,l.size//2,)))
+            model.add(Convolution2D(l.n, l.size, l.size, weights=[l.weights,l.biases],border_mode='valid',subsample=(1,1)))
+            model.add(LeakyReLU(alpha=0.1))
+        elif(l.type == "MAXPOOL"):
+            model.add(MaxPooling2D(pool_size=(2, 2)))
+        elif(l.type == "AVGPOOL"):
+            model.add(AveragePooling2D(pool_size=(7,7),strides=(7,7)))
+            #In this particular model, feature output by avg pooling needs to be flattened. TODO:Use a better way to indicate there is a flatten layer
+            model.add(Flatten())
+        elif(l.type == "CONNECTED"):
+            model.add(Dense(l.output_size, weights=[l.weights,l.biases]))
+            model.add(LeakyReLU(alpha=0.1))
+        else:
+            print "Error: Unknown Layer Type"
+    model.add(Activation('softmax'))
+    return model
+It's a network similar to GoogleNet with 27 layers in total. I am using a 3GB Quadro K4000

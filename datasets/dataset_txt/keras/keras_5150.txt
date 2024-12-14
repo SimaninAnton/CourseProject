@@ -1,0 +1,88 @@
+wailoktam commented on 18 May 2016
+Hi, I cannot get either cosine or dot to work when merge two layers. Let me paste a runnable piece of code that do a concat when merging two layers (I will replace it with cosine, which I really want but have problems with):
+test3dLArray = numpy.random.random((127, 100,100))
+test3dRArray = numpy.random.random((127, 100,100))
+testLabels = numpy.random.randint(2, size=127)
+testLabels = np_utils.to_categorical(testLabels, 2)
+leftKerasModel = Sequential()
+leftKerasModel.add(Reshape((1,100,100),  input_shape=(100, 100)))
+leftKerasModel.add(Convolution2D(10, 3, 3, border_mode='same'))
+leftKerasModel.add(Activation('relu'))
+leftKerasModel.add(MaxPooling2D(pool_size=(2, 2)))
+
+rightKerasModel = Sequential()
+rightKerasModel.add(Reshape((1,100,100), input_shape=(100,100)))
+rightKerasModel.add(Convolution2D(10, 3, 3, border_mode='same'))
+rightKerasModel.add(Activation('relu'))
+rightKerasModel.add(MaxPooling2D(pool_size=(2, 2)))
+
+mergedKerasModel = Sequential()
+merged = Merge([leftKerasModel, rightKerasModel], mode='concat')
+mergedKerasModel.add(merged)
+mergedKerasModel.add(Flatten())
+mergedKerasModel.add(Dense(2))
+mergedKerasModel.add(Activation('softmax'))
+
+sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+mergedKerasModel.compile(loss='custom_objective', optimizer=sgd)
+mergedKerasModel.fit([test3dLArray, test3dRArray], testLabels, nb_epoch=10, batch_size=32)
+Now I revise it and incorporate some of the codes found in #2672. This is done by replacing the following:
+ mergedKerasModel = Sequential()
+ merged = Merge([leftKerasModel, rightKerasModel], mode='concat')
+ mergedKerasModel.add(merged)
+ mergedKerasModel.add(Flatten())
+ mergedKerasModel.add(Dense(2))
+ mergedKerasModel.add(Activation('softmax'))
+with:
+cos_distance = Merge([leftKerasModel, rightKerasModel], mode='cos', dot_axes=1)
+cos_distance = Reshape((1,))(cos_distance)
+cos_similarity = Lambda(lambda x: 1-x)(cos_distance)
+mergedKerasModel = Model([leftKerasModel, rightKerasModel], [cos_similarity])
+As a result, I get this error:
+File "trainKeras.py", line 315, in
+km = make_test_network()
+File "trainKeras.py", line 134, in make_test_network
+cos_distance = Reshape((1,))(cos_distance)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Keras-1.0.2-py2.7.egg/keras/engine/topology.py", line 452, in call
+'". This layer has no information'
+Exception: You tried to call layer "reshape_3". This layer has no information about its expected input shape, and thus cannot be built. You can build it manually via: layer.build(batch_input_shape)
+So I add the merged layer in another way:
+mergedKerasModel = Sequential()
+mergedKerasModel.add(Merge([leftKerasModel,rightKerasModel], mode='cos', dot_axes=1))
+mergedKerasModel.add(Reshape((1,)))
+mergedKerasModel.add(Lambda(lambda x: 1-x))
+And I get a different error message:
+File "trainKeras.py", line 322, in
+train_test_model(km,test3dLArray, test3dRArray, testLabels)
+File "trainKeras.py", line 158, in train_test_model
+km.fit([leftData, rightData], labels, nb_epoch=1, batch_size=32)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Keras-1.0.2-py2.7.egg/keras/models.py", line 409, in fit
+sample_weight=sample_weight)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Keras-1.0.2-py2.7.egg/keras/engine/training.py", line 1052, in fit
+callback_metrics=callback_metrics)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Keras-1.0.2-py2.7.egg/keras/engine/training.py", line 790, in _fit_loop
+outs = f(ins_batch)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Keras-1.0.2-py2.7.egg/keras/backend/theano_backend.py", line 518, in call
+return self.function(*inputs)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Theano-0.8.2-py2.7.egg/theano/compile/function_module.py", line 871, in call
+storage_map=getattr(self.fn, 'storage_map', None))
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Theano-0.8.2-py2.7.egg/theano/gof/link.py", line 314, in raise_with_op
+reraise(exc_type, exc_value, exc_trace)
+File "/home/ubuntu/anaconda2/lib/python2.7/site-packages/Theano-0.8.2-py2.7.egg/theano/compile/function_module.py", line 859, in call
+outputs = self.fn()
+ValueError: Input dimension mis-match. (input[1].shape[0] = 32, input[2].shape[0] = 200000000)
+Apply node that caused the error: Elemwise{Composite{(i0 - (i1 * i2))}}(TensorConstant{(1, 1) of 1.0}, lambda_1_target, Elemwise{Sub}[(0, 1)].0)
+Toposort index: 113
+Inputs types: [TensorType(float32, (True, True)), TensorType(float32, matrix), TensorType(float32, col)]
+Inputs shapes: [(1, 1), (32, 2), (200000000, 1)]
+Inputs strides: [(4, 4), (8, 4), (4, 4)]
+Inputs values: [array([[ 1.]], dtype=float32), 'not shown', 'not shown']
+Outputs clients: [[Elemwise{maximum,no_inplace}(Elemwise{Composite{(i0 - (i1 * i2))}}.0, TensorConstant{(1, 1) of 0.0}), Elemwise{Composite{((i0 * EQ(i1, i2) * i3 * i4 * i5) / i6)}}[(0, 1)](TensorConstant{%281, 1%29 of -1.0}, Elemwise{maximum,no_inplace}.0, Elemwise{Composite{%28i0 - %28i1 * i2%29%29}}.0, InplaceDimShuffle{x,x}.0, InplaceDimShuffle{0,x}.0, lambda_1_target, Elemwise{Mul}[%280, 0%29].0)]]
+Any suggestion on getting cos , dot to work. I expect a scalar from applying dot/cos to two matrices. I actually dont understand why a reshape need to be done.
+Thanks in advance.
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+[O] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[O] If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[O] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

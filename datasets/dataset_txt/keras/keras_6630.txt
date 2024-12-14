@@ -1,0 +1,60 @@
+nikogamulin commented on 25 Sep 2015
+Hi,
+I have tried to modify the LSTM text generator example in order to train the network with large corpus file (~100 MB).
+As the following line (46 in the original example) throws out of memory exception:
+javaX = np.zeros((len(sentences), maxlen, len(chars)), dtype=np.bool),
+I have now implemented the logic to split the file into chunks but am not sure if this approach is correct. The corpus file is split into chunks with following function:
+def getDataFromChunk(txtChunk, maxlen=20, step=3):
+sentences = []
+next_chars = []
+for i in range(0, len(txtChunk) - maxlen, step):
+sentences.append(txtChunk[i : i + maxlen])
+next_chars.append(txtChunk[i + maxlen])
+print('nb sequences:', len(sentences))
+print('Vectorization...')
+X = np.zeros((len(sentences), maxlen, len(chars)), dtype=np.bool)
+y = np.zeros((len(sentences), len(chars)), dtype=np.bool)
+for i, sentence in enumerate(sentences):
+for t, char in enumerate(sentence):
+X[i, t, char_indices[char]] = 1
+y[i, char_indices[next_chars[i]]] = 1
+return [X, y]
+and then the routine for iteration is modified as follows:
+for iteration in range(1, 60):
+print()
+print('-' * 50)
+print('Iteration', iteration)
+f = open('really_big_file.dat')
+for piece in read_in_chunks(f):
+X, y = getDataFromChunk(piece)
+model.fit(X, y, batch_size=128, nb_epoch=1)
+    start_index = random.randint(0, len(text) - maxlen - 1)
+
+    for diversity in [0.2, 0.5, 1.0, 1.2]:
+        print()
+        print('----- diversity:', diversity)
+
+        generated = ''
+        sentence = text[start_index : start_index + maxlen]
+        generated += sentence
+        print('----- Generating with seed: "' + sentence + '"')
+        sys.stdout.write(generated)
+
+        for iteration in range(400):
+            x = np.zeros((1, maxlen, len(chars)))
+            for t, char in enumerate(sentence):
+                x[0, t, char_indices[char]] = 1.
+
+            preds = model.predict(x, verbose=0)[0]
+            next_index = sample(preds, diversity)
+            next_char = indices_char[next_index]
+
+            generated += next_char
+            sentence = sentence[1:] + next_char
+
+            sys.stdout.write(next_char)
+            sys.stdout.flush()
+        print()
+Could anyone suggest the correct (or best) way to train LSTMs with large corpus files?
+Thanks,
+Niko

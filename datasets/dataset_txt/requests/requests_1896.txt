@@ -1,0 +1,60 @@
+weiqiyiji commented on Dec 3, 2013
+Hi, the code that get encoding, when fetching http://lianxu.me/blog/2012/11/14/10-cocoa-objc-newbie-problems/, it will return default encoding 'ISO-8859-1' (The page's content-type is text/html, not text/html; charset=utf-8)
+def get_encoding_from_headers(headers):
+    """Returns encodings from given HTTP Header Dict.
+
+    :param headers: dictionary to extract encoding from.
+    """
+
+    content_type = headers.get('content-type')
+
+    if not content_type:
+        return None
+
+    content_type, params = cgi.parse_header(content_type)
+
+    if 'charset' in params:
+         return params['charset'].strip("'\"")
+
+    if 'text' in content_type:
+        return 'ISO-8859-1'
+And then, encoding is 'ISO-8859-1', so the text will call unicode(content, 'ISO-8859-1'), but the content is already utf-8 encoded, so this will return an invalid unicode string that I cannot call unicode.decode('utf-8') on it.
+@property
+def text(self):
+    """Content of the response, in unicode.
+
+    if Response.encoding is None and chardet module is available, encoding
+    will be guessed.
+    """
+
+    # Try charset from content-type
+    content = None
+    encoding = self.encoding
+
+    if not self.content:
+        return str('')
+
+    # Fallback to auto-detected encoding.
+    if self.encoding is None:
+        encoding = self.apparent_encoding
+
+    # Decode unicode from given encoding.
+    try:
+        content = str(self.content, encoding, errors='replace')
+    except (LookupError, TypeError):
+        # A LookupError is raised if the encoding was not found which could
+        # indicate a misspelling or similar mistake.
+        #
+        # A TypeError can be raised if encoding is None
+        #
+        # So we try blindly encoding.
+        content = str(self.content, errors='replace')
+
+    return content
+I'll show you the code
+resp = requests.get('http://lianxu.me/blog/2012/11/14/10-cocoa-objc-newbie-problems/')
+resp.apprent_encoding # == 'utf-8'
+resp.encoding # == 'ISO-8859-1'
+resp.content # is byte array encoded in 'utf-8'
+resp.text # is a unicode string that wrap content in 'ISO-8859-1'
+I think requests should return None when no encoding found, otherwise this will lead wrong text that user cannot decode on it

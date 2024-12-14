@@ -1,0 +1,44 @@
+tychotatitscheff commented on Aug 18, 2014
+Maybe it is not the right place to report this, its one of my first issue report
+Winows 7
+Python 3.4
+Request 2.3
+In requests' main site it's said:
+connection keepalive should be 100% automatic.
+However in my case:
+on a ssl connection
+throught http proxy
+I had to add the "connection" : "keep-alive" header.
+But it took me so much time to find it because the exceeption raised was a requests.exceptions.ProxyError
+So i went into the code and find that:
+httplib_response = conn.getresponse()
+in _make_request() function in connection_pool.py raise a SocketError wich is converted to a ReadTimeoutError : all correct for now since no connection then we come to a timeout.
+But then this error is rewrap to something incorrect in connectionpool.py.
+        except (TimeoutError, HTTPException, SocketError) as e:
+            if conn:
+                # Discard the connection for these exceptions. It will be
+                # be replaced during the next _get_conn() call.
+                conn.close()
+                conn = None
+
+            if not retries:
+                if isinstance(e, TimeoutError):
+                    # TimeoutError is exempt from MaxRetryError-wrapping.
+                    # FIXME: ... Not sure why. Add a reason here.
+                    raise
+
+                # Wrap unexpected exceptions with the most appropriate
+                # module-level exception and re-raise.
+                if isinstance(e, SocketError) and self.proxy:
+                    raise ProxyError('Cannot connect to proxy.', e)
+
+                if retries is False:
+                    raise ConnectionError('Connection failed.', e)
+
+                raise MaxRetryError(self, url, e)
+
+            # Keep track of the error for the retry warning.
+            err = e
+and since there is a proxy. Boom. proxy error.
+So WRONG advice in requests site and bug in urllib3.
+Hope it can help.

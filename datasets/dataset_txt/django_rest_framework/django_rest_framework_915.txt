@@ -1,0 +1,57 @@
+zerongtonywang commented on 2 Feb 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Issue
+Using a UniqueValidator on a ModelSerializer field, with the serializer instance model not matching the validator queryset model, results in unintended uniqueness validation.
+Example
+...
+
+class SuperUser(models.Model):
+    user = models.OneToOneField(
+        BaseUser,
+        on_delete=models.CASCADE,
+    )
+
+class SuperUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SuperUser
+        fields = '__all__'
+
+    email = serializers.EmailField(
+        source='baseuser.email', # referencing field from related model
+        validators=[UniqueValidator(queryset=BaseUser.objects.all())]
+    )
+
+super_user = SuperUser.objects.get(pk=2)
+print(super_user.user.pk) # 1
+patch_data = {'email': super_user.user.email}
+s = SuperUserSerializer(super_user, data=patch_data, partial=True)
+s.is_valid() # ValidationError: {'email': ['This field should be unique']}
+Debug
+rest_framework/validators.py
+class UniqueValidator(object):
+    ...
+
+    def exclude_current_instance(self, queryset):
+        print(queryset.model) # <class 'BaseUser'>
+        if self.instance is not None:
+            print(type(self.instance)) # <class 'SuperUser'>
+            return queryset.exclude(pk=self.instance.pk) # Unmatched types
+        return queryset
+Proposed solution
+Not really a solution but throws a warning would be helpful
+class UniqueValidator(object):
+    ...
+
+    def exclude_current_instance(self, queryset):
+        if self.instance is not None:
+            assert isinstance(self.instance, queryset.model), (
+                'Cannot perform uniqueness validation on unmatched models.'
+            )
+            return queryset.exclude(pk=self.instance.pk)
+        return queryset

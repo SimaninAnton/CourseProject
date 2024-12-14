@@ -1,0 +1,118 @@
+romanofoti commented on 5 May 2017
+Hello,
+I am experiencing what I believe to be an anomaly in the behaviour of the loss function in keras, both at the fit stage and at the evaluation stage. In particular, setting loss='mse' on a model created as dot product of two embeddings, produces an evaluation on the test set that is inconsistent with direct MSE computation.
+I am using the movielens dataset and the issue should be reproducible with the code below.
+I apologize if the code block is large or if this is not the best way to raise an issue. This is the first time I am raising an issue, so any feedback and criticism are appreciated.
+I hope I have not missed anything trivial.
+Thanks a lot for your assistance and effort!
+import numpy as np
+import pandas as pd
+import keras
+from sklearn.metrics import mean_squared_error
+from keras.models import Model
+from keras.layers import Input, Embedding
+from keras.layers.core import Flatten
+from keras.regularizers import l2
+from keras.optimizers import Adam
+from keras.layers.merge import dot, add
+
+def id2idx_dcs(id_ls):
+    id2index_dc = {str(old_id): idx for idx, old_id in enumerate(id_ls)}
+    index2id_dc = {str(idx): old_id for idx, old_id in \
+                   zip(id2index_dc.values(), id2index_dc.keys())}
+    return id2index_dc, index2id_dc
+#end
+
+def train_test_split_df(input_df, ratio=0.8, seed=None):
+    np.random.seed(seed)
+    msk = np.random.rand(len(input_df)) < ratio
+    train_df = input_df[msk]
+    test_df = input_df[~msk]
+    return train_df, test_df
+#end
+
+def MSE(pred_ar, truth_ar):
+    return mean_squared_error(pred_ar, truth_ar)
+#end
+
+def embedding_input(emb_name, n_items, n_fact=20, l2regularizer=1e-4):
+    inp = Input(shape=(1,), dtype='int64', name=emb_name)
+    return inp, Embedding(n_items, n_fact, input_length=1, 
+                          embeddings_regularizer=l2(l2regularizer))(inp)
+#end
+
+def create_bias(inp, n_items):
+    x = Embedding(n_items, 1, input_length=1)(inp)
+    return Flatten()(x)
+#end
+
+def build_dp_bias_recommender(u_in, m_in, u_emb, m_emb, u_bias, m_bias):
+    x = dot([u_emb, m_emb], axes=(2,2))
+    x = Flatten()(x)
+    x = add([x, u_bias])
+    x = add([x, m_bias])
+    bias_model = Model([u_in, m_in], x)
+    bias_model.compile(Adam(0.001), loss='mse')
+    return bias_model
+#end
+
+ratings_df = pd.read_csv('./ml-latest-small/ratings.csv')
+
+user_id2idx_dc, user_idx2id_dc = id2idx_dcs(list(ratings_df['userId'].unique()))
+movie_id2idx_dc, movie_idx2id_dc = id2idx_dcs(list(ratings_df['movieId'].unique()))
+ratings_df['userId'] = ratings_df['userId'].apply(lambda Id: user_id2idx_dc[str(Id)])
+ratings_df['movieId'] = ratings_df['movieId'].apply(lambda Id: movie_id2idx_dc[str(Id)])
+
+n_users = len(ratings_df['userId'].unique())
+n_movies = len(ratings_df['movieId'].unique())
+
+train_df, test_df = train_test_split_df(ratings_df, seed=7)
+
+usr_inp, usr_emb = embedding_input('user_in', n_users, n_fact=50, l2regularizer=1e-4)
+mov_inp, mov_emb = embedding_input('movie_in', n_movies, n_fact=50, l2regularizer=1e-4)
+
+usr_bias = create_bias(usr_inp, n_users)
+mov_bias = create_bias(mov_inp, n_movies)
+
+bias_model = build_dp_bias_recommender(usr_inp, mov_inp, usr_emb, mov_emb, usr_bias, mov_bias)
+
+bias_model.fit([train_df['userId'], train_df['movieId']], train_df['rating'], 
+               batch_size=64, epochs=12, validation_data=([test_df['userId'], test_df['movieId']], 
+                                                          test_df['rating']))
+
+print '*******************'
+eval_mse = bias_model.evaluate([test_df['userId'], test_df['movieId']], 
+                               test_df['rating'], batch_size=64)
+print '*******************'
+print 'Keras Evaluated MSE: ' + str(eval_mse)
+
+bias_preds_ar = np.squeeze(bias_model.predict([test_df['userId'], test_df['movieId']]))
+print 'MSE from Keras Predictions: ' + str(MSE(bias_preds_ar, test_df['rating'].values)) 
+Train on 79831 samples, validate on 20173 samples
+Epoch 1/12
+79831/79831 [==============================] - 14s - loss: 8.9411 - val_loss: 3.5795
+Epoch 2/12
+79831/79831 [==============================] - 16s - loss: 2.6027 - val_loss: 2.3310
+Epoch 3/12
+79831/79831 [==============================] - 16s - loss: 1.9929 - val_loss: 2.1322
+Epoch 4/12
+79831/79831 [==============================] - 16s - loss: 1.8269 - val_loss: 2.0352
+Epoch 5/12
+79831/79831 [==============================] - 16s - loss: 1.7304 - val_loss: 1.9563
+Epoch 6/12
+79831/79831 [==============================] - 16s - loss: 1.6522 - val_loss: 1.8852
+Epoch 7/12
+79831/79831 [==============================] - 16s - loss: 1.5786 - val_loss: 1.8218
+Epoch 8/12
+79831/79831 [==============================] - 15s - loss: 1.5057 - val_loss: 1.7566
+Epoch 9/12
+79831/79831 [==============================] - 16s - loss: 1.4375 - val_loss: 1.6944
+Epoch 10/12
+79831/79831 [==============================] - 17s - loss: 1.3698 - val_loss: 1.6369
+Epoch 11/12
+79831/79831 [==============================] - 17s - loss: 1.3045 - val_loss: 1.5773
+Epoch 12/12
+79831/79831 [==============================] - 17s - loss: 1.2416 - val_loss: 1.5326
+19264/20173 [===========================>..] - ETA: 0s
+Keras Evaluated MSE: 1.53255516829
+MSE from Keras Predictions: 0.987516968974

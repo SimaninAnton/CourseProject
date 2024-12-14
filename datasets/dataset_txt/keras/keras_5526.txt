@@ -1,0 +1,72 @@
+viksit commented on 12 Apr 2016
+Version:
+  Keras commit: df42e997b7d0f7c5e417c6a5a452c6ddd51e4c24 (Mon Apr 11 09:20:52 2016 -0700)
+  Theano: 1efb15394850a1cf08c7e26eea6fec256634aa7a (Mon Apr 11 17:49:20 2016 -0400)
+After saving a model arch and weights to disk, and then loading them, the loaded model errors out in using the predict_classes() function.
+To reproduce,
+# Modified version of the LSTM example from http://keras.io/getting-started/sequential-model-guide/
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+import numpy as np
+from keras.models import model_from_json
+import keras
+
+
+data_dim = 16
+timesteps = 8
+nb_classes = 10
+
+# expected input data shape: (batch_size, timesteps, data_dim)
+model = Sequential()
+model.add(LSTM(32, return_sequences=True,
+               input_shape=(timesteps, data_dim)))  # returns a sequence of vectors of dimension 32
+model.add(LSTM(32, return_sequences=True))  # returns a sequence of vectors of dimension 32
+model.add(LSTM(32))  # return a single vector of dimension 32
+model.add(Dense(10, activation='softmax'))
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+# generate dummy training data
+x_train = np.random.random((1000, timesteps, data_dim))
+y_train = np.random.random((1000, nb_classes))
+
+# generate dummy validation data
+x_val = np.random.random((100, timesteps, data_dim))
+y_val = np.random.random((100, nb_classes))
+
+model.fit(x_train, y_train,
+          batch_size=64, nb_epoch=5,
+          validation_data=(x_val, y_val))
+
+# -- end example code here and start bug report code --
+# test that the predict functions are working fine
+
+c = model.predict_classes(x_val, batch_size=32, verbose=True)
+d = model.predict_proba(x_val, batch_size=32, verbose=True)
+
+# save model weights and arch to disk
+model.save_weights("./keras1.h5", overwrite=True)
+json_string = model.to_json()
+with open("keras1.json", "w") as f:
+    f.write(json_string)
+
+print("-- Read from file ---")
+jstring_from_file = open("keras1.json").read()
+print(jstring_from_file)
+model_from_file = model_from_json(jstring_from_file)
+model_from_file.load_weights("./keras1.h5")
+print(model_from_file.summary())
+print("-- predict classes --")
+
+model_from_file.predict_classes(x_val, batch_size=32, verbose=True)
+Traceback
+Traceback (most recent call last):
+  File "keras1.py", line 53, in <module>
+    model_from_file.predict_classes(x_val, batch_size=32, verbose=True)
+  File "/Users/viksit/miniconda2/envs/my-environment/lib/python2.7/site-packages/Keras-1.0.0-py2.7.egg/keras/models.py", line 549, in predict_classes
+    proba = self.predict(x, batch_size=batch_size, verbose=verbose)
+  File "/Users/viksit/miniconda2/envs/my-environment/lib/python2.7/site-packages/Keras-1.0.0-py2.7.egg/keras/models.py", line 446, in predict
+    return self.model.predict(x, batch_size=batch_size, verbose=verbose)
+AttributeError: 'NoneType' object has no attribute 'predict'

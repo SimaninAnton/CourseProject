@@ -1,0 +1,142 @@
+zetaab commented on 7 Mar 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+use following settings in django rest framework
+REST_FRAMEWORK = {
+    # Use Django's standard `django.contrib.auth` permissions,
+    # or allow read-only access for unauthenticated users.
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+  'DEFAULT_RENDERER_CLASSES': (
+    'rest_framework.renderers.JSONRenderer',
+    #'rest_framework.renderers.XMLRenderer',
+    #'rest_framework.renderers.BrowsableAPIRenderer',
+  ),
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
+    )
+} 
+Expected behavior
+Excepted behavior is that token authentication does not ask for CSRF and does not create sessionid cookies.
+Actual behavior
+curl -XPOST http://localhost:8000/api/1.0/massgenerate -H 'Authorization: Token xxxx' -v
+*   Trying 127.0.0.1...
+* TCP_NODELAY set
+* Connected to localhost (127.0.0.1) port 8000 (#0)
+> POST /api/1.0/massgenerate HTTP/1.1
+> Host: localhost:8000
+> User-Agent: curl/7.54.0
+> Accept: */*
+> Authorization: Token xxxx
+>
+< HTTP/1.1 403 Forbidden
+< Date: Wed, 07 Mar 2018 12:18:20 GMT
+< Server: WSGIServer/0.2 CPython/3.6.2
+< Content-Type: application/json
+< Allow: POST, OPTIONS
+< X-debug-data-url: http://localhost:8000/__debug__/data/1520425100.500494/
+< X-Frame-Options: SAMEORIGIN
+< Vary: Accept-Language, Cookie
+< Content-Language: en
+< Content-Length: 46
+< X-Sentry-ID: cf2146eeb25749de91b9274aea39d43d
+< Set-Cookie:  sessionid=4cmdher7gxx8nkxxxh2vhxbgoc; expires=Wed, 06-Mar-2019 12:18:20 GMT; HttpOnly; Max-Age=31449600; Path=/
+<
+* Connection #0 to host localhost left intact
+{"detail":"CSRF Failed: CSRF cookie not set."}
+
+
+curl -XPOST http://localhost:8000/api/1.0/massgenerate -H 'Authorization: token xxxx' -v
+*   Trying 127.0.0.1...
+* TCP_NODELAY set
+* Connected to localhost (127.0.0.1) port 8000 (#0)
+> POST /api/1.0/massgenerate HTTP/1.1
+> Host: localhost:8000
+> User-Agent: curl/7.54.0
+> Accept: */*
+> Authorization: token c889931460f1137e064fa98abca6bf4addf27bc5
+>
+< HTTP/1.1 400 Bad Request
+< Date: Wed, 07 Mar 2018 12:18:32 GMT
+< Server: WSGIServer/0.2 CPython/3.6.2
+< Content-Type: application/json
+< Allow: POST, OPTIONS
+< X-debug-data-url: http://localhost:8000/__debug__/data/1520425112.421431/
+< X-Frame-Options: SAMEORIGIN
+< Vary: Accept-Language, Cookie
+< Content-Language: en
+< Content-Length: 74
+< X-Sentry-ID: 44e6361575d742789546d68e93a425a6
+<
+* Connection #0 to host localhost left intact
+{"link":["This field is required."],"targets":["This field is required."]}
+Like you can see if I write Token it asks for CSRF, and if I use lowercase token it works as should.
+However, if I change order of DEFAULT_AUTHENTICATION_CLASSES
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    )
+It works as should:
+% curl -XPOST http://localhost:8000/api/1.0/massgenerate -H 'Authorization: token xxxx' -v
+*   Trying 127.0.0.1...
+* TCP_NODELAY set
+* Connected to localhost (127.0.0.1) port 8000 (#0)
+> POST /api/1.0/massgenerate HTTP/1.1
+> Host: localhost:8000
+> User-Agent: curl/7.54.0
+> Accept: */*
+> Authorization: token xxxx
+>
+< HTTP/1.1 400 Bad Request
+< Date: Wed, 07 Mar 2018 12:21:14 GMT
+< Server: WSGIServer/0.2 CPython/3.6.2
+< Content-Type: application/json
+< Allow: POST, OPTIONS
+< X-debug-data-url: http://localhost:8000/__debug__/data/1520425273.703460/
+< X-Frame-Options: SAMEORIGIN
+< Vary: Accept-Language, Cookie
+< Content-Language: en
+< Content-Length: 74
+< X-Sentry-ID: 58f2389d15554586abd89dc156020872
+<
+* Connection #0 to host localhost left intact
+{"link":["This field is required."],"targets":["This field is required."]}%                                                                                                 
+% curl -XPOST http://localhost:8000/api/1.0/massgenerate -H 'Authorization: Token xxxx' -v
+*   Trying 127.0.0.1...
+* TCP_NODELAY set
+* Connected to localhost (127.0.0.1) port 8000 (#0)
+> POST /api/1.0/massgenerate HTTP/1.1
+> Host: localhost:8000
+> User-Agent: curl/7.54.0
+> Accept: */*
+> Authorization: Token xxxx
+>
+< HTTP/1.1 400 Bad Request
+< Date: Wed, 07 Mar 2018 12:21:16 GMT
+< Server: WSGIServer/0.2 CPython/3.6.2
+< Content-Type: application/json
+< Allow: POST, OPTIONS
+< X-debug-data-url: http://localhost:8000/__debug__/data/1520425276.774616/
+< X-Frame-Options: SAMEORIGIN
+< Vary: Accept-Language, Cookie
+< Content-Language: en
+< Content-Length: 74
+< X-Sentry-ID: 43d82f17e3724ea2944b41ca85c3247c
+< Set-Cookie:  sessionid=e6n9s1rtpmxxxd5clfh6yahvfnbk; expires=Wed, 06-Mar-2019 12:21:16 GMT; HttpOnly; Max-Age=31449600; Path=/
+<
+* Connection #0 to host localhost left intact
+{"link":["This field is required."],"targets":["This field is required."]}
+So two questions:
+should order of these authentication classes matter? Looks like so? Is this bug?
+why token authentication in both cases is creating sessionid, if Token is written in camelcase. Is this bug? It is not created if token is used
+djangorestframework==3.7.7
+Django==2.0

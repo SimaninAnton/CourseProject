@@ -1,0 +1,34 @@
+benwu232 commented on 29 Jun 2016 •
+edited
+Hi,
+I am trying to use tensorboard in callbacks to visualize the parameters in the model. However, I found the name display is a mess, which looks like "keras.layers.core.Dense object at 0x7f30f7583dd0_W". It is hard to know which layer is corresponding to this name. The reason is using model.layers as name.
+I found that using layer.name is much more clear. So I modified the code. And I also add some rules, if you want to display the layer, name it as "tb_some_layer" or "some_layer_tb", otherwise it will not displayed in tensorboard.
+Here is the code, it should replace the same function in L445 in callbacks.py.
+def _set_model(self, model):
+    import tensorflow as tf
+    import keras.backend.tensorflow_backend as KTF
+
+    self.model = model
+    self.sess = KTF.get_session()
+    if self.histogram_freq and self.merged is None:
+        layers = self.model.layers
+        for layer in layers:
+            if 'tb' in layer.name[:2] or 'tb' in layer.name[-2:]:
+                if hasattr(layer, 'W'):
+                    tf.histogram_summary('{}_W'.format(layer.name), layer.W)
+                if hasattr(layer, 'b'):
+                    tf.histogram_summary('{}_b'.format(layer.name), layer.b)
+                if hasattr(layer, 'output'):
+                    tf.histogram_summary('{}_out'.format(layer.name),
+                                         layer.output)
+    self.merged = tf.merge_all_summaries()
+    if self.write_graph:
+        if tf.__version__ >= '0.8.0':
+            self.writer = tf.train.SummaryWriter(self.log_dir,
+                                                 self.sess.graph)
+        else:
+            self.writer = tf.train.SummaryWriter(self.log_dir,
+                                                 self.sess.graph_def)
+    else:
+        self.writer = tf.train.SummaryWriter(self.log_dir)
+Please review it. @fchollet

@@ -1,0 +1,49 @@
+xeor commented on 21 Apr 2015
+I am getting an error when I try to implement voting logic for my db model. The idea is that people can vote via a write_only integer field. I also want the database itself to take care of the addition logic, so I wont get into any race-conditions.
+A simple example:
+from django.db.models import F
+from rest_framework import serializers
+
+class PostDetailSerializer(serializers.Serializer):
+    points = serializers.IntegerField(read_only=True)
+    vote = serializers.IntegerField(write_only=True)
+    def update(self, instance, validated_data):
+        instance.points = F('points') + validated_data.get('vote', 0)
+        instance.save(update_fields=['points'])
+        return instance
+This should work in my opinion, and it does (half-way). It does update the db, but the error comes after the update have happened.
+This is the error I'm getting when trying to update the object;
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/site-packages/django/contrib/staticfiles/handlers.py", line 63, in __call__
+    return self.application(environ, start_response)
+  File "/usr/lib/python2.7/site-packages/django/core/handlers/wsgi.py", line 189, in __call__
+    response = self.get_response(request)
+  File "/usr/lib/python2.7/site-packages/django/core/handlers/base.py", line 218, in get_response
+    response = self.handle_uncaught_exception(request, resolver, sys.exc_info())
+  File "/usr/lib/python2.7/site-packages/django/core/handlers/base.py", line 261, in handle_uncaught_exception
+    return debug.technical_500_response(request, *exc_info)
+  File "/usr/lib/python2.7/site-packages/django_extensions/management/technical_response.py", line 5, in null_technical_500_response
+    six.reraise(exc_type, exc_value, tb)
+  File "/usr/lib/python2.7/site-packages/django/core/handlers/base.py", line 132, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/usr/lib/python2.7/site-packages/django/views/decorators/csrf.py", line 58, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/usr/lib/python2.7/site-packages/django/views/generic/base.py", line 71, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/usr/lib/python2.7/site-packages/rest_framework/views.py", line 452, in dispatch
+    response = self.handle_exception(exc)
+  File "/usr/lib/python2.7/site-packages/rest_framework/views.py", line 449, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/usr/lib/python2.7/site-packages/rest_framework/generics.py", line 287, in put
+    return self.update(request, *args, **kwargs)
+  File "/usr/lib/python2.7/site-packages/rest_framework/mixins.py", line 70, in update
+    return Response(serializer.data)
+  File "/usr/lib/python2.7/site-packages/rest_framework/serializers.py", line 466, in data
+    ret = super(Serializer, self).data
+  File "/usr/lib/python2.7/site-packages/rest_framework/serializers.py", line 213, in data
+    self._data = self.to_representation(self.instance)
+  File "/usr/lib/python2.7/site-packages/rest_framework/serializers.py", line 435, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/usr/lib/python2.7/site-packages/rest_framework/fields.py", line 691, in to_representation
+    return int(value)
+TypeError: int() argument must be a string or a number, not 'CombinedExpression'

@@ -1,0 +1,15 @@
+Vladimir-Yashin commented on 2 Oct 2016
+Within merge(mode = 'cos') the value of denominator may become zero when either vector's norm is zero, so additional K.maximum() is used to work around this:
+https://github.com/fchollet/keras/blob/master/keras/engine/topology.py#L1296-L1299
+            denominator = K.sqrt(K.batch_dot(l1, l1, self.dot_axes) *
+                                 K.batch_dot(l2, l2, self.dot_axes))
+            denominator = K.maximum(denominator, K.epsilon())
+            output = K.batch_dot(l1, l2, self.dot_axes) / denominator
+The problem with the code is that although division by zero problem is eliminated during forward pass, but gradients computed through Merge layer may become inf/nan.
+Generally speaking the function that Merge implements becomes non-differentiable due to this K.maximum().
+I personally had this problem and there is at least one example of code in Lasagne where gradients become inf/nan:
+https://groups.google.com/d/msg/lasagne-users/zBXTU7KDbeI/btZ5CJ3pCgAJ
+Following code would assure smooth function implemented by Merge(mode = 'cos') and avoid this problem:
+            denominator = K.sqrt(K.batch_dot(l1, l1, self.dot_axes) *
+                                 K.batch_dot(l2, l2, self.dot_axes) + K.epsilon() )
+            output = K.batch_dot(l1, l2, self.dot_axes) / denominator

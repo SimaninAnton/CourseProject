@@ -1,0 +1,68 @@
+NinnOgTonic commented on 9 Feb 2017 •
+edited
+I found an issue in which Flask incorrectly handels the posted form-data when posted from Postman.
+The issue can be seen in this test case:
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/', methods=['POST'])
+def hello_world():
+
+    f = request.values
+    for key in f.keys():
+        for value in f.getlist(key):
+            print key.__repr__(),":",value.__repr__()
+
+    return 'Hello'
+If we execute the Flask app, and attempt to post the following command we will NOT encounter an issue in request no. 1
+$ curl -X POST -F 'username=davidwalsh' -F 'password=something' http://localhost:1234/
+127.0.0.1 - - [09/Feb/2017 15:27:06] "POST / HTTP/1.1" 200 -
+'username' : u'davidwalsh'
+'password' : u'something'
+This results in the following raw request:
+$ nc -l 1234
+POST / HTTP/1.1
+Host: localhost:1234
+User-Agent: curl/7.51.0
+Accept: */*
+Content-Length: 259
+Expect: 100-continue
+Content-Type: multipart/form-data; boundary=------------------------45f852bd90f5d691
+
+--------------------------45f852bd90f5d691
+Content-Disposition: form-data; name="username"
+
+davidwalsh
+--------------------------45f852bd90f5d691
+Content-Disposition: form-data; name="password"
+
+something
+--------------------------45f852bd90f5d691--
+How ever, if we utilise a tool like Chrome/Postman, flask seems to incorrectly handle the request form-data request seen here from postman:
+'------WebKitFormBoundaryZBQ6HpTUMMXKs08S\r\nContent-Disposition: form-data; name' : u'"username"\r\n\r\ndavidwalsh\r\n------WebKitFormBoundaryZBQ6HpTUMMXKs08S\r\nContent-Disposition: form-data; name="password"\r\n\r\nsomething\r\n------WebKitFormBoundaryZBQ6HpTUMMXKs08S--\r\n'
+And the raw request for the 2nd case:
+nc -l 1234
+POST / HTTP/1.1
+Host: localhost:1234
+Connection: keep-alive
+Content-Length: 253
+Postman-Token: bc27dc7d-162c-5684-3c73-b4f5cd409a0d
+Cache-Control: no-cache
+Origin: chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36
+Content-Type: application/x-www-form-urlencoded
+Accept: */*
+Accept-Encoding: gzip, deflate, br
+Accept-Language: en-US,en;q=0.8,da;q=0.6
+
+------WebKitFormBoundaryeLtABWI0kqqXwQLL
+Content-Disposition: form-data; name="username"
+
+davidwalsh
+------WebKitFormBoundaryeLtABWI0kqqXwQLL
+Content-Disposition: form-data; name="password"
+
+something
+------WebKitFormBoundaryeLtABWI0kqqXwQLL--
+While I realise the Chrome/Postman formatting is slightly different, it should still be very much valid I believe?

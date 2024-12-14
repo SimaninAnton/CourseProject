@@ -1,0 +1,46 @@
+vane commented on 14 Feb 2018
+I use tornado with some wsgi and observed following case when invoking GET request.
+In ioloop.py write_buffer is becoming null that causes _handle_write nullpointer
+a)
+tornado/tornado/iostream.py
+Line 475 in 8e9e755
+ self._write_buffer = None 
+
+How it happened :
+I got context switch between socked read and write.
+from this line socket write:
+b)
+tornado/tornado/iostream.py
+Line 861 in 8e9e755
+ num_bytes = self.write_to_fd( 
+
+to this line socket read:
+c)
+tornado/tornado/iostream.py
+Line 1059 in 8e9e755
+ self.close() 
+And then code continues from b) that causes null pointer cause there is no _write_buffer
+Couldn't find the issue so I will submit pull request if someone observed such behavior.
+I cannot replicate this on my environment every time so some rough logs from what is happening:
+DEBUG 2018-02-14 13:14:17 _handle_write 1
+DEBUG 2018-02-14 13:14:17 _handle_write 2
+DEBUG 2018-02-14 13:14:17 BaseIOStream write_to_fd self.socket.send
+DEBUG 2018-02-14 13:14:17 BaseIOStream read_from_fd self.socket.recv
+DEBUG 2018-02-14 13:14:17 close
+DEBUG 2018-02-14 13:14:17 problem
+DEBUG 2018-02-14 13:14:17 BaseIOStream close_fd self.socket.close
+DEBUG 2018-02-14 13:14:17 close _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _handle_read
+DEBUG 2018-02-14 13:14:17 invoked _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _maybe_add_error_listener
+DEBUG 2018-02-14 13:14:17 invoked _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _maybe_add_error_listener
+DEBUG 2018-02-14 13:14:17 invoked _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _maybe_add_error_listener
+DEBUG 2018-02-14 13:14:17 invoked _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _maybe_add_error_listener
+DEBUG 2018-02-14 13:14:17 invoked _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _maybe_add_error_listener
+DEBUG 2018-02-14 13:14:17 invoked _maybe_run_close_callback
+DEBUG 2018-02-14 13:14:17 _handle_write 3
+Thanks

@@ -1,0 +1,72 @@
+Davide-DD commented on 11 Sep 2019
+System information
+Have I written custom code (as opposed to using example directory): yes
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Mac OS 10.14.6
+TensorFlow backend (yes / no): yes
+TensorFlow version: v1.14.0-rc1-22-gaf24dc91b5 1.14.0
+Keras version: 2.2.4
+Python version: 3.7.3
+CUDA/cuDNN version: --
+GPU model and memory: NVIDIA GeForce GT 650M 1 GB / Intel HD Graphics 4000 1536 MB
+Describe the current behavior
+The method evaluate() is returning an accuracy of 0.71, while if I calculate the accuracy manually with predict(), I obtain 87 examples correctly predicted out of 100, therefore the accuracy should be 0.87, if I'm not misunderstanding how the accuracy is calculated.
+Describe the expected behavior
+I expected evaluate() and predict() to return the same accuracy.
+Code to reproduce the issue
+I set up a model with Keras, then I trained it on a dataset of 3 records and finally I tested the resulting model with evaluate() and predict(), using the same test set for both functions (the test set has 100 records and it doesn't have any record of the training set, as much as it can be relevant, given the size of the two datasets). The dataset is composed by 5 files, where 4 files represent each one a different temperature sensor, that each minute collects 60 measurements (each row contains 60 measurements), while the last file contains the class labels that I want to predict (in particular, 3 classes: 3, 20 or 100).
+Other info / logs
+This is the model I'm using:
+n_sensors, t_periods = 4, 60
+
+model = Sequential()
+
+model.add(Conv1D(100, 6, activation='relu', input_shape=(t_periods, n_sensors)))
+
+model.add(Conv1D(100, 6, activation='relu'))
+
+model.add(MaxPooling1D(3))
+
+model.add(Conv1D(160, 6, activation='relu'))
+
+model.add(Conv1D(160, 6, activation='relu'))
+
+model.add(GlobalAveragePooling1D())
+
+model.add(Dropout(0.5))
+
+model.add(Dense(3, activation='softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+That I train:
+self.model.fit(X_train, y_train, batch_size=3, epochs=5, verbose=1)
+Then I use evaluate:
+self.model.evaluate(x_test, y_test, verbose=1)
+And predict:
+predictions = self.model.predict(data)
+result = np.where(predictions[0] == np.amax(predictions[0]))
+if result[0][0] == 0:
+    return '3'
+elif result[0][0] == 1:
+    return '20'
+else:
+    return '100'
+For each class predicted, I confront it with the actual label, and then I calculate correct guesses / total examples, that should be equivalent to accuracy from the evaluate() function.
+Data feeded to evaluate() is taken from this function:
+label = pd.read_csv(os.path.join(self.testDir, 'profile.txt'), sep='\t', header=None)
+label = np_utils.to_categorical(label[0].factorize()[0])
+data = [os.path.join(self.testDir,'TS2.txt'),os.path.join(self.testDir, 'TS1.txt'),os.path.join(self.testDir,'TS3.txt'),os.path.join(self.testDir, 'TS4.txt')]
+df = pd.DataFrame()
+for txt in data:
+    read_df = pd.read_csv(txt, sep='\t', header=None)
+    df = df.append(read_df)
+df = df.apply(self.__predict_scale)
+df = df.sort_index().values.reshape(-1,4,60).transpose(0,2,1)
+return df, label
+While data feeded to predict() is taken from this other one:
+df = pd.DataFrame()
+for txt in data: # data 
+    read_df = pd.read_csv(StringIO(txt), sep='\t', header=None)
+    df = df.append(read_df)
+    df = df.apply(self.__predict_scale)
+    df = df.sort_index().values.reshape(-1,4,60).transpose(0,2,1)
+    return df

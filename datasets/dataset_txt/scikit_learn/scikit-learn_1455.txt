@@ -1,0 +1,35 @@
+lucgiffon commented on Mar 29, 2018 •
+edited
+Description
+metrics.pairwise functions (rbf_kernel for instance) throw error due to unexpected 1-D array instead of 2-D array when called from _pairwise_callable.
+I discovered the bug when I have been using sklearn.kernel_approximation.Nystroem with sklearn.metrics.pairwise.rbf_kernel. When Nystroem wants to compute the pairwise metric between the examples it asks for _pairwise_callable to do it and inside this function there is this thing:
+out = np.zeros((X.shape[0], Y.shape[0]), dtype='float')
+        iterator = itertools.combinations(range(X.shape[0]), 2)
+        for i, j in iterator:
+            out[i, j] = metric(X[i], Y[j], **kwds)
+if metric is a metric from sklearn.metrics.pairwise (I mean, the function, not the string) then it crashes because X[i] and Y[j] are both of shape (d,) instead of (1, d) and those metrics check if the input is 2D array.
+So there is a problem. But it may be multiple fold:
+I think my use case should work and for that, we only need to change the above code to the following:
+out = np.zeros((X.shape[0], Y.shape[0]), dtype='float')
+        iterator = itertools.combinations(range(X.shape[0]), 2)
+        for i, j in iterator:
+            x_i = np.reshape(X[i], (1, -1))
+            y_j = np.reshape(Y[j], (1, -1))
+            out[i, j] = metric(x_i, y_j, **kwds)
+One could say that to address my problem, I should use the string definition of kernel instead of the function directly. The problem is that the documentation of the sklearn.metrics.pariwise.pairwise_kernels function is contradictory because it says that valid values for metric are ['rbf', 'sigmoid', 'polynomial', 'poly', 'linear', 'cosine'] AND "If metric is a string, it must be one of the metrics in pairwise.PAIRWISE_KERNEL_FUNCTIONS" which are defined at sklearn.metrics.pairwise.kernel_metrics and contains other metrics than above ('chi2' for instance). Anyway, if I must not use _pairwise_callable with pairwise metrics from within sklearn itself, then It should be said in the documentation.
+What do you think?
+Steps/Code to Reproduce
+Example:
+import numpy as np
+from sklearn.metrics.pairwise import rbf_kernel
+
+subsample = np.random.rand(8, 10)
+nys = Nystroem(kernel=rbf_kernel, gamma=1., n_components=subsample.shape[0])
+nys.fit(subsample)
+Versions
+Linux-4.13.0-37-generic-x86_64-with-debian-stretch-sid
+Python 3.5.4 |Anaconda, Inc.| (default, Nov 20 2017, 18:44:38) 
+[GCC 7.2.0]
+NumPy 1.14.2
+SciPy 1.0.0
+Scikit-Learn 0.19.1

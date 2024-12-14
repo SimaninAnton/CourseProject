@@ -1,0 +1,54 @@
+datameister66 commented on 18 Jan 2019
+I am providing an error and a fully reproducible example. I'm aware the climate dataset is quite small, but you have to eat the elephant one bite at a time. I thank you in advance.
+The error:
+history <- model %>% fit(
+x_train_arr, y_train_arr,
+epochs = epochs, batch_size = batch_size,
+validation_split = 0.1
+)
+Error in py_call_impl(callable, dots$args, dots$keywords) :
+ValueError: Error when checking input: expected lstm_14_input to have shape (2, 1) but got array with shape (1, 2)
+The data is readily available here: https://github.com/datameister66/data/blob/master/climate.csv
+Here is the full code until failure, assuming you loaded a dataframe called "climate":
+ags <- seq(2)
+lag_names <- paste("lag", formatC(lags, width = nchar(max(lags)), flag = "0"), sep = "")
+lag_functions <- setNames(paste("dplyr::lag(., ", lags, ")"), lag_names)
+climate %>% dplyr::mutate_at(dplyr::vars(Temp), dplyr::funs(lag_functions)) -> lagged
+train <- lagged[6:90, ]
+test <- lagged[91:95, ]
+prep <- caret::preProcess(train, method = c("center", "scale"))
+trainT <- predict(prep, train)
+testT <- predict(prep, test)
+x_train <- trainT[, 4:5]
+y_train <- train$Temp
+x_test <- testT[, 4:5]
+y_test <- test$Temp
+x_train_arr <- array(unlist(x_train), dim = c(length(x_train), 1, 2))
+y_train_arr <- array(data = y_train, dim = c(length(y_train), 1, 1))
+x_test_arr <- array(data = x_test, dim = c(length(x_test), 1, 2))
+y_test_arr <- array(data = y_test, dim = c(length(y_test), 1, 2))
+Model inputs
+lag_setting <- 5 # = nrow(test)
+batch_size <- 5 # evenly divisible
+train_length <- 85
+tsteps <- 2 #how many lags
+epochs <- 30
+model <- keras_model_sequential()
+model %>%
+layer_lstm(units = 20,
+input_shape = c(tsteps, 1),
+batch_size = batch_size,
+return_sequences = TRUE,
+stateful = TRUE) %>%
+layer_lstm(units = 20,
+return_sequences = FALSE,
+stateful = TRUE) %>%
+layer_dense(units = 2)
+model %>%
+compile(loss = 'mae', optimizer = 'adam')
+model
+history <- model %>% fit(
+x_train_arr, y_train_arr,
+epochs = epochs, batch_size = batch_size,
+validation_split = 0.1
+)

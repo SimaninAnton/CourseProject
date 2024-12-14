@@ -1,0 +1,40 @@
+Contributor
+keunwoochoi commented on 14 Jan 2016
+I have a convnet based regression model, as below:
+model = Sequential()
+for i in range(5):
+    if i ==0:
+        model.add(Convolution2D(input_shape=(1, height, width))) # with or without l2 regularisation 
+    else:
+        model.add(Convolution2D()) # with or without l2 regularisation 
+    model.add(BatchNormalization())
+    model.add(PReLU())
+    model.add(MaxPooling2D()) # it has 4-6 conv layers.
+# then,
+model.add(Flatten())
+# now fully-connected layers
+for j in range(2):
+    model.add(Dense(128)) # with or without l2 regularisation
+    model.add(BatchNormalization())
+    model.add(PReLU()) # 
+# then,
+model.add(Dense(output_dimension, activation='sigmoid')) # target values is continuous in [0,1]
+# then compile with mse and optimisers 
+The system quite quickly converge to predict just the mean of each dimension as if there's no correlation at all with input data and target vectors, which might be true but I doubt it. I feel like I designed a very inefficient average computation network.
+I spent quite a long time inspecting if I made some errors and now really, really frustrated. This is what I have seen.
+After initialisation and before training, I ran model.predict(test_x), which thrown out [0.5]*output_dimensions e.g. [0.5, 0.5, 0.5, 0.5, 0.5] for the all data points. Is it something expected? I initialised all the layers convolution and dense layers with he_normal. As I used sigmoid as an activation of output layer, the value of 0.5 means it's predicting zeros for all dimension before its activation. I don't have any idea how it could happen with random initialisation - probably it's because of BN? Or is it something that shouldn't happen? I'm so confused.
+By visualising kernels I could see them evolve but the change gets smaller as it backprops. i.e. change in the first layer seems very small, although number says it's being updated.
+model.layers[idx].get_weights() returns a list. Is it [conv_layer_weights, bias]? By its dimension it must be, but just to confirm. If so, is the bias initialised with 0?
+After converging, as the title says, it predicts approximated means of each dimension like this:
+array([[ 0.40856639,  0.41575322,  0.33291921,  0.06373377,  0.18987735],
+       [ 0.40825802,  0.41566607,  0.33345419,  0.06351992,  0.18989056],
+       [ 0.40959656,  0.41564348,  0.33396491,  0.06293178,  0.19023168],
+       ...,
+       [ 0.40923968,  0.41534185,  0.33385843,  0.06460324,  0.19168563],
+       [ 0.40915081,  0.41577771,  0.33324537,  0.06356006,  0.18983789],
+       [ 0.40562034,  0.41507864,  0.33129829,  0.0580974 ,  0.18172719]])
+some other info)
+I'm using Keras 0.3.0 on GPU. Number of data is around 23k, spectrograms of music. + also tested on 0.3.1
+I measured the rates of change of weights. They seems in reasonable range and more importantly, every layers are being updated, so the gradient is flowing okay. (With ReLU however, it suffers from gradient vanishing.)
+I tried to change it to predict only one dimensional value, still it worked the same.
+Different loss functions result in the same predictions.

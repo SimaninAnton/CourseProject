@@ -1,0 +1,43 @@
+martinxyz commented on 2 Jun 2018 •
+edited
+On Debian/Linux, pipenv shell fails to locate the bash binary if you have the "SHELL" environment variable set to "bash".
+Problem Analysis
+Pipenv initializes PIPENV_SHELL to os.environ.get('SHELL'). Later in core.py:2161 it does this:
+shell = os.path.abspath(PIPENV_SHELL)
+which obviously will not search $PATH but just prepend the current directory. The workaround is SHELL="/bin/bash". I'm not sure how common it is, but I've had SHELL=bash set for 8 years and this is the first problem.
+I'd expect spawn() is capable of searching $PATH properly, but I don't know why abspath() was added in core.py.
+Full output:
+$ env|grep SHELL
+SHELL=bash
+$ pipenv shell
+Spawning environment shell (/home/martin/code/chaoseval/bash). Use 'exit' to leave.
+Traceback (most recent call last):
+  File "/home/martin/apps/bin/pipenv", line 11, in <module>
+    sys.exit(cli())
+  File "/home/martin/apps/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 722, in __call__
+    return self.main(*args, **kwargs)
+  File "/home/martin/apps/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 697, in main
+    rv = self.invoke(ctx)
+  File "/home/martin/apps/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 1066, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/home/martin/apps/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 895, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/home/martin/apps/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 535, in invoke
+    return callback(*args, **kwargs)
+  File "/home/martin/.local/lib/python3.6/site-packages/pipenv/cli.py", line 607, in shell
+    three=three, python=python, fancy=fancy, shell_args=shell_args
+  File "/home/martin/.local/lib/python3.6/site-packages/pipenv/core.py", line 2204, in do_shell
+    terminal_dimensions.lines, terminal_dimensions.columns
+  File "/home/martin/.local/lib/python3.6/site-packages/pipenv/vendor/pexpect/pty_spawn.py", line 204, in __init__
+    self._spawn(command, args, preexec_fn, dimensions)
+  File "/home/martin/.local/lib/python3.6/site-packages/pipenv/vendor/pexpect/pty_spawn.py", line 276, in _spawn
+    'executable: %s.' % self.command)
+pipenv.vendor.pexpect.exceptions.ExceptionPexpect: The command was not found or was not executable: /home/martin/code/chaoseval/bash.
+$ python3 -m pipenv.help
+$ python -m pipenv.help output
+Expected result
+pipenv shell finds bash in $PATH
+Actual result
+pipenv shell does not respect $PATH when looking for bash
+Steps to replicate
+SHELL=bash pipenv shell

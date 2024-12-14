@@ -1,0 +1,57 @@
+thomir commented on May 29, 2017
+Hi,
+We had code that used the vendorised urllib3 Retry functionality like so:
+from requests.packages.urllib3.util import Retry
+
+
+session = requests.Session()
+retries = Retry(
+    total=2, method_whitelist=['GET', 'POST', 'PATCH'],
+    status_forcelist=[500, 502, 503, 504])
+retryable_adapter = HTTPAdapter(max_retries=retries)
+session.mount('http://', retryable_adapter)
+session.mount('https://', retryable_adapter)
+When we were running requests 2.13.0 this worked fine. However, today we upgraded to 2.16.5 and found that while the above code does not error, it now silently does nothing.
+This is because:
+HTTPAdapter.__init__ calls self.max_retries = Retry.from_int(max_retries), passing my Retry instance into Retry.from_int. Retry.from_int has this snippet of code:
+if isinstance(retries, Retry):
+    return retries
+In earlier versions of requests this returned my Retry instance unchanged. However now the isinstance check fails because:
+>>> type(retries)
+<class 'requests.packages.urllib3.util.retry.Retry'>
+>>> Retry
+<class 'urllib3.util.retry.Retry'>
+I note that in 2.16.1 the release notes mentioned this exact problem, and provided a workaround (that works!). However, the release notes for 2.16.2 say that the workaround is no longer necessary.
+I'm happy with the workaround documented in the 2.16.1 release notes, but wanted to file this bug so you're aware that the advice in the 2.16.2 release notes is misleading, and leads to subtle bugs.
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.3"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.4.3"
+  },
+  "platform": {
+    "release": "4.10.0-21-generic",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.16.5"
+  },
+  "system_ssl": {
+    "version": "1000106f"
+  },
+  "urllib3": {
+    "version": "1.21.1"
+  },
+  "using_pyopenssl": false
+}

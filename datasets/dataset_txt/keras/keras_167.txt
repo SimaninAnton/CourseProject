@@ -1,0 +1,102 @@
+sailormoon2016 commented on 19 Jun 2019
+the model below is from Keras website and it behaves exactly as expected. It is defined with keras.models.Sequential(). I want to convert it to be defined with keras.models.Model() to make it more flexible for my future use. But after my conversion, the performance plummeted.
+The original model you can find on Keras website:
+def build_model():
+  model = Sequential([
+    layers.Dense(64, activation=tf.nn.relu, input_shape=[len(train_dataset.keys())]),
+    layers.Dense(64, activation=tf.nn.relu),
+    layers.Dense(1)
+  ])
+
+  optimizer = keras.optimizers.Adam()
+  model.compile(loss='mean_squared_error',
+                optimizer=optimizer,
+                metrics=['mean_absolute_error', 'mean_squared_error'])
+  return model
+
+model = build_model()
+model.summary()
+
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+dense_22 (Dense)             (None, 64)                640       
+_________________________________________________________________
+dense_23 (Dense)             (None, 64)                4160      
+_________________________________________________________________
+dense_24 (Dense)             (None, 1)                 65        
+=================================================================
+Total params: 4,865
+Trainable params: 4,865
+Non-trainable params: 0
+_________________________________________________________________
+The following code is my conversion:
+def build_model_base():
+  input = Input(shape=[len(train_dataset.keys())])
+  x = Dense(64, activation='relu', name="dense1")(input)   
+  x = Dense(64, activation='relu', name="dense2")(x)
+  output = Dense(1, activation='sigmoid', name='output')(x)
+  model = Model(input=[input], output=[output])
+  optimizer = keras.optimizers.Adam()
+
+  model.compile(loss='mean_squared_error', 
+                optimizer=optimizer,
+                metrics=['mean_absolute_error', 'mean_squared_error'])
+  return model
+
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_18 (InputLayer)        (None, 9)                 0         
+_________________________________________________________________
+dense1 (Dense)               (None, 64)                640       
+_________________________________________________________________
+dense2 (Dense)               (None, 64)                4160      
+_________________________________________________________________
+output (Dense)               (None, 1)                 65        
+=================================================================
+Total params: 4,865
+Trainable params: 4,865
+Non-trainable params: 0
+The only difference I can see is .Sequential doesn't count input layer while .Model counts it, but I don't believe they make the model structure different. However, the performance of .Sequential is:
+While the performance of the .Model() I converted is:
+Can anyone tell me what I did wrong?
+Some other context:
+I have read this post, but my code are all run on CPU in Google Colab
+print(keras.__version__) # 2.0.4
+print(tf.__version__) #1.14.0-rc1
+Code to plot the losses:
+def plot_history(history):
+  hist = pd.DataFrame(history.history)
+  hist['epoch'] = history.epoch
+  
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('Mean Abs Error [MPG]')
+  plt.plot(hist['epoch'], hist['mean_absolute_error'],
+           label='Train Error')
+  plt.plot(hist['epoch'], hist['val_mean_absolute_error'],
+           label = 'Val Error')
+  y_max = max(hist['val_mean_absolute_error'])
+  plt.ylim([0,y_max])
+  plt.legend()
+  
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('Mean Square Error [$MPG^2$]')
+  plt.plot(hist['epoch'], hist['mean_squared_error'],
+           label='Train Error')
+  plt.plot(hist['epoch'], hist['val_mean_squared_error'],
+           label = 'Val Error')
+  y_max = max(hist['val_mean_squared_error'])
+  plt.ylim([0,y_max])
+  plt.legend()
+  plt.show() 
+Code to train the model(it's exact same for both models):
+his_seq = model.fit(normed_train_data.values, train_labels.values,
+          batch_size=128,
+          validation_split = 0.1,
+          epochs = 100,
+          verbose=0)
+plot_history(his_seq)
+Any suggestion is appreciated!

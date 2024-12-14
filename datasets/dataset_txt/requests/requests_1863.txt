@@ -1,0 +1,60 @@
+xjsender commented on Dec 28, 2013
+I use below code to post a data from file to salesforce, sometimes, it worked.
+def create_batch(self, job_id):
+    url = self.base_url + "/job/%s/batch" % job_id
+
+    headers = self.headers
+    headers["Content-Type"] = "text/csv;charset=UTF-8"
+
+    if self.operation == "query" and self.records == None:
+        api = SalesforceApi(self.settings)
+        self.records = api.combine_soql(self.sobject)
+
+    response = requests.post(url, self.records, verify=False, headers=headers)
+    print (response.content)
+    if response.status_code == 400:
+        return self.parse_response(response, url)
+
+    batch_id = getUniqueElementValueFromXmlString(response.content, "id")
+
+    return batch_id
+However, sometimes, it may give me below error
+b'<?xml version="1.0" encoding="UTF-8"?>
+<error\n   xmlns="http://www.force.com/2009/06/asyncapi/dataload">\n
+<exceptionCode>UnsupportedContentType</exceptionCode>\n
+<exceptionMessage>
+Unsupported content type: application/x-www-form-urlencoded
+</exceptionMessage>\n
+</error>'
+Actually, I am very sure my headers content type is "text/csv;charset=UTF-8", however, after requests post is done, my request content type is changed to "application/x-www-form-urlencoded".
+So I check the requests source code and I add a print statement in models.py,
+else:
+    # Multi-part file uploads.
+    if files:
+        (body, content_type) = self._encode_files(files, data)
+    else:
+        if data:
+            body = self._encode_params(data)
+            if isinstance(data, str) or isinstance(data, builtin_str) or hasattr(data, 'read'):
+                content_type = None
+            else:
+                content_type = 'application/x-www-form-urlencoded'
+
+    self.prepare_content_length(body)
+
+    # Add content-type if it wasn't explicitly provided.
+    if (content_type) and (not 'content-type' in self.headers):
+        self.headers['Content-Type'] = content_type
+
+print (self.headers)
+self.body = body
+The print result contains two Content-Type, can you help me on this problem?
+CaseInsensitiveDict({
+    'Content-Length' : '22',
+    b'Content-Type' : 'text/csv;charset=UTF-8',
+    b'Accept' : '*/*',
+    b'Accept-Encoding' : 'gzip, deflate, compress',
+    'Content-Type' : 'application/x-www-form-urlencoded',
+    b'X-SFDC-Session' : '00D90000000Y9ll!AQEAQJXx87QsHqdUeBbbw1qCbC0K0a7063VDxwZeYv8ZRgDpnmTcQjdxQL5R3tgumYtqhYz3WYK74QH3_ZJgngFDvdzBHB_G',
+    b'User-Agent' : 'python-requests/1.2.3 CPython/3.3.0 Windows/7'
+})

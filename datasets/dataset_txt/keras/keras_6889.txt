@@ -1,0 +1,66 @@
+simonhughes22 commented on 6 Jul 2015
+nb_feature_maps = 128
+max_features = 884
+embedding_size = 64
+MAX_LEN  = 85
+
+graph = Graph()
+graph.add_input(name="input")
+graph.add_node(Embedding(max_features, embedding_size), name="embedding", input="input")
+graph.add_node(Reshape(1, MAX_LEN, embedding_size), name="reshape", input="embedding")
+
+flat_layer_names = []
+ngram_filters = [3, 4, 5, 7]
+for n_gram in ngram_filters:
+    sngram = str(n_gram)
+    conv_layer = 'conv-' + sngram
+    activ_layer = 'activ-' + sngram
+    pool_layer = 'max-pool-' + sngram
+    flat_layer = "flat-" + sngram
+    flat_layer_names.append(flat_layer)
+    graph.add_node(Convolution2D(nb_feature_maps, 1, n_gram, embedding_size), name=conv_layer, input='reshape')
+    graph.add_node(Activation("relu"), name=activ_layer, input=conv_layer)
+    graph.add_node(MaxPooling2D(poolsize=(MAX_LEN - n_gram + 1, 1)), name=pool_layer, input=activ_layer)
+    graph.add_node(Flatten(), name=flat_layer, input=pool_layer)
+
+graph.add_node(Dense(nb_feature_maps * len(ngram_filters), 15), name="dense1", inputs=flat_layer_names, merge_mode='concat')
+graph.add_node(Activation("sigmoid"), name="activ-top", input='dense1')
+graph.add_output(name='output', input='activ-top')
+
+graph.compile('adam', {"output" : "mse"})
+I am trying out the new graph model to share an embedding layer between multiple convolutions and upon compiling (graph.compile)
+         graph.compile('adam', {"output" : "mse"})
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/models.py", line 478, in compile
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 224, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 334, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 146, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 263, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/convolutional.py", line 170, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 224, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/convolutional.py", line 142, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 245, in get_output
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/core.py", line 32, in get_input
+  File "build/bdist.macosx-10.6-x86_64/egg/keras/layers/embeddings.py", line 56, in get_output
+    self.words = words
+  File "/Users/simon.hughes/GitHub/Theano/theano/sandbox/cuda/var.py", line 142, in __getitem__
+    return _operators.__getitem__(self, *args)
+  File "/Users/simon.hughes/GitHub/Theano/theano/tensor/var.py", line 401, in __getitem__
+    return self.take(args[axis], axis)
+  File "/Users/simon.hughes/GitHub/Theano/theano/tensor/var.py", line 433, in take
+    return theano.tensor.subtensor.take(self, indices, axis, mode)
+  File "/Users/simon.hughes/GitHub/Theano/theano/tensor/subtensor.py", line 2312, in take
+    return take(a, indices.flatten(), axis, mode).reshape(shape, ndim)
+  File "/Users/simon.hughes/GitHub/Theano/theano/tensor/subtensor.py", line 2290, in take
+    return advanced_subtensor1(a, indices)
+  File "/Users/simon.hughes/GitHub/Theano/theano/gof/op.py", line 508, in __call__
+    node = self.make_node(*inputs, **kwargs)
+  File "/Users/simon.hughes/GitHub/Theano/theano/tensor/subtensor.py", line 1615, in make_node
+    raise TypeError('index must be integers')
+TypeError: index must be integers
+Note that error is on compile, so no data has been passed to the model yet. Am I doing something wrong?

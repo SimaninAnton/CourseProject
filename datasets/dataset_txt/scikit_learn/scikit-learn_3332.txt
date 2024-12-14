@@ -1,0 +1,19 @@
+Contributor
+arthurmensch commented on Dec 9, 2015
+When using large number of classes (e.g. > 10000, e.g for recommender systems), StratifiedShuffleSplit is very slow when compared to ShuffleSplit. Looking at the code, I believe that the following part:
+            for i, class_i in enumerate(classes):
+                permutation = rng.permutation(class_counts[i])
+                perm_indices_class_i = np.where((y == class_i))[0][permutation]
+l. 1070 in sklearn.model_selection._split is suboptimal : we should build an index matrix holding the indices for each class in the dataset (implying to do a single pass over data, maybe along with a bincount(classes)). Indeed np.where does a pass over y at each call, leading to a O(n_classes * len(y)) complexity, whereas it could be O(len(y)) only.
+I obtain a significant gain in perf doing:
+        class_indices = np.zeros((n_classes, class_counts.max()), dtype='int')
+        count = np.zeros(n_classes, dtype='int')
+        for i in range(len(y_indices)):
+            class_indices[y_indices[i], count[y_indices[i]]] = i
+            count[y_indices[i]] += 1
+and subsequently replacing
+perm_indices_class_i = np.where((y == class_i))[0][permutation]
+by
+perm_indices_class_i = class_indices[class_i,:class_counts[i]][permutation]
+This is suboptimal given we iterate over y values using within a Python loop. I believe that the proper way to do this would be to create a bincount_with_ref cython function that would both count the occurence of classes and accumulate class index in a class_indices array - in arrayfuncs.pyx. Memory usage goes up of len(y) * sizeof('int'), which is typically small when compared to X size.
+Would this be useful ? I'll have to provide benchmarks !

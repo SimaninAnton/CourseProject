@@ -1,0 +1,76 @@
+Contributor
+GuiGel commented on 15 Nov 2019
+How to reproduce the behaviour
+import spacy
+from spacy.lang.en import English
+from spacy.pipeline import EntityRuler
+nlp = English()
+ruler = EntityRuler(nlp, phrase_matcher_attr='LOWER')
+patterns = [{"label": "PYTHON_LIB", "pattern": "spacy", "id": "spaCy"}]
+ruler.add_patterns(patterns)
+nlp.add_pipe(ruler)
+nlp.to_disk('spacy2.2_model')
+text = "Spacy is a python library for nlp"
+doc = nlp(text)
+print('{}\n{}'.format(text, '-'*100))
+print("original model\n")
+detection = [(ent.text, ent.label_, ent.ent_id_) for ent in doc.ents]
+print('ENT TEXT -> {}\nENT LABEL > {}\nENT ID ---> {}\n'.format(*detection[0]))
+nlp_loaded = spacy.load('spacy2.2_model')
+print("{}\nload model\n".format('-'*100))
+loaded_doc = nlp_loaded("Spacy is a python library for nlp.")
+detection = [(ent.text, ent.label_, ent.ent_id_) for ent in loaded_doc.ents]
+print(detection)
+--> OUTPUT
+Spacy is a python library for nlp
+original model
+ENT TEXT -> Spacy
+ENT LABEL > PYTHON_LIB
+ENT ID ---> spaCy
+load model
+[]
+Your Environment
+spaCy version: 2.2.2
+Platform: Linux-4.9.0-11-amd64-x86_64-with-debian-9.11
+Python version: 3.7.3
+Temporarily, I have modified the EntityRuler from_disk method in order to have my exemple working.
+I have split the deserializer in 2 parts. One in order to deserialize the cfg first and and other one in order to deserialize the patterns. By this way the phrase_matcher_attr attribute can be take into account when the add_patterns method is called by the line: from_disk(path, deserializers_patterns, {})
+Info
+The code that I have used to solved the bug in order to continue working...
+def from_disk(self, path, **kwargs):
+"""Load the entity ruler from a file. Expects a file containing
+newline-delimited JSON (JSONL) with one entry per line.
+    path (unicode / Path): The JSONL file to load.
+    **kwargs: Other config paramters, mostly for consistency.
+    RETURNS (EntityRuler): The loaded entity ruler.
+
+    DOCS: https://spacy.io/api/entityruler#from_disk
+    """
+    path = ensure_path(path)
+    depr_patterns_path = path.with_suffix(".jsonl")
+    if depr_patterns_path.is_file():
+        patterns = srsly.read_jsonl(depr_patterns_path)
+        self.add_patterns(patterns)
+    else:
+        cfg = {}
+'---------------------------------- MODIF ---------- SPLIT SERIALIZER -----------------------------'
+deserializers_patterns = {
+"patterns": lambda p: self.add_patterns(
+srsly.read_jsonl(p.with_suffix(".jsonl"))
+)}
+deserializers_cfg = {
+"cfg": lambda p: cfg.update(srsly.read_json(p))
+}
+from_disk(path, deserializers_cfg, {})
+'--------------------------------------------------------------------------------------------------------------'
+self.overwrite = cfg.get("overwrite", False)
+self.phrase_matcher_attr = cfg.get("phrase_matcher_attr")
+self.ent_id_sep = cfg.get("ent_id_sep", DEFAULT_ENT_ID_SEP)
+        if self.phrase_matcher_attr is not None:
+            self.phrase_matcher = PhraseMatcher(
+                self.nlp.vocab, attr=self.phrase_matcher_attr
+            )
+'---------------------------------- MODIF ---------- DESERIALIZE PATTERNS ----------------------'
+from_disk(path, deserializers_patterns, {})
+return self
+Can anyone reproduce the error?

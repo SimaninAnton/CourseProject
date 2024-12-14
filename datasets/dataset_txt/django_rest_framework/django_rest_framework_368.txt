@@ -1,0 +1,56 @@
+wli commented on 11 Jul 2018
+I ran into this issue upgrading from 3.7 to 3.8. I had a @detail_route named detail, which failed once converted to @action. This breaking change was not mentioned in the release notes for 3.8 (http://www.django-rest-framework.org/topics/3.8-announcement/).
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create an extra action within a ViewSet.
+class QuestionViewSet(mixins.CreateModelMixin,
+                      mixins.RetrieveModelMixin,
+                      viewsets.GenericViewSet):
+Original working 3.7.x code:
+  @detail_route(methods=['get'])
+  def detail(self, request, pk=None):
+    pass
+Upgraded according to 3.8.x docs, but it WILL throw an error when hitting this route.
+  @action(methods=['get'], detail=True)
+  def detail(self, request, pk=None):
+    pass
+Workaround code:
+  @action(methods=['get'], detail=True, url_path='detail', url_name='detail')
+  def qdetail(self, request, pk=None):
+    pass
+Expected behavior
+Routing should work as intended.
+Actual behavior
+Throws a TypeError: 'bool' object is not callable:
+[ERROR django.request] Internal Server Error: /questions/41471462-5b02-4fa7-bb2e-d1d03443e60f/detail/
+Traceback (most recent call last):
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/django/core/handlers/exception.py", line 35, in inner
+    response = get_response(request)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/django/core/handlers/base.py", line 128, in _get_response
+    response = self.process_exception_by_middleware(e, request)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/django/core/handlers/base.py", line 126, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/usr/lib/python3.6/contextlib.py", line 52, in inner
+    return func(*args, **kwds)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/django/views/decorators/csrf.py", line 54, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/rest_framework/viewsets.py", line 103, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/rest_framework/views.py", line 483, in dispatch
+    response = self.handle_exception(exc)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/rest_framework/views.py", line 443, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/home/wli/.envs/project/lib/python3.6/site-packages/rest_framework/views.py", line 480, in dispatch
+    response = handler(request, *args, **kwargs)
+TypeError: 'bool' object is not callable
+Debugging notes
+Behavior was changed in 73203e6#diff-faaea574b0b229b4c6ccf6078f194d17
+# The detail initkwarg is reserved for introspecting the viewset type.
+cls.detail = None
+It would be nice for the system to do some sanity checks to either prevent this, or at least give a better error message. It is difficult for an end user to debug and find the root cause of this. detail() is not an uncommon name for a detail=True route.

@@ -1,0 +1,58 @@
+juhoautio commented on 3 Dec 2019 •
+edited
+Issue description
+When pipenv run is executed while another virtual environment is active, pipenv run still uses the project-specific Pipenv virtual environment if it exists.
+This is unexpected, because for example pipenv --py points to the active virtual env, and also pipenv install installs to it (instead of the project's own virtual env)!
+Expected result
+I expected pipenv run to use the env & python that pipenv --py and pipenv install are using in this context (within an activated virtual environment).
+Steps to replicate
+I created this minimal test project to reproduce https://github.com/juhoautio/PipenvTest
+But the Pipfile content is also here:
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[packages]
+
+[requires]
+python_version = "3.6.9"
+I start with a clean shell session (no virtual environments activated).
+$ cd PipenvTest
+$ pipenv install
+This creates a Pipenv virtual environment at ~/.local/share/virtualenvs/PipenvTest-vHYBheAh with Python 3.6.9.
+Now, to simulate the scenario where this was causing confusion, I create a regular virtual environment & activate it (Pipenv is not involved in this):
+$ python3 -V
+Python 3.7.2
+$ python3 -m venv ~/.local/share/virtualenvs/my-python-3.7.2-venv
+$ source ~/.local/share/virtualenvs/my-python-3.7.2-venv/bin/activate
+(my-python-3.7.2-venv) $ python -V
+Python 3.7.2
+Now, I try to check which python pipenv would use:
+(my-python-3.7.2-venv) $ pipenv --py
+Courtesy Notice: Pipenv found itself running within a virtual environment, so it will automatically use that environment, instead of creating its own for any project. You can set PIPENV_IGNORE_VIRTUALENVS=1 to force pipenv to ignore that environment and create its own instead. You can set PIPENV_VERBOSITY=-1 to suppress this warning.
+/Users/JuhoAutio/.local/share/virtualenvs/my-python-3.7.2-venv/bin/python
+This is what I expected.
+Then I actually run python with pipenv:
+(my-python-3.7.2-venv) $ pipenv run python -V
+Courtesy Notice: Pipenv found itself running within a virtual environment, so it will automatically use that environment, instead of creating its own for any project. You can set PIPENV_IGNORE_VIRTUALENVS=1 to force pipenv to ignore that environment and create its own instead. You can set PIPENV_VERBOSITY=-1 to suppress this warning.
+Python 3.6.9
+Well that's unexpected!
+What if I explicitly ignore the active virtual env:
+(my-python-3.7.2-venv) $ PIPENV_IGNORE_VIRTUALENVS=1 pipenv --py
+/Users/JuhoAutio/.local/share/virtualenvs/PipenvTest-vHYBheAh/bin/python
+This is again as expected.
+(my-python-3.7.2-venv) $ PIPENV_IGNORE_VIRTUALENVS=1 pipenv run python -V
+Python 3.6.9
+This is now normal because active environment was explicitly ignored.
+Finally, what if I delete the project-specific, Pipenv-created env?
+rm -r ~/.local/share/virtualenvs/PipenvTest-vHYBheAh
+(my-python-3.7.2-venv) $  pipenv run python -V
+Courtesy Notice: Pipenv found itself running within a virtual environment, so it will automatically use that environment, instead of creating its own for any project. You can set PIPENV_IGNORE_VIRTUALENVS=1 to force pipenv to ignore that environment and create its own instead. You can set PIPENV_VERBOSITY=-1 to suppress this warning.
+Warning: There was an unexpected error while activating your virtualenv. Continuing anyway...
+Python 3.7.2
+Ha! pipenv run switched to using the currently active environment. This is what I would always expect to be used as long as PIPENV_IGNORE_VIRTUALENVS=1 is not set.
+I would prefer to not share my pipenv --support output. This issue is easy to reproduce, any way.
+I do have the latest version:
+pipenv --version
+pipenv, version 2018.11.26

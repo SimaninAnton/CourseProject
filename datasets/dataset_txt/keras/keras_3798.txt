@@ -1,0 +1,108 @@
+ruanxt commented on 1 Dec 2016
+I modified the example from the documentation for variational autoencoder in the website:
+https://blog.keras.io/building-autoencoders-in-keras.html,
+hoping to use more layers.
+But it completely doesn't work with theano backend, and works with batch size 1 wiht tensorflow and throw out errors with batch size larger than 1. Here is the code:
+from keras.models import Model
+from keras.layers import Input, Dense, Activation, Lambda
+import numpy as np
+from keras import backend as K
+from keras.datasets import mnist
+from keras.callbacks import ModelCheckpoint
+
+batch_size =1 
+original_dim = 784 
+
+n_h1 = 300
+n_h2 = 50
+n_z = 10
+epsilon_std = 1.0
+nb_epoch = 100
+
+x = Input(shape=(original_dim,))
+h = Dense(n_h1, activation='relu')(x)
+h = Dense(n_h2, activation='relu')(h)
+
+z_mean = Dense(n_z)(h)
+z_log_sigma = Dense(n_z)(h)
+
+
+def sampling(args):
+    z_mean, z_log_sigma = args
+    epsilon = K.random_normal(K.shape(z_mean),
+                              mean=0., std=epsilon_std)
+    return z_mean + K.exp(z_log_sigma) * epsilon
+
+z = Lambda(sampling, output_shape=(n_z,))([z_mean, z_log_sigma])
+
+d = Dense(n_h2, activation='relu')(z)
+d = Dense(n_h1, activation='relu')(d)
+x_decoded_mean = Dense(original_dim, activation='sigmoid')(d)
+
+# end-to-end autoencoder
+vae = Model(x, x_decoded_mean)
+
+# encoder, from inputs to latent space
+encoder = Model(x, z_mean)
+
+def vae_loss(x, x_decoded_mean):
+    xent_loss = K.binary_crossentropy(x, x_decoded_mean)
+    kl_loss = - 0.5 * K.mean(1 + z_log_sigma - K.square(z_mean) - K.exp(z_log_sigma), axis=-1)
+    return xent_loss + kl_loss
+
+vae.compile(optimizer='rmsprop', loss=vae_loss)
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+x_train = x_train.astype('float32') / 255.
+x_test = x_test.astype('float32') / 255.
+x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
+x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
+
+
+model_path = "weights.hdf5"
+checkpointer = ModelCheckpoint(filepath=model_path, verbose=1)
+
+vae.fit(x_train, x_train,
+        shuffle=True,
+        nb_epoch=nb_epoch,
+        batch_size=batch_size,
+        validation_data=(x_test, x_test),
+        callbacks=[checkpointer])
+The error info with theano backend is:
+Using Theano backend.
+Train on 60000 samples, validate on 10000 samples
+Epoch 1/100
+Traceback (most recent call last):
+  File "variational_autoencoder_v2.py", line 66, in <module>
+    callbacks=[checkpointer])
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1111, in fit
+    initial_epoch=initial_epoch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 826, in _fit_loop
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 811, in __call__
+    return self.function(*inputs)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 886, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 325, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 873, in __call__
+    self.fn() if output_subset is None else\
+ValueError: Input dimension mis-match. (input[0].shape[1] = 784, input[4].shape[1] = 1)
+Apply node that caused the error: Elemwise{Composite{((-((i0 * i1) + (i2 * i3))) + i4)}}(Elemwise{Composite{scalar_sigmoid((i0 + i1))}}[(0, 0)].0, Elemwise{log,no_inplace}.0, Elemwise{sub,no_inplace}.0, Elemwise{Composite{log1p((-i0))}}[(0, 0)].0, Elemwise{Composite{(i0 * (i1 / i2))}}[(0, 1)].0)
+Toposort index: 96
+Inputs types: [TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, row)]
+Inputs shapes: [(1, 784), (1, 784), (1, 784), (1, 784), (1, 1)]
+Inputs strides: [(3136, 4), (3136, 4), (3136, 4), (3136, 4), (4, 4)]
+Inputs values: ['not shown', 'not shown', 'not shown', 'not shown', array([[ 0.16387774]], dtype=float32)]
+Outputs clients: [[Sum{axis=[1], acc_dtype=float64}(Elemwise{Composite{((-((i0 * i1) + (i2 * i3))) + i4)}}.0)]]
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Could anyone help me out? Thanks!
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+[X ] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[ X] If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[X ] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

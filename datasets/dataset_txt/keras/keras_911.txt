@@ -1,0 +1,62 @@
+Incblob commented on 6 Jul 2018 •
+edited
+Hi, i'm trying to change my data in the fit_generator at each epoch.
+The problem i'm having is that __ len __, which returns the batches for each epoch, is only called once at the beginning, even though the documentation states that the dataset can be modified at each epoch_end.
+Nevertheless, i've tried to hard code the data change by implementing checks at on_batch_begin and on_batch_end, but those are just not called!
+Here's the generator with only printing and dummy inputs to show the issue:
+class DataGenerator(keras.utils.Sequence): (the code is properly indented, just missing here)
+def __init__(self,inputs_all):
+       print('init')
+       self.inputs_all = inputs_all
+       self.inputs_buck = []
+
+def __len__(self):
+    print('len')
+    return 1
+
+def on_train_end(self):
+    print('train end')
+
+def __getitem__(self,index):
+    print('getting item')
+    self.inputs_buck = {'the_input': self.inputs_all['the_input'][0],
+              'the_labels': self.inputs_all['the_labels'][0],
+              'input_length': self.inputs_all['input_length'][0],
+              'label_length': self.inputs_all['label_length'][0]
+              }
+    batch_ = {'the_input': self.inputs_buck['the_input'],
+              'the_labels': self.inputs_buck['the_labels'],
+              'input_length': self.inputs_buck['input_length'],
+              'label_length': self.inputs_buck['label_length']
+              }
+    batch = batch_
+    y={'ctc': np.zeros([len(batch_['the_input'])])}
+    return batch_,y
+
+def on_batch_begin(self):
+    print('batch start')
+
+def on_batch_end(self):
+    print('batch end')
+
+def on_epoch_end(self):
+    print('epoch end')   `
+Which has the output:
+input length: Tensor("ctc/strided_slice:0", shape=(1,), dtype=int64)  label length: Tensor("ctc/strided_slice_1:0", shape=(1,), dtype=int64)
+init
+len
+len
+Epoch 1/10
+getting item
+epoch end
+getting item
+As you can see, on_batch_begin and on_batch_end is not called at all and __ len __ is only called once.
+In my full code i can change data at epoch_end since that is called, but since __ len __ isn't called again i'm stuck with the same number of batches as the very first data slice had.
+The docu is very unclear on this, but hints that it should work:
+Every Sequence must implement the getitem and the len methods. If you want to modify your dataset between epochs you may implement on_epoch_end. The method getitem should return a complete batch.
+the only way this would work is if __ len __ is called every epoch. i tried manually calling it at epoch_end but it didn't change the batches calculated.
+And it's not any asynchronicity between GPU and CPU outputs, i've run multiple epochs on my full code and it always sticks to the first number of batches calculated.
+Any clue as to what's happening?
+Thanks for the help,
+Nic
+I'm on Keras 2.2.0, Tensorflow-gpu 1.8.0

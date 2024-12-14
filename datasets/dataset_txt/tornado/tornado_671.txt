@@ -1,0 +1,50 @@
+carlware commented on 8 Mar 2015
+Hi, I have the following code. This is a tcp server that handles data from a tcp/ip connection. Just works fine. But when the client close its connection, the socket in the server never closes. So after reach the limit of open files (in linux). I get the error ``Too many open files`
+class Connection(object):
+
+    stream_set = set([])
+
+    def __init__(self, stream, address):
+        logging.info('receive a new connection from %s', address)
+        self.stream = stream
+        self.address = address
+        self.stream_set.add(self.stream)
+        self.stream.set_close_callback(self._on_close)
+        self.stream.read_until('$', self._on_read_complete)
+
+    def _on_read_complete(self, data):
+        logging.info('read a new line from %s', self.address)
+        self.stream.write(process_data(data), self._on_write_complete)
+
+    def _on_write_complete(self):
+        logging.info('write a line to %s', self.address)
+        if not self.stream.reading():
+            self.stream.read_until('$', self._on_read_complete)
+
+    def _on_close(self):
+        logging.info('client quit %s', self.address)
+        self.stream_set.remove(self.stream)
+
+
+class Server(TCPServer):
+    """
+        Server for incoming devices.
+    """
+    def __init__(self, io_loop=None, ssl_options=None, **kwargs):
+        logging.info('TCP server is started')
+        TCPServer.__init__(self, io_loop=io_loop, ssl_options=ssl_options, **kwargs)
+
+    def handle_stream(self, stream, address):
+        Connection(stream, address)
+I was wondering how to solve it. And I tried the following
+def _on_close(self):
+    logging.info('client quit %s', self.address)
+    self.stream.close_fd()
+    self.stream_set.remove(self.stream)
+But this gives the error AttributeError: 'NoneType' object has no attribute 'close'. I thought that the stream object has a socket, because the iostream object looks like this.
+class IOStream(BaseIOStream):
+    def __init__(self, socket, *args, **kwargs):
+        self.socket = socket
+        self.socket.setblocking(False)
+        super(IOStream, self).__init__(*args, **kwargs)
+What could be the proper way to close the sockets one the client disconnects ?

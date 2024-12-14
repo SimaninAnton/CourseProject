@@ -1,0 +1,37 @@
+debnet commented on 5 Apr 2017 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a simple ModelViewSet against a model and configure APIs to use PageNumberPagination.
+class UserViewSet(viewsets.ModelViewSet):
+    serializer_class = UserSerializer
+    queryset = User.objects.all()
+Expected behavior
+QuerySet of the viewset executed only once.
+Actual behavior
+QuerySet is actually evaluated and executed two times due to Django internal check of ordered results.
+Explanation
+The issue is due to a new control for ordering added in Django 1.11 paginator.
+    def _check_object_list_is_ordered(self):
+        """
+        Warn if self.object_list is unordered (typically a QuerySet).
+        """
+        if hasattr(self.object_list, 'ordered') and not self.object_list.ordered:
+            warnings.warn(
+                'Pagination may yield inconsistent results with an unordered '
+                'object_list: {!r}'.format(self.object_list),
+                UnorderedObjectListWarning
+            )
+django/core/paginator.py - l. 104
+Workaround
+Subclassing PageNumberPagination and overriding the Django behaviour:
+class CustomPageNumberPagination(PageNumberPagination):
+    def paginate_queryset(self, queryset, request, view=None):
+        self.django_paginator_class._check_object_list_is_ordered = lambda s: None
+        return super().paginate_queryset(queryset, request, view=view)

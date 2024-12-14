@@ -1,0 +1,60 @@
+levivm commented on 2 Feb 2016
+Using basic TokenAuthentication schema from DRF, we needed to create our AuthTokenSerializer because we use email instead of username for user's authentication. It was basically the same, except for a few lines.
+DRF's AuthTokenSerializer
+class AuthTokenSerializer(serializers.Serializer):
+    username = serializers.CharField(label=_("Username"))
+    password = serializers.CharField(label=_("Password"), style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        username = attrs.get('username')
+        password = attrs.get('password')
+
+        if username and password:
+            user = authenticate(username=username, password=password)
+
+            if user:
+                if not user.is_active:
+                    msg = _('User account is disabled.')
+                    raise serializers.ValidationError(msg)
+            else:
+                msg = _('Unable to log in with provided credentials.')
+                raise serializers.ValidationError(msg)
+        else:
+            msg = _('Must include "username" and "password".')
+            raise serializers.ValidationError(msg)
+
+        attrs['user'] = user
+        return attrs
+Our custom AutheTokenSerializer
+class AuthTokenSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(style={'input_type': 'password'})
+
+    def validate(self, data):
+        email = data.get('email')
+        password = data.get('password')
+
+        if email and password:
+            user = authenticate(email=email, password=password)
+
+            if user:
+                if not user.is_active:
+                    msg = _('User account is disabled.')
+                    raise exceptions.ValidationError(msg)
+            else:
+                msg = _('Unable to log in with provided credentials.')
+                raise exceptions.ValidationError(msg)
+        else:
+            msg = _('Must include "email" and "password".')
+            raise exceptions.ValidationError(msg)
+
+        data['user'] = user
+        return data
+As we know, it's a common practice to include email instead of username for authentication, so, it would be great that DRF AutheTokenSerializer auth the user against an attribute set as DRF settings variable, something like DRF_AUTH_FIELD
+auth_field = settings.DRF_AUTH_FIELD
+auth_field_value = attrs.get(auth_field)
+.............
+authenticate(**{auth_field:auth_field_value, password:password})
+By default DRF_AUTH_FIELD is set to 'username'.
+I'm sure there are more solutions, so, this is just a suggestion.
+5

@@ -1,0 +1,29 @@
+Member
+shaneaevans commented on Sep 9, 2011
+Previously reported by mrkschan on Trac http://dev.scrapy.org/ticket/313
+I have a scrapy project that has several spiders in it. Those spiders are scheduled to execute on an hourly-basis.
+The scrapyd eventually report unhandled error (as shown below). When I dig through the source of scrapy, I suspect the concurrent control of sqlite3 access is not well guarded as the error below is caused by popping from an empty queue.
+The case can simply be explained by the scenario with two spiders A and B (also refer to the source - http://is.gd/ht4HSs).
+Spider A's poller poll() get to line 21 of scrapyd/poller.py.
+Meanwhile, Spider B's poller also get to line 21.
+Spider A's poller poll() get to line 23, the queue in sqlite becomes empty and sqlite3 is locked (according to py doc - http://is.gd/67PKpn).
+Spider B's poller poll() also get to line 23, wait the lock to be released.
+Spider A commit and release the sqlite lock.
+Spider B pop() from an empty queue. Raise Error.
+Traceback (most recent call last):
+  File "/usr/lib/python2.6/dist-packages/twisted/internet/base.py", line 778, in runUntilCurrent
+    call.func(*call.args, **call.kw)
+  File "/usr/lib/python2.6/dist-packages/twisted/internet/task.py", line 194, in __call__
+    d = defer.maybeDeferred(self.f, *self.a, **self.kw)
+  File "/usr/lib/python2.6/dist-packages/twisted/internet/defer.py", line 117, in maybeDeferred
+    result = f(*args, **kw)
+  File "/usr/lib/python2.6/dist-packages/twisted/internet/defer.py", line 944, in unwindGenerator
+    return _inlineCallbacks(None, f(*args, **kwargs), Deferred())
+--- <exception caught here> ---
+  File "/usr/lib/python2.6/dist-packages/twisted/internet/defer.py", line 823, in _inlineCallbacks
+    result = g.send(result)
+  File "/usr/lib/pymodules/python2.6/scrapyd/poller.py", line 24, in poll
+    returnValue(self.dq.put(self._message(msg, p)))
+  File "/usr/lib/pymodules/python2.6/scrapyd/poller.py", line 33, in _message
+    d = queue_msg.copy()
+exceptions.AttributeError: 'NoneType' object has no attribute 'copy'

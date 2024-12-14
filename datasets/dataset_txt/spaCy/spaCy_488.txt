@@ -1,0 +1,53 @@
+Matt52 commented on 25 Jul 2019
+Hi everyone!
+When training a text classification model, I was trying to alter model architecture. However, once I use anything else than simple_cnn, I will get error message:
+AttributeError: '_finish_linear_update' object has no attribute 'nO'
+How to reproduce the behaviour
+import random
+import spacy
+from spacy.util import minibatch, compounding
+
+train_data = [
+('Augmenting semantic web service descriptions with compositional specification.', {'cats': {'VLDB': False, 'ISCAS': False, 'SIGGRAPH': False, 'INFOCOM': False, 'WWW': True}}),
+('VRML: Prelude and Future (Panel).', {'cats': {'VLDB': False, 'ISCAS': False, 'SIGGRAPH': True, 'INFOCOM': False, 'WWW': False}}),
+('Finding all modes of nonlinear oscillations by the Krawczyk-Moore-Jones algorithm.', {'cats': {'VLDB': False, 'ISCAS': True, 'SIGGRAPH': False, 'INFOCOM': False, 'WWW': False}}),
+('Special properties of the modified DFT to achieve algorithmic fault tolerance in Adaptive Filters.', {'cats': {'VLDB': False, 'ISCAS': True, 'SIGGRAPH': False, 'INFOCOM': False, 'WWW': False}}),
+('Data summaries for on-demand queries over linked data.', {'cats': {'VLDB': False, 'ISCAS': False, 'SIGGRAPH': False, 'INFOCOM': False, 'WWW': True}})
+]
+
+nlp = spacy.load('en_core_web_md')
+
+configuration = {"exclusive_classes": True, "architecture": "ensemble"}
+textcat = nlp.create_pipe("textcat", config = configuration)
+nlp.add_pipe(textcat, last=True)
+
+# add label to text classifier
+labels = ['VLDB', 'ISCAS', 'SIGGRAPH', 'INFOCOM', 'WWW']
+for l in labels:
+    textcat.add_label(l)
+
+batch_sizes = compounding(4.0, 32.0, 1.001)
+    
+other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "textcat"]
+with nlp.disable_pipes(*other_pipes):  # only train textcat
+    optimizer = nlp.begin_training()
+
+    print('*************** BEGINING OF THE TRAINING ***************')
+    for i in range(10):
+        losses = {}
+        # batch up the examples using spaCy's minibatch
+        random.shuffle(train_data)
+        batches = minibatch(train_data, size=batch_sizes)
+        for batch in batches:
+            texts, annotations = zip(*batch)
+            nlp.update(texts, annotations, sgd=optimizer, drop=0.5, losses=losses)
+
+        print("LOSS", losses["textcat"])
+    print('*************** END OF THE TRAINING ***************')
+Everything works when I change ensemble to simple_cnn. I even tried using blank en model instead of en_core_web_md but that is not affecting it.
+How exactly can be used different architecture than simple_cnn?
+Thank you in advance.
+My Environment
+Operating System: osx Mojave 10.14.5
+Python Version Used: 3.7.3
+spaCy Version Used: 2.1.6

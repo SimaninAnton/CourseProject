@@ -1,0 +1,70 @@
+joshenders commented on 27 Nov 2015
+Steps to reproduce the problem:
+Followed these instructions: http://docs.mitmproxy.org/en/stable/transparent/osx.html to do transparent proxying of an iPad to a MacBook Air on a wireless network.
+mitm.pf.conf
+ext_if = "en0"
+ext_ip = "192.168.1.141"
+
+rdr on $ext_if inet proto tcp from any to any port 8181 -> $ext_ip port 8080
+Enabled PF and adjusted sysctls:
+sudo pfctl -vf mitm.pf.conf
+sudo pfctl -e
+sudo sysctl -w net.inet.ip.forwarding=1
+sudo sysctl -w net.inet.ip.redirect=0
+Appended to /etc/sudoers
+ALL ALL=NOPASSWD: /sbin/pfctl -s state
+Started mitmproxy:
+mitmproxy -T -p 8080 --host
+Performed action in iPad app that opens a connection to https://example.com:8181
+What is the expected behavior?
+Successful proxying of the connection
+What went wrong?
+192.168.1.143:50107: clientconnect
+192.168.1.143:50107: Cannot parse Client Hello: FieldError(FieldError('expected 2, found 0',),)
+192.168.1.143:50107: TLS verification failed for upstream server at depth 0 with error: Invalid Hostname
+192.168.1.143:50107: Ignoring server verification error, continuing with connection
+Any other comments?
+TLS daemon on 8181 at example.com has a self-signed, expired cert with CN=localhost. Because of this, an invalid hostname error is expected (CN=localhost but HTTP Host header/DNS name is example.com).
+I think the TLS connection is breaking on parsing the Client Hello. Maybe the client is cert pinning and rejecting the mitm cert?
+Here are some example Client Hellos from the iPad application:
+$ nc -b en0 -l 8080 | xxd
+0000000: 1603 0100 6501 0000 6103 0156 57d7 f601  ....e...a..VW...
+0000010: b74d 1fcf 6a22 545a f4f5 9661 fd3a 65d8  .M..j"TZ...a.:e.
+0000020: bf66 09de 2ad3 db11 85ce b720 5657 d79a  .f..*...... VW..
+0000030: 0810 6afb d5af dc41 f82d 14c2 c7c9 6074  ..j....A.-....`t
+0000040: 68fd 39b0 1d84 4f42 aed6 5bef 001a 0035  h.9...OB..[....5
+0000050: 002f 000a 0005 0004 0009 0003 0006 0008  ./..............
+
+$ nc -b en0 -l 8080 | xxd
+0000000: 1603 0100 6501 0000 6103 0156 57d8 06fa  ....e...a..VW...
+0000010: e277 86a3 accb ee40 430d 1eac 0e44 796c  .w.....@C....Dyl
+0000020: 2cc2 61fb c36c 73c3 05f6 9220 5657 d79a  ,.a..ls.... VW..
+0000030: 0810 6afb d5af dc41 f82d 14c2 c7c9 6074  ..j....A.-....`t
+0000040: 68fd 39b0 1d84 4f42 aed6 5bef 001a 0035  h.9...OB..[....5
+0000050: 002f 000a 0005 0004 0009 0003 0006 0008  ./..............
+
+$ nc -b en0 -l 8080 | xxd
+0000000: 1603 0100 6501 0000 6103 0156 57d8 1429  ....e...a..VW..)
+0000010: cd4c 3a4d 84d0 1996 6a45 7fcd 9c13 1343  .L:M....jE.....C
+0000020: 1865 799b cfa2 f273 cd03 ad20 5657 d79a  .ey....s... VW..
+0000030: 0810 6afb d5af dc41 f82d 14c2 c7c9 6074  ..j....A.-....`t
+0000040: 68fd 39b0 1d84 4f42 aed6 5bef 001a 0035  h.9...OB..[....5
+0000050: 002f 000a 0005 0004 0009 0003 0006 0008  ./..............
+
+$ nc -b en0 -l 8080 | xxd
+0000000: 1603 0100 6501 0000 6103 0156 57d8 f83b  ....e...a..VW..;
+0000010: c4ee 6322 7245 bbcc 5dd0 6e02 3694 9ce0  ..c"rE..].n.6...
+0000020: ae02 b419 1766 2753 849e c020 5657 d8f8  .....f'S... VW..
+0000030: 89cd caa7 ae97 648e 65d4 f3c2 8057 00dc  ......d.e....W..
+0000040: a3a8 7f67 29ba 38ef 6588 b7c8 001a 0035  ...g).8.e......5
+0000050: 002f 000a 0005 0004 0009 0003 0006 0008  ./..............
+
+$ nc -b en0 -l 8080 | xxd
+0000000: 1603 0100 6501 0000 6103 0156 57da 22de  ....e...a..VW.".
+0000010: 2b27 31db 6a7a 2b53 bca2 0343 6df6 301d  +'1.jz+S...Cm.0.
+0000020: ae1c 4706 470a b62f 7146 9320 380f 0da9  ..G.G../qF. 8...
+0000030: 9907 164b 22c6 5186 d134 94d6 5dbc 47ed  ...K".Q..4..].G.
+0000040: ee8b 6598 a6ab e809 f34b 1357 001a 0035  ..e......K.W...5
+0000050: 002f 000a 0005 0004 0009 0003 0006 0008  ./..............
+mitmproxy version: 0.14.0
+Operating System: OS X 10.11.1, iOS 9.0.2

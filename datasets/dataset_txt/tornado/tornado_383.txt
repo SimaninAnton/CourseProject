@@ -1,0 +1,89 @@
+Contributor
+JZQT commented on 12 Feb 2017
+This is a example code.
+#!/usr/bin/env python3
+# coding: utf-8
+
+import os.path
+
+import tornado.web
+import tornado.ioloop
+
+
+class IndexHandler(tornado.web.RequestHandler):
+
+    def get(self):
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        self.render(os.path.join(base_dir, "test.html"))
+
+    pass
+
+
+class UIModuleA(tornado.web.UIModule):
+
+    def render(self):
+        return ""
+
+    def javascript_files(self):
+        return ["1.js", "2.js", "4.js"]
+
+    pass
+
+
+class UIModuleB(tornado.web.UIModule):
+
+    def render(self):
+        return ""
+
+    def javascript_files(self):
+        return ["2.js", "3.js", "4.js"]
+
+    pass
+
+
+if __name__ == "__main__":
+    settings = {
+        "ui_modules": {
+            "UIModuleA": UIModuleA,
+            "UIModuleB": UIModuleB,
+        },
+        "static_path": "/",
+    }
+
+    app = tornado.web.Application([(r"/", IndexHandler)], **settings)
+    app.listen(8000)
+    tornado.ioloop.IOLoop.current().start()
+this is code of test.html.
+<!DOCTYPE HTML>
+<html>
+<head></head>
+<body>
+{% module UIModuleA() %}
+{% module UIModuleB() %}
+</body>
+</html>
+The rendering order of these JavaScript files are 1.js, 2.js, 4.js 3.js or 2.js, 3.js, 4.js, 1.js.
+But the correct rendering order is 1.js, 2.js, 3.js, 4.js.
+This is a code snippet of tornado.web about this issue.
+class RequestHandler(object):
+    ......
+    def render(self, template_name, **kwargs):
+        ......
+        if js_files:
+            # Maintain order of JavaScript files given by modules
+            paths = []
+            unique_paths = set()
+            for path in js_files:
+                if not is_absolute(path):
+                    path = self.static_url(path)
+                if path not in unique_paths:
+                    paths.append(path)
+                    unique_paths.add(path)
+            js = ''.join('<script src="' + escape.xhtml_escape(p) +
+                         '" type="text/javascript"></script>'
+                         for p in paths)
+            sloc = html.rindex(b'</body>')
+            html = html[:sloc] + utf8(js) + b'\n' + html[sloc:]
+        ......
+If this code implement by topological sorting, maybe able to solve this problem.
+Of course, this problem also contain css files.

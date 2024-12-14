@@ -1,0 +1,103 @@
+Ottunger commented on 29 Jun 2016
+As I said in #608 ,
+Hi,
+Sorry for bumping so far, but I feel like I encounter the same issue: I need to send near 400MB of data over the socket, and when doing so I have no exception on the client side that sends, but the message never triggers on_message on the server.
+Any idea where it could come from?
+Thanks!
+I'll attach some client and server code so that you can drop an eye
+The server
+   class ParameterServerWebsocketHandler(tornado.websocket.WebSocketHandler):
+       clients = []
+       server = None
+
+    def __init__(self, *args, **kwargs):
+      ParameterServerWebsocketHandler.server = self
+      self.server = kwargs.pop('server')
+      self.model = self.server.model
+      with self.model.session.graph.as_default():
+         self.saver = tf.train.Saver()
+      self.lock = threading.Lock()
+      super(ParameterServerWebsocketHandler,self).__init__(*args, **kwargs)
+
+   def open(self):
+      print("A new worker just connected!")
+      ParameterServerWebsocketHandler.clients.append(self)
+      self.send_parameters()
+
+   def send_parameters(self):
+      ParameterServerWebsocketHandler.server.lock.acquire()
+      parameters = ParameterServerWebsocketHandler.server.model.get_parameters()
+      ParameterServerWebsocketHandler.server.lock.release()
+      serialized = ParameterServerWebsocketHandler.server.model.serialize(parameters)
+      self.write_message(serialized)
+
+   def on_close(self):
+      print("Someone left?? :(")
+      ParameterServerWebsocketHandler.clients.remove(self)
+
+   def on_message(self, message):
+      print("Received a message of size %d" % sys.getsizeof(message))
+      tornado.ioloop.IOLoop.current().spawn_callback(ParameterServerWebsocketHandler.server.process_msg, message)
+
+   @gen.coroutine
+   def process_msg(self, message):
+      time_gradient = ParameterServerWebsocketHandler.server.model.deserialize(message)
+      ParameterServerWebsocketHandler.server.server.gradient_count += 1
+      print("gradient_count %d" % ParameterServerWebsocketHandler.server.server.gradient_count)
+      time_sent = time_gradient[0][0]
+      if time.time() - time_sent < time_lag:
+         ParameterServerWebsocketHandler.server.lock.acquire()
+         gradient = time_gradient[1:]
+         ParameterServerWebsocketHandler.server.model.apply(gradient)
+         ParameterServerWebsocketHandler.server.model.saveWith(ParameterServerWebsocketHandler.server.saver, ckpoint, ParameterServerWebsocketHandler.server.server.gradient_count)
+         if ParameterServerWebsocketHandler.server.server.gradient_count % 10 == 0:
+            error_rate = ParameterServerWebsocketHandler.server.model.test(ParameterServerWebsocketHandler.server.server.test_labels, ParameterServerWebsocketHandler.server.server.test_features)
+            print("gradients received: %d    error_rate: %f" % (ParameterServerWebsocketHandler.server.server.gradient_count, error_rate))
+         t = time.time()
+         ParameterServerWebsocketHandler.server.lock.release()
+      else:
+         print("Rejected laggy message")
+      del time_gradient
+      for cl in ParameterServerWebsocketHandler.clients:
+         cl.send_parameters()
+And the client:
+   @gen.coroutine
+   def init_websocket(self):                                       
+      self.websock = yield tornado.websocket.websocket_connect("ws://localhost:%d/" % self.websocket_port,
+    on_message_callback=self.includemsg, connect_timeout=3600)
+
+   def request_parameters(self):
+      print("Request to master for new tech...")
+      IOLoop.current().run_sync(self.request_parameters_coroutine)
+
+   @gen.coroutine
+   def request_parameters_coroutine(self):
+      print("Read at pipe...")
+      parameters = yield self.websock.read_message()
+      self.includemsg(parameters)
+
+   def push_gradients(self):
+      print("Request to master to sync...")
+      IOLoop.current().run_sync(self.push_gradients_coroutine)
+
+   @gen.coroutine
+   def push_gradients_coroutine(self):
+      print("Prepare our data...")
+      gradients = self.model.get_gradients()
+      serialized = self.model.serialize(self.model.get_gradients())
+      del gradients
+      print("Sending %d bytes of data..." % sys.getsizeof(serialized))
+      try:
+         self.websock.write_message(serialized, binary=True)
+         print("Written and sent...")
+      except:
+         print("Too large to be sent? :'(")
+         print(sys.exc_info()[0])
+
+   @gen.coroutine
+   def includemsg(self, parameters):
+      if parameters is None:
+         print("Not yet server in advance from us...")
+         return
+      parameters = self.model.deserialize(parameters)
+      self.model.assign_parameters(parameters)

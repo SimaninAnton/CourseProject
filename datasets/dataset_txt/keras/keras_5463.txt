@@ -1,0 +1,31 @@
+Contributor
+braingineer commented on 15 Apr 2016
+A minimum working example: https://gist.github.com/braingineer/799d1d88a2b71b54691a983a55c727bd
+The output:
+==== input gets embedded =====
+For x=X_emb
+     x.ndim=5
+     outmask.ndim=5
+     inmask.ndim=5
+==== a reduction from LSTM ====
+For x=X_reduction, 
+     x.ndim=4
+     outmask.ndim=5
+     inmask.ndim=5
+in a nut shell, if the layer that TimeDistributed wraps reduces the number of dimensions and there is a mask being passed through, the mask it not updated. Down the line, this creates some issues (for me, it was that my y_pred reached the softmax, had the right _keras_shape but actually had ndim=5 because I was using the mask at intermediate layers to keep the computations straight)
+I'm not sure what a good fix would be. Currently, I'm planning on hacking it with
+def compute_mask(self, x, mask=None):
+    if mask is None:
+        return None
+    input_shape = self.input_spec[0].shape
+    output_shape = self.get_output_shape_for(input_shape)
+    if len(input_shape) > len(output_shape): 
+        mask = K.max(mask, axis=-1)
+    return mask
+This requires keeping the output mask of layers consistent: whatever the output shape of a layer is going to be, the mask should be that size. I've just been adding a new axis. For example, the Embedding layer:
+    def compute_mask(self, x, mask=None):
+        if not self.mask_zero:
+            return None
+        else:
+            return K.expand_dims(K.not_equal(x, 0), -1)
+Though, I'm not sure if that's all the right way to go. Masking can be confusing.

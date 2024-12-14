@@ -1,0 +1,73 @@
+vladlep commented on 28 Jul 2015
+Hi,
+I think i found an error with the unique together validator in django rest framework when you update a model (PUT call). It works well when creating new objects but updating them does not work. I am using the 3.0.5 version.
+Here is an example. I generate a unique trip number for a company and when updating the instance (without changing anything, leave the same number) i get:
+"non_field_errors": [
+    "The fields company_profile, number must make a unique set."
+]
+models:
+class Location(models.Model):
+    latitude = models.DecimalField(max_digits=8, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=8, decimal_places=6, null=True, blank=True)
+    name = models.CharField(max_length=512, blank=True)
+
+class Trip(models.Model):
+    number = models.CharField(max_length=50)
+    start = models.OneToOneField(Location, related_name="trips_started_at")
+    end = models.OneToOneField(Location, related_name="trips_ended_at")
+    company_profile = models.ForeignKey(Company, related_name="company_profile_trips")
+    customer = models.ForeignKey(Company, blank=True, null=True, related_name="customer_trips")
+    date = models.DateTimeField()
+
+    class Meta:
+        ordering = ['-date']
+        unique_together = ('company_profile', 'number')
+Serializers:
+class LocationSerializer(serializers.ModelSerializer):
+    country = SerializableCountryField(allow_blank=True, required=False)
+
+    class Meta:
+        model = Location
+
+
+class TripSerializer(serializers.ModelSerializer):
+    start = LocationSerializer()
+    end = LocationSerializer()   
+
+    class Meta:
+        model = Trip
+
+@transaction.atomic
+def update(self, instance, validated_data):
+    if 'start' in validated_data:
+        start = validated_data.pop('start')
+        for (key, value) in start.items():
+            setattr(instance.start, key, value)
+        instance.start.save()
+
+    if 'end' in validated_data:
+        end = validated_data.pop('end')
+        for (key, value) in end.items():
+            setattr(instance.end, key, value)
+        instance.end.save()
+
+    for (key, value) in validated_data.items():
+        setattr(instance, key, value)
+    instance.save(force_update=True)
+    return instance
+views:
+class TripViewSet(viewsets.ModelViewSet):
+    queryset = Trip.objects.all()
+    serializer_class = TripSerializer
+I tried a lot of things, like overwriting the validators on the trip serializer
+validators = [] 
+but then the error was at the model level, or other workarounds. One things that worked but I can not understand why, is to overwrite the init method of the trip serializer and limit the choices of company_profiles to be specific for a user. I did that for security reasons but it solved also my error.
+def __init__(self, *args, **kwargs):
+    super(TripSerializer, self).__init__(*args, **kwargs)
+    if 'request' in self.context:
+        user = self.context['request'].user
+        company_profiles = user.get_companies(query_set=True)
+        self.fields['company_profile'].queryset = company_profiles
+Hope this information helps.
+Cheers,
+Vlad

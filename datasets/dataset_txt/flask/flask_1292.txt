@@ -1,0 +1,35 @@
+astonm commented on 20 Feb 2014
+While using Flask-SQLAlchemy's SQLALCHEMY_COMMIT_ON_TEARDOWN feature, I noticed certain successful-looking requests didn't have their results committed to the database. After further investigation I discovered some exceptions from Gunicorn end up being passed into the teardown function Flask-SQLAlchemy uses to implement the post-request commit functionality.
+I was able to reproduce the issue on a minimal case with the code below (as test.py):
+from flask import Flask, redirect, request, url_for
+
+app = Flask(__name__)
+app.debug = True
+
+@app.route("/")
+def index():
+    return "Hello World!"
+
+@app.teardown_request
+def teardown_request(exception=None):
+    if exception:
+        app.logger.error("Unexpected exception {}".format(exception))
+
+if __name__ == "__main__":
+    app.run()
+With the app run with the following line:
+gunicorn test:app -w 1
+I fairly consistently get the following output:
+2014-02-19 14:00:34 [4459] [INFO] Starting gunicorn 18.0
+2014-02-19 14:00:34 [4459] [INFO] Listening at: http://127.0.0.1:8000 (4459)
+2014-02-19 14:00:34 [4459] [INFO] Using worker: sync
+2014-02-19 14:00:34 [4462] [INFO] Booting worker with pid: 4462
+--------------------------------------------------------------------------------
+ERROR in test [/Users/aston/.envs/flask-gunicorn-bug/test.py:12]:
+Unexpected exception [Errno 35] Resource temporarily unavailable
+--------------------------------------------------------------------------------
+Errno 35 is EAGAIN.
+I'm running on a Mac, but I first noticed this behavior on Heroku (it's Errno 11 there). Also, the behavior isn't consistent, and though I found it more consistently locally with app.debug = True, I noticed the behavior with debugging off (again, on Heroku).
+There's been some discussion about this issue in Gunicorn's issues section here, but they consider EAGAIN a non-fatal exception (and as you can see from running the example, the requests always successfully return data), so the fact that Flask sees it and thinks it's real is a problem.
+I believe Gunicorn could help fix this bug by clearing sys.exc_info() after ignoring the exception (i.e. around here: https://github.com/tilgovi/gunicorn/blob/master/gunicorn/workers/sync.py#L43:L45), but it'd still be racy.
+The real fix, I believe is for Flask not to throw arbitrary "if not exc: exc = sys.exc_info()[1]" in areas where no exception is being explicitly caught by the code (e.g. here). Another alternative, if that behavior is generally desirable, would be to ignore any exceptions with a stack trace that doesn't go deep enough to include any Flask or user-provided code.

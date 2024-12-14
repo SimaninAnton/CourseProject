@@ -1,0 +1,99 @@
+hanssto commented on 28 Feb 2016
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+As referenced in
+#2575
+miki725/django-rest-framework-bulk#30
+ListSerializer attempts to apply unique together validation on the queryset passed to it, but some part of the code is passed the full queryset, where it attempts to look up attributes on what it expects to be individual instances.
+Steps to reproduce
+I've modified a test case found in the above links, and run them against master. I'm not sure what the file should be named, and if it follows your quality standards, so I have not submitted a PR with it.
+from django.db import models
+from django.test import TestCase
+
+from rest_framework import serializers
+
+
+class ManyUniqueTogetherModel(models.Model):
+    foo = models.IntegerField()
+    bar = models.IntegerField()
+    class Meta:
+        unique_together = ("foo", "bar")
+
+
+class ManyUniqueTogetherSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ManyUniqueTogetherModel
+
+
+class ManyUniqueTogetherTestCase(TestCase):
+
+    def test_partial_false(self):
+        obj = ManyUniqueTogetherModel.objects.create(foo=1, bar=2)
+        serializer = ManyUniqueTogetherSerializer(
+            instance=ManyUniqueTogetherModel.objects.all(),
+            data=[{
+                "id": obj.pk,
+                "foo": 5,
+                "bar": 6,
+            }],
+            many=True
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_partial_true(self):
+        obj = ManyUniqueTogetherModel.objects.create(foo=1, bar=2)
+        serializer = ManyUniqueTogetherSerializer(
+            instance=ManyUniqueTogetherModel.objects.all(),
+            data=[{
+                "id": obj.pk,
+                "foo": 5,
+            }],
+            partial=True,
+            many=True
+        )
+        self.assertTrue(serializer.is_valid())
+Expected behavior
+The code path looks up properties on individual instances in the queryset, is_valid() returns either True or False depending on the actual data, the tests pass.
+Actual behavior
+====================================================================== FAILURES ======================================================================
+___________________________________________________ ManyUniqueTogetherTestCase.test_partial_false ____________________________________________________
+tests/test_unique_together.py:35: in test_partial_false
+    self.assertTrue(serializer.is_valid())
+rest_framework/serializers.py:213: in is_valid
+    self._validated_data = self.run_validation(self.initial_data)
+rest_framework/serializers.py:557: in run_validation
+    value = self.to_internal_value(data)
+rest_framework/serializers.py:593: in to_internal_value
+    validated = self.child.run_validation(item)
+rest_framework/serializers.py:409: in run_validation
+    self.run_validators(value)
+rest_framework/fields.py:499: in run_validators
+    validator(value)
+rest_framework/validators.py:142: in __call__
+    queryset = self.exclude_current_instance(attrs, queryset)
+rest_framework/validators.py:135: in exclude_current_instance
+    return queryset.exclude(pk=self.instance.pk)
+E   AttributeError: 'QuerySet' object has no attribute 'pk'
+____________________________________________________ ManyUniqueTogetherTestCase.test_partial_true ____________________________________________________
+tests/test_unique_together.py:50: in test_partial_true
+    self.assertTrue(serializer.is_valid())
+rest_framework/serializers.py:213: in is_valid
+    self._validated_data = self.run_validation(self.initial_data)
+rest_framework/serializers.py:557: in run_validation
+    value = self.to_internal_value(data)
+rest_framework/serializers.py:593: in to_internal_value
+    validated = self.child.run_validation(item)
+rest_framework/serializers.py:409: in run_validation
+    self.run_validators(value)
+rest_framework/fields.py:499: in run_validators
+    validator(value)
+rest_framework/validators.py:141: in __call__
+    queryset = self.filter_queryset(attrs, queryset)
+rest_framework/validators.py:120: in filter_queryset
+    attrs[field_name] = getattr(self.instance, field_name)
+E   AttributeError: 'QuerySet' object has no attribute 'bar'

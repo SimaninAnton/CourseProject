@@ -1,0 +1,33 @@
+Contributor
+Fuzion24 commented on 2 Jul 2014
+This may be more a netlib issue than mitmproxy, but I want to gather information about when a client doesn't like a self-signed cert or mismatched hostname.
+The ssl connection for the client (and otherwise) looks to happen here:
+netlib/tcp.py -> convert_to_ssl
+I would assume on a bad handshake with the client (the client doesn't like the cert) an error is thrown in libmproxy/proxy/server.py at this call:
+            self.client_conn.convert_to_ssl(
+                cert, key,
+                handle_sni=self.handle_sni,
+                cipher_list=self.config.ciphers,
+                dhparams=self.config.certstore.dhparams,
+                ca_file=self.config.ca_file
+            )
+I believe that this function should be throwing an error based on netlib/test/test_tcp.py:
+class TestServerCipherListError(test.ServerTestBase):
+    handler = ClientCipherListHandler
+    ssl = dict(
+        cert = tutils.test_data.path("data/server.crt"),
+        key = tutils.test_data.path("data/server.key"),
+        request_client_cert = False,
+        v3_only = False,
+        cipher_list = 'bogus'
+    )
+    def test_echo(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        c.connect()
+        tutils.raises("handshake error", c.convert_to_ssl, sni="foo.com")
+However this is not throwing any kind of exception.
+I am running mitmproxy and netlib directly from master. I am attempting to mitm an android application and know when the client (the app) rejects a self-signed cert.
+In the event log has the following, but nothing about failed handshake:
+192.168.1.212:58086: clientconnect
+192.168.1.212:58086: error: NetLibDisconnect()
+192.168.1.212:58086: clientdisconnect

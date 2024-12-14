@@ -1,0 +1,34 @@
+Contributor
+tdhd commented on 10 Jun 2015
+Hey François,
+I think it would be useful to have the callbacks return an optional feedback to the fit method. This would be useful to let the callbacks control in certain aspects how fit behaves.
+For example when thinking of an early stopping callback, it could tell fit to stop gracefully by exiting the loop over the epochs. Yesterday I was reading over http://papers.nips.cc/paper/4522-practical-bayesian-optimization-of-machine-learning-algorithms.pdf, where they also let the time to train a model be a factor in their optimization. So being able to stop the training early would have a benefit for hyper parameter optimization.
+If you look at my current implementation, it calls sys.exit in which case the overall optimization of hyper parameters would only resume when the training has been spawned in a different thread:
+class EarlyStop(Callback):
+    def __init__(self, nb_epoch_lookback=5, verbose=0):
+        super(Callback, self).__init__()
+
+        self.nb_epoch_lookback = nb_epoch_lookback
+        self.verbose = verbose
+        self.best_val_loss_epoch = 0
+        self.best_val_loss = np.Inf
+
+    def on_epoch_end(self, epoch, logs={}):
+        '''currently, on_epoch_end receives epoch_logs from keras.models.Sequential.fit
+        which does only contain, if at all, the validation loss and validation accuracy'''
+        if self.params['do_validation']:
+            cur_val_loss = logs.get('val_loss')
+            if cur_val_loss < self.best_val_loss:
+                self.best_val_loss_epoch = epoch
+                self.best_val_loss = cur_val_loss
+            elif (epoch - self.best_val_loss_epoch) > self.nb_epoch_lookback:
+                if self.verbose > 0:
+                    print("EarlyStop: Did not observe an improvement over the last {0} epochs, stopping.".format(self.nb_epoch_lookback))
+                import sys
+                sys.exit(0)
+        else:
+            import warnings
+            warnings.warn("Can run EarlyStop callback only with validation data, skipping", RuntimeWarning)
+Using the feedback approach, the hyper parameter optimization could continue, regardless of whether running the training processes in different threads.
+Concretely the feedback could be implemented as an aggregate in CallbackList where all the logic of feedback aggregation is implemented in CallbackList and a single feedback is returned. Alternatively a list of feedbacks could be returned to fit.
+Let me know what you think about it.

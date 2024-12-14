@@ -1,0 +1,27 @@
+Contributor
+carlthome commented on 13 Apr 2016
+I'm trying to rewrite a Graph model in the new functional API in Keras 1.0 but get errors when trying to merge TimeDistributed objects.
+The old model was declared as:
+m = Graph()
+m.add_input(name='mix', input_shape=(None, features))
+m.add_node(LSTM(features, return_sequences=True), name='lstm1', input='mix')
+m.add_node(LSTM(features, return_sequences=True), name='lstm2', input='lstm1')
+m.add_node(TimeDistributedDense(features, activation='sigmoid'), name='tdd1', input='lstm2')
+m.add_node(TimeDistributedDense(features, activation='sigmoid'), name='tdd2', input='lstm2')
+m.add_node(Lambda(function=lambda d: mask(d['tdd1'], d['tdd2'], d['mix']), output_shape=(None, features)), name='tfm1', inputs=['tdd1', 'tdd2', 'mix'], merge_mode='join')
+m.add_node(Lambda(function=lambda d: mask(d['tdd2'], d['tdd1'], d['mix']), output_shape=(None, features)), name='tfm2', inputs=['tdd2', 'tdd1', 'mix'], merge_mode='join')
+m.add_output(name='background', input='tfm1')
+m.add_output(name='voice', input='tfm2')
+m.compile(loss={'background': 'mse', 'voice': 'mse'}, optimizer='rmsprop')
+Since the join mode has been removed I'm trying to merge the TimeDistributed objects with 'concat' instead, such as:
+mix = Input(batch_shape=(sequences, timesteps, features))
+lstm = LSTM(features, return_sequences=True)(LSTM(features, return_sequences=True)(mix))
+tdd1 = TimeDistributed(Dense(features, activation='sigmoid'))(lstm)
+tdd2 = TimeDistributed(Dense(features, activation='sigmoid'))(lstm)
+voice = Lambda(function=lambda x: mask(x[0], x[1], x[2]))(Merge([tdd1, tdd2, mix], mode='concat'))
+background = Lambda(function=lambda x: mask(x[0], x[1], x[2]))(Merge([tdd2, tdd1, mix], mode='concat'))
+model = Model(input=[mix], output=[voice, background])
+model.compile(loss='mse', optimizer='rmsprop')
+Resulting in
+AttributeError: 'TensorVariable' object has no attribute 'get_output_shape_at'
+For reference here's what I'm trying to do (audio source separation):

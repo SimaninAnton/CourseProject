@@ -1,0 +1,32 @@
+Contributor
+aufziehvogel commented on Jan 18, 2015
+According to the documentation, process_spider_exception should also be called when a spider throws an exception. To my understanding, this would include throwing an exception from any parse method like this:
+    def parse_item(self, response):
+        log.msg("[parse_item] Now in exceptional parse", level=log.INFO)
+        raise Exception('foo')
+My middleware looks like this:
+class ManyExceptionsMiddleware(object):
+    def process_spider_output(self, response, result, spider):
+        log.msg("[process_spider_output] Shows that middleware IS installed", level=log.INFO)
+        return result
+
+    def process_spider_exception(self, response, exception, spider):
+        log.msg("[process_spider_exception] Many exceptions on %s" % spider.name, level=log.WARNING)
+        return []
+This results in:
+2015-01-18 18:08:01+0100 [example] DEBUG: Crawled (200) <GET some-secret-url> (referer: some-other-url)
+2015-01-18 18:08:01+0100 [scrapy] INFO: [process_spider_output] Shows that middleware IS installed
+2015-01-18 18:08:01+0100 [scrapy] INFO: [parse_item] Now in exceptional parse
+2015-01-18 18:08:01+0100 [example] ERROR: Spider error processing <GET some-secret-url>
+    Traceback (most recent call last):
+[...]
+    exceptions.Exception: foo
+Then I added the following additional method to check that process_spider_exception works (because the only exception handling in scrapy itself is done like this).
+def process_spider_input(self, response, spider):
+    raise Exception('foo')
+Then the output looks like this:
+2015-01-18 18:09:53+0100 [example] DEBUG: Crawled (200) <GET some-secret-url> (referer: None)
+2015-01-18 18:09:53+0100 [scrapy] WARNING: [process_spider_exception] Many exceptions on some-secret-domain
+2015-01-18 18:09:53+0100 [scrapy] INFO: [process_spider_output] Shows that middleware IS installed
+If you could tell me, where this all should happen, I could look into the code to fix it (if I understand it well enough).
+👍 5

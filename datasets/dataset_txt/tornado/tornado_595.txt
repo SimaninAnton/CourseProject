@@ -1,0 +1,54 @@
+rudyryk commented on 6 Oct 2015
+When running Tornado server in debug mode with autoreload and asyncio event loop the following exception raises: RuntimeError: Cannot close a running event loop.
+Seems like autoreload hook tries to close event loop, but asyncio loop can't be closed without calling stop(). Code to reproduce and traceback are below.
+Steps to reproduce:
+run the app server
+modify script with app server code to trigger auto reload
+# save this to server.py and run as "python server.py"
+import os
+import asyncio
+import tornado.ioloop
+import tornado.httpserver
+import tornado.web
+
+from tornado.ioloop import IOLoop
+IOLoop.configure('tornado.platform.asyncio.AsyncIOLoop')
+
+
+class HomePage(tornado.web.RequestHandler):
+    def get(self):
+        self.write("Hello!")
+
+if __name__ == '__main__':
+    port = 8000
+    host = '127.0.0.1'
+    app = tornado.web.Application(
+        [
+            (r'/', HomePage),
+        ],
+        debug=True)
+
+    print("Running server at http://%s:%s" % (host, port))
+
+    server = tornado.httpserver.HTTPServer(app)
+    server.bind(port, host)
+    server.start()
+    tornado.ioloop.IOLoop.current().start()
+The full traceback:
+Traceback (most recent call last):
+  File "/Users/user/.virtualenvs/project/src/tornado/tornado/ioloop.py", line 1039, in _run
+    return self.callback()
+  File "/Users/user/.virtualenvs/project/src/tornado/tornado/autoreload.py", line 190, in _reload_on_update
+    _check_file(modify_times, path)
+  File "/Users/user/.virtualenvs/project/src/tornado/tornado/autoreload.py", line 205, in _check_file
+    _reload()
+  File "/Users/user/.virtualenvs/project/src/tornado/tornado/autoreload.py", line 212, in _reload
+    fn()
+  File "/Users/user/.virtualenvs/project/src/tornado/tornado/platform/asyncio.py", line 63, in close
+    self.asyncio_loop.close()
+  File "/usr/local/Cellar/python3/3.4.3/Frameworks/Python.framework/Versions/3.4/lib/python3.4/asyncio/unix_events.py", line 55, in close
+    super().close()
+  File "/usr/local/Cellar/python3/3.4.3/Frameworks/Python.framework/Versions/3.4/lib/python3.4/asyncio/selector_events.py", line 94, in close
+    raise RuntimeError("Cannot close a running event loop")
+RuntimeError: Cannot close a running event loop 
+1

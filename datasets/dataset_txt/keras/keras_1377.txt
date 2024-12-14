@@ -1,0 +1,125 @@
+VamshikShetty commented on 25 Dec 2017 •
+edited
+Im retraining the inception and got 73% validation accuracy on my last epochbut when i try to predict it for a single image i get this kind of result where all values are close to zero and i have used images from both test and train for multiple classes but its predict all values close to zero.
+result:
+[[ 2.74194106e-13 2.54081760e-18 1.17128074e-12 1.01110079e-15
+2.76163472e-16 3.27409473e-14 6.79522421e-18 1.43459751e-14
+2.05136019e-09 4.39245280e-17 5.56166396e-21 1.73498305e-17
+2.68991353e-16 2.36591804e-26 3.35153319e-14 1.11768123e-14
+8.50912358e-17 9.60534225e-19 3.01834512e-13 7.04481802e-17
+2.78013088e-17 5.61404835e-17 6.92195655e-18 6.84859484e-19
+8.55294672e-20 9.74170078e-17 6.47763910e-20 8.58271274e-22
+1.12848042e-16 1.17291891e-13 2.25409657e-20 3.80230241e-20
+3.87696403e-16 2.58817656e-09 4.06113308e-16 5.91141965e-15
+5.33848285e-16 7.36882452e-13 8.49041474e-17 3.93135706e-14
+5.57971996e-16 1.72781461e-12 8.63044445e-12 3.02698288e-16
+8.03856369e-17 1.04676677e-18 3.30692830e-12 6.97223630e-16
+3.51141148e-18 1.12776030e-11 1.09235925e-17 1.98882849e-15
+2.19587783e-17 2.60947989e-25 6.06958026e-11 1.31728961e-25
+4.89476064e-11 5.83930948e-18 3.84633658e-17 1.33928675e-11
+1.27428589e-15 4.21924094e-15 3.63632925e-13 1.39169397e-13
+2.37890765e-16 8.03519488e-16 5.43457617e-26 2.73839849e-16
+1.30515379e-12 2.64051489e-15 1.58349521e-05 2.27204283e-10
+4.37693414e-12 3.07160087e-17 2.91276253e-10 9.18473739e-14
+2.83188796e-14 1.39097013e-12 9.46210447e-16 1.50030525e-18 ]]
+my training code:
+from keras.applications.inception_v3 import InceptionV3
+from keras.preprocessing import image
+from keras.models import Model
+from keras.layers import Dense, GlobalAveragePooling2D,Dropout
+from keras import backend as K
+from keras.models import Model,load_model,model_from_json
+from keras.preprocessing.image import ImageDataGenerator
+import numpy as np
+from PIL import ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+class_name =[] # class names as list
+
+img_size=299
+step_ep = 7264
+valid_step = 676
+num_ep = 5
+
+train_datagen = ImageDataGenerator(shear_range = 0.2,
+                                   rescale=1./255,
+                                   zoom_range = 0.2,
+                                   rotation_range = 20,
+                                   vertical_flip = True,
+                                   horizontal_flip = True)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+training_set = train_datagen.flow_from_directory('train',
+                                                 target_size = (img_size,img_size),
+                                                 batch_size = 8,
+                                                 classes=class_name,
+                                                 class_mode = 'categorical',
+                                                 shuffle=True)
+
+test_set = test_datagen.flow_from_directory('test',
+                                            target_size = (img_size,img_size),
+                                            batch_size = 8,
+                                            classes=class_name,
+                                            class_mode = 'categorical',
+                                            shuffle=True)
+
+
+print("loading model")
+base_model = InceptionV3(weights=None, include_top=False)
+base_model.load_weights("inception_h5\\inception_v3_weights_tf_dim_ordering_tf_kernels_notop.h5")
+print("model loaded")
+
+for layer in base_model.layers:
+    layer.trainable = False
+
+
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+
+
+x = Dense(1024,activation='sigmoid')(x)
+x = Dropout(rate=0.05)(x)
+
+
+predictions = Dense(80, activation='sigmoid')(x)
+
+
+model = Model(inputs=base_model.input, outputs=predictions)
+
+
+
+
+model.compile(optimizer='adam', loss='categorical_crossentropy',metrics = ['accuracy'])
+
+model_json = model.to_json()
+with open('inception_cls/TL_ALL_classifier_w.json', "w") as json_file:
+    json_file.write(model_json)
+
+print("start training : ")
+for i in range(4):
+    model.fit_generator(training_set, steps_per_epoch = step_ep, epochs = num_ep, validation_data = test_set, validation_steps = valid_step)
+
+    model.save_weights("inception_cls/TL_ALL_classifier_w.h5", overwrite=True)
+
+    # sleep for 5 mins for GPU cool down
+    print("sleeping for 5 mins")
+    time.sleep(300)
+
+
+# fine tune
+for layer in model.layers[:249]:
+   layer.trainable = False
+for layer in model.layers[249:]:
+   layer.trainable = True
+
+model.compile(optimizer=SGD(lr=0.0001, momentum=0.9), loss='categorical_crossentropy',metrics = ['accuracy'])
+
+
+for i in range(3):
+    model.fit_generator(training_set, steps_per_epoch = step_ep, epochs = num_ep, validation_data = test_set, validation_steps = valid_step)
+    model.save_weights("inception_cls/FT_ALL_classifier_w.h5", overwrite=True)
+
+    print("sleeping for 5 mins")
+    time.sleep(300)

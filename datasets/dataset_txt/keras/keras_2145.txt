@@ -1,0 +1,170 @@
+vladimircape commented on 13 Jun 2017 •
+edited
+First config
+{ "image_dim_ordering": "tf", "epsilon": 1e-07, "floatx": "float32", "backend": "tensorflow" }
+and the code
+`import os
+import keras
+FN = 'train'
+FN0 = 'vocabulary-embedding'
+FN1 = 'train'
+maxlend=25 # 0 - if we dont want to use description at all
+maxlenh=25
+maxlen = maxlend + maxlenh
+rnn_size = 512 # must be same as 160330-word-gen
+rnn_layers = 3  # match FN1
+batch_norm=False
+activation_rnn_size = 40 if maxlend else 0
+# training parameters
+seed=42
+p_W, p_U, p_dense, p_emb, weight_decay = 0, 0, 0, 0, 0
+optimizer = 'adam'
+LR = 1e-4
+batch_size=64
+nflips=10
+#nb_train_samples = 30000
+#nb_val_samples = 3000
+nb_train_samples = 2225
+nb_val_samples = 300
+with open('data/%s.pkl'%FN0, 'rb') as fp:
+    embedding, idx2word, word2idx, glove_idx2idx = cPickle.load(fp)
+vocab_size, embedding_size = embedding.shape
+print(vocab_size)
+print(embedding_size)
+with open('data/%s.data.pkl'%FN0, 'rb') as fp:
+    X, Y = cPickle.load(fp)
+nb_unknown_words = 10
+for i in range(nb_unknown_words):
+    idx2word[vocab_size-1-i] = '<%d>'%i
+oov0 = vocab_size-nb_unknown_words
+for i in range(oov0, len(idx2word)):
+    idx2word[i] = idx2word[i]+'^'
+from sklearn.cross_validation import train_test_split
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=nb_val_samples, random_state=seed)
+len(X_train), len(Y_train), len(X_test), len(Y_test)    
+del X
+del Y
+empty = 0
+eos = 1
+idx2word[empty] = '_'
+idx2word[eos] = '~'
+import numpy as np
+from keras.preprocessing import sequence
+from keras.utils import np_utils
+import random, sys
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation, Dropout, RepeatVector
+#merge
+from keras.layers import add
+from keras.layers.wrappers import TimeDistributed
+from keras.layers.recurrent import LSTM
+from keras.layers.embeddings import Embedding
+from keras.regularizers import l2
+random.seed(seed)
+np.random.seed(seed)
+regularizer = l2(weight_decay) if weight_decay else None
+model = Sequential()
+model.add(Embedding(vocab_size, 
+                    embedding_size, 
+                    input_length=maxlen, 
+                    W_regularizer=regularizer, 
+                    weights=[embedding], 
+                    mask_zero=True,
+                    name='embedding_1'))
+
+for i in range(rnn_layers):
+    lstm = LSTM(rnn_size, return_sequences=True, # batch_norm=batch_norm,
+                W_regularizer=regularizer, U_regularizer=regularizer,
+                b_regularizer=regularizer, dropout_W=p_W, dropout_U=p_U,
+                name='lstm_%d'%(i+1)
+                  )
+    model.add(lstm)
+    model.add(Dropout(p_dense,name='dropout_%d'%(i+1)))
+from keras.layers.core import Lambda
+import keras.backend as K
+
+def simple_context(X, mask, n=activation_rnn_size, maxlend=maxlend, maxlenh=maxlenh):
+    desc, head = X[:,:maxlend,:], X[:,maxlend:,:]
+    head_activations, head_words = head[:,:,:n], head[:,:,n:]
+    desc_activations, desc_words = desc[:,:,:n], desc[:,:,n:]
+    
+    # RTFM http://deeplearning.net/software/theano/library/tensor/basic.html#theano.tensor.batched_tensordot
+    # activation for every head word and every desc word
+    activation_energies = K.batch_dot(head_activations, desc_activations, axes=(2,2))
+    # make sure we dont use description words that are masked out
+    activation_energies = activation_energies + -1e20*K.expand_dims(1.-K.cast(mask[:, :maxlend],'float32'),1)
+    
+    # for every head word compute weights for every desc word
+    activation_energies = K.reshape(activation_energies,(-1,maxlend))
+    activation_weights = K.softmax(activation_energies)
+    activation_weights = K.reshape(activation_weights,(-1,maxlenh,maxlend))
+
+    # for every head word compute weighted average of desc words
+    desc_avg_word = K.batch_dot(activation_weights, desc_words, axes=(2,1))
+    return K.concatenate((desc_avg_word, head_words))
+
+
+class SimpleContext(Lambda):
+    def __init__(self,**kwargs):
+        super(SimpleContext, self).__init__(simple_context,**kwargs)
+        self.supports_masking = True
+
+    def compute_mask(self, input, input_mask=None):
+        return input_mask[:, maxlend:]
+    
+    def get_output_shape_for(self, input_shape):
+        nb_samples = input_shape[0]
+        n = 2*(rnn_size - activation_rnn_size)
+        return (nb_samples, maxlenh, n)
+if activation_rnn_size:
+    model.add(SimpleContext(name='simplecontext_1'))
+model.add(TimeDistributed(Dense(vocab_size,
+                                W_regularizer=regularizer, b_regularizer=regularizer,
+                                name = 'timedistributed_1')))
+model.add(Activation('softmax', name='activation_1'))`
+and got error
+`---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-60-149a2088cdfb> in <module>()
+      1 if activation_rnn_size:
+----> 2     model.add(SimpleContext(name='simplecontext_1'))
+      3 model.add(TimeDistributed(Dense(vocab_size,
+      4                                 W_regularizer=regularizer, b_regularizer=regularizer,
+      5                                 name = 'timedistributed_1')))
+
+/home/vshebuniayeu/anaconda3/lib/python3.5/site-packages/keras/models.py in add(self, layer)
+    453                           output_shapes=[self.outputs[0]._keras_shape])
+    454         else:
+--> 455             output_tensor = layer(self.outputs[0])
+    456             if isinstance(output_tensor, list):
+    457                 raise TypeError('All layers in a Sequential model '
+
+/home/vshebuniayeu/anaconda3/lib/python3.5/site-packages/keras/engine/topology.py in __call__(self, inputs, **kwargs)
+    557             # Infering the output shape is only relevant for Theano.
+    558             if all([s is not None for s in _to_list(input_shape)]):
+--> 559                 output_shape = self.compute_output_shape(input_shape)
+    560             else:
+    561                 if isinstance(input_shape, list):
+
+/home/vshebuniayeu/anaconda3/lib/python3.5/site-packages/keras/layers/core.py in compute_output_shape(self, input_shape)
+    625                 else:
+    626                     x = K.placeholder(shape=input_shape)
+--> 627                     x = self.call(x)
+    628                 if isinstance(x, list):
+    629                     return [K.int_shape(x_elem) for x_elem in x]
+
+/home/vshebuniayeu/anaconda3/lib/python3.5/site-packages/keras/layers/core.py in call(self, inputs, mask)
+    657         if 'mask' in arg_spec.args:
+    658             arguments['mask'] = mask
+--> 659         return self.function(inputs, **arguments)
+    660 
+    661     def compute_mask(self, inputs, mask=None):
+
+<ipython-input-59-6cb879a16b11> in simple_context(X, mask, n, maxlend, maxlenh)
+     11     activation_energies = K.batch_dot(head_activations, desc_activations, axes=(2,2))
+     12     # make sure we dont use description words that are masked out
+---> 13     activation_energies = activation_energies + -1e20*K.expand_dims(1.-K.cast(mask[:, :maxlend],'float32'),1)
+     14 
+     15     # for every head word compute weights for every desc word
+
+TypeError: 'NoneType' object is not subscriptable`

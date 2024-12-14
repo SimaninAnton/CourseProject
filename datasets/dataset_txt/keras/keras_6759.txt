@@ -1,0 +1,48 @@
+gsmafra commented on 18 Aug 2015
+Code to reproduce the problem:
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers.core import Dense, Merge
+
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+
+X_train = X_train.reshape(X_train.shape[0], 28*28)
+X_train = X_train.astype("float32")
+X_test = X_test.reshape(X_test.shape[0], 28*28)
+X_test = X_test.astype("float32")
+
+left = Sequential()
+left.add(Dense(28*28, 50))
+
+left.compile(loss='categorical_crossentropy', optimizer='sgd')
+print left.predict(X_train).shape
+
+right = Sequential()
+right.add(Dense(28*28, 50))
+
+right.compile(loss='categorical_crossentropy', optimizer='sgd')
+print right.predict(X_train).shape
+
+model = Sequential()
+model.add(Merge([left, right], mode='concat'))
+
+model.compile(loss='categorical_crossentropy', optimizer='sgd')
+print model.predict([X_train, X_train]).shape
+Running this with device = cpu in .theanorc yields this output as expected:
+(60000, 50)
+(60000, 50)
+(60000, 100)
+When I change it to device = gpu it gives me this:
+(60000, 50)
+(60000, 50)
+(60000, 50)
+When I use inputs that differ only on the last dimension (simply changing the line right.add(Dense(28*28, 50)) to this right.add(Dense(28*28, 40))) the program breaks with this message:
+ValueError: GpuJoin: Wrong inputs for input 1 related to inputs 0.!
+Apply node that caused the error: GpuJoin(TensorConstant{-1}, GpuElemwise{Add}[(0, 0)].0, GpuElemwise{Add}[(0, 0)].0)
+Inputs types: [TensorType(int8, scalar), CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix)]
+Inputs shapes: [(), (128, 50), (128, 40)]
+Inputs strides: [(), (50, 1), (40, 1)]
+Inputs values: [array(-1, dtype=int8), 'not shown', 'not shown']
+Also, tests/manual/check_model_utils.py breaks for me when using device = gpu
+Edit1: apparently this is solvable by upgrading Theano to the development version, BRB to confirm
+Edit2: confirmed

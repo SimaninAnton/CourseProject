@@ -1,0 +1,67 @@
+MilesZhao commented on 22 Jun 2017 •
+edited
+results : 7424/10000 [=====================>........] - ETA: 0s[0.094332152533531194, 0.81302972192764278] this is verbose
+I have 10000 data, but it looks like the function just tests part of them.
+code:
+from keras.layers import Input,Dense
+from keras.models import Model
+from keras.datasets import mnist
+import numpy as np
+from keras import regularizers
+def main():
+(x_train, _), (x_test, _) = mnist.load_data()
+x_train = x_train.astype('float32') / 255.
+x_test = x_test.astype('float32') / 255.
+x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
+x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
+
+obj = unlabel_training(cv=10,epochs=50,batch_size=256)
+autoencoder_model = obj.auto_encoder(x_train)
+loss = obj.loss(autoencoder_model,x_test)
+print('\n auto encoder loss:  ',loss)
+class unlabel_training(object):
+def __init__(self,cv=10,epochs=30,batch_size=256):
+    self.cv = cv
+    self.epochs = epochs
+    self.batch_size = batch_size
+
+def loss(self,model,x_test):
+    return model.evaluate(x_test,x_test,batch_size=self.batch_size)
+
+def auto_encoder(self,target_data):
+
+    encoding_dim = 32
+    input_img = Input(shape=(784,))
+    encoded = Dense(encoding_dim, activation='relu',)(input_img)
+    decoded = Dense(784, activation='sigmoid')(encoded)
+    autoencoder = Model(input_img, decoded)
+
+    encoder = Model(input_img, encoded)
+    encoded_input = Input(shape=(encoding_dim,))
+    decoder_layer = autoencoder.layers[-1]
+    decoder = Model(encoded_input, decoder_layer(encoded_input))
+
+    autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy',metrics=['accuracy'])
+    for i in range(self.cv):
+        x_train,x_val = self.build_cv(target_data,i)
+        autoencoder.fit(x_train, x_train,
+                        epochs=self.epochs,
+                        batch_size=self.batch_size,
+                        shuffle=True,
+                        validation_data=(x_val, x_val))
+        # break
+    return autoencoder
+
+def build_cv(self,data,val_id,shuffle=True):
+    data_size = len(data)
+    b = int(data_size/self.cv)
+    if shuffle:
+        shuffle_indices = np.random.permutation(np.arange(data_size))
+        shuffled_data = data[shuffle_indices]
+    else:
+        shuffled_data = data
+    x_val = shuffled_data[b*val_id:(b+1)*val_id]#validation
+    x_train = np.concatenate((shuffled_data[0:b*val_id],shuffled_data[(b+1)*val_id:data_size]),axis=0)#train
+    return x_train,x_val
+if name == 'main':
+main()

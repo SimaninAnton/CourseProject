@@ -1,0 +1,62 @@
+antevens commented on 6 Mar 2018 •
+edited by ohemorange
+I think I might have found a bug in how plugins with prefixes are handled, see stacktrace and code below, it appears to me that retrieving config values for any plugin with a prefix will fail due to the semicolon being used in the prefix name.
+ 25 class PluginEntryPoint(object):                                                 
+ 26     """Plugin entry point."""                                                   
+ 27                                                                                 
+ 28     PREFIX_FREE_DISTRIBUTIONS = [                                               
+ 29         "certbot",                                                              
+ 30         "certbot-apache",                                                       
+ 31         "certbot-dns-cloudflare",                                               
+ 32         "certbot-dns-cloudxns",                                                 
+ 33         "certbot-dns-digitalocean",                                             
+ 34         "certbot-dns-dnsimple",                                                 
+ 35         "certbot-dns-dnsmadeeasy",                                              
+ 36         "certbot-dns-google",                                                   
+ 37         "certbot-dns-luadns",                                                   
+ 38         "certbot-dns-nsone",                                                    
+ 39         "certbot-dns-rfc2136",                                                  
+ 40         "certbot-dns-route53",                                                  
+ 41         "certbot-nginx",                                                        
+ 42     ]                                                                           
+ 43     """Distributions for which prefix will be omitted."""                       
+ 44                                                                                 
+ 45     # this object is mutable, don't allow it to be hashed!                      
+ 46     __hash__ = None  # type: ignore                                             
+ 47                                                                                 
+ 48     def __init__(self, entry_point):                                            
+ 49         self.name = self.entry_point_to_plugin_name(entry_point)                
+ 50         self.plugin_cls = entry_point.load()                                    
+ 51         self.entry_point = entry_point                                          
+ 52         self._initialized = None                                                
+ 53         self._prepared = None                                                   
+ 54                                                                                 
+ 55     @classmethod                                                                
+ 56     def entry_point_to_plugin_name(cls, entry_point):                           
+ 57         """Unique plugin name for an ``entry_point``"""                         
+ 58         if entry_point.dist.key in cls.PREFIX_FREE_DISTRIBUTIONS:               
+ 59             return entry_point.name                                             
+ 60         return entry_point.dist.key + ":" + entry_point.name         
+
+Traceback (most recent call last):
+  File "/home/vagrant/Revisions/certbot/venv/bin/cerlet", line 11, in <module>
+    load_entry_point('cerlet', 'console_scripts', 'cerlet')()
+  File "/home/vagrant/Revisions/cerlet/cerlet/__init__.py", line 540, in main
+    sys.exit(CertMongerAction.operation_factory(os.getenv('CERTMONGER_OPERATION')))
+  File "/home/vagrant/Revisions/cerlet/cerlet/__init__.py", line 303, in operation_factory
+    return valid_operations[operation]()
+  File "/home/vagrant/Revisions/cerlet/cerlet/__init__.py", line 359, in submit
+    self.client.obtain_certificate_from_csr(domains, csr)
+  File "/home/vagrant/Revisions/certbot/certbot/client.py", line 273, in obtain_certificate_from_csr
+    authzr = self.auth_handler.get_authorizations(domains)
+  File "/home/vagrant/Revisions/certbot/certbot/auth_handler.py", line 74, in get_authorizations
+    resp = self._solve_challenges()
+  File "/home/vagrant/Revisions/certbot/certbot/auth_handler.py", line 115, in _solve_challenges
+    resp = self.auth.perform(self.achalls)
+  File "/home/vagrant/Revisions/certbot/certbot/plugins/dns_common.py", line 64, in perform
+    self.conf('propagation-seconds'))
+  File "/home/vagrant/Revisions/certbot/certbot/plugins/common.py", line 102, in conf
+    return getattr(self.config, self.dest(var))
+  File "/home/vagrant/Revisions/certbot/certbot/configuration.py", line 55, in __getattr__
+    return getattr(self.namespace, name)
+AttributeError: 'Config' object has no attribute 'cerlet:ipa_propagation_seconds'

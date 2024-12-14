@@ -1,0 +1,92 @@
+evotjh commented on Aug 1, 2017
+Description
+_pickle.PicklingError: Can't pickle <function <lambda> at 0x7f253aa720d0>: attribute lookup <lambda> on __main__ failed
+when executing on more than 1 cores:
+    gs = GridSearchCV(estimator=pipeline, param_grid=param_grid, scoring=scoring_method, cv=10, n_jobs=2)
+    scores = cross_val_score(gs, x_train, y_train, scoring=scoring_method, cv=5)
+Steps/Code to Reproduce
+   pipeline = Pipeline([
+        ('union', FeatureUnion(
+            transformer_list=[
+
+                ('abstractclaims_idf', Pipeline([
+                    ('selector', ItemSelector(key='claims')),
+                    ('vect', StemmedCountVectorizer(stop_words='english', ngram_range=(1, 1), strip_accents='unicode',
+                                                        analyzer='word', token_pattern=r'(?u)\b([a-zA-Z]{3,})\b',
+                                                        stemmer=SnowCastleStemmer(mode='NLTK_EXTENSIONS'))),
+                    ('tfidf', TfidfTransformer()),
+                    ('best', SelectKBest(k=500)),
+                    ])),
+
+                ('authors_bow', Pipeline([
+                    ('selector', ItemSelector(key='authors')),
+                    ('vect', CountVectorizer(max_df=1, preprocessor=lambda x: [re.sub(re.compile(r'\s{2,}'), '', w.strip().lower().replace(',', '')) for w in x], tokenizer=lambda x: x))
+                ])),
+
+                ],
+            transformer_weights={
+                'abstractclaims_idf': 0.8,
+                'authors_bow': 0.2
+            },
+        )),  # end of 'union'
+        ('clf', SGDClassifier(loss='log', eta0=0.1, penalty='elasticnet', n_iter=5, random_state=42, class_weight={0: 1, 1: 2})),
+    ])
+
+
+    # pipeline.fit(x_train, y_train)
+
+    scoring_method = 'recall'
+    param_grid = [{'clf__alpha': [1e-4, 5e-4, 1e-3], 'clf__learning_rate': ['optimal', 'invscaling'],
+                   'clf__penalty': ['elasticnet', 'l2']}]
+    # unfortunately does not work on more then one core due to a pickle error
+    gs = GridSearchCV(estimator=pipeline, param_grid=param_grid, scoring=scoring_method, cv=10, n_jobs=2)
+    scores = cross_val_score(gs, x_train, y_train, scoring=scoring_method, cv=5)
+    print('CV {}: {:.3f} +/- {:.3f}'.format(scoring_method, np.mean(scores), np.std(scores)))
+Expected Results
+Should work as it does with njobs=1.
+Actual Results
+Traceback (most recent call last):
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/src/simple_pipeline.py", line 107, in <module>
+    scores = cross_val_score(gs, x_train, y_train, scoring=scoring_method, cv=5)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/model_selection/_validation.py", line 140, in cross_val_score
+    for train, test in cv_iter)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 758, in __call__
+    while self.dispatch_one_batch(iterator):
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 608, in dispatch_one_batch
+    self._dispatch(tasks)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 571, in _dispatch
+    job = self._backend.apply_async(batch, callback=cb)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 109, in apply_async
+    result = ImmediateResult(func)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 326, in __init__
+    self.results = batch()
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 131, in __call__
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 131, in <listcomp>
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/model_selection/_validation.py", line 238, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/model_selection/_search.py", line 945, in fit
+    return self._fit(X, y, groups, ParameterGrid(self.param_grid))
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/model_selection/_search.py", line 564, in _fit
+    for parameters in parameter_iterable
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 768, in __call__
+    self.retrieve()
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 719, in retrieve
+    raise exception
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/parallel.py", line 682, in retrieve
+    self._output.extend(job.get(timeout=self.timeout))
+  File "/usr/lib/python3.4/multiprocessing/pool.py", line 599, in get
+    raise self._value
+  File "/usr/lib/python3.4/multiprocessing/pool.py", line 383, in _handle_tasks
+    put(task)
+  File "/home/t13147/programming/scripts/proj_BDL_REIM_2017_patentclassifier/venv/lib/python3.4/site-packages/sklearn/externals/joblib/pool.py", line 371, in send
+    CustomizablePickler(buffer, self._reducers).dump(obj)
+_pickle.PicklingError: Can't pickle <function <lambda> at 0x7f253aa720d0>: attribute lookup <lambda> on __main__ failed
+Versions
+Linux-3.19.0-80-generic-x86_64-with-Ubuntu-14.04-trusty
+Python 3.4.3 (default, Nov 17 2016, 01:08:31)
+[GCC 4.8.4]
+NumPy 1.13.1
+SciPy 0.19.1
+Scikit-Learn 0.18.2

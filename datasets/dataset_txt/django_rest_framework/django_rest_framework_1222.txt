@@ -1,0 +1,34 @@
+jpocentek commented on 28 Apr 2016
+The default key for TokenAuthorization is "Token". The most often used key is "Bearer". Not long ago I tried to change the authentication token name for our REST application. I found class TokenAuthentication on line 142 in authentication.py. It defines method "authenticate_header" which returns "Token" so I thought that it is possible to override this method and return "Bearer". No, it's not possible. I had to override entire class just to change token name. Am I missed something? This actually should be in settings.py file. I don't know if there is other way to define token name. If there is, please, give me link to docs. If it's not possible, I could easily create plugin that takes token name from settings file. Method "authenticate_header" seems to be not used at all. This is my modification:
+class CustomTokenAuthentication(TokenAuthentication):
+""" Modify default authorization header to much more common 'Bearer'.
+"""
+header_key = b'bearer'
+def authenticate(self, request):
+    auth = get_authorization_header(request).split()
+
+    if not auth or auth[0].lower() != self.header_key:
+        return None
+
+    if len(auth) == 1:
+        msg = _('Invalid token header. No credentials provided.')
+        raise exceptions.AuthenticationFailed(msg)
+    elif len(auth) > 2:
+        msg = _(
+            'Invalid token header. Token string should not contain spaces.'
+        )
+        raise exceptions.AuthenticationFailed(msg)
+
+    try:
+        token = auth[1].decode()
+    except UnicodeError:
+        msg = _(
+            'Invalid token header. Token string should not contain',
+            'invalid characters.'
+        )
+        raise exceptions.AuthenticationFailed(msg)
+
+    return self.authenticate_credentials(token)
+
+def authenticate_header(self, request):
+    return "Bearer"

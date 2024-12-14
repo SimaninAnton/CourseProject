@@ -1,0 +1,20 @@
+Contributor
+bryan-lunt commented on 17 Aug 2016
+These lines read the keras JSON config file, if it exists.
+Then they unconditionally write back the same keras JSON config file.
+https://github.com/fchollet/keras/blob/master/keras/backend/__init__.py#L27-L50
+If there are multiple python kernels reading/writing the same config file at once, a race condition is created, and some jobs will throw an exception. This can happen in a cluster environment where the keras.json file is shared via NFS, or on shared memory machines starting multiple processes at once.
+My suggestion is to make writing the file keras.json conditional on that file's non-existence. This will at least mean that the race condition only happens the first time keras is used in an installation. A more complicated idea would write to a temporary file and then use shutil to move that temporary file, gaining a certain kind of atomic writing. However, just making the writing code conditional will eliminate most instances of this problem.
+File "/home/my_username/.local/lib/python2.7/site-packages/keras/init.py", line 2, in
+from . import backend
+File "/home/my_username/.local/lib/python2.7/site-packages/keras/backend/init.py", line 26, in
+_config = json.load(open(_config_path))
+File "/my/python/installation/python/lib/python2.7/json/init.py", line 290, in load
+**kw)
+File "/my/python/installation/python/lib/python2.7/json/init.py", line 338, in loads
+return _default_decoder.decode(s)
+File "/my/python/installation/python/lib/python2.7/json/decoder.py", line 366, in decode
+obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+File "/my/python/installation/python/lib/python2.7/json/decoder.py", line 384, in raw_decode
+raise ValueError("No JSON object could be decoded")
+ValueError: No JSON object could be decoded

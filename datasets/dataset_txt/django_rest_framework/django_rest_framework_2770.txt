@@ -1,0 +1,87 @@
+enoren commented on 24 Jul 2013
+If I have an Album Model and a Track Model as such:
+# Models
+class AlbumModel(models.Model):
+    name = models.CharField(max_length=200)
+
+class TrackModel(models.Model):
+    number = models.IntegerField()
+    name = models.CharField(max_length=200)
+    album = models.ForeignKey(AlbumModel)
+
+    class Meta:
+        unique_together = ('album', 'number')
+
+# Viewsets
+class TrackViewSet(viewsets.ModelViewSet):
+    serializer_class = TrackSerializer
+    queryset = TrackModel.objects.all()
+
+class AlbumViewSet(viewsets.ModelViewSet):
+    serializer_class = AlbumSerializer
+    queryset = AlbumModel.objects.all()
+
+# Routes
+router = SimpleRouter()
+router.register(r'albums', AlbumViewSet)
+I would like to reference tracks through their relationship to the album through a URL scheme such as:
+/albums/1234/tracks/2
+On top of this basic requirement I also don't want to repeat myself as I already have a viewset capable of understanding object retrieval and management of Albums through the AlbumViewset as well as a viewset capable of understanding Tracks through the TrackViewSet. Simplistically all we are modeling here is a filter of the child ViewSet through the URL scheme. So what I don't want to do is have the TrackViewSet understand the relationship to the parent album in its definition since that makes the TrackViewSet too brittle, especially in the case where I also have an artist added to the mix where I want to view their tracks via /artists/4321/tracks.
+I have an implementation that provides this capability with a test suite, however I am still working through some edge cases, but before I went any further I wanted to make sure this was something that would be interesting to incorporate back into the project. With the current implementation, the above relationship would be modeled by defining nested Routers on the ViewSets themselves, which in the raw form the AlbumViewSet would look like(with no changes to TrackViewSet):
+class AlbumViewSet(viewsets.ModelViewSet):
+    serializer_class = AlbumSerializer
+    queryset = AlbumModel.objects.all()
+
+    router = SimpleRouter()
+    router.register("tracks", TrackViewSet)
+However there is also a declarative form through the Meta class:
+class AlbumViewSet(viewsets.ModelViewSet):
+    serializer_class = AlbumSerializer
+    queryset = AlbumModel.objects.all()
+
+    class Meta:
+        routes = {
+            "tracks": TrackViewSet
+        }
+Under the covers what happens is that the SimpleRouter still generates the same urls for list, details, etc for the AlbumViewSet, but for nested routes we add a new route which is the same as the "detail" route (e.g. r'^{prefix}/{lookup}/$') except that we remove the trailing '$' and then do an include on the AlbumViewSet.router.urls with some special nested router handling within the Router that provides a hook into all of the views within AlbumViewSet.router. When a view exposed through the nested router is routed to, the parent ViewSet is notified of the request to give it a chance to do any preprocessing before handing the request off to the child ViewSet's view function.
+For the default implementation of a ModelViewSet we determine the relationship of the child to the parent through the Django Meta information and then filter the child viewsets queryset using the return of getObject() on the parent ViewSet and the related field information. By default the child view set can be completely ignorant to this filtering and this relationship and it just works, however if the child or the parent ViewSet wants to be more intelligent about the relationship there are numerous hooks and information that can be leveraged to further enhance the relationship. We have actually extended this further within our custom code to allow for retrieval of custom Many To Many through table information so that not only do you get the information about the child model but you also get the custom properties on the through table as well which describe the relationship of the child to the parent.
+This implementation and pattern is infinitely nestable such that you could also have /artists/4321/albums/1234/tracks/ where albums are prefiltered by the artists before albums then filter the tracks.
+It also supports bidirectional relationships such that you could have both /artists/4321/albums/1234/tracks/ and /albums/1234/artists/ which would be modeled in the Viewsets as such:
+class AlbumViewSet(viewsets.ModelViewSet):
+    serializer_class = AlbumSerializer
+    queryset = AlbumModel.objects.all()
+
+    class Meta:
+        routes = {
+            "tracks": TrackViewSet,
+            "artists": "ArtistViewSet"  # Must define as String which is looked up lazily since it is not defined yet 
+        }
+
+class ArtistViewSet(viewsets.ModelViewSet):
+    serializer_class = ArtistSerializer
+    queryset = ArtistModel.objects.all()
+
+    class Meta:
+        routes = {
+            "albums": AlbumViewSet
+        }
+While there is default magic that happens, all of this is configurable and customizable either through declarative means on the Meta classes of the parent Viewset, or through method overidding on either the parent or the child view set. As a quick example, here is an explicit definition of the AlbumViewSet using all of the explicit Meta attributes:
+class AlbumViewSet(viewsets.ModelViewSet):
+    serializer_class = AlbumSerializer
+    queryset = AlbumModel.objects.all()
+
+    class Meta:
+        routes = {
+            "tracks": {
+                "viewset": TrackViewSet,
+                "related_field": "album",   # What field on the child model relates it back to an Album(the parent)
+                "related_value": lambda obj: obj    # The value from the Album to use when filtering the child
+
+            }
+        }
+Customizations can also define their own meta properties on the route and access their configurations from either the child view set or the parent view set if needed.
+The primary changes that were made in order to support this feature were:
+1> Changes to routers.py; specifically to enhance SimpleRouter to understand nested routers and routing around that. Most of the changes were done in here
+2> Added a new NestedRouterModelMixin which is applied to ModelViewSets to provide default nested behavior as well as provide various hooks for customizing the nested behavior from a Subclassed ViewSet. This is where most of the work is done, but is all new stuff.
+3> Minor modifications to APIView and GenericAPIView to hook in some of the pre dispatch functionality for nesting.
+I am happy to provide a pull request for what we have at the moment and discuss further. To be ready for an actual pull though there is some code cleanup that needs to be done as I am not happy with some of the data management and there are a few known issues with things that we are not currently using. I would also need to write the documentation. Our changes are based on 2.3.5, but I think if there is interest we could have the finishing touches applied and ready for a pull in a couple of weeks.

@@ -1,0 +1,137 @@
+jkozlowicz commented on 28 Jun 2016
+Quite a few TimeoutErrors occur when we send requests to a given http server. I wonder if it is Tornado's fault or if the http server times out. I have increased both connect_timeout and request_timeout to one hour and still a lot of TimeoutErrors occur.
+Since I increased those to one hour isn't http_client.fetch method supposed to wait one hour until it times out? Those errors occur after running an instance of an IOLoop for a few minutes already. Also, this errno is different than 599 mentioned in this issue, thus I am not sure whose fault is this.
+I do not have access to logs of the http server, but it could be true that it runs behind a proxy like nginx, which times out if it did not receive a response from an application server that handles business logic.
+Here is the traceback:
+Traceback (most recent call last):
+  File "/Users/X/project-discovery/src/common.py", line 167, in worker
+    result = yield fetch_resource_list(http_client, url, headers)
+  File "/Users/X/env-pd/lib/python3.5/site-packages/tornado/gen.py", line 1008, in run
+    value = future.result()
+  File "/Users/X/env-pd/lib/python3.5/site-packages/tornado/concurrent.py", line 232, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+  File "/Users/X/env-pd/lib/python3.5/site-packages/tornado/gen.py", line 1014, in run
+    yielded = self.gen.throw(*exc_info)
+  File "/Users/X/project-discovery/src/common.py", line 113, in fetch_resource_list
+    resp = yield http_client.fetch(http_request)
+  File "/Users/X/env-pd/lib/python3.5/site-packages/tornado/gen.py", line 1008, in run
+    value = future.result()
+  File "/Users/X/env-pd/lib/python3.5/site-packages/tornado/concurrent.py", line 232, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+TimeoutError: [Errno 60] Operation timed out
+And here is the code that we run (more or less I got rid of certain parts for brevity):
+#project-discovery/src/common.py
+
+@gen.coroutine
+def fetch_resource_list(http_client, url, headers):
+    """
+    Fetches a list of resources from a REST endpoint specified by `url` param.
+
+    :param http_client: Tornado HTTP client that will be used to send the
+    request.
+    :param url: A string with URL to fetch the resource list from.
+    :param headers: A dict with headers to be sent with the HTTP request.
+    :return:
+    """
+    http_request = HTTPRequest(url=url,
+                               headers=headers,
+                               request_timeout=15*60.0,
+                               connect_timeout=15*60.0)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug('fetching: {url}'.format(url=url))
+    resp = yield http_client.fetch(http_request)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug('fetched: {url}'.format(url=url))
+    body = resp.body if isinstance(resp.body, str) else resp.body.decode()
+    try:
+        resource_list = json.loads(body)
+    except ValueError as e:
+        raise e
+    else:
+        raise gen.Return(resource_list)
+
+
+@gen.coroutine
+def worker(headers, http_client, queue, _callback,
+           _callback_args=[], _callback_kwargs={}):
+
+    """
+    Gets a resource to be fetched from the `queue`.
+
+    If there are no resources in the queue then it waits until one arrives.
+
+    If there are resources to be fetched in the queue, each of them is
+    fetched asynchronously and then `_callback` function is invoked with the
+    fetched result, resource, `callback_args` and `_callback_kwargs` as its
+    arguments.
+
+    If the fetched resource has more pages a new instance of the same resource
+    with URL of the next page is created and put into the queue.
+
+    :param headers: A dict with headers to be sent with the HTTP request.
+    :param http_client: Tornado HTTP client that will be used to send the
+    request.
+    :param queue: A Tornado Queue to get resources to be fetched from.
+    :param _callback: A function to be invoked when the resource is fetched.
+    :param _callback_args: A list of positional arguments to invoke the
+    `_callback` function with.
+    :param _callback_kwargs: A dict with keyword arguments to invoke the
+    `_callback` function with.
+    """
+    while True:
+        resource = yield queue.get()
+        url = resource.url
+        try:
+            result = yield fetch_resource_list(http_client, url, headers)
+        except HTTPError as e:
+            log_http_error(error=e, headers=headers, method='GET', payload=None,
+                           url=url, logger=logger)
+        except TimeoutError as e:
+            log_error(error=e, payload=None, logger=logger)
+        else:
+            if _callback is not None:
+                yield gen.Task(_callback, result, resource,
+                               *_callback_args, **_callback_kwargs)
+
+           params = extract_get_url_params(url)
+           if not is_last_page(result, params):
+                params = create_next_page_params(params)
+                new_url = build_get_url(url, params)
+                resource_dict = {
+                    field_name: getattr(resource, field_name) for field_name
+                    in resource.field_names
+                 }
+                resource_dict['url'] = new_url
+                resource_type = type(resource)
+                new_resource = resource_type(**resource_dict)
+                yield queue.put(new_resource)
+        finally:
+            queue.task_done()
+#And the code of the main coroutine (more or less)
+
+AsyncHTTPClient.configure(None, max_clients=concurrency)
+http_client = AsyncHTTPClient()
+
+users_field_names = ['url']
+Users = namedtuple('Users', field_names=users_field_names)
+Users.field_names = users_field_names
+
+users_endpoint_url = ''.join([config['api_url'], '/users'])
+url = build_get_url(users_endpoint_url, params)
+users = Users(url=url)
+users_queue.put(users)
+
+for _ in range(concurrency):
+    worker(
+        headers=headers,
+        stats=stats,
+        http_client=http_client,
+        queue=users_queue,
+        _callback=process_users,
+        _callback_args=[
+            config, arguments, result_container, user_repos_queue
+        ],
+    )
+yield users_queue.join()

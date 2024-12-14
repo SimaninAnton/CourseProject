@@ -1,0 +1,102 @@
+mpariente commented on 5 Mar 2018
+Hey,
+I needed to normalize my input data, to keep the norm and inverse the normalization. I used a Lambda layer for this and it works well.
+import numpy as np
+from keras import backend as K
+from keras import Input, Model, Sequential
+from keras.layers import Dense, Lambda, TimeDistributed, multiply
+
+def l2(x):
+    axis=-1
+    square_sum = K.sum(K.square(x), axis=axis, keepdims=True)
+    norm = K.sqrt(K.maximum(square_sum, K.epsilon()))
+    return [x/norm, norm]
+    
+def l2_output_shape(input_shape):
+    return [input_shape, input_shape]
+
+def build_generator(a, b):
+    inp = Input(shape=(None, a, b))
+    x, norm = Lambda(l2, output_shape=l2_output_shape)(inp)
+    x = TimeDistributed(Dense(b))(x)
+    out = multiply([x, norm])
+    model = Model(inp, out)
+    return model
+
+a = 10
+b = 50
+generator = build_generator(a, b)
+If I compile the model, I can use the methods predict and fit without problem.
+But I don't compile the model just yet, because I want to use it as the generator of a GAN. So I do something similar to the mnist_acgan example.
+generator_inp = Input(shape=(a, b))
+fake = generator(generator_inp)
+And this doesn't work, I give you the full traceback :
+AssertionError                            Traceback (most recent call last)
+/home/claire/Bureau/Main/decibel-se/minimal_example.py in <module>()
+     31 
+     32 generator_inp = Input(shape=(a, b))
+---> 33 fake = generator(generator_inp)
+     34 
+     35 
+
+/home/claire/anaconda2/lib/python2.7/site-packages/keras/engine/topology.pyc in __call__(self, inputs, **kwargs)
+    617 
+    618             # Actually call the layer, collecting output(s), mask(s), and shape(s).
+--> 619             output = self.call(inputs, **kwargs)
+    620             output_mask = self.compute_mask(inputs, previous_mask)
+    621 
+
+/home/claire/anaconda2/lib/python2.7/site-packages/keras/engine/topology.pyc in call(self, inputs, mask)
+   2081             return self._output_tensor_cache[cache_key]
+   2082         else:
+-> 2083             output_tensors, _, _ = self.run_internal_graph(inputs, masks)
+   2084             return output_tensors
+   2085 
+
+/home/claire/anaconda2/lib/python2.7/site-packages/keras/engine/topology.pyc in run_internal_graph(self, inputs, masks)
+   2285         output_shapes = []
+   2286         for x in self.outputs:
+-> 2287             assert str(id(x)) in tensor_map, 'Could not compute output ' + str(x)
+   2288             tensor, mask = tensor_map[str(id(x))]
+   2289             if hasattr(tensor, '_keras_shape') and output_shapes is not None:
+
+AssertionError: Could not compute output Tensor("multiply_1/mul:0", shape=(?, 10, 50), dtype=float32)
+I can make it work in this way, but it's not efficient and it tells me that the only problem is that the Lambda layer has two outputs.
+Here I use two lambda layers which are doing the computation twice but each one has only one output.
+import numpy as np
+from keras import backend as K
+from keras import Input, Model, Sequential
+from keras.layers import Dense, Lambda, TimeDistributed, multiply
+
+def l2(x):
+    axis=-1
+    square_sum = K.sum(K.square(x), axis=axis, keepdims=True)
+    norm = K.sqrt(K.maximum(square_sum, K.epsilon()))
+    return x/norm
+
+def ret_l2(x):
+    axis=-1
+    square_sum = K.sum(K.square(x), axis=axis, keepdims=True)
+    norm = K.sqrt(K.maximum(square_sum, K.epsilon()))
+    return norm
+
+def l2_output_shape(input_shape):
+    return input_shape
+
+def build_generator(a, b):
+    inp = Input(shape=(a, b))
+    x = Lambda(l2, output_shape=l2_output_shape)(inp)
+    norm = Lambda(ret_l2, output_shape=l2_output_shape)(inp)
+    x = TimeDistributed(Dense(b))(x)
+    out = multiply([x, norm])
+    model = Model(inp, out)
+    return model
+
+a = 10
+b = 50
+generator = build_generator(a, b)
+generator_inp = Input(shape=(a, b))
+fake = generator(generator_inp)
+Any ideas on this? Is it intentional that a model including a two-output Lambda layer cannot be called?
+@fchollet @Dref360 @farizrahman4u ?
+Thanks in advance

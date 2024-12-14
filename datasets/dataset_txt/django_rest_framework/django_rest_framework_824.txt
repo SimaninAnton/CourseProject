@@ -1,0 +1,53 @@
+supritashankar commented on 14 Apr 2017 •
+edited
+Context: I am having problem accessing fields which are validated by nested serializers.
+I have a very sample model as shown below.
+For 2 of the fields I have their specific serializers. When I try to access the data it returns all the fields except the one validated by the specific serializers.
+Models looks like this
+class Sampler(models.Model):
+  sample_name = models.CharField(unique=True, max_length=100)
+  sampling_by = JSONField(max_length=100)
+  extractions = JSONField(max_length=100)
+  max_samples = models.IntegerField(default=100)
+Serializers
+class ExtractionsSerializer(serializers.BaseSerializer):
+   table_name = serializers.CharField()
+   extraction_type = serializers.ChoiceField(["ABC"])
+   dependencies = serializers.ListField(child=RecursiveField(), allow_empty=True, required=False)
+
+
+class SamplingBySerializer(serializers.BaseSerializer):
+"""
+    Validate sampling_by
+"""
+    def to_internal_value(self, samples):
+      methods = ["ABC"]
+      sampling_not_supported = [sample for sample in samples
+                              if sample['by'] not in methods]
+       if sampling_not_supported:
+          raise ValidationError("{} not in {}".format(sampling_not_supported, methods))
+
+class SamplerSerializer(serializers.ModelSerializer):
+    extractions = ExtractionsSerializer()
+    sampling_by = SamplingBySerializer()
+
+    class Meta:
+      model = Sampler
+      fields = ('sample_name', 'database', 'schema', 'sampling_by', 'extractions', 'max_samples')
+Now I do
+data = {
+"database": "postgresql://..",
+"sampling_by":[{
+ "by":"ABC",
+ "value": ["l32=turn_the"]
+}],
+"max_samples":3,
+"extractions" : [{
+ "table_name": "person", 
+ "extraction_type": "ABC"
+}]
+}
+sampler = SamplerSerializer(data=data)
+sampler.is_valid()
+sampler.data() => does not contain data of the nested fields. Like the `sampling_by` and `extractions`
+Any help would be appreciated!

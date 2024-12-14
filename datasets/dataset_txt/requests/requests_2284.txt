@@ -1,0 +1,59 @@
+Contributor
+michaelhelmick commented on Dec 17, 2012
+Hey guys, just wanted to bring this issue forward. With requests 1.0.0
+So the error came from when I went to test Twython with the new requests release.
+And because it bothered me, I removed self from all variables that used self like self.callback_url
+Also, I striped the code out of the actual function get_authentication_tokens (so that's why you'll see ref to that function in the traceback)
+import requests
+from requests_oauthlib import OAuth1
+
+app_key = u'SUPERDUPERSECRETKEY'
+app_secret = u'SUPERDUPERSECRETSECRET'
+
+callback_url = 'http://example.com'
+headers = {'User-Agent': 'Twython v2.5.5'}
+auth = OAuth1(app_key, app_secret,
+                               signature_type='auth_header')
+
+request_args['oauth_callback'] = callback_url
+response = requests.get('https://api.twitter.com/oauth/request_token', params=request_args, headers=headers, auth=auth)
+
+if response.status_code != 200:
+    raise TwythonAuthError("Seems something couldn't be verified with your OAuth junk. Error: %s, Message: %s" % (response.status_code, response.content))
+
+request_tokens = dict(parse_qsl(response.content))
+if not request_tokens:
+    raise TwythonError('Unable to decode request tokens.')
+
+oauth_callback_confirmed = request_tokens.get('oauth_callback_confirmed') == 'true'
+
+auth_url_params = {
+    'oauth_token': request_tokens['oauth_token'],
+}
+
+# Use old-style callback argument if server didn't accept new-style
+if callback_url and not oauth_callback_confirmed:
+    auth_url_params['oauth_callback'] = callback_url
+
+request_tokens['auth_url'] = 'https://api.twitter.com/oauth/authenticate?' + urllib.urlencode(auth_url_params)
+
+return request_tokens
+Anyways, when I try to run this code I get the error:
+Traceback (most recent call last):
+  File "twython.py", line 585, in <module>
+    auth_props = t.get_authentication_tokens()
+  File "twython.py", line 271, in get_authentication_tokens
+    response = requests.get('https://api.twitter.com/oauth/request_token', params=request_args, headers=headers, auth=self.auth)
+  File "/Users/mikehelmick/.virtualenv/twython/lib/python2.7/site-packages/requests/api.py", line 49, in get
+    return request('get', url, **kwargs)
+  File "/Users/mikehelmick/.virtualenv/twython/lib/python2.7/site-packages/requests/api.py", line 38, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/mikehelmick/.virtualenv/twython/lib/python2.7/site-packages/requests/sessions.py", line 253, in request
+    prep = req.prepare()
+  File "/Users/mikehelmick/.virtualenv/twython/lib/python2.7/site-packages/requests/models.py", line 200, in prepare
+    p.prepare_auth(self.auth)
+  File "/Users/mikehelmick/.virtualenv/twython/lib/python2.7/site-packages/requests/models.py", line 336, in prepare_auth
+    r = auth(self)
+  File "/Users/mikehelmick/.virtualenv/twython/lib/python2.7/site-packages/requests_oauthlib/core.py", line 41, in __call__
+    decoded_body = extract_params(r.data)
+AttributeError: 'PreparedRequest' object has no attribute 'data'

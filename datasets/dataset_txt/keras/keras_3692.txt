@@ -1,0 +1,126 @@
+atana1 commented on 13 Dec 2016
+Hi, I am new to keras and trying to implements a model a part of that includes encoding sentences using convolution network.
+# import statements
+from keras.layers.embeddings import Embedding
+from keras.layers.wrappers import TimeDistributed
+from keras.layers.convolutional import Convolution1D
+from keras.layers.pooling import MaxPooling1D
+from keras.engine.topology import Merge
+from keras.layers.core import Dropout, RepeatVector
+from keras.layers import LSTM, Input, Dense
+from keras.models import Model, Sequential
+from IPython.display import SVG
+
+
+def conv_encoder(nb_filters, filter_len, in_shape):
+    """model to encode a sentence with a particular filter size
+        nb_filters: number of filters, filter_len: size of filter,
+        in_shape: input shape (_, SENT_LEN, WORD_LEN)
+    """
+    model = Sequential()
+    model.add(Convolution1D(nb_filters, filter_len, border_mode='same', input_shape=in_shape))
+    model.add(MaxPooling1D(pool_length=2, stride=None, border_mode='same'))
+    return model
+
+ def make_sentence_encoder(nb_filters, filter_lens, in_shape):
+     """model to encode a sentence with different filter sizes
+         basically, learns different types of representations based
+         on filter sizes like unigram, bigram, trigram etc.
+     """
+     models = []
+     for flt in filter_lens:
+         models.append(conv_encoder(nb_filters, flt, in_shape))
+     merged_model = Sequential()
+     merged_model.add(Merge(models, mode='sum', concat_axis=1))
+     return merged_model
+
+def encode_all_sentences(vocab_size, dense_emb_dim, doc_maxlen, sent_maxlen, nb_filters,   filter_lens, in_shape):
+     """A model that encodes each sentences using conv nets.
+        Returns encoded set of sentences.
+        Input: Document,  SHAPE: (_, DOC_LEN, SENT_LEN)
+        Output: SHAPE: (_, DOC_LEN, NEW_SENT_LEN)
+     """
+     # setup a sentence encoder
+     sent_encoder = make_sentence_encoder(nb_filters, filter_lens, in_shape)
+
+    # embed the input sequence into a sequence of vectors                     
+    sentences_encoder = Sequential()
+    # initialize embedding layer with wordvec
+    sentences_encoder.add(TimeDistributed(Embedding(input_dim=vocab_size,    output_dim=dense_emb_dim, mask_zero=True),
+                input_shape=(doc_maxlen, sent_maxlen), input_dtype='int32'))
+    sentences_encoder.add(TimeDistributed(Dropout(0.3)))
+
+    sentences_encoder.add(TimeDistributed(sent_encoder))
+    return sentences_encoder
+Test code:
+inputs = Input(shape=(50, 170))
+sents_enc = encode_all_sentences(1000, 60, 50, 170, 32, [1, 2, 3], (170, 60))
+print sents_enc.output_shape
+out = sents_enc(inputs)
+model = Model(input=inputs, output=out)
+The line sentences_encoder.add(TimeDistributed(sent_encoder)) in encode_all_sentences method is source of problem. I guess it's because sent_encoder takes input as list of size equal to len(filter_lens) i.e total number of different filters used. I don't know/am confused how to pass it here.
+Help will be highly appreciated. Thanks.
+Error thrown :
+`---------------------------------------------------------------------------
+AssertionError Traceback (most recent call last)
+in ()
+1 inputs = Input(shape=(50, 170))
+2
+----> 3 sents_enc = encode_all_sentences(1000, 60, 50, 170, 32, [1, 2, 3], (170, 60))
+4 print sents_enc.output_shape
+5
+in encode_all_sentences(vocab_size, dense_emb_dim, doc_maxlen, sent_maxlen, nb_filters, filter_lens, in_shape)
+40 sentences_encoder.add(TimeDistributed(Dropout(0.3)))
+41
+---> 42 sentences_encoder.add(TimeDistributed(sent_encoder))
+43 return sentences_encoder
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in add(self, layer)
+310 output_shapes=[self.outputs[0]._keras_shape])
+311 else:
+--> 312 output_tensor = layer(self.outputs[0])
+313 if type(output_tensor) is list:
+314 raise Exception('All layers in a Sequential model '
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in call(self, x, mask)
+512 if inbound_layers:
+513 # this will call layer.build() if necessary
+--> 514 self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+515 input_added = True
+516
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in add_inbound_node(self, inbound_layers, node_indices, tensor_indices)
+570 # creating the node automatically updates self.inbound_nodes
+571 # as well as outbound_nodes on inbound layers.
+--> 572 Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+573
+574 def get_output_shape_for(self, input_shape):
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in create_node(cls, outbound_layer, inbound_layers, node_indices, tensor_indices)
+147
+148 if len(input_tensors) == 1:
+--> 149 output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+150 output_masks = to_list(outbound_layer.compute_mask(input_tensors[0], input_masks[0]))
+151 # TODO: try to auto-infer shape if exception is raised by get_output_shape_for
+/usr/local/lib/python2.7/dist-packages/keras/layers/wrappers.pyc in call(self, X, mask)
+139 input_length = K.shape(X)[1]
+140 X = K.reshape(X, (-1, ) + input_shape[2:]) # (nb_samples * timesteps, ...)
+--> 141 y = self.layer.call(X) # (nb_samples * timesteps, ...)
+142 # (nb_samples, timesteps, ...)
+143 output_shape = self.get_output_shape_for(input_shape)
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in call(self, x, mask)
+364 if not self.built:
+365 self.build()
+--> 366 return self.model.call(x, mask)
+367
+368 def build(self, input_shape=None):
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in call(self, input, mask)
+2054 return self._output_tensor_cache[cache_key]
+2055 else:
+-> 2056 output_tensors, output_masks, output_shapes = self.run_internal_graph(inputs, masks)
+2057 return output_tensors
+2058
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in run_internal_graph(self, inputs, masks)
+2227 for x in self.outputs:
+2228 # todo: better error msg
+-> 2229 assert str(id(x)) in tensor_map, 'Could not compute output ' + str(x)
+2230 tensor, mask = tensor_map[str(id(x))]
+2231 if hasattr(tensor, '_keras_shape') and output_shapes is not None:
+AssertionError: Could not compute output Elemwise{add,no_inplace}.0
+`

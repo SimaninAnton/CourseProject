@@ -1,0 +1,98 @@
+lk1983823 commented on 31 Mar 2017
+I am using Python 3.4, Tensorflow 1.0.1 and Keras 2.0.
+I want to use the tensorboard callbacks to visualize dynamic graphs of my training and test metrics.
+I run my code without any error, but when I enter the command of "tensorboard --logdir = Graph/" and open tensorboad in firefox, it shows "No graph definition files were found" and nothing can be found in
+Scalars.
+Can anyone help me to fix this problem? Thank you!
+Here is my code below:
+from __future__ import absolute_import
+from __future__ import print_function
+import numpy as np
+import keras 
+from keras.models import Model
+from keras.models import Sequential
+from keras.layers import Input, merge
+from keras.layers.core import Activation
+from keras.layers.convolutional import Conv1D, Conv2D
+import matplotlib.pyplot as plt
+from keras.preprocessing import sequence
+
+# callbacks
+callbacks = keras.callbacks.TensorBoard(log_dir='./Graph', histogram_freq=0,  write_graph=True, write_images=True)
+
+## Input & Output function
+def gen_cosine_amp(amp=100, period=25, x0=0, xn=50000, step=1, k=0.0001):
+    cos = np.zeros(((xn - x0) * step,  1, 1))
+    print("Cos. Shape",cos.shape)
+    for i in range(len(cos)):
+        idx = x0 + i * step
+        cos[i, 0, 0] = amp * np.cos(idx / (2 * np.pi * period))
+        cos[i, 0, 0] = cos[i, 0, 0] * np.exp(-k * idx)
+        
+    lahead = 1
+    expected_output = np.zeros((len(cos), 1))
+    for i in range(len(cos) - lahead):
+        expected_output[i, 0] = np.mean(cos[i + 1:i + lahead + 1])
+    return cos, expected_output
+
+
+#Parameter
+sequence_length = 500 # same as in Roni Mittelman's paper
+features = 1                # guess changed Ernst 20160301
+nb_filter = 150             # same as in Roni Mittelman's paper
+filter_length = 5           # same as in Roni Mittelman's paper
+output_dim = 1              # guess changed Ernst 20160301
+epochs = 5
+batch_size = 128
+optimizer='adagrad'
+loss='mse'
+output_dim=1
+
+
+# UFCNN model
+                           
+inputs = Input(shape=(sequence_length, features), name = 'input')
+    
+    #########################################################
+conv_1 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(inputs)
+relu_1 = Activation('relu')(conv_1)
+    #########################################################
+conv_2 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_1)
+relu_2 = Activation('relu')(conv_2)
+    #########################################################
+conv_3 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_2)
+relu_3 = Activation('relu')(conv_3)
+    #########################################################
+conv_4 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(relu_3)
+relu_4 = Activation('relu')(conv_4)
+    #########################################################
+merge_1 = keras.layers.add([relu_2, relu_4])
+conv_5 =Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(merge_1)
+relu_5 = Activation('relu')(conv_5)
+    #########################################################
+merge_2 = keras.layers.add([relu_1, relu_5])
+conv_6 = Conv1D(filters=nb_filter, kernel_size=filter_length, padding='same')(merge_2)
+relu_6 = Activation('relu')(conv_6)
+    #########################################################
+conv_7 = Conv1D(filters= output_dim, kernel_size=filter_length, padding='same')(relu_6)
+
+model = Model(inputs = inputs, outputs = conv_7)
+
+model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+ 
+
+# get trainning datas
+cos = gen_cosine_amp(xn = sequence_length )[0]
+expected_output =  gen_cosine_amp(xn = sequence_length )[1]
+cos = np.reshape(cos, (-1, sequence_length, features))
+expected_output = np.reshape(expected_output, (-1, sequence_length, features))
+
+# trainning
+for i in range(epochs):
+        print('Epoch', i, '/', epochs)
+        model.fit(cos,expected_output,
+                  verbose=1,
+                  epochs=1,
+                  shuffle=False,
+                  callbacks = [callbacks],
+                  batch_size=batch_size)

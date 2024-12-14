@@ -1,0 +1,119 @@
+ryechus commented on 21 Nov 2018
+Steps to reproduce
+Use a returned object from an ElasticSearch database with 38 fields (2 nested each with 12 fields)
+Serialize using a serializer that subcalsses DRF's basic Serializer class
+Expected behavior
+Moderately fast run times
+Actual behavior
+For a dataset with 10000 objects (where less than 1/10th of the objects use the nested fields) serialization takes 53.1 seconds
+For a dataset with 1000 objects (where 1/5th of the objects use the nested fields) serialization takes 8.5 seconds
+I benchmarked the performance using pyinstrument. It looks like the bottleneck is in the deepcopy operation that happens during to_representation. See the below output from pyinstrument.
+10,000 objects
+|- 53.164 data  rest_framework/serializers.py:531
+|  `- 52.890 data  rest_framework/serializers.py:248
+|     `- 52.763 to_representation  rest_framework/serializers.py:478
+|        |- 24.399 __get__  django/utils/functional.py:29
+|        |  `- 24.334 _readable_fields  rest_framework/serializers.py:374
+|        |     `- 23.553 fields  rest_framework/serializers.py:353
+|        |        |- 20.757 get_fields  rest_framework/serializers.py:381
+|        |        |  `- 20.686 deepcopy  copy.py:132
+|        |        |     `- 20.423 _reconstruct  copy.py:268
+|        |        |        `- 19.670 deepcopy  copy.py:132
+|        |        |           `- 16.615 __deepcopy__  rest_framework/fields.py:614
+|        |        |              |- 3.390 __init__  rest_framework/fields.py:749
+|        |        |              |  `- 2.817 __init__  rest_framework/fields.py:307
+|        |        |              |- 2.598 <dictcomp>  rest_framework/fields.py:626
+|        |        |              |  `- 2.108 deepcopy  copy.py:132
+|        |        |              |     `- 1.326 __deepcopy__  rest_framework/fields.py:614
+|        |        |              |- 2.504 __init__  rest_framework/fields.py:1790
+|        |        |              |  `- 2.341 __init__  rest_framework/fields.py:307
+|        |        |              `- 1.537 __init__  rest_framework/fields.py:916
+|        |        |                 `- 1.355 __init__  rest_framework/fields.py:307
+|        |        `- 2.327 __setitem__  rest_framework/utils/serializer_helpers.py:146
+|        |           `- 1.131 bind  rest_framework/fields.py:353
+|        |- 9.361 to_representation  rest_framework/serializers.py:647
+|        |  `- 9.277 <listcomp>  rest_framework/serializers.py:656
+|        |     `- 8.681 to_representation  rest_framework/serializers.py:478
+|        |        |- 4.341 get_attribute  rest_framework/fields.py:435
+|        |        |  `- 3.925 get_attribute  rest_framework/fields.py:88
+|        |        |     |- 1.432 __getattr__  elasticsearch_dsl/utils.py:111
+|        |        |     `- 0.974 __instancecheck__  abc.py:180
+|        |        `- 3.489 __get__  django/utils/functional.py:29
+|        |           `- 3.428 _readable_fields  rest_framework/serializers.py:374
+|        |              `- 3.231 fields  rest_framework/serializers.py:353
+|        |                 `- 2.740 get_fields  rest_framework/serializers.py:381
+|        |                    `- 2.713 deepcopy  copy.py:132
+|        |                       `- 2.466 _reconstruct  copy.py:268
+|        |                          `- 2.359 deepcopy  copy.py:132
+|        |                             `- 1.974 __deepcopy__  rest_framework/fields.py:614
+|        |- 9.253 to_representation  rest_framework/serializers.py:478
+|        |  |- 6.973 __get__  django/utils/functional.py:29
+|        |  |  `- 6.918 _readable_fields  rest_framework/serializers.py:374
+|        |  |     `- 6.427 fields  rest_framework/serializers.py:353
+|        |  |        `- 5.460 get_fields  rest_framework/serializers.py:381
+|        |  |           `- 5.442 deepcopy  copy.py:132
+|        |  |              `- 5.286 _reconstruct  copy.py:268
+|        |  |                 `- 5.057 deepcopy  copy.py:132
+|        |  |                    `- 4.112 __deepcopy__  rest_framework/fields.py:614
+|        |  |                       `- 1.268 __init__  rest_framework/fields.py:1790
+|        |  |                          `- 1.152 __init__  rest_framework/fields.py:307
+|        |  |- 1.016 to_representation  rest_framework/fields.py:1814
+|        |  `- 0.931 get_attribute  rest_framework/fields.py:435
+|        |- 5.457 get_attribute  rest_framework/fields.py:435
+|        |  `- 4.789 get_attribute  rest_framework/fields.py:88
+|        |     |- 1.588 __getattr__  elasticsearch_dsl/utils.py:111
+|        |     `- 1.199 __instancecheck__  abc.py:180
+|        `- 2.873 to_representation  rest_framework/fields.py:1814
+1000 objects
+|- 8.516 data  rest_framework/serializers.py:531
+|  `- 8.467 data  rest_framework/serializers.py:248
+|     `- 8.447 to_representation  rest_framework/serializers.py:478
+|        |- 4.245 __get__  django/utils/functional.py:29
+|        |  `- 4.238 _readable_fields  rest_framework/serializers.py:374
+|        |     `- 4.119 fields  rest_framework/serializers.py:353
+|        |        |- 3.615 get_fields  rest_framework/serializers.py:381
+|        |        |  `- 3.609 deepcopy  copy.py:132
+|        |        |     `- 3.570 _reconstruct  copy.py:268
+|        |        |        `- 3.448 deepcopy  copy.py:132
+|        |        |           `- 2.889 __deepcopy__  rest_framework/fields.py:614
+|        |        |              |- 0.494 __init__  rest_framework/fields.py:749
+|        |        |              |  `- 0.394 __init__  rest_framework/fields.py:307
+|        |        |              |- 0.445 <dictcomp>  rest_framework/fields.py:626
+|        |        |              |  `- 0.344 deepcopy  copy.py:132
+|        |        |              |     `- 0.179 __deepcopy__  rest_framework/fields.py:614
+|        |        |              |- 0.301 __init__  rest_framework/fields.py:1790
+|        |        |              |  `- 0.269 __init__  rest_framework/fields.py:307
+|        |        |              `- 0.295 __init__  rest_framework/fields.py:916
+|        |        |                 `- 0.266 __init__  rest_framework/fields.py:307
+|        |        `- 0.398 __setitem__  rest_framework/utils/serializer_helpers.py:146
+|        |           `- 0.193 bind  rest_framework/fields.py:353
+|        |- 1.704 to_representation  rest_framework/serializers.py:647
+|        |  `- 1.694 <listcomp>  rest_framework/serializers.py:656
+|        |     `- 1.571 to_representation  rest_framework/serializers.py:478
+|        |        |- 0.790 get_attribute  rest_framework/fields.py:435
+|        |        |  `- 0.729 get_attribute  rest_framework/fields.py:88
+|        |        |     |- 0.268 __getattr__  elasticsearch_dsl/utils.py:111
+|        |        |     |  `- 0.155 __getitem__  elasticsearch_dsl/utils.py:125
+|        |        |     `- 0.161 __instancecheck__  abc.py:180
+|        |        `- 0.641 __get__  django/utils/functional.py:29
+|        |           `- 0.628 _readable_fields  rest_framework/serializers.py:374
+|        |              `- 0.603 fields  rest_framework/serializers.py:353
+|        |                 `- 0.547 get_fields  rest_framework/serializers.py:381
+|        |                    `- 0.540 deepcopy  copy.py:132
+|        |                       `- 0.511 _reconstruct  copy.py:268
+|        |                          `- 0.494 deepcopy  copy.py:132
+|        |                             `- 0.425 __deepcopy__  rest_framework/fields.py:614
+|        |- 0.989 get_attribute  rest_framework/fields.py:435
+|        |  `- 0.839 get_attribute  rest_framework/fields.py:88
+|        |     |- 0.273 __getattr__  elasticsearch_dsl/utils.py:111
+|        |     `- 0.220 __instancecheck__  abc.py:180
+|        |- 0.841 to_representation  rest_framework/serializers.py:478
+|        |  `- 0.641 __get__  django/utils/functional.py:29
+|        |     `- 0.639 _readable_fields  rest_framework/serializers.py:374
+|        |        `- 0.624 fields  rest_framework/serializers.py:353
+|        |           `- 0.551 get_fields  rest_framework/serializers.py:381
+|        |              `- 0.548 deepcopy  copy.py:132
+|        |                 `- 0.528 _reconstruct  copy.py:268
+|        |                    `- 0.500 deepcopy  copy.py:132
+|        |                       `- 0.410 __deepcopy__  rest_framework/fields.py:614
+|        `- 0.439 to_representation  rest_framework/fields.py:1814

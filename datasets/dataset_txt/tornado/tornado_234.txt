@@ -1,0 +1,14 @@
+staticglobal commented on 21 Feb 2018
+The WebSocketHandler.select_subprotocol() callback is invoked for every client connection, even clients that do not send (or send an empty) Sec-WebSocket-Protocol header. For these clients, the callback is invoked with (subprotocols=['']), which is probably never useful. In addition, both the documentation and the code seem to indicate that the intent is for this callback to only be invoked if the client submits some non-empty value for Sec-WebSocket-Protocol.
+class WebSocketProtocol13(WebSocketProtocol):
+    def _accept_connection(self):
+        subprotocols = self.request.headers.get("Sec-WebSocket-Protocol", '')
+        subprotocols = [s.strip() for s in subprotocols.split(',')]
+        if subprotocols:
+            selected = self.handler.select_subprotocol(subprotocols)
+            ...
+For cases when Sec-WebSocket-Protocol is empty, subprotocols evaluates to [''] before being tested in the conditional. Unfortunately, [''] == True, which means this if subprotocols: always evaluates True.
+Options I see:
+If we can assume that self.request.headers is always an instance of HTTPHeaders, we can use get_list() like so:
+subprotocols = [s.strip() for s in self.request.headers.get_list("Sec-WebSocket-Protocol")] instead of get() and split(). This will result in subprotocols = [], which evaluates False. This feels like the cleaner solution and I will work on a PR for this. Is there a reason for us to access our headers using only basic dict operations?
+Evaluate if subprotocols: immediately after get() while it is still a string, before calling split() / strip() to turn it into a list.

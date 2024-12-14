@@ -1,0 +1,40 @@
+Contributor
+mattjmorrison commented on 22 Apr 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I ran into a really nasty bug today because of how we are using DjangoFilterBackend. Here is our scenario... we have a FilterBackend as well as a parent filter backend (that is really a mixin). Our backend extends our mixin as well as the rest_framework.filters.DjangoFilterBackend.... so it looks something like this
+class NewDjangoFilterBackend:
+
+    def filter_queryset(self):
+        print("Inside django-filters")
+
+
+class DefaultDRFBackwardsCompat:
+
+    def __new__(*args, **kwargs):
+        return NewDjangoFilterBackend()
+
+
+class OurCustomerFilterBackendParent:
+
+    def filter_queryset(self):
+        print("Inside Our Parent Object")
+
+
+class OurFilterBackend(OurCustomerFilterBackendParent, DefaultDRFBackwardsCompat):
+    pass
+
+OurFilterBackend().filter_queryset()
+Expected behavior
+(this is in Python 3.4.6 btw)
+I expect, because of Python's normal MRO that filter_queryset on OurCustomerFilterBackendParent will be called.
+Actual behavior
+Due to the __new__ in DefaultDRFBackwardsCompat the filter_queryset inside of django-filters is called instead.
+It is not very clear to my why this would happen... but there has to be a way to deprecate a class without breaking Python's MRO.
+In our case, the fix to our bug was to just use the DjangoFilterBackend from django-filters instead of the one in rest_framework... but this just seems like a potentially dangerous way to make something be backwards compatible.

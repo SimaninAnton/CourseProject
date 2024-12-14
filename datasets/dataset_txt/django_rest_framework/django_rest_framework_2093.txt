@@ -1,0 +1,58 @@
+bacongobbler commented on 9 Jan 2015
+Hi!
+I'm in the middle of migrating us over to 3.x (yay!) and I've hit a bump in the road with our migration. In DRF 2.x, we defined a Serializer for Django's User object like so:
+class UserSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        read_only_fields = ('is_superuser', 'is_staff', 'groups',
+                            'user_permissions', 'last_login', 'date_joined')
+
+    @property
+    def data(self):
+        """Custom data property that removes secure user fields"""
+        d = super(UserSerializer, self).data
+        for f in ('password',):
+            if f in d:
+                del d[f]
+        return d
+However, given the following UserSerializer, I'm finding that our test suite is catching that the read_only_fields are not being sent in the response:
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('email', 'username', 'password', 'first_name', 'last_name')
+        read_only_fields = ('is_superuser', 'is_staff', 'groups',
+                            'user_permissions', 'last_login', 'date_joined', 'is_active')
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def create(self, validated_data):
+        now = timezone.now()
+        user = User(
+            email=validated_data['email'],
+            username=validated_data['username'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name'],
+            last_login=now,
+            date_joined=now,
+            is_active=True
+        )
+        user.set_password(validated_data['password'])
+        # Make the first signup an admin / superuser
+        if User.objects.all().count() == 0:
+            user.is_superuser = user.is_staff = True
+        else:
+            user.is_superuser = user.is_staff = False
+        user.save()
+        return user
+Which resulted in a failure in our test suite:
+><> venv/bin/python manage.py test api.AuthTest
+WARNING Cannot synchronize with etcd cluster
+Creating test database for alias 'default'...
+F...
+======================================================================
+FAIL: test_auth (api.tests.test_auth.AuthTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+    self.assertEqual(response.data.get('is_active'), True, response.data)
+AssertionError: ReturnDict([(u'email', u'autotest@deis.io'), (u'username', u'newuser'), (u'first_name', u'Otto'), (u'last_name', u'Test')])
+Is this intended behaviour? If not, I'd be happy to take a crack at a PR and fix it up!

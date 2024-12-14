@@ -1,0 +1,26 @@
+rollokb commented on 4 Nov 2015
+Occasionally I need to override the related manager, and use a method other than all. This can be useful when you need to return special relations. For instance this manager will return reverse relations for polls, and child categories' reverse relations.
+class PollsManager(models.Manager):
+    def polls_for_category(self):
+        """
+        This will return reverse relationships of the current 
+        category and it's children
+
+        `self.instance` is available when polls manager is constructed as a
+        RelatedManager
+        """
+        return self.filter(category=self.instance.children.all())
+
+class Category(MPTTModel):
+    name = models.CharField(_('Name'), max_length=128)
+Currently it is impossible to use this method without overriding ManyRelatedField, because it will always call all() on the relationship.
+class ManyRelatedField(Field):
+    def get_attribute(self, instance):
+        # Can't have any relationships if not created
+        if hasattr(instance, 'pk') and instance.pk is None:
+            return []
+
+        relationship = get_attribute(instance, self.source_attrs)
+        return relationship.all() if (hasattr(relationship, 'all')) else relationship
+https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/relations.py#L463-L469
+I suggest a new parameter to allow users to specify what manager method they want to use.

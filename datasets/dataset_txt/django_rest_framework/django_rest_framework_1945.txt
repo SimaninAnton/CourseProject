@@ -1,0 +1,59 @@
+jannon commented on 13 Mar 2015
+This results in the same error as mentioned in #2656, but has a different reproduction and implications. A test case like the following:
+class MyModel(models.Model):
+    my_date = models.DateField(null=True, blank=True)
+    other_field = models.CharField(max_length=100)
+
+
+class MySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = MyModel
+
+
+class MyView(generics.ListCreateAPIView):
+    queryset = MyModel.objects.all()
+    serializer_class = MySerializer
+
+
+class TestMySerializer(TestCase):
+    def setUp(self):
+        self.view = MyView.as_view()
+
+    def test_model_save_works(self):
+        obj = MyModel.objects.create(other_field='foo')
+        assert obj.other_field == ''foo"
+
+    def test_post_root_view(self):
+        """
+        POST requests to ListCreateAPIView should create a new object.
+        """
+        data = {'other_field': 'bar'}
+        request = factory.post('/', data, format='json')
+        response = self.view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+Results in an error like:
+Traceback (most recent call last):
+  File "tests.py", line 10, in test_post_root_view
+     response = self.view(request).render()
+  File "/path/to/django/views/decorators/csrf.py", line 57, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/path/to/rest_framework/viewsets.py", line 85, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/path/to/rest_framework/views.py", line 452, in dispatch
+    response = self.handle_exception(exc)
+  File "/path/to/rest_framework/views.py", line 449, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/path/to/rest_framework/mixins.py", line 57, in retrieve
+    return Response(serializer.data)
+  File "/path/to/rest_framework/serializers.py", line 467, in data
+    ret = super(Serializer, self).data
+  File "/path/to/rest_framework/serializers.py", line 213, in data
+    self._data = self.to_representation(self.instance)
+  File "/path/to/rest_framework/serializers.py", line 436, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/path/to/rest_framework/fields.py", line 940, in to_representation
+    return value.isoformat()
+AttributeError: 'str' object has no attribute 'isoformat'
+This is because the submitted data does not contain a 'my_date' field (which is valid in this situation) and that results in the empty string being sent as the value parameter DateField.to_representation, which proceeds to attempt to call isoformat() on it.
+I'm happy to submit a PR, but I wanted to first check that I wasn't missing something and check to see how you actually wanted to handle it. Maybe just return the value if it's None or ''? Or more complex string handling as requested in #2656? Or maybe something else should happen earlier to prevent empty values from even getting to to_representation?

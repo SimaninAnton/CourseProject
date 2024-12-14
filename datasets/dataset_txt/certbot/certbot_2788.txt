@@ -1,0 +1,35 @@
+SunMar commented on 7 Dec 2015
+Hi,
+Today I'm trying out letsencrypt and stumbled upon that using webroot breaks when not using root due to a chown on line 72 of letsencrypt/plugins/webroot.py:
+ 49     def prepare(self):  # pylint: disable=missing-docstring
+ 50         path_map = self.conf("map")
+ 51
+ 52         if not path_map:
+ 53             raise errors.PluginError("--{0} must be set".format(
+ 54                 self.option_name("path")))
+ 55         for name, path in path_map.items():
+ 56             if not os.path.isdir(path):
+ 57                 raise errors.PluginError(path + " does not exist or is not a directory")
+ 58             self.full_roots[name] = os.path.join(path, challenges.HTTP01.URI_ROOT_PATH)
+ 59
+ 60             logger.debug("Creating root challenges validation dir at %s",
+ 61                          self.full_roots[name])
+ 62             try:
+ 63                 os.makedirs(self.full_roots[name])
+ 64                 # Set permissions as parent directory (GH #1389)
+ 65                 # We don't use the parameters in makedirs because it
+ 66                 # may not always work
+ 67                 # https://stackoverflow.com/questions/5231901/permission-problems-when-creating-a-dir-with-os-makedirs-python
+ 68                 stat_path = os.stat(path)
+ 69                 filemode = stat.S_IMODE(stat_path.st_mode)
+ 70                 os.chmod(self.full_roots[name], filemode)
+ 71                 # Set owner and group, too
+ 72                 os.chown(self.full_roots[name], stat_path.st_uid,
+ 73                           stat_path.st_gid)
+ 74
+ 75             except OSError as exception:
+ 76                 if exception.errno != errno.EEXIST:
+ 77                     raise errors.PluginError(
+ 78                         "Couldn't create root for {0} http-01 "
+ 79                         "challenge responses: {1}", name, exception)
+It tries to set the ownership of the directory to the owner of the parent. So currently to bypass this issue either the webroot must be chown'd to the letsencrypt user, or the script needs to be run as root. Neither of which are satisfactory solutions. Is chown at all neccesary when letsencrypt is not run as root?

@@ -1,0 +1,48 @@
+ncullen93 commented on Apr 11, 2017 •
+edited
+I'd like to add a feature request to include your own ParameterGrid for GridSearchCV. My use case is that I'd like to distribute each parameter fit across multiple GPUs (an extra hyper-parameter) without actually enumerating over all the other parameters. I don't see how to do this without a custom ParameterGrid
+Example that wouldn't work:
+param_grid = {
+    'sparsity': [0.1, 1e-4],
+    'gpu' : ['gpu1', 'gpu2']
+}
+
+gs_clf = GridSearchCV(..., param_grid=param_grid)
+This doesn't work because it makes 4 classifiers, when I just want two.
+Instead, I could do:
+param_grid = {
+    'sparsity': [0.1, 1e-4]
+}
+param_grid = ParameterGrid(param_grid)
+param_grid[0]['gpu'] = 'gpu1'
+param_grid[1]['gpu'] = 'gpu2'
+But then I can't pass in the ParameterGrid to GridSearchCV.fit because it automatically makes its own. This is certainly as easy as providing an optional param_grid argument to the fit method or even just checking whether isinstance(param_grid, ParameterGrid) before passing it to the superclass _fit method.
+So, either:
+param_grid = {
+    'sparsity': [0.1, 1e-4]
+}
+param_grid = ParameterGrid(param_grid)
+param_grid[0]['gpu'] = 'gpu1'
+param_grid[1]['gpu'] = 'gpu2'
+
+gs_clf = GridSearch(..., param_grid=param_grid)
+then fit method would see that self.param_grid is an instance of ParameterGrid and not instantiate one:
+    def fit(self, X, y=None, groups=None):
+        """Run fit with all sets of parameters.
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+            Training vector, where n_samples is the number of samples and
+            n_features is the number of features.
+        y : array-like, shape = [n_samples] or [n_samples, n_output], optional
+            Target relative to X for classification or regression;
+            None for unsupervised learning.
+        groups : array-like, with shape (n_samples,), optional
+            Group labels for the samples used while splitting the dataset into
+            train/test set.
+        """
+        if isinstance(self.param_grid, dict):
+            param_grid = ParameterGrid(self.param_grid)
+        else:
+            param_grid = self.param_grid
+        return self._fit(X, y, groups, param_grid)

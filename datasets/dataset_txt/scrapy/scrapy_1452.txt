@@ -1,0 +1,51 @@
+Contributor
+rmax commented on Jan 23, 2014
+An item loaders example shows this code:
+from scrapy.item import Item, Field
+from scrapy.contrib.loader.processor import MapCompose, Join, TakeFirst
+
+from scrapy.utils.markup import remove_entities
+from myproject.utils import filter_prices
+
+class Product(Item):
+    name = Field(
+        input_processor=MapCompose(remove_entities),
+        output_processor=Join(),
+    )
+    price = Field(
+        default=0,
+        input_processor=MapCompose(remove_entities, filter_prices),
+        output_processor=TakeFirst(),
+    )
+The argument default=0 currently does nothing in that example. What's the purpose of having default=0 in that example?
+Furthermore, that particular example needs a little more work to use it. It might be good to have as a policy that all examples should work out of the box by simply copy pasting the content.
+I was attempting to make a working example but even remove_entities is misleading because actually it doesn't remove the entities but convert them to unicode.
+Anyway, I worked out an example that I think it make sense:
+from scrapy.item import Item, Field
+from scrapy.contrib.loader.processor import MapCompose, Join, TakeFirst
+from w3lib.html import remove_tags
+
+
+def filter_price(value):
+    """Ignores non-number value."""
+    if value.isdigit():
+        return value
+
+
+class Product(Item):
+    """An item with input/output processors declared in the fields."""
+    name = Field(
+        input_processor=MapCompose(remove_tags),
+        output_processor=Join(),
+    )
+    price = Field(
+        input_processor=MapCompose(remove_tags, filter_price),
+        output_processor=TakeFirst(),
+    )
+>>> from scrapy.contrib.loader import ItemLoader
+>>> il = ItemLoader(item=Product())
+>>> il.add_value('name', [u'Welcome to my', u'<strong>website</strong>'])
+>>> il.add_value('price', [u'&euro;', u'<span>1000</span>'])
+>>> il.load_item()
+{'name': u'Welcome to my website', 'price': u'1000'}
+If looks good to you I can make a PR for this issue.

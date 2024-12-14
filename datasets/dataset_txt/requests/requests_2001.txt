@@ -1,0 +1,20 @@
+ntx- commented on Sep 3, 2013
+When sending a large (multipart) POST request to a server requiring digest access authentication the "401 Unauthorized" response might be received and the connection terminated before the HTTPConnection.request() in HTTPConnectionPool._make_request() has returned causing the underlying socket routines to fail with EPIPE.
+The resulting exception is not caught and the subsequent handling of the 401 response is not triggered causing the whole POST to fail with the following exception:
+Traceback (most recent call last):
+  <my code>
+  File "<requests>/api.py", line 88, in post
+    return request('post', url, data=data, **kwargs)
+  File "<requests>/api.py", line 44, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "<requests>/sessions.py", line 344, in request
+    resp = self.send(prep, **send_kwargs)
+  File "<requests>/sessions.py", line 447, in send
+    r = adapter.send(request, **kwargs)
+  File "<requests>/adapters.py", line 318, in send
+    raise ConnectionError(e)
+ConnectionError: HTTPConnectionPool(host=<host>, port=80): Max retries exceeded with url: <url> (Caused by <class 'socket.error'>: [Errno 32] Broken pipe)
+The same issue is also present when implementing essentially the same thing with urllib2.
+I'm not sure if this is standard behavior for servers requiring digest authentication (have only tested the affected server so far) or if this is due to a special safe-guard against DoS attacks.
+For testing I used Requests 1.2.0 and Python 2.7.4 with Ubuntu 13.04 inside VirtualBox, and I was unable to reproduce the issue on the host Windows 8.
+PS. I temporarily worked around the issue by suppressing the specific exception (socket.error with EPIPE) inside Requests and letting _make_request() attempt to read the response. This worked as expected and allowed the 401 handling to kick in. But I'm sure there are some cases where this leads to undesired behavior.

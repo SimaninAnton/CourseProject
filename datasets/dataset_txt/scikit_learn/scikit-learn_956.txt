@@ -1,0 +1,37 @@
+Contributor
+nicholastoddsmith commented on Nov 2, 2018
+Description
+Occasionally the cluster_centers_ attribute of KMeans do not agree with the attribute labels_. That is, if the cluster_centers_ are compared to the centroids manually computed using labels_, they occasionally are different. Based on my understanding of Lloyds algorithm, this looks like an issue. It looks greater than simply rounding error.
+I stumbled on this issue when I was working on the abalone dataset available from the UCI machine learning repository: http://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.data
+I tried to make the code to reproduce the issue as minimal as possible. However, I was unable to reproduce the issue on randomly generated data.
+To run the code, first download the data and save it as: abalone.data
+I chose specific arguments for the KMeans constructor, but it seems to happen for a lot of different argument combinations.
+Steps/Code to Reproduce
+import numpy as np
+import pandas as pd
+from sklearn.cluster import KMeans
+#%%Load data
+D = pd.read_csv('abalone.data', header = None)
+D[0] = D[0].map({'F': -1, 'I': 0, 'M': 1})          #Map sexes to numbers
+AR = D[D.columns[:-1]].values                       #Last column are targets
+A = (AR - AR.mean(axis = 0)) / AR.std(axis = 0)     #Standardize
+#%%Compute clusters
+kmc = KMeans(algorithm = 'full', n_clusters = 8, precompute_distances = False, random_state = 1, n_jobs = 1)
+kmc.fit(A)
+CL = kmc.labels_
+for i in range(kmc.n_clusters):
+    CLi = CL == i
+    AMi = A[CLi].mean(axis = 0)
+    if not np.isclose(AMi, kmc.cluster_centers_[i]).all():
+        print('FAIL: {:f}'.format(np.linalg.norm(AMi - kmc.cluster_centers_[i])))
+Expected Results
+I would expect that cluster_centers_[i] should be "close" to A[labels_ == i].mean(axis = 0) on termination of the algorithm. Minor differences due to rounding error are expected in numerical algorithms. What seems strange here is the difference is usually almost 0 and then occasionally quite different than 0.
+Actual Results
+Occasionally the clusters centers computed manually using numpy.mean and the KMeans attribute labels_ do not match the attribute cluster_centers_
+Versions
+Windows-2012ServerR2-6.3.9600-SP0
+Python 3.6.6 |Anaconda custom (64-bit)| (default, Jun 28 2018, 11:27:44) [MSC v.1900 64 bit (AMD64)]
+NumPy 1.15.1
+SciPy 1.1.0
+Scikit-Learn 0.19.1
+I stepped through the code for a while and noticed that there is even what looks like a check to handle this condition at the bottom of "_kmeans_single_lloyd." I can potentially look into this more, but I wanted to file this to make sure it wasn't a known issue or something I was missing. I didn't see any similar past issue or pull request. Thanks!

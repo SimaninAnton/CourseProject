@@ -1,0 +1,174 @@
+Contributor
+sebzur commented on 23 Dec 2011
+While working on a project that utilizes DRF we have found some certain limitations of *ModeMixn (ReadModelMixin, UpdaModelMixin, ...) classes - the arguments provided in URL are directly provided to .objects.get and .objects.filter methods which makes one not to be able to use the mixins with custom URL arguments.
+This issue is somehow related to #66.
+We propose an update to the mixins.py leaving the current default behaviour of the framework as is (direct mapping URL args -> queryset method arg) but allowing for the simple custom override with subclassing.
+The idea is to wrap *args, **kwargs with the query builder method defined with some base Mixin.
+I'm attaching a diff below (I have no idea how to attach a file with the mixins.py module or diff as file...). This is tested and seems to work OK - we are now using modified version of DRF with that to get custom URLs working. Besides the removal of URL arguments limitations the diff removes also some redundant code from *ModelMixins and allows to implement custom filters without the need to bind them with URL args.
+Like in #66 - I think we should add to DRF CBV-like get_object() + get_queryset() methods living somewhere in base Mixin - a code-holders for that are in the diff.
+=== modified file 'djangorestframework/mixins.py'
+--- djangorestframework/mixins.py       2011-12-23 09:34:03 +0000
++++ djangorestframework/mixins.py       2011-12-23 11:12:38 +0000
+@@ -1,10 +1,11 @@
++# -*- coding: utf-8 -*-
+ """
+ The :mod:`mixins` module provides a set of reusable `mixin` 
+ classes that can be added to a `View`.
+ """
+
+ from django.contrib.auth.models import AnonymousUser
+-from django.db.models.query import QuerySet
++from django.db.models.query import QuerySet, Q
+ from django.db.models.fields.related import RelatedField
+ from django.http import HttpResponse
+ from django.http.multipartparser import LimitBytes
+@@ -37,6 +38,63 @@
+     'ListModelMixin'
+ )
+
++#### Base for *ModelMixins using URL arguments to filter out queryset or instances ####
++
++class QueryMixin(object):
++    """ Implements mechanisms used by other classes (like *ModelMixin group) to
++    define a query that represents Model instances the Mixin is working with.
++
++    If a *ModelMixin is going to retrive an instance (or queryset) using args and kwargs
++    passed by as URL arguments, it should provied arguments to objects.get and objects.filter
++    methods wrapped in by `build_query`
++    
++
++    """
++    def build_query(self, *args, **kwargs):
++        
++        # This methods simply mimics the previous behaviour of the framework, where
++        # the following code was used few times in to retrive the instance:
++        #
++        # ------------------------------
++        # if args:
++        #     #If we have any none kwargs then assume the last represents the primrary key
++        #     instance = model.objects.get(pk=args[-1], **kwargs)
++        # else:
++        #     # Otherwise assume the kwargs uniquely identify the model
++        #     instance = model.objects.get(**kwargs)
++        # -----------------------------
++        # 
++        # this block is now replaced with
++        #
++        # -------------
++        # instance = model.objects.get(self.build_query(*args, **kwargs)
++        # -------------
++        #
++        # which is more DRY + gives the simple possibility to provide 
++        # *any* arguments in URL
++        #
++
++        tmp = dict(kwargs)
++        if args:
++            # While this code simply follows the previous behaviour, we feel this 
++            # is somehow strange to use 'pk' with any other query parameters... isn't it?
++
++            # If we have any none kwargs then assume the last represents the primrary key
++            # Otherwise assume the kwargs uniquely identify the model
++            tmp.update({'pk': args[-1]})
++        return Q(**tmp)
++
++
++    # TODO: get_object and get_queryset methods should be implemented somehow. This will
++    # give a nice parallel to django class-based generic views. We're leaving this 
++    # unimplementd at the moment.
++
++    def get_object(self):
++        pass
++
++    def get_queryset(self):
++        pass
++        
+
+ ########## Request Mixin ##########
+
+@@ -473,20 +531,16 @@
+
+ ########## Model Mixins ##########
+
+-class ReadModelMixin(object):
++class ReadModelMixin(QueryMixin):
++    
+     """
+     Behavior to read a `model` instance on GET requests
+     """
+     def get(self, request, *args, **kwargs):
+         model = self.resource.model
+-
++     
+         try:
+-            if args:
+-                # If we have any none kwargs then assume the last represents the primrary key
+-                instance = model.objects.get(pk=args[-1], **kwargs)
+-            else:
+-                # Otherwise assume the kwargs uniquely identify the model
+-                instance = model.objects.get(**kwargs)
++            instance = model.objects.get(self.build_query(*args, **kwargs))
+         except model.DoesNotExist:
+             raise ErrorResponse(status.HTTP_404_NOT_FOUND)
+
+@@ -518,7 +572,7 @@
+         return Response(status.HTTP_201_CREATED, instance, headers)
+
+
+-class UpdateModelMixin(object):
++class UpdateModelMixin(QueryMixin):
+     """
+     Behavior to update a `model` instance on PUT requests
+     """
+@@ -527,12 +581,7 @@
+
+         # TODO: update on the url of a non-existing resource url doesn't work correctly at the moment - will end up with a new url 
+         try:
+-            if args:
+-                # If we have any none kwargs then assume the last represents the primrary key
+-                instance = model.objects.get(pk=args[-1], **kwargs)
+-            else:
+-                # Otherwise assume the kwargs uniquely identify the model
+-                instance = model.objects.get(**kwargs)
++            instance = model.objects.get(self.build_query(*args, **kwargs))
+
+             for (key, val) in self.CONTENT.items():
+                 setattr(instance, key, val)
+@@ -544,7 +593,7 @@
+         return instance
+
+
+-class DeleteModelMixin(object):
++class DeleteModelMixin(QueryMixin):
+     """
+     Behavior to delete a `model` instance on DELETE requests
+     """
+@@ -552,12 +601,7 @@
+         model = self.resource.model
+
+         try:
+-            if args:
+-                # If we have any none kwargs then assume the last represents the primrary key
+-                instance = model.objects.get(pk=args[-1], **kwargs)
+-            else:
+-                # Otherwise assume the kwargs uniquely identify the model
+-                instance = model.objects.get(**kwargs)
++            instance = model.objects.get(self.build_query(*args, **kwargs))
+         except model.DoesNotExist:
+             raise ErrorResponse(status.HTTP_404_NOT_FOUND, None, {})
+
+@@ -565,7 +609,7 @@
+         return
+
+
+-class ListModelMixin(object):
++class ListModelMixin(QueryMixin):
+     """
+     Behavior to list a set of `model` instances on GET requests
+     """
+@@ -597,6 +641,6 @@
+         if ordering:
+             args = as_tuple(ordering)
+             queryset = queryset.order_by(*args)
+-        return queryset.filter(**kwargs)
++        return queryset.filter(self.build_query(**kwargs))

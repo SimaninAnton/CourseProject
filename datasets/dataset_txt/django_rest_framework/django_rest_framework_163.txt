@@ -1,0 +1,34 @@
+Contributor
+spookylukey commented on 24 Apr 2019
+It would be great if the documentation for Serializer.fields (and any similar attributes) could show lists, not tuples.
+Lists do have significant advantages:
+They are the data structure designed for arbitrary length sequences, tuples are not. This is the way the language is designed. (Says Guido).
+Writing a one-tuple is ugly and error prone (not surprising, since conceptually it doesn't make any sense, you don't need a data structure to hold a single piece of data).
+In most cases it really doesn't make much difference, but the effect of using tuples in one place is that they naturally spread, and that's the real problem.
+The project I've recently joined, which is a heavy user of django-rest-framework and not much else, has code like this:
+    class FooSerializer(ModelSerializer):
+        class Meta:
+            fields = ('foo', 'bar')
+
+    class DetailedFooSerializer(FooSerializer):
+        class Meta:
+            fields = FooSerializer.Meta.fields + ('baz', )
+A tuple in the first instance pushes you to carry on using tuples in the second instance, because [] + () raises TypeError.
+The result, eventually, is code like this:
+    fields = ()
+    if condition:
+        fields += ('foo',)
+    if other_condition:
+        fields += ('bar', 'baz')     
+And worse:
+    stuff = ()
+    for thing in all_the_things:
+        stuff += (thing.attribute,)
+        stuff += tuple([foo.attribute for foo in other_things])
+I'm not kidding, I have code like this, quite a lot of it. It's like "What a shame! If only this language had a data structure that was designed for arbitrary length sequences and that allowed you to add to that sequence in amortized O(1) time instead of having to rebuild data structures in a loop, resulting in quadratic performance!"
+I even have developers insisting "for consistency" that any constant sequences (like Serializer.fields or module level constants) must be tuples. And indeed consistency as an argument does have some merit, the problem is being consistent with the wrong pattern.
+This code wasn't even written by novices either, it was written very recently by really good developers, some of whose names' you'll know (assuming the 'you' who is reading this ticket is Tom Christie). They are definitely aware of the list data structure. The only way I can explain this is by a habit of using tuples, and consistency/compatibility with code that uses tuples. It appears typing () to represent an empty list has become a habit, and then they proceed to fight the language at every step. Tuples were just not designed for this.
+Of course, there are other ways to avoid the performance issues of using tuples like this, but it's about "falling into the pit of success", which is even more important for projects that have weaker developers.
+Interestingly, by contrast, the permission_classes attributes on all our View classes are lists, despite our apparent tuples policy. Look at the DRF docs and you'll find the explanation - example code and documentation exerts a very strong influence. I suspect that the DRF's Meta.fields attribute being a tuple is itself traced back to the way that Django documented things like ModelAdmin.fields (some of this has now been corrected to lists but not all).
+I would like to eradicate the tuple pestilence infecting our code base, and it would really help my case if the docs for DRF showed best practice. I'm happy to submit a patch if this ticket is accepted.
+1

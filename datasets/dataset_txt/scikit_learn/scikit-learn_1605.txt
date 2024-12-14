@@ -1,0 +1,32 @@
+whatbeg commented on Jan 19, 2018 •
+edited
+Description
+In ForestClassifier or ForestRegressor (forest.py) s' predict_proba method, the dtype of the return proba is fixed to np.float64, instead of being the same as the input, at some times, we need not that numerical precision, we would like to give an input with dtype=np.float32 to save memory.
+For example, if we trained a random forest with 500 trees, we then want to predict for 1000000 examples, n_classes is 10, so that means there are 500 trees, each tree will produce 1000000x10 numbers, totally the random forest model will produce 1000000x10x500x64bit=40GB intermediate data, which may be killed by OS in my 64GB RAM machine.
+so I wonder if scikit-learn can let we ourself define the dtype of this return proba ? Or make it determined by our incoming input ?
+Steps/Code to Reproduce
+below is a piece of code of forest.py
+    def predict_proba(..):
+        ........
+        check_is_fitted(self, 'estimators_')
+        # Check data
+        X = self._validate_X_predict(X)
+
+        # Assign chunk of trees to jobs
+        n_jobs, _, _ = _partition_estimators(self.n_estimators, self.n_jobs)
+
+        # avoid storing the output of every estimator by summing them here
+        all_proba = [np.zeros((X.shape[0], j), dtype=np.float64)
+                     for j in np.atleast_1d(self.n_classes_)]
+        lock = threading.Lock()
+        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
+            delayed(accumulate_prediction)(e.predict_proba, X, all_proba, lock)
+            for e in self.estimators_)
+
+        for proba in all_proba:
+            proba /= len(self.estimators_)
+
+        if len(all_proba) == 1:
+            return all_proba[0]
+        else:
+            return all_proba

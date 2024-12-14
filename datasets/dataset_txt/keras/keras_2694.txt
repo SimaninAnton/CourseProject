@@ -1,0 +1,97 @@
+AakashKumarNain commented on 10 Apr 2017 •
+edited
+I was designing a siamese network in keras 2.0. There are around 50,000 images in my training dataset and I designed my architecture with a VGG16 base with little modifications. Here is the architecture I used :
+def build_model(img_input):
+
+ # Block 1
+ x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1', trainable=False)(img_input)
+ x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv2', trainable=False)(x)
+ x = MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool')(x)
+
+ # Block 2
+ x = Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv1', trainable=False)(x)
+ x = Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv2', trainable=False)(x)
+ x = MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool')(x)
+
+ # Block 3
+ x = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv1', trainable=True)(x)
+ x = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv2', trainable=True)(x)
+ x = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv3', trainable=True)(x)
+ x = MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool')(x)
+
+ # Block 4
+ x = Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv1', trainable=True)(x)
+ x = Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv2', trainable=True)(x)
+ x = Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv3', trainable=True)(x)
+ x = MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool')(x)
+
+ # Block 5
+ x = Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv1', trainable=True)(x)
+ x = Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv2', trainable=True)(x)
+ x = Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv3', trainable=True)(x)
+
+ # Global average pooling 
+ gap = GlobalAveragePooling2D(name='GAP')(x)
+ # Max pooling over the same conv layer
+ mp = MaxPooling2D((14, 14), strides=(14, 14), name='block5_pool')(x)
+ mp = Flatten()(mp)
+
+ # Merge both the pooling layers in order to pass it to the dense layer
+ x = Concatenate(name='combined')([gap, mp])
+
+ # Add dense layers
+ x = Dense(1024, trainable=True, activation ='relu', kernel_regularizer=l2(0.01))(x)
+ x = Dropout(0.5)(x)
+ x = Dense(256, trainable=True, activation ='relu', kernel_regularizer=l2(0.01))(x)
+ x = Dropout(0.5)(x)
+ x = Dense(128, trainable=True, activation='relu', kernel_regularizer=l2(0.01))(x)
+ return x
+
+
+# Load the weights for VGG16 conv layers
+def load_base_model_weights():
+ # Make a baseline network
+ img = Input(shape=(224,224,3))
+ base_model = Model(img, build_model(img))
+
+ weight_file = h5py.File('vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5')
+
+ # Get the weights of the VGG upto the fully connected layer
+ for i,key in enumerate(weight_file.attrs['layer_names']):
+  if i >= len(base_model.layers):
+   break
+  g = weight_file[key]
+  weights = [g[j] for j in g.attrs['weight_names']]
+  base_model.layers[i+1].set_weights(weights)
+
+ weight_file.close()
+
+ print('Weights loaded')
+ return base_model
+
+
+
+
+# Load the base model
+base_model = load_base_model_weights()
+
+
+# Define the input shapes for the image pair
+img_input_1 = Input(shape=(224,224,3))
+img_input_2 = Input(shape=(224,224,3))
+
+# Processed_image
+processed_img_1 = base_model(img_input_1)
+processed_img_2 = base_model(img_input_2)
+
+
+# Define a joined layer
+joint = keras.layers.concatenate([processed_img_1, processed_img_2], axis=-1)
+learned_metric = Dense(2, activation='softmax')(joint)
+model = Model([img_input_1, img_input_2], learned_metric) 
+I tried to train my model and I found the following issues:
+1) If I train my model using a batch generator, then after one epoch, GPU ran out of memory. I changed the max_queue_size parameter value to 1 but nothing changed.
+2) If I try to use the train_on_batch option, then the model starts growing in size and after 10,000 samples have been passed to the model, my model starts to exhaust the RAM(28GB of RAM out of 32GB).
+3) If I checkpoint my model and load the model to train it on 3,000 samples using fit method, even then the size of model starts increasing exponentially and it exhausts my RAM.
+Please help!! I don't want to switch from Keras just because of the fact that I am unable to design a efficient siamese network in keras.
+P.S: I tried to build the same model in lasagne and I faced none of the issues in that. Also, I am using Keras 2.0 with TF(1.0.1) as backend

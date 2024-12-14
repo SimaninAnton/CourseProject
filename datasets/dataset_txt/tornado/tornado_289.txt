@@ -1,0 +1,58 @@
+Contributor
+polygon commented on 5 Sep 2017
+What is the preferred way to combine unit testing and tornado.options? To give a minimal example, assume I want to test the following code:
+import tornado.web
+from tornado.options import define, options
+import tornado.ioloop
+
+
+def define_options():
+    define('myoption', type=str, default='MyValue')
+
+
+class ExampleHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write({
+            'myoption': options.myoption
+        })
+
+
+def make_app():
+    ROUTES = [
+        (r'/', ExampleHandler)
+    ]
+    return tornado.web.Application(ROUTES)
+
+
+def run():
+    define_options()
+    app = make_app()
+    app.listen(8080)
+    tornado.ioloop.IOLoop.current().start()
+
+
+if __name__ == '__main__':
+    run()
+I might write a test class like so:
+import tornado.testing
+from simurray.optiondemo import define_options, make_app
+
+class Test1(tornado.testing.AsyncHTTPTestCase):
+    def setUp(self):
+        define_options()
+        super().setUp()
+
+    def get_app(self):
+        return make_app()
+
+    def test1(self):
+        response = self.fetch('/')
+        print(response)
+Up to this point, everything is fine. However, once I add a second method:
+    def test2(self):
+        response = self.fetch('/')
+        print(response)
+I will start to see errors like:
+tornado.options.Error: Option 'myoption' already defined in demo.py
+Similarly, when I move the call to setUpClass, I will have the same issue once I create a second class and when I move it to the module level, I will have this problem, when I add a second module that defines those options.
+Is there any way around this issue? Where should I define my options so that this does not happen? Furthermore, isolation between tests does not seem to be given. I assume that if the options persist over all tests, then when I want to test a certain combination of settings, these will also persist to the next test which takes away test isolation and I need to make sure to reset all options to default values.

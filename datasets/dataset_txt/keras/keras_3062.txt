@@ -1,0 +1,152 @@
+ParthaEth commented on 6 Mar 2017
+Hi all,
+I have the following model. It is the implementation of the human model of this paper
+This model has about 25M parameters but is around 10 times slower with a model that has 38M parmas. This is where I am confused. Any idea how might I debug this? or why this is legit?
+`def getSRNN(batch_input_shape, W_regularizer_val, stateful, output_data_shape,
+spine_idx, l_arm_idx, r_arm_idx, l_leg_idx, r_leg_idx):
+def getNodeRnn(node_name, batch_input_shape, out_shape):
+    I = Input(batch_shape=batch_input_shape, dtype='float32', name='input_'+ node_name)
+    node = LSTM(512, return_sequences=True, inner_init='orthogonal',
+                 batch_input_shape=batch_input_shape, stateful=False,
+                 W_regularizer=l2(W_regularizer_val), name="LSTM_" + node_name)(I)
+    node = SimpleRNN(256, return_sequences=True, inner_init='orthogonal',
+                      batch_input_shape=batch_input_shape, stateful=False,
+                      W_regularizer=l2(W_regularizer_val), name="FC_" + node_name)(node)
+    node = SimpleRNN(256, return_sequences=True, inner_init='orthogonal',
+                      batch_input_shape=batch_input_shape, stateful=False,
+                      W_regularizer=l2(W_regularizer_val), name="FC_" + node_name + '1')(node)
+    node = SimpleRNN(100, return_sequences=True, inner_init='orthogonal',
+                      batch_input_shape=batch_input_shape, stateful=False,
+                      W_regularizer=l2(W_regularizer_val), name="FC_" + node_name + '2')(node)
+    node = SimpleRNN(out_shape, return_sequences=True, inner_init='orthogonal',
+                      batch_input_shape=batch_input_shape, stateful=False,
+                      W_regularizer=l2(W_regularizer_val), name="FC_" + node_name + '3')(node)
+
+    return Model(I, node, name=node_name + '_node')
+
+def getEdgeRnn(edge_name, batch_input_shape):
+    I = Input(batch_shape=batch_input_shape, dtype='float32', name='input_' + edge_name)
+    edge = SimpleRNN(256, return_sequences=True, inner_init='orthogonal',
+                     batch_input_shape=batch_input_shape, stateful=False,
+                     W_regularizer=l2(W_regularizer_val), name="FC_" + edge_name)(I)
+    edge = SimpleRNN(256, return_sequences=True, inner_init='orthogonal',
+                     batch_input_shape=batch_input_shape, stateful=False,
+                     W_regularizer=l2(W_regularizer_val), name="FC_" + edge_name + '1')(edge)
+    edge = LSTM(512, return_sequences=True, inner_init='orthogonal',
+                batch_input_shape=batch_input_shape, stateful=False,
+                W_regularizer=l2(W_regularizer_val), name="LSTM_" + edge_name)(edge)
+    return Model(I, edge, name=edge_name)
+
+def selectIndices(x, indices):
+    out = x[:, :, 0:1]
+    for i in range(len(indices)-1):
+        out = K.concatenate([out, x[:, :, indices[i + 1]:indices[i + 1] + 1]], axis=-1)
+    return out
+    # return x[:, :, K.variable(indices, dtype='int32')]
+
+def getReverseMap(forward_map):
+    reverse_map = []
+    for i in range(66):
+        for j in range(len(forward_map)):
+            if i == forward_map[j]:
+                reverse_map.append(j)
+                break
+
+    return reverse_map
+
+I = Input(batch_shape=batch_input_shape, dtype='float32', name='current_pose_input')
+
+samples = batch_input_shape[0]
+time_steps = batch_input_shape[1]
+left_arm_feature_num = len(l_arm_idx)
+right_arm_feature_num = len(r_arm_idx)
+
+if left_arm_feature_num != right_arm_feature_num:
+    print "Fatal ERROR: Both hands have to have same number of features associated"
+    exit(16)
+
+left_leg_feature_num = len(l_leg_idx)
+right_leg_feature_num = len(r_leg_idx)
+
+if left_leg_feature_num != right_leg_feature_num:
+    print "Fatal ERROR: Both legs have to have same number of features associated"
+    exit(17)
+
+spine_feature_num = len(spine_idx)
+
+# Node inputs
+left_arm_in = Lambda(selectIndices, arguments={'indices': l_arm_idx}, name='l_arm')(I)
+right_arm_in = Lambda(selectIndices, arguments={'indices': l_arm_idx}, name='r_arm')(I)
+left_leg_in = Lambda(selectIndices, arguments={'indices': l_leg_idx}, name='l_leg')(I)
+right_leg_in = Lambda(selectIndices, arguments={'indices': r_leg_idx}, name='r_leg')(I)
+spine_in = Lambda(selectIndices, arguments={'indices': spine_idx}, name='Spine')(I)
+
+# Node RNNs
+spine_node = getNodeRnn('spine', batch_input_shape=[samples, time_steps, spine_feature_num + 512 * 3],
+                        out_shape=spine_feature_num)
+arm_node = getNodeRnn('arm', batch_input_shape=[samples, time_steps, left_arm_feature_num + 512 * 3],
+                      out_shape=left_arm_feature_num)
+leg_node = getNodeRnn('leg', batch_input_shape=[samples, time_steps, right_leg_feature_num + 512 * 2],
+                      out_shape=right_leg_feature_num)
+
+# Edge RNNs
+l_arm_r_arm_edge = getEdgeRnn('l_arm_r_arm_edge',
+                              batch_input_shape=[samples, time_steps, left_arm_feature_num*2])
+l_leg_r_leg_edge = getEdgeRnn('l_leg_r_leg_edge',
+                              batch_input_shape=[samples, time_steps, left_leg_feature_num * 2])
+leg_spine_edge = getEdgeRnn('leg_spine_edge',
+                            batch_input_shape=[samples, time_steps, left_leg_feature_num + spine_feature_num])
+arm_spine_edge = getEdgeRnn('arm_spine_edge',
+                            batch_input_shape=[samples, time_steps, left_arm_feature_num + spine_feature_num])
+spine_spine_edge = getEdgeRnn('spine_spine_edge',
+                              batch_input_shape=[samples, time_steps, spine_feature_num])
+arm_arm_edge = getEdgeRnn('arm_arm_edge', batch_input_shape=[samples, time_steps, left_arm_feature_num])
+leg_leg_edge = getEdgeRnn('leg_leg_edge', batch_input_shape=[samples, time_steps, left_leg_feature_num])
+
+# Connecting everything together
+# edge_connections
+spine_spine_edge = spine_spine_edge(spine_in)
+l_arm_l_arm_edge = arm_arm_edge(left_arm_in)
+r_arm_r_arm_edge = arm_arm_edge(right_arm_in)
+l_arm_r_arm_edge = l_arm_r_arm_edge(merge([left_arm_in, right_arm_in], mode='concat', concat_axis=-1))
+l_leg_l_leg_edge = leg_leg_edge(left_leg_in)
+r_leg_r_leg_edge = leg_leg_edge(right_leg_in)
+l_leg_r_leg_edge = l_leg_r_leg_edge(merge([left_leg_in, right_leg_in], mode='concat', concat_axis=-1))
+spine_l_arm_edge = arm_spine_edge(merge([spine_in, left_arm_in], mode='concat', concat_axis=-1))
+spine_r_arm_edge = arm_spine_edge(merge([spine_in, right_arm_in], mode='concat', concat_axis=-1))
+spine_l_leg_edge = leg_spine_edge(merge([spine_in, left_leg_in], mode='concat', concat_axis=-1))
+spine_r_leg_edge = leg_spine_edge(merge([spine_in, right_leg_in], mode='concat', concat_axis=-1))
+
+
+# node connections
+left_arm = arm_node(merge([left_arm_in, spine_l_arm_edge, l_arm_l_arm_edge, l_arm_r_arm_edge],
+                          mode='concat', concat_axis=-1))
+right_arm = arm_node(merge([right_arm_in, spine_r_arm_edge, r_arm_r_arm_edge, l_arm_r_arm_edge],
+                           mode='concat', concat_axis=-1))
+
+both_hand = merge([spine_l_arm_edge, spine_r_arm_edge], mode='sum', concat_axis=-1)
+both_legs = merge([spine_l_leg_edge, spine_r_leg_edge], mode='sum', concat_axis=-1)
+spine = spine_node(merge([spine_in, spine_spine_edge, both_hand, both_legs], mode='concat', concat_axis=-1))
+
+left_leg = leg_node(merge([left_leg_in, l_leg_l_leg_edge, l_leg_r_leg_edge], mode='concat', concat_axis=-1))
+right_leg = leg_node(merge([right_leg_in, r_leg_r_leg_edge, l_leg_r_leg_edge], mode='concat', concat_axis=-1))
+
+output = merge([spine, left_arm, right_arm, left_leg, right_leg], mode='concat', concat_axis=-1)
+
+# This order hs to match the previous merge order
+forward_map = spine_idx + l_arm_idx + r_arm_idx + l_leg_idx + r_leg_idx
+reverse_map = getReverseMap(forward_map)
+output = Lambda(selectIndices, arguments={'indices': reverse_map}, name='Output_rearrange')(output)
+
+# output = SimpleRNN(output_data_shape, return_sequences=True, inner_init='orthogonal',
+#                    batch_input_shape=batch_input_shape, stateful=stateful,
+#                    W_regularizer=l2(W_regularizer_val), name="FC_output")(output)
+
+model = Model(input=I, output=output)
+
+if stateful:
+    for layer_idx in range(len(model.layers)):
+        if hasattr(model.layers, 'stateful'):
+            model.layers.stateful = True
+
+return model`

@@ -1,0 +1,27 @@
+migueleliasweb commented on 14 Feb 2017 •
+edited
+The behaviour of the following app should be pretty simple but it actually raises an unwanted exception.
+# flask_cache.py
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route('/', methods=["GET", "POST"])
+def hello_uncached():
+    json1 = request.get_json(cache=False)
+    request.data = '{"abc":123}'
+
+    #  exception here because get_json internally returns an empty string
+    #   to json.loads() which raises an BadRequest exception
+    json2 = request.get_json(cache=False)
+    return json1+'/'+json2
+
+if __name__ == "__main__":
+    app.run()
+$ mkvirtualenv flask_cache
+$ pip install flask
+$ python flask_cache.py
+$ curl -H "Content-type: application/json" -d '{"foo":"bar"}' localhost:5000
+As far as I could debug, the problem is located at wrappers.get_data. The get_data function "fails" silently because request does not has the "get_data" property and thus the returned string is empty.
+After that, since I passed cache=False, the json.loads("") fails and everything gets airbourne.
+I could not understand this behaviour because if the request.data is suposed to be read-only, it should have been made in a way that `request.data = "some data" should not make any side effects, otherwise, we should be able to successfully run the above example code.
+Is this the wanted behaviour ? If no, can I proceed with a PR ?

@@ -1,0 +1,55 @@
+Irene-GM commented on Mar 23, 2016 •
+edited by amueller
+Recently I discovered that in version 0.18 of scikit-learn a major change will be implemented in the GaussianProcess class, which will be forked into two classes: GaussianProcessClassifier and GaussianProcessRegressor, so I decided so substitute my 0.17 version of gaussian processes by the 0.18 one, which is still on development. I simply renamed the version 0.17 as "_old" and pasted the 0.18 in C:\Python34\Lib\site-packages\sklearn.
+Individually, it works with no problem. However, when I try to wrap my GaussianProcessRegressor in a GridSearchCVto find the optimum parameters, I get the following error:
+Traceback (most recent call last):
+    grid_search.fit(xtrain, ytrain)
+  File "C:\Python34\lib\site-packages\sklearn\grid_search.py", line 804, in fit
+    return self._fit(X, y, ParameterGrid(self.param_grid))
+  File "C:\Python34\lib\site-packages\sklearn\grid_search.py", line 553, in _fit
+    for parameters in parameter_iterable
+  File "C:\Python34\lib\site-packages\sklearn\externals\joblib\parallel.py", line 800, in __call__
+    while self.dispatch_one_batch(iterator):
+  File "C:\Python34\lib\site-packages\sklearn\externals\joblib\parallel.py", line 658, in dispatch_one_batch
+    self._dispatch(tasks)
+  File "C:\Python34\lib\site-packages\sklearn\externals\joblib\parallel.py", line 566, in _dispatch
+    job = ImmediateComputeBatch(batch)
+  File "C:\Python34\lib\site-packages\sklearn\externals\joblib\parallel.py", line 180, in __init__
+    self.results = batch()
+  File "C:\Python34\lib\site-packages\sklearn\externals\joblib\parallel.py", line 72, in __call__
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "C:\Python34\lib\site-packages\sklearn\externals\joblib\parallel.py", line 72, in <listcomp>
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "C:\Python34\lib\site-packages\sklearn\cross_validation.py", line 1524, in _fit_and_score
+    X_train, y_train = _safe_split(estimator, X, y, train)
+  File "C:\Python34\lib\site-packages\sklearn\cross_validation.py", line 1573, in _safe_split
+    raise ValueError("Cannot use a custom kernel function. "
+ValueError: Cannot use a custom kernel function. Precompute the kernel matrix instead.
+The code that raises this error is the following:
+ker_rbf = ConstantKernel(1.0, constant_value_bounds="fixed") * RBF(1.0, length_scale_bounds="fixed")
+
+ker_rq = ConstantKernel(1.0, constant_value_bounds="fixed") * RationalQuadratic(alpha=0.1, length_scale=1)
+
+ker_expsine = ConstantKernel(1.0, constant_value_bounds="fixed") * ExpSineSquared(1.0, 5.0, periodicity_bounds=(1e-2, 1e1))
+
+kernel_list = [ker_rbf, ker_rq, ker_expsine]
+
+param_grid = {"kernel": kernel_list,
+              "alpha": [1e1],
+              "optimizer": ["fmin_l_bfgs_b"],
+              "n_restarts_optimizer": [1, 2, 3],
+              "normalize_y": [False],
+              "copy_X_train": [True], 
+              "random_state": [0]}
+
+print("\nRunning grid search to tune up GPR parameters")
+gp = GaussianProcessRegressor()
+grid_search = GridSearchCV(gp, param_grid=param_grid)
+grid_search.fit(xtrain, ytrain)
+Nothing sophisticated, I would say: just passing a list of kernels to GridSearch. I do not think it is a numerical problem during computation, because the weird thing here is that if I pass to "kernel"a None, it uses the kernel by default and works. However, my "ker_rbf" kernel is a copy-paste of the default one used in gpr.py, in line 153:
+if self.kernel is None:  # Use an RBF kernel as default
+            self.kernel_ = C(1.0, constant_value_bounds="fixed") \
+                * RBF(1.0, length_scale_bounds="fixed")
+So if I pass a None, it defaults to this one above, but if I pass my own list of kernels (including the default one), then i am prompted to the error message seen above. I could expect an error with the other two kernels, but I was surprised to see that not even making explicit the default one works...
+I wonder if this is a buggy behaviour or a side-effect of embedding the 0.18 gaussian process in a 0.17 scikit-learn.
+Thanks for checking!

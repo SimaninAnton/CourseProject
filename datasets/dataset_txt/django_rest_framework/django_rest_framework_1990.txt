@@ -1,0 +1,79 @@
+Contributor
+fabianbuechler commented on 25 Feb 2015
+Hi, I've noticed that when using Sphinx's autodoc to document serializers, the serializer fields cause errors due to lazy gettext objects being evaluated on Field.__init__ in CharField, IntegerField, FloatField and DecimalField when str.format(), or in that case lazy.__proxy__.format() is being called:
+message = self.error_messages['max_length'].format(max_length=max_length)
+This works at runtime, but Sphinx's autodoc does not seem to load the apps infrastructure, thus calls to non-lazy gettext objects are forbidden, and of course also converting lazy gettext objects to strings.
+Is there any way to not do this on Field.__init__ or to use partials for example like:
+from functools import partial
+
+message = partial(self.error_messages['max_length'].format, max_length=max_length)
+and then evaluate this when the error message is required by checking for callables or so?
+The full stracktrace looks like this:
+###/docs/technical/api_serializers.rst:16: WARNING: autodoc: failed to import module 'buchklub.api.serializers.product'; the following exception was raised:
+Traceback (most recent call last):
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 186, in _fetch
+    app_configs = reversed(list(apps.get_app_configs()))
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/apps/registry.py", line 137, in get_app_configs
+    self.check_apps_ready()
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/apps/registry.py", line 124, in check_apps_ready
+    raise AppRegistryNotReady("Apps aren't loaded yet.")
+django.core.exceptions.AppRegistryNotReady: Apps aren't loaded yet.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/sphinx/ext/autodoc.py", line 335, in import_object
+    __import__(self.modname)
+  File "###/buchklub/api/serializers/product.py", line 25, in <module>
+    class ProductSyncSerializer(CustomModelUpdateSerializer):
+  File "###/buchklub/api/serializers/product.py", line 37, in ProductSyncSerializer
+    min_length=10, max_length=10, allow_blank=False)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/rest_framework/fields.py", line 562, in __init__
+    message = self.error_messages['max_length'].format(max_length=max_length)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/functional.py", line 132, in __wrapper__
+    res = func(*self.__args, **self.__kw)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/__init__.py", line 83, in ugettext
+    return _trans.ugettext(message)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 319, in gettext
+    return do_translate(message, 'gettext')
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 306, in do_translate
+    _default = translation(settings.LANGUAGE_CODE)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 209, in translation
+    default_translation = _fetch(settings.LANGUAGE_CODE)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 189, in _fetch
+    "The translation infrastructure cannot be initialized before the "
+django.core.exceptions.AppRegistryNotReady: The translation infrastructure cannot be initialized before the apps registry is ready. Check that you don't make non-lazy gettext calls at import time.
+###/docs/technical/api_serializers.rst:22: WARNING: autodoc: failed to import module 'buchklub.api.serializers.order'; the following exception was raised:
+Traceback (most recent call last):
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 186, in _fetch
+    app_configs = reversed(list(apps.get_app_configs()))
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/apps/registry.py", line 137, in get_app_configs
+    self.check_apps_ready()
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/apps/registry.py", line 124, in check_apps_ready
+    raise AppRegistryNotReady("Apps aren't loaded yet.")
+django.core.exceptions.AppRegistryNotReady: Apps aren't loaded yet.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/sphinx/ext/autodoc.py", line 335, in import_object
+    __import__(self.modname)
+  File "###/buchklub/api/serializers/order.py", line 13, in <module>
+    class OrderItemSyncSerializer(serializers.Serializer):
+  File "###/buchklub/api/serializers/order.py", line 32, in OrderItemSyncSerializer
+    max_digits=10, decimal_places=2, min_value=0, allow_null=True)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/rest_framework/fields.py", line 745, in __init__
+    message = self.error_messages['min_value'].format(min_value=min_value)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/functional.py", line 132, in __wrapper__
+    res = func(*self.__args, **self.__kw)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/__init__.py", line 83, in ugettext
+    return _trans.ugettext(message)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 319, in gettext
+    return do_translate(message, 'gettext')
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 306, in do_translate
+    _default = translation(settings.LANGUAGE_CODE)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 209, in translation
+    default_translation = _fetch(settings.LANGUAGE_CODE)
+  File "###/.virtualenvs/bk/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 189, in _fetch
+    "The translation infrastructure cannot be initialized before the "
+django.core.exceptions.AppRegistryNotReady: The translation infrastructure cannot be initialized before the apps registry is ready. Check that you don't make non-lazy gettext calls at import time.

@@ -1,0 +1,29 @@
+jkarneges commented on Oct 7, 2015
+I want to be able to consume an HTTP stream of indefinite length, but I also want a way to cleanly exit the read loop that doesn't involve killing the thread. Here's what I've got:
+import threading
+import socket
+import requests
+
+resp = requests.get('http://some-url/', stream=True, timeout=5)
+
+quit = False
+quit_lock = threading.Lock()
+it = resp.iter_lines(chunk_size=1)
+while True:
+    quit_lock.acquire()
+    if quit:
+        quit_lock.release()
+        break
+    quit_lock.release()
+    try:
+        line = next(it)
+    except StopIteration:
+        break
+    except socket.timeout:
+        print('read timed out')
+        it = resp.iter_lines(chunk_size=1)
+        continue
+    print(line)
+The idea here is that a separate thread can set quit = True and this read loop will exit within some seconds. The approach works fine on Python 2 but fails on Python 3. On Python 3, once a read has timed out, a subsequent read will fail with the exception:
+OSError: cannot read from timed out object
+Is this a bug in the requests library? Or is it simply a limitation of Python 3? Or is there some other workaround?

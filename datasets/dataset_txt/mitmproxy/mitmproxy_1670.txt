@@ -1,0 +1,52 @@
+kkurian commented on 11 Jun 2014
+I'm new to libmproxy and maybe I'm missing something here. In particular, it's not clear from the documentation how to implement a forward proxy using libmproxy so I've reviewed the mitmproxy source and taken a stab based upon that.
+Given all that...
+Using 0.11, I've pieced together the following, which I believe should simply forward-proxy requests to port 8080 along to localhost port 80.
+from libmproxy import controller, proxy
+from libmproxy.proxy import config, server
+
+class SimpleForwardProxy(controller.Master):
+    def __init__(self, server):
+        controller.Master.__init__(self, server)
+
+    def run(self):
+        try:
+            return controller.Master.run(self)
+        except Exception as e:
+            print e.__doc__
+            print e.message
+        finally:
+            self.shutdown()
+
+    def handle_request(self, msg):
+        print "handling request {}".format(msg)
+        msg.reply()
+
+    def handle_response(self, msg):
+        print "handling response {}".format(msg)
+        msg.reply()
+
+config_ = config.ProxyConfig(
+    http_form_in="absolute",
+    http_form_out="absolute",
+    get_upstream_server=
+        proxy.ConstUpstreamServerResolver("http://127.0.0.1:80")
+)
+server_ = server.ProxyServer(config_, 8080)
+forward_proxy = SimpleForwardProxy(server_)
+forward_proxy.run()
+Once the application is running,
+curl http://127.0.0.1:8080
+results in:
+mitmproxy has crashed!
+Please lodge a bug report at: https://github.com/mitmproxy/mitmproxy
+----------------------------------------
+Error in processing of request from 127.0.0.1:38216
+Traceback (most recent call last):
+  File "/root/venv/lib/python2.7/site-packages/netlib/tcp.py", line 433, in connection_thread
+    self.handle_client_connection(connection, client_address)
+  File "/root/venv/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 53, in handle_client_connection
+    h.handle()
+  File "/root/venv/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 105, in handle
+    raise e
+TypeError: getsockaddrarg() takes exactly 2 arguments (17 given)

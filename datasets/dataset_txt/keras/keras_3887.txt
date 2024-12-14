@@ -1,0 +1,70 @@
+Contributor
+angeloskath commented on 19 Nov 2016
+I am wondering why the Keras backend doesn't expose high order functions like map and fold. I have also made such an inquiry in the Google group and got no answers.
+I will be showing here how one would implement the following code in a Keras layer with and without the backend supporting high order functions to make a point of why we need it. I have already implemented it and I could make a pull request but the guidelines suggest I make an issue first so there you have it. (I hope it is not too big a code snippet for including it directly in the issue).
+def g(x, w):
+    pass # Do some non trivial work with x and w
+
+# Example code implemented with numpy. It might not make much
+# sense but bare with me.
+def f_numpy(batch, w):
+    s = np.zeros((batch.shape[0], batch.shape[-1]))
+    for i, x in enumerate(batch):
+        for feature in x:
+            s[i] += g(feature, w)
+    return s
+
+# The implementation in pure keras using the proposed changes
+# agnostic of g and backend
+from keras import backend as K
+def f_keras_proposed(batch, w):
+    return K.map_fn(
+        lambda feature: K.foldl(
+            lambda acc, x: acc + g(x, w),
+            feature,
+            K.zeros_like(feature[0])
+        ),
+        batch
+    )
+
+# Implementation in Keras agnostic of g and backend with the current API
+from keras import backend as K
+try:
+    import theano as T
+except ImportError:
+    pass
+try:
+    import tensorflow as tf
+except ImportError:
+    pass
+def f_keras_now(batch, w):
+    if K.backend() == "theano":
+        # It could also be done with map and sum just making a point here
+        return T.map(
+            lambda feature: T.foldl(
+                lambda x, acc: acc + g(x, w),
+                feature,
+                T.zeros_like(feature[0])
+            )[0],
+            batch
+        )[0]
+    elif K.backend() == "tensorflow":
+        return tf.map_fn(
+            lambda feature: tf.foldl(
+                lambda acc, x: acc + g(x, w),
+                feature,
+                tf.zeros_like(feature[0])
+            ),
+            batch
+        )
+    else:
+        raise RuntimeError(("Function not implemented for keras "
+                                         "backend '%s'") % (K.backend(),))
+For functionality that the backends disagree on or that is too hard to implement with the same API in both backends I would understand it but in this case it seems an omission to me.
+Anyway, thanks for the amazing work!
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

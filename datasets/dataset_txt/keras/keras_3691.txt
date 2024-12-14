@@ -1,0 +1,61 @@
+Contributor
+dontloo commented on 13 Dec 2016 •
+edited
+Hi,
+I don't know whether I'm supposed to use Theano back-end together with the "tf" image dimension ordering, the BatchNormalization layer will fail in this case.
+It will pass the shape check when building the network, and modal.summary() will give the correct shape like
+Layer (type)                     Output Shape          Param #     Connected to                     
+====================================================================================================
+convolution2d_1 (Convolution2D)  (20, 98, 98, 32)      896         convolution2d_input_1[0][0]      
+____________________________________________________________________________________________________
+batchnormalization_1 (BatchNorma (20, 98, 98, 32)      128         convolution2d_1[0][0]            
+____________________________________________________________________________________________________
+activation_1 (Activation)        (20, 98, 98, 32)      0           batchnormalization_1[0][0]       
+____________________________________________________________________________________________________
+convolution2d_2 (Convolution2D)  (20, 96, 96, 64)      18496       activation_1[0][0]               
+but Theano will give the following error when running
+ValueError: GpuDnnConv images and kernel must have the same stack size
+
+Apply node that caused the error: GpuDnnConv{algo='time_once', inplace=True}(GpuContiguous.0, GpuContiguous.0, GpuAllocEmpty.0, GpuDnnConvDesc{border_mode='valid', subsample=(1, 1), conv_mode='conv', precision='float32'}.0, Constant{1.0}, Constant{0.0})
+Toposort index: 707
+Inputs types: [CudaNdarrayType(float32, 4D), CudaNdarrayType(float32, 4D), CudaNdarrayType(float32, 4D), <theano.gof.type.CDataType object at 0x7f59985c7c10>, Scalar(float32), Scalar(float32)]
+Inputs shapes: [(20, 98, 32, 98), (64, 32, 3, 3), (20, 64, 30, 96), 'No shapes', (), ()]
+Inputs strides: [(307328, 3136, 98, 1), (288, 9, 3, 1), (184320, 2880, 96, 1), 'No strides', (), ()]
+Inputs values: ['not shown', 'not shown', 'not shown', <PyCObject object at 0x7f59827fa378>, 1.0, 0.0]
+Inputs name: ('image', 'kernel', 'output', 'descriptor', 'alpha', 'beta')
+
+Outputs clients: [[GpuDimShuffle{0,2,3,1}(GpuDnnConv{algo='time_once', inplace=True}.0)]]
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Here're some code snippets
+{
+    "image_dim_ordering": "tf", 
+    "epsilon": 1e-07, 
+    "floatx": "float32", 
+    "backend": "theano"
+}
+...
+
+img_rows, img_cols, im_chnls = 100, 100, 3
+input_shape = (img_rows, img_cols, im_chnls)
+bn_axis = -1
+...
+
+x = Input(shape=input_shape)
+y = Convolution2D(32, kernel_size[0], kernel_size[1], border_mode='valid')(x)
+y = BatchNormalization(axis=bn_axis)(y)
+y = Activation('relu')(y)
+y = Convolution2D(64, kernel_size[0], kernel_size[1], border_mode='valid')(y)
+y = BatchNormalization(axis=bn_axis)(y)
+y = Activation('relu')(y)
+y = MaxPooling2D(pool_size=pool_size)(y)
+...
+
+model = Model(x, y)
+model.compile(loss='categorical_crossentropy',
+              optimizer=Adam(lr=0.001, decay=1e-5),
+              metrics=['accuracy'])
+model.summary()
+...
+Best regards

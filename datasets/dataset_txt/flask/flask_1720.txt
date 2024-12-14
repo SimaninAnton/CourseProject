@@ -1,0 +1,76 @@
+zarf commented on 6 Aug 2010
+Steps to reproduce:
+(werk)mini:~ fz$ python
+Python 2.6.1 (r261:67515, Dec 17 2009, 00:59:15) 
+[GCC 4.2.1 (Apple Inc. build 5646)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import pydoc, flask
+>>> pydoc.pager = lambda text: pydoc.pipepager(text, 'cat')
+>>> help(flask)
+Help on package flask:
+
+flask = <module 'flask' from '/Volumes/Home/FZ/.local/repo/flask/flask/__init__.pyc'>
+>>> 
+No top-level documentation! Same problem with help(flask.app), help(flask.globals), help(flask.helpers), also via the pydoc -p web server. I found that it hinges on this:
+>>> pydoc.text.docmodule(flask)
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/Volumes/Home/FZ/.local/lib/python2.6/site-packages/pydoc.py", line 1100, in docmodule
+    contents.append(self.docother(value, key, name, maxlen=70))
+  File "/Volumes/Home/FZ/.local/lib/python2.6/site-packages/pydoc.py", line 1299, in docother
+    repr = self.repr(object)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/repr.py", line 24, in repr
+    return self.repr1(x, self.maxlevel)
+  File "/Volumes/Home/FZ/.local/lib/python2.6/site-packages/pydoc.py", line 955, in repr1
+    return cram(stripid(repr(x)), self.maxother)
+  File "/Volumes/Home/FZ/.local/env/werk/lib/python2.6/site-packages/werkzeug/local.py", line 321, in __repr__
+    obj = self._get_current_object()
+  File "/Volumes/Home/FZ/.local/env/werk/lib/python2.6/site-packages/werkzeug/local.py", line 306, in _get_current_object
+    return self.__local()
+  File "/Volumes/Home/FZ/.local/repo/flask/flask/globals.py", line 17, in <lambda>
+    current_app = LocalProxy(lambda: _request_ctx_stack.top.app)
+AttributeError: 'NoneType' object has no attribute 'app'
+>>> 
+and can be fixed by the following change (which I hope won't cause breakage elsewhere):
+diff --git a/flask/globals.py b/flask/globals.py
+index aac4655..0a17f56 100644
+--- a/flask/globals.py
++++ b/flask/globals.py
+@@ -14,7 +14,8 @@ from werkzeug import LocalStack, LocalProxy
+
+ # context locals
+ _request_ctx_stack = LocalStack()
+-current_app = LocalProxy(lambda: _request_ctx_stack.top.app)
+-request = LocalProxy(lambda: _request_ctx_stack.top.request)
+-session = LocalProxy(lambda: _request_ctx_stack.top.session)
+-g = LocalProxy(lambda: _request_ctx_stack.top.g)
++_top = _request_ctx_stack.top
++current_app = LocalProxy(lambda: _top.app if _top else None)
++request = LocalProxy(lambda: _top.request if _top else None)
++session = LocalProxy(lambda: _top.session if _top else None)
++g = LocalProxy(lambda: _top.g if _top else None)
+Then one gets as expected, e.g.
+>>> help(flask.globals)
+Help on module flask.globals in flask:
+
+NAME
+    flask.globals
+
+FILE
+    /Volumes/Home/FZ/.local/repo/flask/flask/globals.py
+
+DESCRIPTION
+    flask.globals
+    ~~~~~~~~~~~~~
+
+    Defines all the global objects that are proxies to the current
+    active context.
+
+    :copyright: (c) 2010 by Armin Ronacher.
+    :license: BSD, see LICENSE for more details.
+
+DATA
+    current_app = None
+    g = None
+    request = None
+    session = None

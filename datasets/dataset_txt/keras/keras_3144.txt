@@ -1,0 +1,88 @@
+mattdornfeld commented on 23 Feb 2017
+Here's an example: I generate 100 synthetic training examples each with 40 features. I then define a generator function to train a Keras model.
+import numpy as np
+from queue import Queue, deque
+from keras.models import Sequential
+from keras.layers import Dense
+
+num_features = 40
+len_data = 100
+data = np.random.rand(len_data, num_features)
+
+def train_generator(train_idxs):
+ while True:
+  i = train_idxs.get(block=False)
+  training_example = data[i,:]
+  training_example.shape = (1, len(training_example))
+
+  yield (training_example, training_example)
+
+
+layer0_size = num_features
+layer1_size = layer0_size / 2
+layer2_size = layer1_size / 2
+
+layers = []
+layers.append(
+ Dense(input_dim=layer0_size, output_dim=layer1_size, activation='relu'))
+layers.append(
+ Dense(input_dim=layer1_size, output_dim=layer2_size, activation='relu'))
+layers.append(
+ Dense(input_dim=layer2_size, output_dim=layer1_size, activation='relu'))
+layers.append(
+ Dense(input_dim=layer1_size, output_dim=layer0_size, activation='sigmoid'))
+
+model = Sequential()
+for layer in layers:
+ model.add(layer)
+
+model.compile(optimizer='adam', loss='binary_crossentropy')
+
+train_idxs = Queue()
+train_idxs.queue = deque(range(len_data))
+train_gen = train_generator(train_idxs)
+max_q_size = 2
+model.fit_generator(train_gen, samples_per_epoch=len(data), max_q_size=max_q_size, nb_epoch=1)
+This throws the error
+Exception in thread Thread-56:
+Traceback (most recent call last):
+  File "/usr/lib/python3.5/threading.py", line 914, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.5/threading.py", line 862, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 429, in data_generator_task
+    generator_output = next(self._generator)
+  File "/home/matthew/projects/dolphin_tagger/scrap.py", line 12, in train_generator
+    i = train_idxs.get(block=False)
+  File "/usr/lib/python3.5/queue.py", line 161, in get
+    raise Empty
+queue.Empty
+
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+/home/matthew/projects/dolphin_tagger/scrap.py in <module>()
+     41 train_gen = train_generator(train_idxs)
+     42 max_q_size = 2
+---> 43 model.fit_generator(train_gen, samples_per_epoch=len(data), max_q_size=max_q_size, nb_epoch=1)
+
+/usr/local/lib/python3.5/dist-packages/keras/models.py in fit_generator(self, generator, samples_per_epoch, nb_epoch, verbose, callbacks, validation_data, nb_val_samples, class_weight, max_q_size, nb_worker, pickle_safe, initial_epoch, **kwargs)
+    933                                         nb_worker=nb_worker,
+    934                                         pickle_safe=pickle_safe,
+--> 935                                         initial_epoch=initial_epoch)
+    936 
+    937     def evaluate_generator(self, generator, val_samples,
+
+/usr/local/lib/python3.5/dist-packages/keras/engine/training.py in fit_generator(self, generator, samples_per_epoch, nb_epoch, verbose, callbacks, validation_data, nb_val_samples, class_weight, max_q_size, nb_worker, pickle_safe, initial_epoch)
+   1526                                          '(x, y, sample_weight) '
+   1527                                          'or (x, y). Found: ' +
+-> 1528                                          str(generator_output))
+   1529                     if len(generator_output) == 2:
+   1530                         x, y = generator_output
+
+ValueError: output of generator should be a tuple (x, y, sample_weight) or (x, y). Found: None
+The error is averted if I replace the last line of the code with
+model.fit_generator(train_gen, samples_per_epoch=len(data)-max_q_size, max_q_size=max_q_size, nb_epoch=1)
+What seems to be happening is that Keras keeps trying to get training examples from the generator until the Keras queue is exhausted even though it already popped of samples_per_epoch training examples from the generator. It seems like the correct behavior should be for Keras to stop trying to get elements from the generator when it has retrieved samples_per_epoch training examples. At least that's my interpretation. I hope this was helpful!
+Thanks,
+Matt
+3

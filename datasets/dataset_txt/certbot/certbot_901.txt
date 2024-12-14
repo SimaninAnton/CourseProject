@@ -1,0 +1,69 @@
+randombit commented on 21 Nov 2017
+My operating system is (include version):
+Arch Linux (latest)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+From OS package manager.
+$ certbot --version
+certbot 0.19.0
+I ran this command and it produced this output:
+$ certbot --renew
+... normal renewal output
+Please choose whether or not to redirect HTTP traffic to HTTPS, removing HTTP access.
+-------------------------------------------------------------------------------
+1: No redirect - Make no further changes to the webserver configuration.
+2: Redirect - Make all requests redirect to secure HTTPS access. Choose this for
+new sites, or if you're confident your site works on HTTPS. You can undo this
+change by editing your web server's configuration.
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 2
+No matching insecure server blocks listening on port 80 found.
+No matching insecure server blocks listening on port 80 found.
+2017/11/21 11:11:54 [notice] 23645#23645: signal process started
+
+-------------------------------------------------------------------------------
+Your existing certificate has been successfully renewed, and the new certificate
+has been installed.
+Certbot's behavior differed from what I expected because:
+Since Nginx is not listening on port 80 at all, I would expect certbot to skip the question given its attempt to edit the server block will fail.
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+    server {
+        listen       443 ssl;
+        server_name  practicalselfreliance.com www.practicalselfreliance.com;
+ssl_certificate /etc/letsencrypt/live/practicalselfreliance.com/fullchain.pem; # managed by Certbot                                                                                   
+ssl_certificate_key /etc/letsencrypt/live/practicalselfreliance.com/privkey.pem; # managed by Certbot                                                                                 
+
+        ssl_session_cache    shared:SSL:1m;
+        ssl_session_timeout  15m;
+
+        ssl_ciphers  HIGH:!aNULL;
+        #ssl_prefer_server_ciphers  on;                                                                                                                                               
+
+        #access_log  logs/host.access.log  main;                                                                                                                                      
+
+        location / {
+
+            proxy_pass            http://127.0.0.1:80;
+            proxy_read_timeout    10;
+            proxy_connect_timeout 10;
+            proxy_redirect        off;
+
+            proxy_set_header      X-Real-IP $remote_addr;
+            proxy_set_header      X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header      X-Forwarded-Proto https;
+            proxy_set_header      X-Forwarded-Port 443;
+            proxy_set_header      Host $host;
+            }
+
+        #error_page  404              /404.html;                                                                                                                                      
+
+        # redirect server error pages to the static page /50x.html                                                                                                                    
+        #                                                                                                                                                                             
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /usr/share/nginx/html;
+        }
+Further Background
+Nginx is acting as a TLS terminator in front of Varnish which in turns talks to Apache/PHP/Wordpress. Varnish handles port 80, and HTTP->HTTPS redirects are done using a VCL rule. The setup is basically as described in https://www.smashingmagazine.com/2015/09/https-everywhere-with-nginx-varnish-apache/
+It would be nice if certbot-nginx would detect this situation (at least to the extent that it would realize nginx isn't configured to listen on port 80, and thus its attempt to modify the server block will fail anyway) and skip the question.

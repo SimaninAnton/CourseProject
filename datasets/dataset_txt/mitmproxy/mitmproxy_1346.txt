@@ -1,0 +1,77 @@
+Contributor
+sakurai-youhei commented on 9 Aug 2015
+Expected behavior:
+mitmproxy in regular mode should behave according to description below.
+https://github.com/mitmproxy/mitmproxy/blob/master/libmproxy/proxy/primitives.py#L46
+https://mitmproxy.org/doc/schematics/proxy-modes-regular.png
+i.e. If client sends GET http://example.com/path/to/resource/ HTTP/1.1 to mitmproxy, then mitmproxy in regular mode should send GET /path/to/resource/ HTTP/1.1 to server.
+Current behavior:
+mitmproxy in regular mode sends GET http://example.com/path/to/resource/ HTTP/1.1 to server and this improper request leads problematic location header in 301 response from server.
+How to replicate:
+On 1st terminal, run following command.
+LANG=en_US.UTF-8 mitmdump -v -d
+On 2rd terminal, run following command.
+tcpdump -X \(port 80 or port 8080\) and host www.cuthousemore.co.jp
+On 3rd terminal, run following command.
+http_proxy=127.0.0.1:8080 curl -v http://www.cuthousemore.co.jp/tete/
+You'll get to see strange location header from server on every terminal - Location: http://www.cuthousemore.co.jphttp/www.cuthousemore.co.jp:80/tete/. And you can find the root cause on 2nd terminal (running tcpdump) - mitmproxy sends absolute resource path to server.
+Output of mitmdump:
+root@packer-ubuntu-15-04-amd64:~# LANG=en_US.UTF-8 mitmdump -v -d
+127.0.0.1:34663: clientconnect
+127.0.0.1:34663: request
+  -> <HTTPRequest: GET http://www.cuthousemore.co.jp:80/tete/>
+127.0.0.1:34663: Set new server address: www.cuthousemore.co.jp:80
+127.0.0.1:34663: serverconnect
+  -> www.cuthousemore.co.jp:80
+127.0.0.1:34663: response
+  -> <HTTPResponse: 301 Moved Permanently (text/html; charset=UTF-8, content missing)>
+127.0.0.1 GET http://www.cuthousemore.co.jp/tete/
+    User-Agent: curl/7.38.0
+    Host: www.cuthousemore.co.jp
+    Accept: */*
+    Proxy-Connection: Keep-Alive
+
+ << 301 Moved Permanently 0B
+    Date: Sun, 09 Aug 2015 03:44:40 GMT
+    Server: Apache
+    X-Powered-By: PHP/5.5.26
+    X-Pingback: http://www.cuthousemore.co.jp/xmlrpc.php
+    Expires: Wed, 11 Jan 1984 05:00:00 GMT
+    Cache-Control: no-cache, must-revalidate, max-age=0
+    Pragma: no-cache
+    Location: http://www.cuthousemore.co.jphttp/www.cuthousemore.co.jp:80/tete/
+    Content-Length: 0
+    Content-Type: text/html; charset=UTF-8
+
+127.0.0.1:34663: clientdisconnect
+127.0.0.1:34663: serverdisconnect
+  -> www.cuthousemore.co.jp:80
+Output of curl:
+root@packer-ubuntu-15-04-amd64:~# http_proxy=127.0.0.1:8080 curl -v http://www.cuthousemore.co.jp/tete/
+* Hostname was NOT found in DNS cache
+*   Trying 127.0.0.1...
+* Connected to 127.0.0.1 (127.0.0.1) port 8080 (#0)
+> GET http://www.cuthousemore.co.jp/tete/ HTTP/1.1
+> User-Agent: curl/7.38.0
+> Host: www.cuthousemore.co.jp
+> Accept: */*
+> Proxy-Connection: Keep-Alive
+>
+< HTTP/1.1 301 Moved Permanently
+< Date: Sun, 09 Aug 2015 03:14:43 GMT
+* Server Apache is not blacklisted
+< Server: Apache
+< X-Powered-By: PHP/5.5.26
+< X-Pingback: http://www.cuthousemore.co.jp/xmlrpc.php
+< Expires: Wed, 11 Jan 1984 05:00:00 GMT
+< Cache-Control: no-cache, must-revalidate, max-age=0
+< Pragma: no-cache
+< Location: http://www.cuthousemore.co.jphttp/www.cuthousemore.co.jp:80/tete/
+< Content-Length: 0
+< Content-Type: text/html; charset=UTF-8
+<
+* Connection #0 to host 127.0.0.1 left intact
+Supplemental information:
+Break point where would help debugger: https://github.com/mitmproxy/netlib/blob/master/netlib/http/semantics.py#L91
+Version of mitmproxy and netlib: 0.13.1
+How I installed mitmproxy: pip install https://github.com/mitmproxy/netlib/archive/master.zip && pip install https://github.com/mitmproxy/mitmproxy/archive/master.zip

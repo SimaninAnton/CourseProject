@@ -1,0 +1,27 @@
+dwt commented on 22 Feb 2012
+I've just lost a whole day until I figured out why my test suite suddenly exploded completely.
+Here's what happened:
+A test of mine exercises colanders validation logic to see if correctly rejecting invalid input
+Suddenly my whole test suite exploded
+It takes hours of debugging until I learn that the AsyncTestCase somehow swallows exceptions raised during logging an exception that is thrown in a test.
+To be exact, colander throws an exception that throws an exception when you str() it
+tornado.testing swallows that exception, starts the next test and lets me stay to wonder why suddenly test isolation is broken
+which happens because teardown isn't run.
+Here's a reduction that nicely demonstrates the problem for me.
+import unittest
+import logging
+from tornado.testing import AsyncTestCase
+
+
+class Test(AsyncTestCase):
+
+    def test(self):
+        class FaultingException(Exception):
+            def __str__(self):
+                raise TypeError()
+        # comment the next line to see it dying normaly
+        logging.warn('baz to logging.warn')
+        raise FaultingException()
+
+# Run with $ nosetests test.py
+# watch it die without reporting the exception

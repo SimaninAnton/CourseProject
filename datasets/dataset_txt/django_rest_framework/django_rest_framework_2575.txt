@@ -1,0 +1,39 @@
+sdobz commented on 2 Apr 2014
+As far as I can see in the documentation there is no way of setting the throttle scope of a function based view, only class based views.
+The naive method didn't work:
+@api_view(('GET', ))
+def view(request):
+    return Response()
+view.throttle_scope = 'scope'
+After poking around in the code and a few failed attempts I came up with a method that works, but it is nasty:
+class ManualScopeRateThrottle(ScopedRateThrottle):
+    scope = None
+
+    def allow_request(self, request, view):
+        self.rate = self.get_rate()
+        self.num_requests, self.duration = self.parse_rate(self.rate)
+
+        # We can now proceed as normal.
+        # Note we are calling the super of ScopedRateThrottle, not the super of this class
+        # This is because we want to bypass ScopedRateThrottle.allow_request
+        return super(ScopedRateThrottle, self).allow_request(request, view)
+
+
+def set_throttle_scope(scope):
+    # This is a nasty piece of work.
+    # In effect it allows the throttle scope of a function view to be set:
+    # @api_view(('GET', ))
+    # @set_throttle_scope('scope')
+    # def view(request):
+    #     ...
+    # It does this by creating a new class with scope already defined, then setting the functions throttle class to that
+    def decorator(func):
+        CustomScopeRateThrottle = type(
+            'CustomScopeRateThrottle',
+            (ManualScopeRateThrottle,),
+            {'scope': scope}
+        )
+        func.throttle_classes = (CustomScopeRateThrottle, )
+        return func
+    return decorator
+While this code shouldn't be included, certainly the feature is worth looking at.

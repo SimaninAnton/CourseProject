@@ -1,0 +1,118 @@
+Ao-Lee commented on 27 Feb 2018 •
+edited
+I have fine-tuned a pre-trained network with triplet loss. after training, the network predicts exactly the same results no matter what inputs we feed. I have done troubleshooting for half a week and found that the root cause is the multiple inputs structure of the network. After tons of experiments, I found that this phenomenon will only arise if the network has multiple inputs. It has nothing to do with data and loss. Since any dataset and any loss function can reproduce the phenomenon, I use a fake triplet loss and a fake dataset to illustrate the problem, just for simplification and better understanding.
+I use python3.5 on win7, with up-to-date keras with up-to-date tensorflow backend.
+the cuda library is cuda9.0 for windows
+batch_size = 8
+image_size = 224
+embedding_dim = 5
+
+def identity_loss(y_true, y_pred):
+    return K.mean(y_pred - 0 * y_true)
+
+A = np.ones([batch_size,embedding_dim])
+A /= embedding_dim
+A = K.variable(A)
+    
+def fake_loss(X):
+    item, _,_ = X
+    # item = X
+    loss = K.sum(A * item, axis=-1, keepdims=True)
+    return loss
+    
+############## Model ########################### 
+def GetBaseModel():
+    base_model = ResNet50(weights='imagenet', include_top=False)
+    x = base_model.output
+    x = GlobalMaxPooling2D()(x)
+    x = Dropout(0.5)(x)
+    dense_1 = Dense(embedding_dim)(x)
+    normalized = Lambda(lambda  x: K.l2_normalize(x,axis=1))(dense_1)
+    base_model = Model(base_model.input, normalized, name="base_model")
+    return base_model
+
+def GetMyModel(base_model):
+    input_1 = Input((image_size,image_size,3))
+    input_2 = Input((image_size,image_size,3))
+    input_3 = Input((image_size,image_size,3))
+
+    r1 = base_model(input_1)
+    r2 = base_model(input_2)
+    r3= base_model(input_3)
+
+    loss = Lambda(fake_loss)([r1,r2,r3]) 
+    model = Model(inputs=[input_1, input_2, input_3], outputs=loss)
+    model.compile(loss=identity_loss, optimizer=Adam(0.000003))
+    # print(model.summary())
+    return model
+It can be seen that, before training, each data generate a different loss, which is normal and which is what we expected:
+base_model = GetBaseModel()
+model = GetMyModel(base_model)
+print(model.predict_on_batch(batch[0]))
+the result is:
+[[0.09356911]
+ [0.08442864]
+ [0.04717201]
+ [0.06100047]
+ [0.08477053]
+ [0.07589568]
+ [0.06031361]
+ [0.05517637]]
+after training, the model always predicts a fixed result no matter what input is.
+ model.fit_generator(train_generator, 
+                    validation_data=test_generator, 
+                    epochs=5, 
+                    verbose=2, 
+                    workers=4,
+                    steps_per_epoch=20, 
+                    validation_steps=30)
+
+print(model.predict_on_batch(batch[0]))
+
+[[0.08818615]
+ [0.08818615]
+ [0.08818615]
+ [0.08818615]
+ [0.08818615]
+ [0.08818615]
+ [0.08818615]
+ [0.08818615]]
+Someone may argue that my fake loss could be a reason. Actually, I used triplet loss, and the network generated the same thing. But if we change the input of the model and let the model only accept one vector, everything gets back to normal. the code and the output is here
+def fake_loss(X):
+   item = X
+   loss = K.sum(A * item, axis=-1, keepdims=True)
+   return loss
+   
+def GetMyModel(base_model):
+   input_1 = Input((image_size,image_size,3))
+   r1 = base_model(input_1)
+
+   loss = Lambda(fake_loss)(r1,) 
+   model = Model(inputs=input_1, outputs=loss)
+   model.compile(loss=identity_loss, optimizer=Adam(0.000003))
+   # print(model.summary())
+   return model
+
+model.fit_generator(train_generator, 
+                   validation_data=test_generator, 
+                   epochs=5, 
+                   verbose=2, 
+                   workers=4,
+                   steps_per_epoch=20, 
+                   validation_steps=30)
+
+print(model.predict_on_batch(batch[0]))
+
+[[-0.395428  ]
+[-0.41014406]
+[-0.4061373 ]
+[-0.3003529 ]
+[-0.40376177]
+[-0.31965423]
+[-0.23563485]
+[-0.35777506]]
+generating same predictions for any input data is a very unreasonable behavior, and I cannot solve it alone. It would be very greatful if someone can solve it
+thank you in advance
+The whole runnable script can be found here
+https://github.com/Ao-Lee/Shares/blob/master/standard%20inputs.py
+https://github.com/Ao-Lee/Shares/blob/master/triplet%20inputs.py

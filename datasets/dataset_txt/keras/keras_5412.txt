@@ -1,0 +1,33 @@
+Contributor
+antonmbk commented on 20 Apr 2016
+Got a prelim SWWAE going in the most recent release (1.0.1), but facing a few issues.
+Paper: http://arxiv.org/abs/1506.02351
+The biggest one has to do with what we do when our cost function has contributions that are tied to intermediary (and only intermediary) layers/values. In other words, is there support for adding intermediate objectives independent of supervised truth data?
+To illustrate, when an output is supervised with some set of truth (regression or classification), we can pass truth into the fitting procedure like so:
+model.fit({'input':X_train},{'output_supervised':Y_train})
+When we are doing an autoregressive reconstruction, (I think) we can do:
+model.fit({'input':X_train},{'L2_rec':X_train})
+And then comes intermediary loss function contributions that don't rely on any supervising data outside of the input image... I have hacked things along the lines of the Siamese Example by defining the following:
+def euclidean_distance(vects):
+    x, y = vects
+    return K.sqrt(K.sum(K.sum(K.sum(K.square(x - y), 
+                                    axis=1, keepdims=True),axis=2,
+                                    keepdims=True),axis=3, keepdims=True))
+
+def eucl_dist_output_shape(shapes):
+    shape1, shape2 = shapes
+    return shape1
+...
+L2_intermediary = Lambda(euclidean_distance, output_shape=eucl_dist_output_shape)([encoder_midwaydown,decoder_midwayup])
+...
+model = Model(input=[inputs], output=[L2_intermediary ])
+
+def myloss(y_true,y_pred):    
+    return T.mean(y_pred)
+
+model.compile('adam',{'L2_intermediary ':myloss})
+
+L2_intermediary_dummy = np.zeros((X_train.shape[0],64,9,9),dtype='float32')
+
+model.fit({'input':X_train},{'L2_intermediary':L2_intermediary_dummy})
+In other words, I am just taking the mean of the L2 norms of the difference between the encoder and decoder intermediary layers. It works, but it's kind of ugly. Is there support for adding intermediate objectives independent of supervised truth data?

@@ -1,0 +1,110 @@
+ophiry commented on 10 Aug 2017 •
+edited
+I have a custom layer that encapsulates a string look up table.
+it works on python 2.7.13
+but fails on python 3.5.3 and 3.6.2
+both run tensorflow 1.2.1 with the included tensorflow
+the code:
+import tensorflow
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class LookUpTableLayer(tensorflow.contrib.keras.layers.Layer):
+    def __init__(self, mapping, **kwargs):
+        logger.info('__init__')
+        self.mapping = mapping
+        super(LookUpTableLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        logger.info('build')
+        self.initializer = tensorflow.contrib.lookup.KeyValueTensorInitializer(self.mapping.keys(), self.mapping.values())
+        self.hash_table = tensorflow.contrib.lookup.HashTable(self.initializer, 0)
+        tensorflow.contrib.keras.backend.get_session().run(self.hash_table.init)
+        super(LookUpTableLayer, self).build(input_shape)
+
+    def call(self, x):
+        logger.info('call')
+        return self.hash_table.lookup(x)
+
+    def compute_output_shape(self, input_shape):
+        logger.info('compute_output_shape')
+        return input_shape
+
+    def get_config(self):
+        logger.info('get_config')
+        return {'mapping': self.mapping}
+
+
+logging.basicConfig(level=logging.INFO)
+input_layer = tensorflow.contrib.keras.layers.Input(shape=(1,), name='input', dtype='string')
+lut_layer = LookUpTableLayer({'a':1, 'b':2})
+model = tensorflow.contrib.keras.models.Model(inputs=[input_layer], outputs=[lut_layer(input_layer)])
+x = [['a'],['X'],['b']]
+print(model.predict(x))
+print(lut_layer.get_config())
+model.save('/tmp/lut.hdf5')
+
+loaded_model = tensorflow.contrib.keras.models.load_model('/tmp/lut.hdf5', custom_objects={'LookUpTableLayer':LookUpTableLayer} )
+print(loaded_model.predict(x))
+output on python 2.7:
+INFO:__main__:__init__
+INFO:__main__:build
+2017-08-10 17:34:35.132109: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+2017-08-10 17:34:35.132127: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+2017-08-10 17:34:35.132132: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+2017-08-10 17:34:35.132138: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+INFO:__main__:call
+[[1]
+ [0]
+ [2]]
+{'mapping': {'a': 1, 'b': 2}}
+INFO:__main__:get_config
+INFO:__main__:get_config
+INFO:__main__:__init__
+INFO:__main__:build
+INFO:__main__:call
+/Users/ophir/miniconda3/envs/p2/lib/python2.7/site-packages/tensorflow/contrib/keras/python/keras/models.py:270: UserWarning: No training configuration found in save file: the model was *not* compiled. Compile it manually.
+  warnings.warn('No training configuration found in save file: '
+[[1]
+ [0]
+ [2]]
+output on python 3.5
+INFO:__main__:__init__
+INFO:__main__:build
+Traceback (most recent call last):
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/tensor_util.py", line 458, in make_tensor_proto
+    str_values = [compat.as_bytes(x) for x in proto_values]
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/tensor_util.py", line 458, in <listcomp>
+    str_values = [compat.as_bytes(x) for x in proto_values]
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/util/compat.py", line 65, in as_bytes
+    (bytes_or_text,))
+TypeError: Expected binary or unicode string, got dict_keys(['b', 'a'])
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/ophir/dev/ophir/tf_keras_string_input.py", line 40, in <module>
+    model = tensorflow.contrib.keras.models.Model(inputs=[input_layer], outputs=[lut_layer(input_layer)])
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/contrib/keras/python/keras/engine/topology.py", line 432, in __call__
+    output = super(Layer, self).__call__(inputs, **kwargs)
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/layers/base.py", line 434, in __call__
+    self.build(input_shapes[0])
+  File "/Users/ophir/dev/ophir/tf_keras_string_input.py", line 15, in build
+    self.initializer = tensorflow.contrib.lookup.KeyValueTensorInitializer(self.mapping.keys(), self.mapping.values())
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/contrib/lookup/lookup_ops.py", line 284, in __init__
+    self._keys = ops.convert_to_tensor(keys, dtype=key_dtype, name="keys")
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 676, in convert_to_tensor
+    as_ref=False)
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 741, in internal_convert_to_tensor
+    ret = conversion_func(value, dtype=dtype, name=name, as_ref=as_ref)
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/constant_op.py", line 113, in _constant_tensor_conversion_function
+    return constant(v, dtype=dtype, name=name)
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/constant_op.py", line 102, in constant
+    tensor_util.make_tensor_proto(value, dtype=dtype, shape=shape, verify_shape=verify_shape))
+  File "/Users/ophir/miniconda3/envs/p35/lib/python3.5/site-packages/tensorflow/python/framework/tensor_util.py", line 462, in make_tensor_proto
+    "supported type." % (type(values), values))
+TypeError: Failed to convert object of type <class 'dict_keys'> to Tensor. Contents: dict_keys(['b', 'a']). Consider casting elements to a supported type.
+
+Process finished with exit code 1

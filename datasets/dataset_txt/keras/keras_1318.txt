@@ -1,0 +1,101 @@
+fkluger commented on 19 Jan 2018 •
+edited
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+The following code works fine with a GPU installation of Keras w/ Tensorflow, but raises an error when using a CPU-only installation. Said error only occurs when I use an LSTM cell with return_state=True and initial_state set within a model, and then use that model as a Layer within another model.
+I successfully trained and tested a model with a similar structure on an Nvidia GPU, but am unable to deploy it on my laptop (w/ Intel GPU only) due to this error.
+from keras.models import Model
+from keras.layers import Input, LSTM
+import numpy as np
+
+def model1():
+    input_state = Input(shape=(1,))
+    input_data = Input(shape=(1, 1))
+
+    output, _, _ = LSTM(1, return_state=True)(input_data, initial_state=[input_state, input_state])
+
+    return Model(inputs=[input_state, input_data], outputs=[output])
+
+def model2():
+    input_state = Input(shape=(1,))
+    input_data = Input(shape=(1, 1))
+
+    # Using model1 as a layer raises an error:
+    output = model1()([input_state, input_data])
+    # Using the following line instead gives no error:
+    # output, _, _ = LSTM(1, return_state=True)(input_data, initial_state=[input_state, input_state])
+
+    return Model(inputs=[input_state, input_data], outputs=[output])
+
+
+model = model2()
+
+p = model.predict([np.zeros((1,1)), np.zeros((1,1,1))])
+
+print(p)
+This gives me:
+/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/h5py/__init__.py:36: FutureWarning: Conversion of the second argument of issubdtype from `float` to `np.floating` is deprecated. In future, it will be treated as `np.float64 == np.dtype(float).type`.
+  from ._conv import register_converters as _register_converters
+Using TensorFlow backend.
+2018-01-19 00:42:26.119981: I tensorflow/core/platform/s3/aws_logging.cc:53] Initializing Curl library
+Traceback (most recent call last):
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1350, in _do_call
+    return fn(*args)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1329, in _run_fn
+    status, run_metadata)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/framework/errors_impl.py", line 473, in __exit__
+    c_api.TF_GetCode(self.status.status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'input_3' with dtype float and shape [?,1]
+  [[Node: input_3 = Placeholder[dtype=DT_FLOAT, shape=[?,1], _device="/job:localhost/replica:0/task:0/device:CPU:0"]()]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/kluger/projects/test_example/test.py", line 33, in <module>
+    p = model.predict([np.zeros((1,1)), np.zeros((1,1,1))])
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/engine/training.py", line 1800, in predict
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/engine/training.py", line 1301, in _predict_loop
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/backend/tensorflow_backend.py", line 2475, in __call__
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 895, in run
+    run_metadata_ptr)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1128, in _run
+    feed_dict_tensor, options, run_metadata)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1344, in _do_run
+    options, run_metadata)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1363, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'input_3' with dtype float and shape [?,1]
+  [[Node: input_3 = Placeholder[dtype=DT_FLOAT, shape=[?,1], _device="/job:localhost/replica:0/task:0/device:CPU:0"]()]]
+
+Caused by op 'input_3', defined at:
+  File "/home/kluger/projects/test_example/test.py", line 31, in <module>
+    model = model2()
+  File "/home/kluger/projects/test_example/test.py", line 23, in model2
+    output = model1()([input_state, input_data])
+  File "/home/kluger/projects/test_example/test.py", line 8, in model1
+    input_state = Input(shape=(1,))
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/engine/topology.py", line 1455, in Input
+    input_tensor=tensor)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/legacy/interfaces.py", line 91, in wrapper
+    return func(*args, **kwargs)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/engine/topology.py", line 1364, in __init__
+    name=self.name)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/Keras-2.1.3-py3.6.egg/keras/backend/tensorflow_backend.py", line 504, in placeholder
+    x = tf.placeholder(dtype, shape=shape, name=name)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/ops/array_ops.py", line 1717, in placeholder
+    return gen_array_ops._placeholder(dtype=dtype, shape=shape, name=name)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/ops/gen_array_ops.py", line 3051, in _placeholder
+    "Placeholder", dtype=dtype, shape=shape, name=name)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/framework/op_def_library.py", line 787, in _apply_op_helper
+    op_def=op_def)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/framework/ops.py", line 3172, in create_op
+    op_def=op_def)
+  File "/home/kluger/.anaconda/envs/keras/lib/python3.6/site-packages/tensorflow/python/framework/ops.py", line 1617, in __init__
+    self._traceback = self._graph._extract_stack()  # pylint: disable=protected-access
+
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'input_3' with dtype float and shape [?,1]
+  [[Node: input_3 = Placeholder[dtype=DT_FLOAT, shape=[?,1], _device="/job:localhost/replica:0/task:0/device:CPU:0"]()]]

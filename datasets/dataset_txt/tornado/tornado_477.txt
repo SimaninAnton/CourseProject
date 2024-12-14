@@ -1,0 +1,59 @@
+Contributor
+AaronOpfer commented on 13 Jul 2016 •
+edited
+Hi,
+This is probably a little unusual and I am not sure I understand the whole object graph, but I believe I have reduced my production issue to this test case.
+If a coroutine is waiting on a future, and the only hard references to that future are entirely inside the body of the inner generator of the coroutine, a garbage collection run can sweep away the in-progress coroutine and its runner object, leave the coroutine's future unresolved forever, and in some cases leave the application in a stuck state.
+Ran on Python 3.4 with Tornado 4.3.
+from tornado.ioloop import IOLoop
+from tornado.gen import Future, coroutine
+import weakref
+import gc
+
+wr_fut = None
+
+def count_runners():
+    runners = len([
+        x for x in gc.get_objects()
+        if x.__class__.__name__ == "Runner"
+    ])
+    print("There are",runners,"Runners")
+
+def resolve_fut():
+    count_runners()
+    gc.collect(2)
+    count_runners()
+    fut = wr_fut()
+    if not fut:
+        print('failure! The app is going to hang forever now')
+    else:
+        fut.set_result(1)
+
+@coroutine
+def main():
+    global wr_fut
+    my_fut = Future()
+    wr_fut = weakref.ref(my_fut)
+    IOLoop.current().add_callback(resolve_fut)
+    yield my_fut
+    print('success!')
+
+IOLoop.current().run_sync(main)
+This program hangs forever despite using run_sync. That's because the future returned by the coroutine in main() still exists, it just no longer has a Runner object to actually make the future do anything useful. This is very surprising behavior. I would expect the generator/coroutine/Runner/frame objects to be alive for as long as {{run_sync}} is waiting.
+Also, note that explicit call to gc.collect(2) ; this bug actually requires the garbage collector to run for the bug to trigger, which made this bug very difficult to track down.
+I have managed hack tornado into making it so that the Runner cannot die while its Future is alive which causes my test case to work:
+# gen.py line 1241 tornado 4.3
+                except (StopIteration, Return) as e:
+                    future.set_result(_value_from_stopiteration(e))
+                except Exception:
+                    future.set_exc_info(sys.exc_info())
+                else:
+                    # this is the original code below:
+                    #Runner(result, future, yielded)
+                    # this hack makes the Runner not die and my test case work
+                    future._the_runner = Runner(result, future, yielded)
+                try:
+                    return future
+So the real-world scenario: I have a proprietary networking library that is using weakrefs for event callbacks and a wrapper library that converts these events into futures. Because I have gone out of my way to avoid creating garbage collection cycles (so that my network client can be GCed when it is no longer in use, unlike a lot of async clients available to tornado), it appears I have discovered this issue.
+What is the most appropriate bugfix for this? I personally feel that Runner objects should have their lifecycle tied directly to the future they're driving so that Runners cannot die while their future is alive. However, an argument could also be made that Runner should have a __del__ method that marks the future as canceled (or .set_exception(RuntimeError("GCed"))) instead so that developers can more clearly see that they hit this failure mode.
+Please don't tell me the answer is "don't use weakrefs"! I believe it may be possible to create a test case that presents the same problem without using weakrefs but it would have to abuse certain behaviors of sockets, filenos and IOLoop's fd handlers to more closely emulate the actual workings of my network library.

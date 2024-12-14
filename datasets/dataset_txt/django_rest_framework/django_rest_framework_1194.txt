@@ -1,0 +1,63 @@
+pik commented on 21 May 2016 •
+edited
+Hello Tom - we spoke on IRC yesterday, I apologize for the initial confusion since I hadn't quite figured out how this was happening at the time and I had some custom extensions which I needed to disable to be sure that this was actually general to rest-framework.
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+9b56dda@master
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+#3884
+#3884 (comment):
+Closing due to lack of strictly delimited, actionable issue.
+Opening with substantially more detail.
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Current Behaviour (web-form input - incorrect)
+
+Result (note that json_field is a string literal):
+In [47]: TestModel.objects.all()[0].attributes
+Out[47]:
+{'_state': <django.db.models.base.ModelState at 0x7f90a85b9390>,
+ 'account_id': 38,
+ 'created_at': datetime.datetime(2016, 5, 21, 4, 1, 17, 543922, tzinfo=<UTC>),
+ 'id': 71,
+ 'json_field': '{"a": true} ',
+ 'updated_at': datetime.datetime(2016, 5, 21, 4, 1, 17, 545692, tzinfo=<UTC>)}
+Current Behaviour (curl -X POST - correct)
+curl 'http://127.0.0.1:8000/api/test_models/' -H 'Pragma: no-cache' -H 'Cookie: sessionid=cw85hy8pelhvhyb4z3xtngfapyeokf1v' -H "Content-Type: application/json" -X POST -d '{"json_field":{"a":true}}'
+Result (note that json_field is the parsed object of the JSON submitted via POST):
+In [48]: TestModel.objects.all()[0].attributes
+Out[48]:
+{'_state': <django.db.models.base.ModelState at 0x7f90a8855630>,
+ 'account_id': 35,
+ 'created_at': datetime.datetime(2016, 5, 21, 4, 6, 10, 65872, tzinfo=<UTC>),
+ 'id': 73,
+ 'json_field': {'a': True},
+ 'updated_at': datetime.datetime(2016, 5, 21, 4, 6, 10, 67324, tzinfo=<UTC>)}
+WebForm-Input (Here is what a POST using the webform-input looks like)
+Request Headers:
+POST /api/test_models/ HTTP/1.1
+Host: 127.0.0.1:8000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:46.0) Gecko/20100101 Firefox/46.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Referer: http://127.0.0.1:8000/api/test_models/
+Connection: keep-alive
+Request Payload:
+Content-Type: multipart/form-data; boundary=---------------------------991790026648295083338748743
+Content-Length: 339
+
+-----------------------------991790026648295083338748743
+Content-Disposition: form-data; name="csrfmiddlewaretoken"
+
+wNJTnxROcxtm9nXmK6sv0sN4MhY7PfC2
+-----------------------------991790026648295083338748743
+Content-Disposition: form-data; name="json_field"
+
+{"a": true}
+-----------------------------991790026648295083338748743--
+It seems that any Content-Disposition: form-data will be parsed as a string input. Technically it should be possible* to tag a portion of a multipart/form-data with Content-Type e.g. Content-Type: application/json or Content-Type: text/json but even if we do add it Django seems to ignore this.
+[0] http://www.ietf.org/rfc/rfc2388.txt
+I think the best solution would be to modify get_value to check html.is_html_input(dictionary) and json.loads the string if it is. Therefore non-quoted inputs would be parsed as JSON objects e.g.
+One could still express a JSON string literal e.g.

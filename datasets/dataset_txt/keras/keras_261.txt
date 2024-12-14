@@ -1,0 +1,45 @@
+gilgarad commented on 26 Apr 2019
+I was trying to do a simple test; Concatenating two layers.
+Below is the code
+inputs = Input(shape=(seq_length, latent_dim)) # seq_length = 3, latend_dim=2
+reshaped_d_inputs = Reshape((inputs.get_shape()[1] * inputs.get_shape()[2], ))(inputs)
+print(reshaped_d_inputs.get_shape()) # (?, 3, 2)
+repeat_d_repeat = RepeatVector(seq_length)(reshaped_d_inputs)
+repeat_d = Reshape((seq_length, inputs.get_shape()[1], inputs.get_shape()[2]))(repeat_d_repeat)
+print(repeat_d.get_shape()) # (?, 3, 3, 2)
+
+
+permuted_e = Permute((2, 1))(inputs)
+reshaped_e_inputs = Reshape((inputs.get_shape()[1] * inputs.get_shape()[2], ))(permuted_e)
+permuted_e_repeat = RepeatVector(seq_length)(reshaped_e_inputs)
+repeat_e = Reshape((seq_length, inputs.get_shape()[2], inputs.get_shape()[1]))(permuted_e_repeat)
+repeat_e = Permute((1, 3, 2))(repeat_e)
+print(repeat_e.get_shape()) # (?, 3, 3, 2)
+
+outputs = Concatenate(-1)([repeat_d, repeat_e])
+model = Model(inputs=inputs, outputs=outputs)
+model.compile(optimizer='rmsprop', loss='mse')
+output_array = model.predict(input_array)
+But it emits an error like below
+TypeError Traceback (most recent call last)
+in
+14 print(repeat_e.get_shape())
+15
+---> 16 outputs = Concatenate(-1)([repeat_d, repeat_e])
+17 model = Model(inputs=inputs, outputs=outputs)
+18 model.compile(optimizer='rmsprop', loss='mse')
+d:\igs_projects\nlp_nlu\venv\lib\site-packages\keras\engine\base_layer.py in call(self, inputs, **kwargs)
+429 'You can build it manually via: '
+430 'layer.build(batch_input_shape)')
+--> 431 self.build(unpack_singleton(input_shapes))
+432 self.built = True
+433
+d:\igs_projects\nlp_nlu\venv\lib\site-packages\keras\layers\merge.py in build(self, input_shape)
+355 for i in range(len(reduced_inputs_shapes)):
+356 del reduced_inputs_shapes[i][self.axis]
+--> 357 shape_set.add(tuple(reduced_inputs_shapes[i]))
+358 if len(shape_set) > 1:
+359 raise ValueError('A Concatenate layer requires '
+TypeError: unhashable type: 'Dimension'
+I do not know if it is me doing something wrong or Keras bug...
+After digging a while I realize that the tensor of right after the RepeatVector could be Concatenate but won't be concatenated once the posterior code is added.

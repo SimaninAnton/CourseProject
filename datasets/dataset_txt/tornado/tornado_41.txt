@@ -1,0 +1,59 @@
+DachuanZhao commented on 12 Jul 2019
+I want to use both sqlalchemy and tornado.
+Here is my sqlalchemy code:
+from sqlalchemy.orm import sessionmaker,scoped_session,mapper
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+engine = create_engine(MYSQL_DB_URL,pool_size=300,max_overflow=20,pool_recycle=1800,pool_pre_ping=True)
+
+@event.listens_for(engine, "connect")
+def connect(dbapi_connection, connection_record):
+    connection_record.info['pid'] = os.getpid()
+
+@event.listens_for(engine, "checkout")
+def checkout(dbapi_connection, connection_record, connection_proxy):
+    pid = os.getpid()
+    if connection_record.info['pid'] != pid:
+        connection_record.connection = connection_proxy.connection = None
+        raise exc.DisconnectionError(
+                "Connection record belongs to pid %s, "
+                "attempting to check out in pid %s" %
+                (connection_record.info['pid'], pid)
+        )
+
+DBSession = sessionmaker(bind=engine)
+
+db_session = scoped_session(DBSession)
+tornado code:
+class CustomTornadoHandler(tornado.web.RequestHandler):
+
+    """
+    custom tornadoHandler with sqlalchemy session
+    """
+
+    def set_default_headers(self):
+        """
+        """
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "x-requested-with,application/x-www-form-urlencoded")
+        self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, PATCH, DELETE, PUT')
+
+    def initialize(self, *args, **kwargs):
+        self.db_session = db_session()
+
+    def on_finish(self):
+        db_session.remove()
+
+class TerminologyDetailHandler(CustomTornadoHandler):
+
+    executor = ThreadPoolExecutor()
+
+    @run_on_executor
+    def get(self):
+        data = SqlFunc.get_terminology_detail(self.db_session,**param_dict)
+        self.write('success')
+But it goes wrong.
+pymysql.err.internalerror: packet sequence number wrong - got 102 expected 8
+I think the reason for the error is that I should give the param scopefunc=get_current_request in method scoped_session()
+So I want to know that is there a get_current_request() method in tornado6.0 ?

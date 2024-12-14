@@ -1,0 +1,57 @@
+jeffkaufman commented on 4 Dec 2013
+Running stock mitmproxy on wikipedia the page wouldn't finish loading. It was getting stuck on this file: https://es.wikipedia.org/wiki/Special:CentralAutoLogin
+Compare headers:
+Straight from the source:
+ $ curl -k -D- https://es.wikipedia.org/wiki/Special:CentralAutoLogin
+HTTP/1.1 301 Moved Permanently
+Server: nginx/1.1.19
+Date: Tue, 03 Dec 2013 21:24:52 GMT
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+Connection: keep-alive
+X-Powered-By: PHP/5.3.10-1ubuntu3.8+wmf2
+X-Content-Type-Options: nosniff
+Vary: Accept-Encoding,X-Forwarded-Proto,Cookie
+X-Vary-Options: Accept-Encoding;list-contains=gzip,X-Forwarded-Proto,Cookie;string-contains=eswikiToken;string-contains=eswikiLoggedOut;string-contains=forceHTTPS;string-contains=eswikiSession;string-contains=centralauth_Token;string-contains=centralauth_Session;string-contains=centralauth_LoggedOut;string-contains=mf_useformat;string-contains=stopMobileRedirect
+Last-Modified: Tue, 03 Dec 2013 21:12:36 GMT
+Location: https://es.wikipedia.org/wiki/Especial:CentralAutoLogin
+X-Varnish: 788152767 788090537, 2349374586 2347321229
+Via: 1.1 varnish, 1.1 varnish
+Age: 735
+X-Cache: cp1054 hit (2), cp1067 frontend hit (1)
+Cache-Control: private, s-maxage=0, max-age=0, must-revalidate
+Via stock mitmdump on port 8024:
+$ https_proxy=localhost:8024 curl -k -D- https://es.wikipedia.org/wiki/Special:CentralAutoLogin
+HTTP/1.1 200 Connection established
+Proxy-agent: mitmproxy 0.9.2
+
+HTTP/1.1 301 Moved Permanently
+Server: nginx/1.1.19
+Date: Tue, 03 Dec 2013 21:25:10 GMT
+Content-Type: text/html; charset=utf-8
+Connection: keep-alive
+X-Powered-By: PHP/5.3.10-1ubuntu3.8+wmf2
+X-Content-Type-Options: nosniff
+Vary: Accept-Encoding,X-Forwarded-Proto,Cookie
+X-Vary-Options: Accept-Encoding;list-contains=gzip,X-Forwarded-Proto,Cookie;string-contains=eswikiToken;string-contains=eswikiLoggedOut;string-contains=forceHTTPS;string-contains=eswikiSession;string-contains=centralauth_Token;string-contains=centralauth_Session;string-contains=centralauth_LoggedOut;string-contains=mf_useformat;string-contains=stopMobileRedirect
+Last-Modified: Tue, 03 Dec 2013 21:12:36 GMT
+Location: https://es.wikipedia.org/wiki/Especial:CentralAutoLogin
+X-Varnish: 788090537, 2626133798 2623931022
+Via: 1.1 varnish, 1.1 varnish
+Age: 754
+X-Cache: cp1054 miss (0), cp1066 frontend hit (2)
+Cache-Control: private, s-maxage=0, max-age=0, must-revalidate
+Note that when running through mitmproxy the Transfer-Encoding: chunked is stripped but no Content-Length: 0 is added to make up for it.
+Here's a workaround:
+def response(context, flow):
+  if (len(flow.response.content) == 0 and
+      "Transfer-Encoding" in flow.response.headers):
+    # If you fetch https://es.wikipedia.org/wiki/Special:CentralAutoLogin it     
+    # will give you a 301 with 'Transfer-Encoding: chunked' and no content.      
+    # This is not handled properly by mitmproxy, which produces an empty         
+    # response with neither chunked encoding nor a Content-Length header.  So    
+    # when we see empty responses with 'Transfer-Encoding: chunked', remove the  
+    # header and add a Content-Length.                                           
+    del flow.response.headers["Transfer-Encoding"]
+    assert "Content-Length" not in flow.response.headers
+    flow.response.headers["Content-Length"] = ["0"]

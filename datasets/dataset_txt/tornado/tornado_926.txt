@@ -1,0 +1,56 @@
+FZambia commented on 11 Jul 2013
+Hello!
+Please, look at this code example. I've tested it on Centos 6 and Ubuntu 12.04 using current master branch of Tornado.
+from __future__ import print_function
+from tornado.gen import Task, Return, coroutine
+from tornado.ioloop import IOLoop
+import tornado.process
+import os
+
+
+STREAM = tornado.process.Subprocess.STREAM
+
+
+@coroutine
+def call_subprocess(cmd, stdin_data=None):
+
+    sub_process = tornado.process.Subprocess(
+        cmd, stdin=STREAM, stdout=STREAM, stderr=STREAM
+    )
+
+    if stdin_data:
+        yield Task(sub_process.stdin.write, stdin_data)
+        sub_process.stdin.close()
+
+    result, error = yield [
+        Task(sub_process.stdout.read_until_close),
+        Task(sub_process.stderr.read_until_close)
+    ]
+
+    raise Return((result, error))
+
+
+@coroutine
+def main():
+
+    pid = os.getpid()
+    cmd = ['ls', '/proc/%s/fd' % pid]
+
+    for i in range(100):
+        yield call_subprocess('wc', stdin_data="123\n")
+        result, error = yield call_subprocess(cmd)
+        print('num of fds:', len(result.split('\n')))
+
+    print('process pid:', pid)
+
+if __name__ == "__main__":
+    ioloop = IOLoop.instance()
+    ioloop.add_callback(main)
+    ioloop.start()
+On my machine output is something like:
+...
+num of fds: 107
+num of fds: 108
+num of fds: 109
+process pid: 17548
+File descriptors not closing and remain open which leads to leaking. Or am I doing something wrong?

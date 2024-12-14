@@ -1,0 +1,109 @@
+Liebeck commented on Nov 18, 2016 •
+edited
+Description
+I'm actually trying use GridSearchCV to turn on/off normalizers and feature selections based on values in the parameter grid. I was able to do this with a Normalizer so far:
+from sklearn.preprocessing import Normalizer
+
+class NormalizerToggle(Normalizer):
+    def __init__(self, use_normalize=True, norm='l2', copy=True):
+        self.norm = norm
+        self.copy = copy
+        self.use_normalize = use_normalize
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None, copy=None):
+        if self.use_normalize:
+            print('using normalizer')
+            return super().transform(X, y, copy)
+        else:
+            print("don't use normalizer")
+            return X
+This works like a charm.
+If I try do to the same thing with feature selection and SelectKBest (or to be specific with an inherited class), the different parameters passed from GridSearchCV are not passed to the __init__ function correctly.
+Steps/Code to Reproduce
+I wrote a small sample:
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.datasets import load_digits
+from sklearn.feature_selection import chi2
+from sklearn.svm import SVC
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import f_classif
+
+
+class SelectKBestToggle(SelectKBest):
+    def __init__(self, score_func=f_classif, k=30):
+        print('k: {}'.format(k))
+        self.k = k
+        super(SelectKBest, self).__init__(score_func)
+
+
+grid = {
+    'feature_selection__k': [5, 10, 20],
+    'classifier__gamma': [0.005, 0.01]
+}
+
+digits = load_digits()
+
+pipeline = Pipeline([('feature_selection', SelectKBestToggle(chi2, k=2)),
+                     ('classifier', SVC())])
+grid = GridSearchCV(pipeline, cv=2, n_jobs=1, param_grid=grid, verbose=2)
+grid.fit(digits.data, digits.target)
+Expected Results
+I expect that the values 5, 10 and 20 are passed to the constructor
+Actual Results
+k is always 2 and the values from the parameter grid are ignored
+k: 2
+Fitting 2 folds for each of 6 candidates, totalling 12 fits
+k: 2
+k: 2
+[CV] feature_selection__k=5, classifier__gamma=0.005 .................
+[CV] .. feature_selection__k=5, classifier__gamma=0.005, total=   0.1s
+[Parallel(n_jobs=1)]: Done   1 out of   1 | elapsed:    0.1s remaining:    0.0s
+k: 2
+[CV] feature_selection__k=5, classifier__gamma=0.005 .................
+[CV] .. feature_selection__k=5, classifier__gamma=0.005, total=   0.1s
+k: 2
+[CV] feature_selection__k=10, classifier__gamma=0.005 ................
+[CV] . feature_selection__k=10, classifier__gamma=0.005, total=   0.1s
+k: 2
+[CV] feature_selection__k=10, classifier__gamma=0.005 ................
+[CV] . feature_selection__k=10, classifier__gamma=0.005, total=   0.1s
+k: 2
+[CV] feature_selection__k=20, classifier__gamma=0.005 ................
+[CV] . feature_selection__k=20, classifier__gamma=0.005, total=   0.1s
+k: 2
+[CV] feature_selection__k=20, classifier__gamma=0.005 ................
+[CV] . feature_selection__k=20, classifier__gamma=0.005, total=   0.1s
+k: 2
+[CV] feature_selection__k=5, classifier__gamma=0.01 ..................
+[CV] ... feature_selection__k=5, classifier__gamma=0.01, total=   0.1s
+k: 2
+[CV] feature_selection__k=5, classifier__gamma=0.01 ..................
+[CV] ... feature_selection__k=5, classifier__gamma=0.01, total=   0.1s
+k: 2
+[CV] feature_selection__k=10, classifier__gamma=0.01 .................
+[CV] .. feature_selection__k=10, classifier__gamma=0.01, total=   0.1s
+k: 2
+[CV] feature_selection__k=10, classifier__gamma=0.01 .................
+[CV] .. feature_selection__k=10, classifier__gamma=0.01, total=   0.1s
+k: 2
+[CV] feature_selection__k=20, classifier__gamma=0.01 .................
+[CV] .. feature_selection__k=20, classifier__gamma=0.01, total=   0.2s
+k: 2
+[CV] feature_selection__k=20, classifier__gamma=0.01 .................
+[CV] .. feature_selection__k=20, classifier__gamma=0.01, total=   0.2s
+[Parallel(n_jobs=1)]: Done  12 out of  12 | elapsed:    1.5s finished
+k: 2
+Is this a bug in the framework? I'm afraid I can't see why my code works for the Normalizer but not for SelectKBest.
+Versions
+Python 3.5.2 |Continuum Analytics, Inc.| (default, Jul 2 2016, 17:53:06)
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+Linux-4.2.0-27-generic-x86_64-with-debian-jessie-sid
+Python 3.5.2 |Continuum Analytics, Inc.| (default, Jul 2 2016, 17:53:06)
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+NumPy 1.11.2
+SciPy 0.18.1

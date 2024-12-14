@@ -1,0 +1,122 @@
+miranthajayatilake commented on 19 Apr 2018
+I'm building a image captioning model combining pretrained InceptionResNetV2 and glove embeddings. Below is my full code except data pre-processing step:
+#-----------------------------------
+#  IMAGE EMBEDDING MODEL
+#-----------------------------------
+
+# create the base pre-trained model
+# note the include top is set to False, meaning the last layer is eliminated
+base_model = InceptionResNetV2(weights='imagenet', include_top=False)
+
+#obtain the output of the pretrained model and add custom last layer
+# add a global spatial average pooling layer
+image_model = base_model.output
+image_model = GlobalAveragePooling2D()(image_model)
+
+# add a fully connected layer
+image_model = Dense(1024, activation='relu')(image_model)
+
+# add a softmax layer according to the no. of classes
+image_model = Dense(200, activation='softmax')(image_model)
+
+#freeza all the layers in the pretrained model so they won't be trained
+for layer in base_model.layers:
+ layer.trainable = False
+
+image_model_final = Model(base_model.input, image_model)
+
+#Loading the pre-trained GloVe model
+BASE_DIR = ''
+GLOVE_DIR = os.path.join(BASE_DIR, 'glove.6B')
+
+#Indexing the pretrained words and their vectors from the glove text file
+print('Indexing word vectors.')
+
+embeddings_index = {}
+with open(os.path.join(GLOVE_DIR, 'glove.6B.100d.txt')) as f:
+    for line in f:
+        values = line.split()
+        word = values[0]
+        coefs = np.asarray(values[1:], dtype='float32')
+        embeddings_index[word] = coefs
+
+print('Found %s word vectors.' % len(embeddings_index))
+
+
+#Froming the embedding matrix
+embedding_dim = 100
+  
+embedding_matrix = np.zeros((max_words, embedding_dim))
+for word, i in word_index.items():
+    embedding_vector = embeddings_index.get(word)
+    if i < max_words:
+        if embedding_vector is not None:
+            # Words not found in embedding index will be all-zeros.
+            embedding_matrix[i] = embedding_vector
+
+embedding_layer = Embedding(input_dim=max_words, 
+                            output_dim=100,
+                            weights=[embedding_matrix],
+                            input_length=maxlen,
+                            trainable=False)
+
+
+#---
+# Encoded image into the word model
+#---
+
+image_embed_input = Input(shape=(200,))
+
+encoded_sentence = embedding_layer(image_embed_input)
+# encoded_sentence = Flatten()(encoded_sentence)
+
+#run it through a final LSTM layer
+encoded_sentence_output = LSTM(200)(encoded_sentence)
+
+#The word embedding model 
+sentence_model_final = Model(image_embed_input , encoded_sentence_output)
+
+#feeding the image model to the word model and obtaining the output
+final_output = sentence_model_final(image_model_final(base_model.input))
+
+
+# The main model. Input - image input. Output - word embedding output
+model = Model(base_model.input, final_output)
+
+#compiling the model
+model.compile(optimizer='rmsprop',
+              loss='categorical_crossentropy',
+              metrics=['acc'])
+
+#training and validation set sizes
+training_samples = 200  
+validation_samples = 800
+
+#dividing the data into training and validation sets
+x_train = image_set[:training_samples]
+y_train = sentence_vector[:training_samples]
+x_val = image_set[training_samples: training_samples + validation_samples]
+y_val = sentence_vector[training_samples: training_samples + validation_samples]
+
+history = model.fit(x_train, y_train,
+                    epochs=10,
+                    batch_size=32,
+                    validation_data=(x_val, y_val))
+Summery of the code: The image input is fed into the InceptionResNetV2 to obtain an embedding which is then fed into the word model.
+The final model compiles but I get the 'None' for gradient error constantly.
+Traceback (most recent call last):
+  File "mc_v1.py", line 285, in <module>
+    validation_data=(x_val, y_val))
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 1682, in fit
+    self._make_train_function()
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 990, in _make_train_function
+    loss=self.total_loss)
+  File "/usr/local/lib/python3.5/dist-packages/keras/legacy/interfaces.py", line 91, in wrapper
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/optimizers.py", line 244, in get_updates
+    grads = self.get_gradients(loss, params)
+  File "/usr/local/lib/python3.5/dist-packages/keras/optimizers.py", line 80, in get_gradients
+    raise ValueError('An operation has `None` for gradient. '
+ValueError: An operation has `None` for gradient. Please make sure that all of your ops have a gradient defined (i.e. are differentiable). Common ops without gradient: K.argmax, K.round, K.eval.
+I played around with the layers of bath models but no luck. Really grateful if someone could point to to a direction to solve this error.
+Thanks!

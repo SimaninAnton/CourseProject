@@ -1,0 +1,59 @@
+Contributor
+pminervini commented on 12 Apr 2016
+I'm running the latest Keras 1.0 release from GitHub - here's a little snippet for reproducing the problem:
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import numpy as np
+
+from keras.preprocessing import sequence
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation, Flatten
+from keras.layers.embeddings import Embedding
+from keras.constraints import MaxNorm
+from keras.datasets import imdb
+
+(X_train, y_train), (X_test, y_test) = imdb.load_data(nb_words=500, test_split=0.05)
+
+X_train = sequence.pad_sequences(X_train, maxlen=100)
+X_test = sequence.pad_sequences(X_test, maxlen=100)
+
+
+for norm_constraint in [None, MaxNorm(m=.001, axis=1)]:
+    np.random.seed(1337)
+
+    model = Sequential()
+
+    model.add(Embedding(500, 10, input_length=100, W_constraint=norm_constraint))
+    model.add(Flatten())
+    model.add(Dense(1))
+    model.add(Activation('sigmoid'))
+
+    model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+    model.fit(X_test, y_test, batch_size=32, nb_epoch=5, validation_data=(X_test, y_test), verbose=2)
+As you can see, there are two training procedures: one without any constraint on the embeddings, and another one with a MaxNorm constraint.
+However, there is no noticeable difference between the two training procedures:
+bugs$ ./constraints.py 
+Using Theano backend.
+Train on 1250 samples, validate on 1250 samples
+Epoch 1/5
+0s - loss: 0.6928 - acc: 0.5008 - val_loss: 0.6850 - val_acc: 0.6608
+Epoch 2/5
+0s - loss: 0.6846 - acc: 0.6480 - val_loss: 0.6773 - val_acc: 0.7448
+Epoch 3/5
+0s - loss: 0.6764 - acc: 0.7112 - val_loss: 0.6678 - val_acc: 0.7912
+Epoch 4/5
+0s - loss: 0.6664 - acc: 0.7736 - val_loss: 0.6561 - val_acc: 0.8208
+Epoch 5/5
+0s - loss: 0.6538 - acc: 0.7960 - val_loss: 0.6418 - val_acc: 0.8336
+Train on 1250 samples, validate on 1250 samples
+Epoch 1/5
+0s - loss: 0.6928 - acc: 0.5008 - val_loss: 0.6850 - val_acc: 0.6608
+Epoch 2/5
+0s - loss: 0.6846 - acc: 0.6480 - val_loss: 0.6773 - val_acc: 0.7448
+Epoch 3/5
+0s - loss: 0.6764 - acc: 0.7112 - val_loss: 0.6678 - val_acc: 0.7912
+Epoch 4/5
+0s - loss: 0.6664 - acc: 0.7736 - val_loss: 0.6561 - val_acc: 0.8208
+Epoch 5/5
+0s - loss: 0.6538 - acc: 0.7960 - val_loss: 0.6418 - val_acc: 0.8336

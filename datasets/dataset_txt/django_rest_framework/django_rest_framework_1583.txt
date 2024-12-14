@@ -1,0 +1,44 @@
+Member
+tomchristie commented on 1 Sep 2015
+This from IRC...
+[17:04:05] <__zer01>     after adding the `min_value` kwarg to a serializer.DecimalField I get a `django.core.exceptions.AppRegistryNotReady: The translation infrastructure cannot be initialized before the apps registry is ready.` error when running tests, any ideas?
+[17:07:57] <__zer01>     here's the end of the stack trace http://pastebin.com/B7ECdL6w
+Which is:
+File "/home/eugenio/spartan/rest/serializers.py", line 80, in MySerializer min_value=1.01)
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/rest_framework/fields.py", line 906, in __init__
+message = self.error_messages['min_value'].format(min_value=self.min_value)
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/functional.py", line 136, in __wrapper__ res = func(*self.__args, **self.__kw)
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/translation/__init__.py", line 84, in ugettext
+return _trans.ugettext(message)
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 321, in gettext
+return do_translate(message, 'gettext')
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 304, in do_translate
+_default = _default or translation(settings.LANGUAGE_CODE)
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 206, in translation
+_translations[language] = DjangoTranslation(language)
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 116, in __init__
+self._add_installed_apps_translations()
+File "/home/eugenio/Envs/spartan/lib/python3.4/site-packages/django/utils/translation/trans_real.py", line 164, in _add_installed_apps_translations
+"The translation infrastructure cannot be initialized before the "
+django.core.exceptions.AppRegistryNotReady: The translation infrastructure cannot be initialized before the apps registry is ready. Check that you don't make non-lazy gettext calls at import time.
+And...
+[17:08:41]   yuriheupa (~yuriheupa@177.16.212.34) joined the channel.
+[17:09:26]   yuriheupa (~yuriheupa@177.16.212.34) left IRC. (Remote host closed the connection)
+[17:11:54] <tomchristie>     Hrm
+[17:13:14] <__zer01>     I'm running djangorestframework==3.2.3 and Django==1.8.4
+[17:13:28] <tomchristie>     I think that may need raising as an issue
+[17:14:13] <tomchristie>     The error is being raised because we're calling .format on a lazy-translated error message
+[17:14:34] <tomchristie>     Due to it being passed a min_value which is included in the message
+[17:15:00] <tomchristie>     Prob is, that causes the translation machinary to attempt to run, and produce the translated output
+[17:15:12] <tomchristie>     But that can't happen yet because the app isn't setup and running
+[17:15:23] <tomchristie>     Looks like Django internally handles this a little diff, eg
+[17:15:34] <tomchristie>     This… https://github.com/django/django/blob/master/django/forms/fields.py#L258
+[17:15:43] <tomchristie>     vs
+[17:16:09] <tomchristie>     This: https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/fields.py#L820-L821
+[17:16:23] <tomchristie>     Notive that we're calling .format when the field is instantiated
+[17:16:31] <tomchristie>     But same is not happening in Django
+[17:16:37] <tomchristie>     You may be able to resolve
+[17:16:53] <tomchristie>     by ensuring that you're not importing the serializers prior to the app setup
+[17:16:54]   marc_v92 (~marc_v92@unaffiliated/marc-v92/x-6202358) joined the channel.
+[17:17:07] <tomchristie>     (Eg if you import them in your settings I guess that's when it blows up)
+2

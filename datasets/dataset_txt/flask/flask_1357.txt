@@ -1,0 +1,37 @@
+Tyilo commented on 27 Aug 2013
+I'm deploying my flask website to heroku and they pass 4 headers to flask: X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Port & X-Request-Start.
+I want to use all of these headers in flask, however if there are multiple of these headers (except X-Forwarded-For) flask will only use the last ones, even when using request.headers.get_all or request.headers.getlist.
+This is problematic as the client can easily fake these headers, which will override those values passed from heroku.
+As the request.headers object is already the type werkzeug.datastructures.EnvironHeaders, which subclasses werkzeug.datastructures.Headers, which have support for a key with multiple values, I don't think it will be that hard to implement.
+Example code:
+test.py
+import requests
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route('/')
+def test():
+    k = 'X-Request-Start'
+    h = request.headers
+    print h.get(k)
+    print h.get_all(k)
+    print h.getlist(k)
+    return 'Check the logs\n'
+
+if __name__ == '__main__':
+    app.run()
+Testing:
+python test.py &
+curl -H 'X-Request-Start: test1' -H 'X-Request-Start: test2' http://127.0.0.1:5000/
+Logs:
+ * Running on http://127.0.0.1:5000/
+test2
+['test2']
+['test2']
+127.0.0.1 - - [27/Aug/2013 17:30:45] "GET / HTTP/1.1" 200 -
+Expected result in logs:
+ * Running on http://127.0.0.1:5000/
+test2
+['test1', 'test2']
+['test1', 'test2']
+127.0.0.1 - - [27/Aug/2013 17:30:45] "GET / HTTP/1.1" 200 -

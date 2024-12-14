@@ -1,0 +1,49 @@
+Contributor
+sersorrel commented on 23 Mar 2018
+When I run pipenv update --outdated, it crashes with an IndexError, but only if a package is installed in editable mode where the package is also a Git repository.
+This looks kind of like pypa/pip#4759? I don't know if you would be willing to merge the PR that apparently fixes it into Pipenv's vendored Pip; alternatively, ignoring lines from Pip that start with # might work, since apparently requirements files are allowed to contain comments, and I guess Pipenv is probably parsing the output of pip freeze.
+$ python -m pipenv.help output
+Expected result
+The outdated packages should be displayed? (I've actually never used this command before, but I guess it probably shouldn't just crash )
+Actual result
+$ pipenv update --outdated
+Traceback (most recent call last):
+  File "/home/josh/.local/bin/pipenv", line 11, in <module>
+    sys.exit(cli())
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 722, in __call__
+    return self.main(*args, **kwargs)
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 697, in main
+    rv = self.invoke(ctx)
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 1066, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 895, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 535, in invoke
+    return callback(*args, **kwargs)
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/vendor/click/decorators.py", line 17, in new_func
+    return f(get_current_context(), *args, **kwargs)
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/cli.py", line 731, in update
+    core.do_outdated()
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/core.py", line 1698, in do_outdated
+    packages.update(convert_deps_from_pip(result))
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/utils.py", line 520, in convert_deps_from_pip
+    req = get_requirement(dep)
+  File "/home/josh/.local/venvs/pipenv/lib/python3.6/site-packages/pipenv/utils.py", line 127, in get_requirement
+    req = [r for r in requirements.parse(dep)][0]
+IndexError: list index out of range
+I inserted some debugging, and in the final stack frame, the value of dep is "## !! Could not determine repository location"; a couple of frames up in pipenv.core.do_outdated, the value of results is ['## !! Could not determine repository location', 'foo==0.1'].
+Steps to replicate
+Run in an empty directory:
+cat > setup.py << EOF
+from setuptools import setup
+
+setup(
+    name="foo",
+    version="0.1",
+)
+EOF
+pipenv --python 3.6
+pipenv install -e .
+pipenv update --outdated  # works fine, no output
+git init
+pipenv update --outdated  # now everything explodes

@@ -1,0 +1,42 @@
+melwas commented on 14 Aug 2014
+For URL like this:
+/items/<pk>/subitems/<subitem_pk>
+/items/11/subitems/99
+and view that has only lookup_url_kwarg like below:
+class SubitemDetails(RetrieveUpdateDestroyAPIView):
+    lookup_url_kwarg = 'subitem_pk'
+On patch method (when UpdateModelMixin is used), Subitem with id = 11 is updated. Method should update Subitem with id = 99.
+Problematic code:
+    def pre_save(self, obj):
+        """
+        Set any attributes on the object that are implicit in the request.
+        """
+        # pk and/or slug attributes are implicit in the URL.
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup = self.kwargs.get(lookup_url_kwarg, None)
+        pk = self.kwargs.get(self.pk_url_kwarg, None)
+        slug = self.kwargs.get(self.slug_url_kwarg, None)
+        slug_field = slug and self.slug_field or None
+
+        if lookup:
+            setattr(obj, self.lookup_field, lookup)
+
+        # Causes problem - melwas
+        if pk:
+            setattr(obj, 'pk', pk)
+
+        if slug:
+            setattr(obj, slug_field, slug)
+
+        # Ensure we clean the attributes so that we don't eg return integer
+        # pk using a string representation, as provided by the url conf kwarg.
+        if hasattr(obj, 'full_clean'):
+            exclude = _get_validation_exclusions(obj, pk, slug_field, self.lookup_field)
+            obj.full_clean(exclude)
+.
+Default value of pk_url_kwarg is pk, so if I have lookup_url_kwarg different from pk and pk_url_kwarg is not set, then pk value in setattr(obj, 'pk', pk) is set to value under pk placeholder, not subitem_pk.
+Workaround for this - explicitly set pk_url_kwarg to None:
+class SubitemDetails(RetrieveUpdateDestroyAPIView):
+    lookup_url_kwarg = 'subitem_pk'
+    pk_url_kwarg = None
+Version: 2.3.14

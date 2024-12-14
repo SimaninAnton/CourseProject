@@ -1,0 +1,46 @@
+Contributor
+Zsailer commented on 30 Apr 2019 •
+edited
+We're seeing tests fail in inside of Jupyter(Lab) when using Tornado 6.x, forcing us to pin to Tornado 5.x. (See the relevant issue).
+Here's the traceback we see in the tests:
+    Traceback (most recent call last):
+      File "~/dev/tornado/tornado/web.py", line 1699, in _execute
+        result = await result
+      File "~/dev/tornado/tornado/gen.py", line 736, in run
+        yielded = self.gen.throw(*exc_info)  # type: ignore
+      File "~/dev/notebook/notebook/services/kernels/handlers.py", line 239, in get
+        yield super(ZMQChannelsHandler, self).get(kernel_id=kernel_id)
+      File "~/dev/tornado/tornado/gen.py", line 729, in run
+        value = future.result()
+      File "~/dev/tornado/tornado/gen.py", line 736, in run
+        yielded = self.gen.throw(*exc_info)  # type: ignore
+      File "~/dev/notebook/notebook/base/zmqhandlers.py", line 293, in get
+        yield maybe_future(res)
+      File "~/dev/tornado/tornado/gen.py", line 729, in run
+        value = future.result()
+      File "~/dev/tornado/tornado/websocket.py", line 278, in get
+        await self.ws_connection.accept_connection(self)
+      File "~/dev/tornado/tornado/websocket.py", line 881, in accept_connection
+        await self._accept_connection(handler)
+      File "~/dev/tornado/tornado/websocket.py", line 964, in _accept_connection
+        await self._receive_frame_loop()
+      File "~/dev/tornado/tornado/websocket.py", line 1118, in _receive_frame_loop
+        await self._receive_frame()
+      File "~/dev/tornado/tornado/websocket.py", line 1130, in _receive_frame
+        data = await self._read_bytes(2)
+      File "~/dev/tornado/tornado/websocket.py", line 1124, in _read_bytes
+        data = await self.stream.read_bytes(n)
+      File "~/dev/tornado/tornado/iostream.py", line 436, in read_bytes
+        future = self._start_read()
+      File "~/dev/tornado/tornado/iostream.py", line 797, in _start_read
+        assert self._read_future is None, "Already reading"
+I'm hoping y'all might be able to provide some insight on the issue. I can't tell if we missed something in the jump to 6.x that you might be able to answer easily.
+We've tracked down the exact commit that broke our tests.
+I dove a bit deeper into Tornado and found a single change that can toggle the break. Here's a summary of the change:
+Before this commit, _maybe_add_error_listener ensured that all futures+callbacks were done+closed if the stream was closed by calling the_maybe_run_close_callback() method
+_maybe_run_close_callback() was renamed to _signal_closed()
+In this commit, the _maybe_add_error_listener no longer calls signal_closed/_maybe_run_close_callback()
+Reverting to previous behavior fixes the issue. Here's a patch showing the diff. I add this _signal_closed() method back to _maybe_add_error_listener and things seem to work again.
+I'm not sure if this is a bug in Tornado, or if Jupyter's notebook server is using this API wrong (possibly a missing await could be a likely culprit).
+Any thoughts? Let me know if I can provide you more detail.
+1

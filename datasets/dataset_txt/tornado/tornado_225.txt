@@ -1,0 +1,62 @@
+Nagidal commented on 3 Mar 2018 •
+edited
+I was trying to run the sample code for the websocket of SeismicPortal (http://www.seismicportal.eu/realtime.html). The code in question is shown on their webiste. I installed Tornado 4.5.3 in my Python 3.6, but when running SeismicPortal's script, I was periodically getting this error:
+INFO:root:trying connection to ws://www.seismicportal.eu/standing_order/websocket
+INFO:root:connected, waiting for messages
+ERROR:tornado.application:Exception in callback functools.partial(<function wrap.<locals>.wrapped at 0x0000000002F7ED90>)
+Traceback (most recent call last):
+  File "C:\Python36\lib\site-packages\tornado\ioloop.py", line 605, in _run_callback
+    ret = callback()
+  File "C:\Python36\lib\site-packages\tornado\stack_context.py", line 345, in wrapped
+    raise_exc_info(exc)
+  File "<string>", line 4, in raise_exc_info
+  File "C:\Python36\lib\site-packages\tornado\stack_context.py", line 316, in wrapped
+    ret = fn(*args, **kwargs)
+  File "example.py", line 27, in dokeepalive
+    self.conn.protocol.write_ping("")
+  File "C:\Python36\lib\site-packages\tornado\websocket.py", line 797, in write_ping
+    assert isinstance(data, bytes)
+AssertionError
+I was debugging this for a while until I found svisser's post that assert isinstance(..., ...) works different in Python 3.
+SeismicPortal's websocket is sending String type, but tornado's function write_ping in websocket.py needs it as bytes. I made a quick workaround this by converting the data to bytes, adding a line of code just before the assertion:
+    def write_ping(self, data):
+        """Send ping frame."""
+        # Workaround for Python 3 AssertionError
+        # Need to convert String type to bytes
+        data = data.encode(encoding="utf-8", errors="strict") 
+        # End of workaround for Python 3 AssertionError
+        assert isinstance(data, bytes)
+        self._write_frame(True, 0x9, data)
+Running SeismicPotal's websocket sample code with this hotfix in websocket.py produced the desired results, i.e. JSONs with data of current earthquake events (one of which occurs and is sent by the websocket server every few minutes):
+INFO:root:trying connection to ws://www.seismicportal.eu/standing_order/websocket 
+INFO:root:connected, waiting for messages                                         
+>> {"action":"update","data":{                                                    
+  "geometry": {                                                                   
+    "type": "Point",                                                              
+    "coordinates": [                                                              
+      40.05,                                                                      
+      39.95,                                                                      
+      -1.0                                                                        
+    ]                                                                             
+  },                                                                              
+  "type": "Feature",                                                              
+  "id": "20180303_0000038",                                                       
+  "properties": {                                                                 
+    "lastupdate": "2018-03-03T09:18:00.0Z",                                       
+    "magtype": "ml",                                                              
+    "evtype": "ke",                                                               
+    "lon": 40.05,                                                                 
+    "auth": "EMSC",                                                               
+    "lat": 39.95,                                                                 
+    "depth": 1.0,                                                                 
+    "unid": "20180303_0000038",                                                   
+    "mag": 4.1,                                                                   
+    "time": "2018-03-03T09:05:48.1Z",                                             
+    "source_id": "652117",                                                        
+    "source_catalog": "EMSC-RTS",                                                 
+    "flynn_region": "EASTERN TURKEY"                                              
+  }                                                                               
+}}                                                                                
+I am sure that this workaround may only work for my particular example with SeismicPortal's websocket and may make tornado incompatible with other websocket servers or Python 2.x versions.
+Please implement a proper clean and elegant handling of the differentiation between bytes and string in Python 3. I am looking forward for your update.
+1

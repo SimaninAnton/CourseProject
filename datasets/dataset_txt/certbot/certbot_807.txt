@@ -1,0 +1,35 @@
+ryanjaeb commented on 14 Jan 2018
+My operating system is:
+I'm using CentOS 7.3, but this is likely applicable to RHEL 7 too.
+I installed Certbot with:
+I installed Certbot HEAD (2cb9d9e) using these instructions.
+I ran this command:
+venv/bin/certbot --apache --preferred-challenges http -d sub.example.com
+and it produced this output:
+Performing the following challenges:
+http-01 challenge for sub.example.com
+Waiting for verification...
+Cleaning up challenges
+Failed authorization procedure. sub.example.com (http-01): urn:acme:error:unauthorized
+My server is giving back a 403 forbidden error.
+Certbot's behavior differed from what I expected because:
+The httpd service on CentOS 7 and, I assume, RHEL 7 use SystemD's PrivateTmp support by default. When the httpd process reads /tmp, it's actually reading from a private folder similar to /tmp/systemd-private-*. As far as the httpd process is concerned, the /tmp/* directory temporarily used to alias /.well-known/acme-challenge doesn't exist, so an error is returned rather than what's expected.
+Workaround
+It's possible to use a SystemD drop-in to override the PrivateTmp feature of the httpd service. However, this is not recommended by the author of the RHEL blog article linked above. The author recommends the use of /run or /var/lib instead.
+sudo mkdir /etc/systemd/system/httpd.service.d
+
+sudo tee /etc/systemd/system/httpd.service.d/no-privatetmp.conf > /dev/null << 'EOF'
+[Service]
+PrivateTmp=false
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart httpd
+Other Notes
+It's possible to get to the real tmp directory for httpd via the /proc directory, but I don't know if it's useful:
+systemctl status httpd | grep "Main PID"
+ Main PID: 30762 (httpd)
+echo "testing for httpd tmp" > /proc/30762/root/tmp/test.txt
+cat /tmp/systemd-private-19a42c88bf784b63af9846e509c36212-httpd.service-VCqHvj/tmp/test.txt
+testing for httpd tmp
+I think these types of issues are being tracked in #5409.

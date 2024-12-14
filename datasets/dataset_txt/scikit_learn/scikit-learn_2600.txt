@@ -1,0 +1,285 @@
+GillesJ commented on Nov 8, 2016 •
+edited
+Description
+I memmap a large dataset with joblib before doing parallel crossvalidation (with both the GridSearchCV and RandomizedSearchCV objects) in order to work in shared memory. The resulting error is ValueError: index pointer should start with 0. However, calling X.indptr[0] of the memmapped data does equal 0.
+This error occurs with both in Python 2.7.12 and 3.5.2.
+The memmap mode does not seem to matter (r, r+, w+ were tested).
+Steps/Code to Reproduce
+from sklearn import svm
+from sklearn.model_selection import GridSearchCV
+import numpy as np
+import scipy
+from joblib import dump, load
+
+PARAM_GRID = {'C': [1, 10], 'kernel': ['linear']}
+m = 500
+n = 1000
+X = scipy.sparse.random(m, n, format='csr')
+y = np.random.choice([-1, 1], m)
+#joblib memmap the data
+dump(X, 'Xmwe.mmap')
+# loading for memmapped usage
+X = load('Xmwe.mmap', mmap_mode='r+')
+svr = svm.SVC()
+clf = GridSearchCV(svr, PARAM_GRID, scoring='f1', n_jobs=2, cv=2)
+clf.fit(X, y)
+Expected Results
+The fit method starts performing parallel crossvalidation.
+Actual Results
+Traceback (most recent call last):
+  File "/home/gilles/repos/bookkeeper/gridsearchcvbugmwe.py", line 17, in <module>
+    clf.fit(X, y)
+  File "/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 940, in fit
+    return self._fit(X, y, groups, ParameterGrid(self.param_grid))
+  File "/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 562, in _fit
+    for parameters in parameter_iterable
+  File "/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 768, in __call__
+    self.retrieve()
+  File "/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 719, in retrieve
+    raise exception
+sklearn.externals.joblib.my_exceptions.JoblibValueError: JoblibValueError
+___________________________________________________________________________
+Multiprocessing exception:
+...........................................................................
+/home/gilles/repos/bookkeeper/gridsearchcvbugmwe.py in <module>()
+     12 dump(X, 'Xmwe.mmap')
+     13 # loading for memmapped usage
+     14 X = load('Xmwe.mmap', mmap_mode='w+')
+     15 svr = svm.SVC()
+     16 clf = GridSearchCV(svr, PARAM_GRID, scoring='f1', n_jobs=2, cv=2)
+---> 17 clf.fit(X, y)
+     18 
+     19 
+     20 
+     21 
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/model_selection/_search.py in fit(self=GridSearchCV(cv=2, error_score='raise',
+       e...train_score=True,
+       scoring='f1', verbose=0), X=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, y=array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1]), groups=None)
+    935 
+    936         groups : array-like, with shape (n_samples,), optional
+    937             Group labels for the samples used while splitting the dataset into
+    938             train/test set.
+    939         """
+--> 940         return self._fit(X, y, groups, ParameterGrid(self.param_grid))
+        self._fit = <bound method GridSearchCV._fit of GridSearchCV(...rain_score=True,
+       scoring='f1', verbose=0)>
+        X = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+        y = array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1])
+        groups = None
+        self.param_grid = {'C': [1, 10], 'kernel': ['linear']}
+    941 
+    942 
+    943 class RandomizedSearchCV(BaseSearchCV):
+    944     """Randomized search on hyper parameters.
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/model_selection/_search.py in _fit(self=GridSearchCV(cv=2, error_score='raise',
+       e...train_score=True,
+       scoring='f1', verbose=0), X=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, y=array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1]), groups=None, parameter_iterable=<sklearn.model_selection._search.ParameterGrid object>)
+    557                                   fit_params=self.fit_params,
+    558                                   return_train_score=self.return_train_score,
+    559                                   return_n_test_samples=True,
+    560                                   return_times=True, return_parameters=True,
+    561                                   error_score=self.error_score)
+--> 562           for parameters in parameter_iterable
+        parameters = undefined
+        parameter_iterable = <sklearn.model_selection._search.ParameterGrid object>
+    563           for train, test in cv.split(X, y, groups))
+    564 
+    565         # if one choose to see train score, "out" will contain train score info
+    566         if self.return_train_score:
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py in __call__(self=Parallel(n_jobs=2), iterable=<generator object <genexpr>>)
+    763             if pre_dispatch == "all" or n_jobs == 1:
+    764                 # The iterable was consumed all at once by the above for loop.
+    765                 # No need to wait for async callbacks to trigger to
+    766                 # consumption.
+    767                 self._iterating = False
+--> 768             self.retrieve()
+        self.retrieve = <bound method Parallel.retrieve of Parallel(n_jobs=2)>
+    769             # Make sure that we get a last message telling us we are done
+    770             elapsed_time = time.time() - self._start_time
+    771             self._print('Done %3i out of %3i | elapsed: %s finished',
+    772                         (len(self._output), len(self._output),
+
+---------------------------------------------------------------------------
+Sub-process traceback:
+---------------------------------------------------------------------------
+ValueError                                         Tue Nov  8 15:33:08 2016
+PID: 167384Python 2.7.12: /home/gilles/.virtualenvs/cyberbullying/bin/python
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py in __call__(self=<sklearn.externals.joblib.parallel.BatchedCalls object>)
+    126     def __init__(self, iterator_slice):
+    127         self.items = list(iterator_slice)
+    128         self._size = len(self.items)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+        func = <function _fit_and_score>
+        args = (SVC(C=1, cache_size=200, class_weight=None, coef...None, shrinking=True,
+  tol=0.001, verbose=False), <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1]), make_scorer(f1_score), array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499]), array([  0,   1,   2,   3,   4,   5,   6,   7,  ..., 242, 243, 244, 245, 246,
+       247, 250, 251]), 0, {'C': 1, 'kernel': 'linear'})
+        kwargs = {'error_score': 'raise', 'fit_params': {}, 'return_n_test_samples': True, 'return_parameters': True, 'return_times': True, 'return_train_score': True}
+        self.items = [(<function _fit_and_score>, (SVC(C=1, cache_size=200, class_weight=None, coef...None, shrinking=True,
+  tol=0.001, verbose=False), <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1]), make_scorer(f1_score), array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499]), array([  0,   1,   2,   3,   4,   5,   6,   7,  ..., 242, 243, 244, 245, 246,
+       247, 250, 251]), 0, {'C': 1, 'kernel': 'linear'}), {'error_score': 'raise', 'fit_params': {}, 'return_n_test_samples': True, 'return_parameters': True, 'return_times': True, 'return_train_score': True})]
+    132 
+    133     def __len__(self):
+    134         return self._size
+    135 
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/model_selection/_validation.py in _fit_and_score(estimator=SVC(C=1, cache_size=200, class_weight=None, coef...None, shrinking=True,
+  tol=0.001, verbose=False), X=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, y=array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1]), scorer=make_scorer(f1_score), train=array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499]), test=array([  0,   1,   2,   3,   4,   5,   6,   7,  ..., 242, 243, 244, 245, 246,
+       247, 250, 251]), verbose=0, parameters={'C': 1, 'kernel': 'linear'}, fit_params={}, return_train_score=True, return_parameters=True, return_n_test_samples=True, return_times=True, error_score='raise')
+    226     if parameters is not None:
+    227         estimator.set_params(**parameters)
+    228 
+    229     start_time = time.time()
+    230 
+--> 231     X_train, y_train = _safe_split(estimator, X, y, train)
+        X_train = undefined
+        y_train = undefined
+        estimator = SVC(C=1, cache_size=200, class_weight=None, coef...None, shrinking=True,
+  tol=0.001, verbose=False)
+        X = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+        y = array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1])
+        train = array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499])
+    232     X_test, y_test = _safe_split(estimator, X, y, test, train)
+    233 
+    234     try:
+    235         if y_train is None:
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/utils/metaestimators.py in _safe_split(estimator=SVC(C=1, cache_size=200, class_weight=None, coef...None, shrinking=True,
+  tol=0.001, verbose=False), X=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, y=array([ 1,  1,  1,  1,  1,  1, -1,  1, -1, -1,  ..., -1, -1,  1,
+       -1, -1,  1,  1,  1, -1,  1]), indices=array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499]), train_indices=None)
+    103             if train_indices is None:
+    104                 X_subset = X[np.ix_(indices, indices)]
+    105             else:
+    106                 X_subset = X[np.ix_(indices, train_indices)]
+    107         else:
+--> 108             X_subset = safe_indexing(X, indices)
+        X_subset = undefined
+        X = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+        indices = array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499])
+    109 
+    110     if y is not None:
+    111         y_subset = safe_indexing(y, indices)
+    112     else:
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/sklearn/utils/__init__.py in safe_indexing(X=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, indices=array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499]))
+    107         if hasattr(X, 'take') and (hasattr(indices, 'dtype') and
+    108                                    indices.dtype.kind == 'i'):
+    109             # This is often substantially faster than X[indices]
+    110             return X.take(indices, axis=0)
+    111         else:
+--> 112             return X[indices]
+        X = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+        indices = array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499])
+    113     else:
+    114         return [X[idx] for idx in indices]
+    115 
+    116 
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/scipy/sparse/csr.py in __getitem__(self=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, key=array([248, 249, 252, 253, 254, 255, 256, 257, 2..., 492, 493, 494, 495, 496,
+       497, 498, 499]))
+    312 
+    313         elif issequence(row):
+    314             # [[1,2],??]
+    315             if isintlike(col) or isinstance(col,slice):
+    316                 P = extractor(row, self.shape[0])     # [[1,2],j] or [[1,2],1:2]
+--> 317                 extracted = P * self
+        extracted = undefined
+        P = <250x500 sparse matrix of type '<type 'numpy.flo... stored elements in Compressed Sparse Row format>
+        self = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+    318                 if col == slice(None, None, None):
+    319                     return extracted
+    320                 else:
+    321                     return extracted[:,col]
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/scipy/sparse/base.py in __mul__(self=<250x500 sparse matrix of type '<type 'numpy.flo... stored elements in Compressed Sparse Row format>, other=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>)
+    348             return self._mul_scalar(other)
+    349 
+    350         if issparse(other):
+    351             if self.shape[1] != other.shape[0]:
+    352                 raise ValueError('dimension mismatch')
+--> 353             return self._mul_sparse_matrix(other)
+        self._mul_sparse_matrix = <bound method csr_matrix._mul_sparse_matrix of <...stored elements in Compressed Sparse Row format>>
+        other = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+    354 
+    355         try:
+    356             other.shape
+    357         except AttributeError:
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/scipy/sparse/compressed.py in _mul_sparse_matrix(self=<250x500 sparse matrix of type '<type 'numpy.flo... stored elements in Compressed Sparse Row format>, other=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>)
+    471     def _mul_sparse_matrix(self, other):
+    472         M, K1 = self.shape
+    473         K2, N = other.shape
+    474 
+    475         major_axis = self._swap((M,N))[0]
+--> 476         other = self.__class__(other)  # convert to this format
+        other = <500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>
+        self.__class__ = <class 'scipy.sparse.csr.csr_matrix'>
+    477 
+    478         idx_dtype = get_index_dtype((self.indptr, self.indices,
+    479                                      other.indptr, other.indices),
+    480                                     maxval=M*N)
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/scipy/sparse/compressed.py in __init__(self=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, arg1=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, shape=None, dtype=None, copy=False)
+     92                     self.shape = self._swap((major_dim,minor_dim))
+     93 
+     94         if dtype is not None:
+     95             self.data = np.asarray(self.data, dtype=dtype)
+     96 
+---> 97         self.check_format(full_check=False)
+        self.check_format = <bound method csr_matrix.check_format of <500x10...stored elements in Compressed Sparse Row format>>
+     98 
+     99     def getnnz(self, axis=None):
+    100         if axis is None:
+    101             return int(self.indptr[-1])
+
+...........................................................................
+/home/gilles/.virtualenvs/cyberbullying/local/lib/python2.7/site-packages/scipy/sparse/compressed.py in check_format(self=<500x1000 sparse matrix of type '<type 'numpy.fl... stored elements in Compressed Sparse Row format>, full_check=False)
+    157         # check index pointer
+    158         if (len(self.indptr) != major_dim + 1):
+    159             raise ValueError("index pointer size (%d) should be (%d)" %
+    160                                 (len(self.indptr), major_dim + 1))
+    161         if (self.indptr[0] != 0):
+--> 162             raise ValueError("index pointer should start with 0")
+    163 
+    164         # check index and data arrays
+    165         if (len(self.indices) != len(self.data)):
+    166             raise ValueError("indices and data should have the same size")
+
+ValueError: index pointer should start with 0
+Versions
+Linux-4.4.0-22-generic-x86_64-with-Ubuntu-16.04-xenial
+('Python', '2.7.12 (default, Jul 1 2016, 15:12:24) \n[GCC 5.4.0 20160609]')
+('NumPy', '1.11.2')
+('SciPy', '0.18.1')
+('Scikit-Learn', '0.18')
+('Joblib', '0.10.3')

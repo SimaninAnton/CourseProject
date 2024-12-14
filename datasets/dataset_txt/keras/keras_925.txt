@@ -1,0 +1,53 @@
+nguerinjr commented on 1 Jul 2018
+I'm having a problem with loading and running a saved keras model using target_tensors.
+The configurations:
+Python 3.5.2
+tensorflow-gpu 1.8.0
+Keras 2.2.0
+GTX 1080 Ti
+Ubuntu 16.04.4 LTS
+Cuda 9.0.176-1
+cuDNN 7.1.4.18-1+cuda9.0
+tensorrt 4.0.0.3-1+cuda9.0
+Trying to be simple: I'm creating a model of image autoencoder. I receive an image and it simply downsamples and upsamples the image. I compare this output with the input and creates a residue. I input this residue in another autoencoder of the same structure. This autoencoder outputs something that's compared with the input (a residue from the preceding autoencoder). I actually do this many times, with many "sequential" residual autoencoders. I'm implementing it based on an article.
+In each output, I've included a loss function that compares the output with the input. I've done it with the use of target_tensors:
+enc_input = [Input(shape=self._gen_conf.input_shape)]                    
+dec_output = []                                                          
+for cont in range(self._gen_conf.num_of_iterations):                     
+     enc_output = self._add_enc_layers(enc_input[-1], cont)               
+     dec_output += [self._add_dec_layers(enc_output, cont)]               
+     enc_input += [Subtract(name='subtract' + str(cont))([enc_input[-1], dec_output[-1]])]                     
+                                                                                                                                         
+# Tensorflow does not allow the input_feed to be specified here. It         
+# gives an error of 'Endpoint [...] fed more than once'                  
+self._model = Model(inputs=enc_input[0], outputs=dec_output)             
+targets = [K.identity(enc_input[0])] + enc_input[1:-1]
+I use these targets to feed the intermediate losses (in another piece of code):
+self._model.compile(optimizer=optimizer, loss=loss, target_tensors=target_tensors)
+I'm handling a huge database, so I'm training it with generators. The generator feed just the original images, since the losses are calculated from tensors.
+history = self._model.fit_generator(train_gen.generator(True, True),     
+               steps_per_epoch=train_gen.get_num_steps_per_epoch(),                 
+               epochs=confs.max_epochs, verbose=1, callbacks=confs.callbacks,       
+               validation_data=val_gen.generator(),                                 
+               validation_steps=val_gen.get_num_steps_per_epoch())
+And the special point is: besides other callbacks, i have a checkpoint.
+checkpoint = ModelCheckpoint(gen_conf['models_name_pattern'], verbose=1)
+It's currently saving the whole model in each epoch.
+So, with this, I've created a "complex" autoencoder and it works.
+I'm inserting a piece of the graph from tensorflow below. It's a much simpler network, although the same problem happens. You can see this strategy there. The input to each stage is used as reference to a loss:
+So now comes the problem. When I load any saved model of this to continue training, I use the function load_model from keras.models. As the documentation says:
+You can then use keras.models.load_model(filepath) to reinstantiate your model. load_model will also take care of compiling the model using the saved training configuration (unless the model was never compiled in the first place)_.
+So, as I've already compiled it, it seems it's ok to use the .fit_generator directly. But, I've received the following error when I have 2 models (just one intermediate loss, which I call in the code as iterations):
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'd.conv01_sample_weights' with dtype float and shape [?]
+[[Node: d.conv01_sample_weights = Placeholderdtype=DT_FLOAT, shape=[?], _device="/job:localhost/replica:0/task:0/device:GPU:0"]]
+[[Node: loss_1/d.conv11_loss/Mean_3/_519 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_974_loss_1/d.conv11_loss/Mean_3", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]
+Uncaught exception. Entering post mortem debugging
+And the following when I have 1 or 3 or more models, with the same code showed above:
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'd.conv21_target' with dtype float and shape [?,?,?,?]
+[[Node: d.conv21_target = Placeholderdtype=DT_FLOAT, shape=[?,?,?,?], _device="/job:localhost/replica:0/task:0/device:GPU:0"]]
+[[Node: training/Adam/gradients/subtract1_1/sub_grad/Shape_1/_689 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_315_training/Adam/gradients/subtract1_1/sub_grad/Shape_1", tensor_type=DT_INT32, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]
+Uncaught exception. Entering post mortem debugging
+Actually, I've tried with many "residuals": 2, 3, 4, 5. It gives error this error cause in this case, the losses are considering the "weights" as input. The graphs of the loaded version:
+I've done nothing in this case. Just the loading and after that, the .fit_generator. But now the loss considers the input of the decoder, the output and some "weights" variable for something.
+I'm inserting bellow the expansion of the losses in the two cases:
+So, It seems strange to me. I have not tried to compile the model manually in the loading case since the documentation says it's not necessary. I don't know if there's something wrong, but seems the loading is not "maintaining" the structure of the network.

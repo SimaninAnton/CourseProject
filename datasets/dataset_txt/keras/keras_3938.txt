@@ -1,0 +1,55 @@
+Contributor
+matt-peters commented on 13 Nov 2016
+I've noticed that the Embedding layer with TensorFlow backend is converting sparse gradient updates to dense ones and killing the performance, as well as gobbling up lots of memory. This is making it unusable for a large scale problem with a large Embedding layer.
+Here is a script that makes a model with single large embedding layer using Keras and TensorFlow directly. In Keras, it takes about 2.3 seconds / batch and uses > 9 GB of memory while training. In TensorFlow it only takes 20 ms / batch (100X faster) and uses < 4 G of memory.
+This is using TensorFlow 0.11.0rc2 and the master branch of Keras.
+import numpy as np
+
+from keras.layers import Embedding, Input
+from keras.models import Model
+
+# a model with just one Embedding layer
+token_ids = Input(batch_shape=(128, 20),
+                          dtype='int32', name='token_ids')
+token_embedding = Embedding(793471,
+    512, mask_zero=False, input_length=20)(token_ids)
+
+model = Model(input=[token_ids], output=token_embedding)
+model.compile(loss='mse', optimizer='sgd')
+
+X = np.random.randint(0, 793471, (128, 20)).astype(np.int32)
+y = np.random.rand(128, 20, 512)
+
+# compile model
+model.train_on_batch(X, y)
+
+# now time
+%timeit model.train_on_batch(X, y)
+Outputs:
+Using TensorFlow backend.
+/Users/matthewp/anaconda3/lib/python3.5/site-packages/tensorflow/python/ops/gradients.py:87: UserWarning: Converting sparse IndexedSlices to a dense Tensor with 406257152 elements. This may consume a large amount of memory.
+  "This may consume a large amount of memory." % num_elements)
+1 loop, best of 3: 2.32 s per loop
+With TensorFlow:
+import numpy as np
+import tensorflow as tf
+
+token_ids = tf.placeholder(tf.int32, [128, 20])
+W = tf.Variable(tf.zeros([793471, 512]))
+token_embedding = tf.gather(W, token_ids)
+y_ = tf.placeholder(tf.float32, [128, 20, 512])
+loss = tf.reduce_mean((token_embedding - y_) ** 2)
+
+train_step = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
+
+init = tf.initialize_all_variables()
+
+X = np.random.randint(0, 793471, (128, 20)).astype(np.int32)
+y = np.random.rand(128, 20, 512)
+
+with tf.Session() as sess:
+    sess.run(init)
+    sess.run(train_step, feed_dict={token_ids: X, y_: y})
+    %timeit sess.run(train_step, feed_dict={token_ids: X, y_: y})
+Outputs:
+10 loops, best of 3: 20.8 ms per loop

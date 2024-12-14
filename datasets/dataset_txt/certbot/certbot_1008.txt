@@ -1,0 +1,68 @@
+herriett commented on 17 Aug 2017
+My operating system is (include version):
+Gentoo-current
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+emerge -avuDN =app-crypt/certbot-0.15.0
+I ran this command and it produced this output:
+strace certbot -v certonly -d multiple -d valid -d domains
+The same happens without strace of course, then without the trace output.
+Certbot's behavior differed from what I expected because:
+It segfaulted:
+certbot[4183]: segfault at 7f21ec4fe9b0 ip 00007f21ec4fe9b0 sp 00007ffdec8c2608 error 15 in _openssl.abi3.so[7f21ec4f7000+8000]
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+017-08-16 22:05:29,052:DEBUG:certbot.main:certbot version: 0.15.0
+2017-08-16 22:05:29,054:DEBUG:certbot.main:Arguments: ['-v', '-d', 'xxxxx.net', '-d', 'cloud.xxxxx.net', '-d', 'dyn.xxxxx.net', '-d', 'imap.xxxxx.net', '-d', 'mail.xxxxx.net', '-d', 'xxxx.de', '-d', 'smtp.xxxxxx.net', '-d', 'static.xxxxxxxx.net', '-d', 'ldap.xxxxxxxxxxx.net', '-d', 'sql.xxxxxxxxx.net', '-d', 'www.xxxxxxxx.net']
+2017-08-16 22:05:29,054:DEBUG:certbot.main:Discovered plugins: PluginsRegistry(PluginEntryPoint#apache,PluginEntryPoint#manual,PluginEntryPoint#null,PluginEntryPoint#standalone,PluginEntryPoint#webroot)
+2017-08-16 22:05:29,176:DEBUG:certbot.log:Root logging level set at 10
+2017-08-16 22:05:29,179:INFO:certbot.log:Saving debug log to /var/log/letsencrypt/letsencrypt.log
+2017-08-16 22:05:29,182:DEBUG:certbot.plugins.selection:Requested authenticator None and installer None
+2017-08-16 22:05:29,515:DEBUG:certbot_apache.configurator:Apache version is 2.4.27
+2017-08-16 22:05:30,806:DEBUG:certbot.plugins.selection:Multiple candidate plugins: * apache
+Description: Apache Web Server plugin - Beta
+Interfaces: IAuthenticator, IInstaller, IPlugin
+Entry point: apache = certbot_apache.configurator:ApacheConfigurator
+Initialized: <certbot_apache.configurator.ApacheConfigurator object at 0x7f02ce0a0860>
+Prep: True
+standalone
+Description: Spin up a temporary webserver
+Interfaces: IAuthenticator, IPlugin
+Entry point: standalone = certbot.plugins.standalone:Authenticator
+Initialized: <certbot.plugins.standalone.Authenticator object at 0x7f02ce0ae240>
+Prep: True
+webroot
+Description: Place files in webroot directory
+Interfaces: IAuthenticator, IPlugin
+Entry point: webroot = certbot.plugins.webroot:Authenticator
+Initialized: <certbot.plugins.webroot.Authenticator object at 0x7f02cd40fb70>
+Prep: True
+2017-08-16 22:05:36,596:DEBUG:certbot.plugins.selection:Selected authenticator <certbot_apache.configurator.ApacheConfigurator object at 0x7f02ce0a0860> and installer None
+2017-08-16 22:05:36,781:DEBUG:certbot.main:Picked account: <Account(RegistrationResource(new_authzr_uri='https://acme-v01.api.letsencrypt.org/acme/new-authz', body=Registration(agreement='https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf', contact=('mailto:www@xxxxx.net',), status=None, key=xxxxx(key=<ComparableRSAKey(<cryptography.hazmat.backends.openssl.rsa._RSAPublicKey object at 0xxxxxxxx>)>)), terms_of_service='https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf', uri='https://acme-v01.api.letsencrypt.org/acme/reg/xxxxxxxx'), xxxxxxxxxxxx, Meta(creation_host='xxxxxx.xxxxx.net', creation_dt=datetime.datetime(2016, xx, xx, xx, xx, tzinfo=)))>
+2017-08-16 22:05:36,789:DEBUG:acme.client:Sending GET request to https://acme-v01.api.letsencrypt.org/directory.
+2017-08-16 22:05:36,808:INFO:requests.packages.urllib3.connectionpool:Starting new HTTPS connection (1): acme-v01.api.letsencrypt.org
+--> here it segfaults and stopped logging
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+Not relevant as it happens also in webroot mode
+Here is the last lines from strace
+getsockopt(10, SOL_SOCKET, SO_TYPE, [1], [4]) = 0
+ioctl(10, FIONBIO, [1]) = 0
+getpeername(10, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("88.221.71.152")}, [16]) = 0
+getrandom("\x0a\xcf\xa8\x11\x06\xb2\xc1\x39\xd7\x7a\x7a\x95\xfc\xf2\x7a\x80\xd4\xc9\x69\x15\xd4\xbb\xff\xd4\x49\xc6\x47\x07\x2b\x4b\x8c\x8a", 32, GRND_NONBLOCK) = 32
+write(10, "\26\3\1\2\0\1\0\1\374\3\3\n\317\250\21\6\262\3019\327zz\225\374\362z\200\324\311i\25\324"..., 517) = 517
+read(10, 0xf03d9ad240, 7) = -1 EAGAIN (Resource temporarily unavailable)
+poll([{fd=10, events=POLLIN}], 1, 45000) = 1 ([{fd=10, revents=POLLIN}])
+read(10, "\26\3\3\0A\2\0", 7) = 7
+read(10, "\0=\3\3\370\36\322\324D\22\242\302\376\234\375\322\31\272\374\246\311\311\371\10\3404\36\246,\316<\317"..., 63) = 63
+read(10, "\26\3\3\24\231", 5) = 5
+read(10, "\v\0\24\225\0\24\222\0\7\0230\202\7\0170\202\5\367\240\3\2\1\2\2\20\177\0\0\1\0\0\1"..., 5273) = 1373
+read(10, 0xf03d9ad7a5, 3900) = -1 EAGAIN (Resource temporarily unavailable)
+poll([{fd=10, events=POLLIN}], 1, 45000) = 1 ([{fd=10, revents=POLLIN}])
+read(10, "ttp://validation.identrust.com/c"..., 3900) = 2648
+read(10, "#\33]3\23\22]\304\1%\3660\335\2]\237\340\325G\275\264\353\33\241\273II\330\237[\2\363"..., 1252) = 1252
+read(10, "\26\3\3\1M", 5) = 5
+read(10, "\f\0\1I\3\0\27A\4b\324\357x\10V\1\236$4\32\321u\33?\225}7\v\305\36/\7"..., 333) = 191
+read(10, 0xf03d9ad307, 142) = -1 EAGAIN (Resource temporarily unavailable)
+poll([{fd=10, events=POLLIN}], 1, 45000) = 1 ([{fd=10, revents=POLLIN}])
+read(10, "\324\361\354\211\0058\205\373\205\343g\31\271P\rQ\37\275\263\230\372E\331\36;\261C\243\215b\6\317"..., 142) = 142
+--- SIGSEGV {si_signo=SIGSEGV, si_code=SEGV_ACCERR, si_addr=0x7f02ced1d9b0} ---
++++ killed by SIGSEGV +++

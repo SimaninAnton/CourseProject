@@ -1,0 +1,162 @@
+kyochujoho commented on 28 Dec 2018 •
+edited
+I am using ImageDataGenerator to transform images and masks together for semantic segmentation in the style presented in the Keras docs where two generators get zipped together and then get fed to a flow method. However, when I save the augmented image-mask pairs to a directory, the file naming indicates that the seeding for the augmentation isn't always the same for the image and mask. This is despite feeding the generators the same seed and also playing around with the setting of seeds at the top of the file. Here are the files produced in my 'aug' folder with the code below:
+image_19_8801850.png
+image_214_4543356.png
+image_268_864897.png
+image_388_2338108.png
+image_394_7960136.png
+image_516_6392335.png
+mask_19_8801850.png
+mask_214_4543356.png
+mask_268_864897.png
+mask_388_2338108.png
+mask_394_8946097.png
+mask_516_7424466.png
+You can see that the seeds used for pairs 394 and 516 were different. The number of pairs generated that have different seeds seems to equal the batch_size*max_queue_size.
+Any help would be appreciated, as I want to make sure all image-mask pairs are augmented in the same fashion.
+Keras: 2.2.4
+Keras-Applications: 1.0.6
+keras-contrib : 2.0.8
+Keras-Preprocessing: 1.0.5
+tensorflow-gpu: 1.12.0
+Ubuntu 16.04.5 LTS (GNU/Linux 4.4.0-1074-aws x86_64v)
+import random
+random.seed(1)
+import numpy as np
+np.random.seed(10)
+import tensorflow as tf
+tf.reset_default_graph()
+graph_level_seed = 1
+tf.set_random_seed(graph_level_seed)
+operation_level_seed = 1
+
+import os
+from find_onh_model import unet
+from keras.callbacks import EarlyStopping, TensorBoard, ModelCheckpoint
+import gc
+
+import imageio
+from sklearn.utils import class_weight
+from keras.preprocessing.image import ImageDataGenerator
+
+gc.collect()
+
+def adjust_data(img,mask,flag_multi_class,num_class):
+    if(flag_multi_class):
+    elif(np.max(img) > 1):
+        img = img / 255
+        mask = mask /255
+        mask[mask > 0.5] = 1
+        mask[mask <= 0.5] = 0
+    return (img,mask)
+
+def TrainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image_color_mode = "grayscale",
+                    mask_color_mode = "grayscale",image_save_prefix  = "image",mask_save_prefix  = "mask",
+                    flag_multi_class = False,num_class = 2,save_to_dir = None,target_size = (256,256),seed = 1,
+                    subset=None):
+
+    image_datagen = ImageDataGenerator(**aug_dict)
+    mask_datagen = ImageDataGenerator(**aug_dict)
+    image_generator = image_datagen.flow_from_directory(
+        train_path,
+        classes = [image_folder],
+        class_mode = None,
+        color_mode = image_color_mode,
+        target_size = target_size,
+        batch_size = batch_size,
+        save_to_dir = save_to_dir,
+        save_prefix  = image_save_prefix,
+        seed = seed,
+        subset = subset)
+    mask_generator = mask_datagen.flow_from_directory(
+        train_path,
+        classes = [mask_folder],
+        class_mode = None,
+        color_mode = mask_color_mode,
+        target_size = target_size,
+        batch_size = batch_size,
+        save_to_dir = save_to_dir,
+        save_prefix  = mask_save_prefix,
+        seed = seed,
+       subset = subset)
+    train_generator = zip(image_generator, mask_generator)
+    for (img,mask) in train_generator:
+        img,mask = adjust_data(img,mask,flag_multi_class,num_class)
+        yield (img,mask)
+
+# Load masks to get number of images available, image dimensions, and appropriate class weighting.
+def load_images_from_folder(folder):
+    images = []
+    for image_name in os.listdir(folder):
+        path = os.path.join(folder, image_name)
+        im_arr = imageio.imread(path, pilmode='L')
+        images.append(im_arr)
+    return np.array(images)
+
+usr_dir = os.path.expanduser('~')
+train_data_dir = usr_dir
+
+saved_models_dir = os.path.join(train_data_dir, 'saved_models')
+os.makedirs(saved_models_dir, exist_ok=True)
+mask_path = os.path.join(train_data_dir, 'label', 'image')
+aug_data_dir = os.path.join(train_data_dir, 'aug')
+
+masks = load_images_from_folder(mask_path)
+n_images, height, width = masks.shape
+print('Data dimensions: {}'.format(masks.shape))
+
+height_new = 128 # height
+width_new = 128 # width
+
+# config
+image_folder = 'data'
+mask_folder = 'label'
+VALID_SPLIT = 0.2
+n_valid_images = np.floor(n_images*VALID_SPLIT)
+n_train_images = np.ceil(n_images*(1 - VALID_SPLIT))
+batch_size = 2
+STEPS_PER_EPOCH = 1
+N_EPOCHS = 1
+VALIDATION_STEPS = np.floor(n_valid_images/batch_size)
+PATIENCE = 10
+
+train_aug_dict = dict(
+                    rotation_range=90, #0.2,
+                    width_shift_range=0.1,
+                    height_shift_range=0.1,
+                    shear_range=0.05,
+                    zoom_range=0.05,
+                    horizontal_flip=True,
+                    vertical_flip=False,
+                    fill_mode='constant',
+                    cval=0,
+                    validation_split=VALID_SPLIT,
+                    )
+train_generator = TrainGenerator(batch_size,train_data_dir,image_folder,mask_folder,train_aug_dict,image_color_mode = "grayscale",
+                    mask_color_mode = "grayscale",image_save_prefix  = "image",mask_save_prefix  = "mask",
+                    flag_multi_class = False,num_class = 2,
+                    save_to_dir = aug_data_dir,
+                    target_size = (height_new, width_new),
+                    seed = operation_level_seed,
+                    subset='training')
+
+val_aug_dict = dict(
+    validation_split=VALID_SPLIT,
+     )
+
+val_generator = TrainGenerator(batch_size,train_data_dir,image_folder,mask_folder,val_aug_dict,image_color_mode = "grayscale",
+                    mask_color_mode = "grayscale",
+                    flag_multi_class = False,num_class = 2,
+                    target_size = (height_new, width_new),
+                    seed = operation_level_seed,
+                    subset='validation')
+
+model = <mymodel>
+
+save_best_only=True, mode='auto')
+callbacks = [EarlyStopping(monitor='val_loss', patience=PATIENCE)]
+
+print('Training')
+history = model.fit_generator(train_generator, max_queue_size=1, steps_per_epoch=STEPS_PER_EPOCH,epochs=N_EPOCHS,callbacks=callback\
+s, validation_data=val_generator, validation_steps=VALIDATION_STEPS, class_weight=class_weighting, shuffle=False)

@@ -1,0 +1,71 @@
+Contributor
+ozabluda commented on 15 Dec 2017 •
+edited
+When BatchNormalization layer is shared Siamese-style, moving_variance is calculated incorrectly. In the code below, if BatchNormalization is not shared (if branch of the conditional) the final weights are correct:
+[ 1.00000203  1.          0.99995679  0.99995679]
+the order is
+[gamma, beta, moving_mean, moving_variance]
+but if the BatchNormalization layer is shared (else branch of the conditional), the final weights are incorrect:
+[  0.00000000e+00   6.13518556e-37   9.99296010e-01   0.00000000e+00]
+namely, moving_variance (last weight) is zero, which is the most likely, the root cause of it. It's as if one of the shared BatchNormalization layers, overwrites moving_variance of the other. Note that moving_mean is calculated correctly in a shared way. gamma and beta also work "correctly" to compensate for the wrong moving_variance.
+# Script for reproducing a BatchNormalization bug
+# https://gist.github.com/ozabluda/11326307bbf13936f18063a1a4165adc
+
+from keras.models import Sequential, Model
+from keras.layers import Dense, BatchNormalization, Input, concatenate
+import numpy as np
+
+m = Sequential([
+    BatchNormalization(input_shape=(1,),
+                       center=True,
+                       scale=True,
+                       gamma_initializer='zero',
+                       beta_initializer='one',
+                       moving_mean_initializer='zero',
+                       moving_variance_initializer='zero',
+                       epsilon=0.00001
+    ),
+])
+m.summary()
+print(m.layers[0].weights)
+
+if False: # not shared
+    x  = np.array([0, 2])
+    y  = np.array([0, 2])
+
+    m.compile(optimizer='sgd', loss='mse')
+    print(m.evaluate(x,y), m.predict(x))
+    print(np.array(m.layers[0].get_weights()).ravel())
+
+    m.fit(x, y, verbose=0, epochs=1000)
+
+    print(m.evaluate(x,y), m.predict(x))
+    print(np.array(m.layers[0].get_weights()).ravel())
+
+else: #shared
+    input_a = Input(shape=(1,))
+    input_b = Input(shape=(1,))
+
+    processed_a = m(input_a)
+    processed_b = m(input_b)
+
+    c = concatenate([processed_a, processed_b])
+    c = Dense(1, kernel_initializer='ones', use_bias=False, trainable=False)(c)
+    s = Model([input_a, input_b], c)
+    s.compile(optimizer='sgd', loss='mse')
+    s.summary()
+
+    x0 = np.array([0])
+    x1 = np.array([2])
+    x  = [x0,x1]
+    y  = np.array([0])
+
+    print(np.array(s.layers[2].layers[0].get_weights()).ravel())
+
+    s.fit(x, y, verbose=0, epochs=200)
+
+    print(s.evaluate(x,y), s.predict(x))
+    print(np.array(s.layers[2].layers[0].get_weights()).ravel())
+========
+Check that you are up-to-date with the master branch of Keras. [OZ: Keras version is after https://github.com//pull/8785
+If running on TensorFlow, check that you are up-to-date with the latest version. [OZ: TF is 1.4.1]

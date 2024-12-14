@@ -1,0 +1,44 @@
+ilkarman commented on 26 Jul 2017 •
+edited
+I created an example on the same dataset with the same structure under Tensorflow and CNTK (Tensorflow) and found that TF took 72s to train whereas with Keras it was around 160s.
+For example:
+TensorFlow
+def create_model():
+    conv1 = tf.layers.conv2d(X, filters=20, kernel_size=5, strides=1, padding='valid')
+    tanh1 = tf.tanh(conv1)
+    pool1 = tf.layers.max_pooling2d(tanh1, pool_size=2, strides=2, padding='valid')
+    conv2 = tf.layers.conv2d(pool1, filters=50, kernel_size=5, strides=1, padding='valid')
+    tanh2 = tf.tanh(conv2)
+    pool2 = tf.layers.max_pooling2d(tanh2, pool_size=2, strides=2, padding='valid')
+    flatten = tf.reshape(pool2, shape=[-1, 50*4*4])
+    fc1 = tf.layers.dense(flatten, 500, activation=tf.tanh)
+    logits = tf.layers.dense(fc1, N_CLASSES, name='output')
+    return logits
+
+def init_model():
+    # Single-class labels, don't need dense one-hot
+    # Expects unscaled logits, not output of tf.nn.softmax
+    xentropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=y)
+    loss = tf.reduce_mean(xentropy)
+    optimizer = tf.train.MomentumOptimizer(learning_rate=LR, momentum=MOMENTUM)
+    training_op = optimizer.minimize(loss)
+    return training_op
+Keras:
+def create_lenet():
+    model = Sequential()
+    model.add(Conv2D(20, kernel_size=(5, 5), activation='tanh', input_shape=(28, 28, 1)))
+    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+    model.add(Conv2D(50, (5, 5), activation='tanh'))
+    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+    model.add(Flatten())
+    model.add(Dense(500, activation='tanh'))
+    model.add(Dense(N_CLASSES, activation='softmax'))
+    return model
+
+def init_model():
+    model = create_lenet()
+    model.compile(loss = "categorical_crossentropy",
+                  optimizer = K.optimizers.SGD(lr=LR, momentum=MOMENTUM, decay=0.0, nesterov=False),
+                  metrics = ['accuracy'])
+    return model
+I was expecting to see the same time during time, once the model has been initialised and the graph created on the backend. It seems like keras is re-creating something on each mini-batch. Have others noticed this speed difference?

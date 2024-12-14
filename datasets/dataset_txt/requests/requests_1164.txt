@@ -1,0 +1,42 @@
+ndw commented on Feb 10, 2016
+If you read a multipart/mixed response, the connectionpool issues a couple of warnings about defects in the message. I'm not sure what the expected, correct behavior is, but these warnings seem spurious.
+Stick this perl script somewhere:
+#!/usr/bin/perl
+
+print "Server: Some Server Name\r\n";
+print "Content-Type: multipart/mixed; boundary=36eeb8c4e26d842a\r\n";
+print "Content-Length: 178\r\n";
+print "\r\n\r\n";
+print "--36eeb8c4e26d842a\r\n";
+print "Content-Type: text/plain\r\n";
+print "\r\n";
+print "7\r\n";
+print "--36eeb8c4e26d842a\r\n";
+print "Content-Type: text/plain\r\n";
+print "\r\n";
+print "9\r\n";
+print "--36eeb8c4e26d842a\r\n";
+print "Content-Type: text/plain\r\n";
+print "\r\n";
+print "11\r\n";
+print "--36eeb8c4e26d842a--\r\n";
+Read it with requests (naturally, you'll have to change the URI to wherever you put the script):
+import requests, logging
+
+logging.basicConfig(level=logging.WARNING)
+logging.getLogger("requests").setLevel(logging.DEBUG)
+
+headers = {'accept': "multipart/mixed"}
+r = requests.get("http://localhost:8124/cgi-bin/mpm.pl", headers=headers)
+
+print(r)
+The following errors are displayed:
+DEBUG:requests.packages.urllib3.connectionpool:"GET http://localhost:8124/cgi-bin/mpm.pl HTTP/1.1" 200 178
+WARNING:requests.packages.urllib3.connectionpool:Failed to parse headers (url=http://localhost:8888/http://localhost:8124/cgi-bin/mpm.pl): [StartBoundaryNotFoundDefect(), MultipartInvariantViolationDefect()], unparsed data: ''
+Traceback (most recent call last):
+  File "/home/ndw/.virtualenvs/pyapi/lib/python3.4/site-packages/requests-2.8.0-py3.4.egg/requests/packages/urllib3/connectionpool.py", line 390, in _make_request
+    assert_header_parsing(httplib_response.msg)
+  File "/home/ndw/.virtualenvs/pyapi/lib/python3.4/site-packages/requests-2.8.0-py3.4.egg/requests/packages/urllib3/util/response.py", line 58, in assert_header_parsing
+    raise HeaderParsingError(defects=defects, unparsed_data=unparsed_data)
+requests.packages.urllib3.exceptions.HeaderParsingError: [StartBoundaryNotFoundDefect(), MultipartInvariantViolationDefect()], unparsed data: ''
+It took me quite a while to work out that they were spurious (because in real life, the server side that is generating the multipart/mixed is more complicated!)

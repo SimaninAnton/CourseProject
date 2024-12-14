@@ -1,0 +1,70 @@
+robdennis commented on 29 Sep 2014
+I'm using DRF 2.4.2 and due to some custom methods / representations, I'm writing some unit tests for my serializers using py.test and pytest-django, which all worked very well.
+I wanted to change a related field (just showed the ID) to the serialized representation so I used an existing serializer as a field. (as explained in the docs
+Running tests using py.test (with pytest-django) will blow up with the giant (sanitized) stack trace shown at the bottom of this post.
+Consider the documentation example:
+class TrackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Track
+        fields = ('order', 'title')
+
+class AlbumSerializer(serializers.ModelSerializer):
+    tracks = TrackSerializer(many=True)
+
+    class Meta:
+        model = Album
+        fields = ('album_name', 'artist', 'tracks')
+and this key part of the stack trace:
+env/lib/python2.7/site-packages/rest_framework/fields.py:146: in __init__
+    self.help_text = strip_multiple_choice_msg(smart_text(help_text))
+env/lib/python2.7/site-packages/rest_framework/fields.py:116: in strip_multiple_choice_msg
+    multiple_choice_msg = force_text(multiple_choice_msg)
+The short version based on my investigation:
+the instantiation of the TrackSerializer will happen when this is imported
+when the TrackSerializer is instantiated, it creates all the fields from the model and sets up help text for them (I assume for the html form).
+the help text is using django's force_text method which (check the rest of the trace) will use the "underscore" translation service
+this doesn't happen using runserver, which I assume is because something to do with the import timing of loading a WSGI app.
+Where I'm at:
+I'm not sure if this works using django test runner
+I can work around it in my code, so not blocking
+I'm not sure what the action is, especially if it works on django test runner
+I was hoping that I could avoid initialization of the serializer by setting the value equal to the class instead of an instance, but no luck, that may be a conceptually simple/ok solution
+this may all get thrown out in a pending major release, since I know that serializers were a big focus of the upcoming development calendar
+_______________________________________________ ERROR collecting tests/test_serializers.py _______________________________________________
+my/app.py: in <module>
+    class MySerializer(serializers.ModelSerializer):
+hass/endpoint/serializers.py:35: in EndpointSerializer
+    related = RelatedSerialzer()
+env/lib/python2.7/site-packages/rest_framework/serializers.py:200: in __init__
+    self.fields = self.get_fields()
+env/lib/python2.7/site-packages/rest_framework/serializers.py:236: in get_fields
+    default_fields = self.get_default_fields()
+env/lib/python2.7/site-packages/rest_framework/serializers.py:691: in get_default_fields
+    serializer_pk_field = self.get_pk_field(pk_field)
+env/lib/python2.7/site-packages/rest_framework/serializers.py:818: in get_pk_field
+    return self.get_field(model_field)
+env/lib/python2.7/site-packages/rest_framework/serializers.py:925: in get_field
+    return serializer_field_class(**kwargs)
+env/lib/python2.7/site-packages/rest_framework/fields.py:468: in __init__
+    super(CharField, self).__init__(*args, **kwargs)
+env/lib/python2.7/site-packages/rest_framework/fields.py:272: in __init__
+    super(WritableField, self).__init__(source=source, label=label, help_text=help_text)
+env/lib/python2.7/site-packages/rest_framework/fields.py:146: in __init__
+    self.help_text = strip_multiple_choice_msg(smart_text(help_text))
+env/lib/python2.7/site-packages/rest_framework/fields.py:116: in strip_multiple_choice_msg
+    multiple_choice_msg = force_text(multiple_choice_msg)
+env/lib/python2.7/site-packages/django/utils/encoding.py:85: in force_text
+    s = six.text_type(s)
+env/lib/python2.7/site-packages/django/utils/functional.py:144: in __text_cast
+    return func(*self.__args, **self.__kw)
+env/lib/python2.7/site-packages/django/utils/translation/__init__.py:83: in ugettext
+    return _trans.ugettext(message)
+env/lib/python2.7/site-packages/django/utils/translation/trans_real.py:325: in ugettext
+    return do_translate(message, 'ugettext')
+env/lib/python2.7/site-packages/django/utils/translation/trans_real.py:306: in do_translate
+    _default = translation(settings.LANGUAGE_CODE)
+env/lib/python2.7/site-packages/django/utils/translation/trans_real.py:209: in translation
+    default_translation = _fetch(settings.LANGUAGE_CODE)
+env/lib/python2.7/site-packages/django/utils/translation/trans_real.py:189: in _fetch
+    "The translation infrastructure cannot be initialized before the "
+E   AppRegistryNotReady: The translation infrastructure cannot be initialized before the apps registry is ready. Check that you don't make non-lazy gettext calls at import time.

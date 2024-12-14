@@ -1,0 +1,42 @@
+pleasedontbelong commented on 17 Feb 2016
+When passing data to a Serializer with a MultipleChoiceField, the array gets sorted because it's transformed into a Set
+https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/fields.py#L1315
+to reproduce:
+class FooSerializer(serializers.Serializer):
+    my_list = serializers.MultipleChoiceField(choices=['a','b','c'])
+
+serializer = FooSerializer({"my_list": ['c', 'b', 'a']})
+serializer.data['my_list']
+#  Out: {'a', 'b', 'c'}
+when I was expecting:
+# Out: ['c', 'b', 'a']
+Is there a reason why we need a Set on the MultipleChoiceFIeld? I suppose it's because we want to remove the duplicates.
+Here's my workaround:
+class MultipleChoiceField(serializers.MultipleChoiceField):
+    """
+    @PATCH, we extend MultipleChoiceField to use an array instead of a Set
+    to preserve the original data order
+    """
+    def to_internal_value(self, data):
+        if isinstance(data, type('')) or not hasattr(data, '__iter__'):
+            self.fail('not_a_list', input_type=type(data).__name__)
+        if not self.allow_empty and len(data) == 0:
+            self.fail('empty')
+
+        # remove duplicates
+        data = sorted(set(data), key=lambda x: data.index(x))
+
+        return [
+            super(serializers.MultipleChoiceField, self).to_internal_value(item)
+            for item in data
+        ]
+
+    def to_representation(self, value):
+        # remove duplicates
+        value = sorted(set(value), key=lambda x: value.index(x))
+        return [
+            self.choice_strings_to_values.get(six.text_type(item), item) for item in value
+        ]
+(I think I dont need to delete the duplicates on the to_representation() method)
+anyway, I'll add a Pull request later, see what you think about it
+1

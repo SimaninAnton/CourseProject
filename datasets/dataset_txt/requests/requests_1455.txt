@@ -1,0 +1,20 @@
+Contributor
+smiley commented on Apr 6, 2015
+I'm writing an adapter that interfaces with a CDN, and it requires that I "sign" my requests with a cookie, but it doesn't send the cookie back in Set-Cookie.
+I manage to send it on the first request, but then the site behind the CDN does send a Set-Cookie header (this is expected), and prepare_cookies called by the Session works its magic. The problem is, due to how cookielib is written, if a Cookie header was already composed, it won't be re-composed: (Even if cookies have changed between calls)
+# cookielib.py:CookieJar.add_cookie_header (starts at 1312)
+# ...
+attrs = self._cookie_attrs(cookies)
+if attrs:
+    if not request.has_header("Cookie"):
+        request.add_unredirected_header(
+          "Cookie", "; ".join(attrs))
+#...
+This causes a problem when any request past the first one on the same Session object renders my adapter worthless, as authentication fails and attempts to properly add cookies fail silently:
+def _prepare_request(self, request):
+    """
+    :type request: requests.PreparedRequest
+    """
+    request.prepare_cookies({self.COOKIE_NAME: self._get_authorization_cookie(request.url)})
+request._cookies is modified properly, but request.headers['Cookie'] is still its former self.
+If fixing this isn't possible (it is a bundled library after all), maybe requests could delete the header before calling CookieJar.add_cookie_header?

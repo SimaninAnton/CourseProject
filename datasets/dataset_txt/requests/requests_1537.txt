@@ -1,0 +1,11 @@
+Contributor
+sigmavirus24 commented on Jan 6, 2015
+Earlier today I was speaking with @ducu on IRC about a problem they're having using rq and requests. My intuition (which is really all I have to work with about this problem) is that all of the content on the response is not being consumed and people assume that doing something like:
+with contextlib.closing(requests.get(url, stream=True)) as response:
+    # do some stuff with response
+The socket will close properly. If I remember correctly though, we've seen that if the socket isn't completely consumed, this won't allow the socket to be released (at least not immediately). I'm further suspicious this is the cause because killing one of the workers for rq lets the job resume. I wonder what people think about changing Response.close to be something like:
+def close(self):
+    self.content
+    self.raw.release_conn()
+The call to self.content will consume the rest of the socket (if there's anything to consume) and then we'll release the connection (which should release the socket in this case).
+Thoughts? Also I'm pretty tired so I could be wrong about some of this stuff.

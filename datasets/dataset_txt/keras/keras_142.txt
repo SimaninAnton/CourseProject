@@ -1,0 +1,107 @@
+Johnny65456 commented on 3 Jul 2019
+I'm training a model with inception_v3 net in keras to classify the images into 4 categories. However, after many times debugging, my validation accuracy not change and the training accuracy reaches very high about 95% at the first epoch. I got a large dataset including 407 tf-records files. can someone help me?
+I'm trying to classify images into 4 categories which are Crystal, Clear, Precipitate and Other, their label are 0, 1, 2, 3. But my code seems not get good result. https://marco.ccr.buffalo.edu/download This is the website of the dataset.
+I don't know why the training acc increases so fast while the validation acc not change even run up to more than 10 epochs. There must be some problem with my code. Can some one help me?
+`batch_size = 64
+num_classes = 4
+epochs = 2000
+train_steps_per_epoch = 6500
+vali_steps_per_epoch = 735
+ignore_order = tf.data.Options()
+ignore_order.experimental_deterministic = False
+AUTO = tf.data.experimental.AUTOTUNE
+train_files = tf.data.Dataset.list_files("./work/train/train*", seed=2)
+train_files = train_files.with_options(ignore_order)
+train_files = train_files.interleave(tf.data.TFRecordDataset,
+cycle_length=407,
+num_parallel_calls=tf.data.experimental.AUTOTUNE)
+validation_files = tf.data.Dataset.list_files("./work/test/test*", seed=3)
+validation_files = validation_files.with_options(ignore_order)
+validation_files = validation_files.interleave(tf.data.TFRecordDataset,
+cycle_length=46,
+num_parallel_calls=tf.data.experimental.AUTOTUNE)
+def decode_example(example_proto):
+image_feature_description = {
+'image/height': tf.io.FixedLenFeature([], tf.int64),
+'image/width': tf.io.FixedLenFeature([], tf.int64),
+'image/colorspace': tf.io.FixedLenFeature([], tf.string),
+'image/channels': tf.io.FixedLenFeature([], tf.int64),
+'image/class/label': tf.io.FixedLenFeature([], tf.int64),
+'image/class/raw': tf.io.FixedLenFeature([], tf.int64),
+'image/class/source': tf.io.FixedLenFeature([], tf.int64),
+'image/class/text': tf.io.FixedLenFeature([], tf.string),
+'image/format': tf.io.FixedLenFeature([], tf.string),
+'image/filename': tf.io.FixedLenFeature([], tf.string),
+'image/id': tf.io.FixedLenFeature([], tf.int64),
+'image/encoded': tf.io.FixedLenFeature([], tf.string),
+}
+parsed_features = tf.io.parse_single_example(example_proto, image_feature_description)
+height = tf.cast(parsed_features['image/height'], tf.int32)
+width = tf.cast(parsed_features['image/width'], tf.int32)
+channels = tf.cast(parsed_features['image/channels'], tf.int32)
+label = tf.cast(parsed_features['image/class/label'], tf.int32)
+image_buffer = parsed_features['image/encoded']
+image = tf.io.decode_jpeg(image_buffer, channels=3)
+image = tf.image.central_crop(image, 0.8)
+image = tf.image.resize(image, [299, 299])
+image = tf.cast(image, tf.float32) / 255.0
+return image, label
+def image_augmentation(image, label):
+if random.random() < 0.5:
+image = tf.image.random_flip_left_right(image)
+image = tf.image.random_brightness(image=image, max_delta=32/255.0)
+image = tf.image.random_contrast(image, 0.5, 1.5)
+image = tf.image.random_hue(image, 0.2)
+return image, label
+def processed_dataset(dataset):
+dataset = dataset.shuffle(buffer_size=10000, seed=1)
+dataset = dataset.repeat()
+dataset = dataset.batch(batch_size)
+dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+return dataset
+def data_generator(dataset):
+iter = tf.compat.v1.data.make_one_shot_iterator(dataset)
+image, label = iter.get_next()
+while True:
+yield image, tf.keras.utils.to_categorical(label, num_classes=num_classes)
+train_dataset = train_files.map(decode_example, num_parallel_calls=AUTO)
+train_dataset = train_dataset.map(image_augmentation, num_parallel_calls=AUTO)
+train_dataset = processed_dataset(train_dataset)
+validation_dataset = validation_files.map(decode_example, num_parallel_calls=AUTO)
+validation_dataset = processed_dataset(validation_dataset)
+model = tf.keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None, input_shape=None, pooling=None, classes=4)
+def step_decay(epoch):
+initial_lrate = 0.005
+drop = 0.94
+epochs_drop = 2.0
+lrate = initial_lrate * math.pow(drop,
+math.floor((1+epoch)/epochs_drop))
+return lrate
+model.compile(loss='categorical_crossentropy',
+optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.005, momentum=0.9, epsilon=0.1, decay=0.9),
+metrics=['accuracy'])
+checkpoint_cb = tf.keras.callbacks.ModelCheckpoint("classification_model.h5",
+save_best_only=True)
+early_stopping_cb = tf.keras.callbacks.EarlyStopping(patience=10,
+restore_best_weights=True)
+lrate = tf.keras.callbacks.LearningRateScheduler(step_decay)
+history = model.fit_generator(
+data_generator(train_dataset),
+steps_per_epoch=train_steps_per_epoch,
+epochs=epochs,
+verbose=1,
+callbacks=[lrate, checkpoint_cb, early_stopping_cb],
+validation_data=data_generator(validation_dataset),
+validation_steps=vali_steps_per_epoch,
+workers = 0
+)`
+result:
+Epoch 1/2000
+6500/6500 [==============================] - 3942s 606ms/step - loss: 0.0065 - accuracy: 0.9982 - val_loss: 3.2384 - val_accuracy: 0.4062
+Epoch 2/2000
+6500/6500 [==============================] - 3151s 485ms/step - loss: 8.6521e-04 - accuracy: 1.0000 - val_loss: 3.2648 - val_accuracy: 0.4062
+Epoch 3/2000
+6500/6500 [==============================] - 3152s 485ms/step - loss: 8.1589e-04 - accuracy: 1.0000 - val_loss: 3.2768 - val_accuracy: 0.4062
+Epoch 4/2000
+6500/6500 [==============================] - 3152s 485ms/step - loss: 7.9254e-04 - accuracy: 1.0000 - val_loss: 3.2835 - val_ac
+Thank you!

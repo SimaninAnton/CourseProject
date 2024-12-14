@@ -1,0 +1,156 @@
+Miail commented on 25 May 2017 •
+edited
+I seem to have some issues using the cifar10 on vgg16 model... I seem to get a weird error message That I am not sure how to interpret:
+here is the code:
+from keras.utils import np_utils
+
+from keras import metrics
+import keras
+from keras import backend as K
+from keras.layers import Conv1D,Conv2D,MaxPooling2D, MaxPooling1D, Reshape
+from keras.models import Model
+from keras.layers import Input, Dense
+import tensorflow as tf
+from keras.datasets import mnist,cifar10
+
+
+
+WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels.h5'
+WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
+
+batch_size = 128
+num_classes = 10
+epochs = 12
+
+# input image dimensions
+img_rows, img_cols = 32, 32
+
+# the data, shuffled and split between train and test sets
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+#print('x_train shape:', x_train.shape)
+#print(x_train.shape[0], 'train samples')
+#print(x_test.shape[0], 'test samples')
+
+if K.image_data_format() == 'channels_first':
+    x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+    x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+    input_shape = (1, img_rows, img_cols)
+else:
+    x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 3)
+    x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 3)
+    input_shape = (img_rows, img_cols, 1)
+
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+
+x_train /= 255
+x_test /= 255
+
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+
+def fws():
+    #print "Inside"
+    #   Params:
+    #   batch ,  lr, decay , momentum, epochs
+    #
+    #Input shape: (batch_size,40,45,3)
+    #output shape: (1,15,50)
+    # number of unit in conv_feature_map = splitd
+    input = Input(shape=(img_rows,img_cols,3))
+    zero_padded_section = keras.layers.convolutional.ZeroPadding2D(padding=(96,96), data_format='channels_last')(input)
+    print zero_padded_section
+    model = keras.applications.vgg16.VGG16(include_top = True,
+                    weights = 'imagenet',
+                    input_shape = (224,224,3),
+                    pooling = 'max',
+                    classes = 1000)
+
+    model_output = model(input)
+
+
+    #FC
+    dense1 = Dense(units = 512, activation = 'relu',    name = "dense_1")(model_output)
+    dense2 = Dense(units = 256, activation = 'relu',    name = "dense_2")(dense1)
+    dense3 = Dense(units = 10 , activation = 'softmax', name = "dense_3")(dense2)
+
+
+    model = Model(inputs = input , outputs = dense3)
+    #sgd = SGD(lr=0.08,decay=0.025,momentum = 0.99,nesterov = True)
+    model.compile(loss="categorical_crossentropy", optimizer='adam' , metrics = [metrics.categorical_accuracy])
+
+    model.fit(x_train[:500], y_train[:500],
+              batch_size=batch_size,
+              epochs=epochs,
+              verbose=1,
+              validation_data=(x_test[:10], y_test[:10]))
+    score = model.evaluate(x_test, y_test, verbose=0)
+    print('Test loss:', score[0])
+    print('Test accuracy:', score[1])
+
+
+fws()
+And here is the error message:
+Traceback (most recent call last):
+  File "keras_cnn_vgg16_mnnist.py", line 102, in <module>
+    fws()
+  File "keras_cnn_vgg16_mnnist.py", line 96, in fws
+    validation_data=(x_test[:10], y_test[:10]))
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1501, in fit
+    initial_epoch=initial_epoch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1155, in _fit_loop
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/tensorflow_backend.py", line 2231, in __call__
+    feed_dict=feed_dict)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 778, in run
+    run_metadata_ptr)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 982, in _run
+    feed_dict_string, options, run_metadata)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 1032, in _do_run
+    target_list, options, run_metadata)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 1052, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Matrix size-incompatible: In[0]: [128,512], In[1]: [25088,4096]
+     [[Node: vgg16/fc1/MatMul = MatMul[T=DT_FLOAT, transpose_a=false, transpose_b=false, _device="/job:localhost/replica:0/task:0/cpu:0"](vgg16/flatten/Reshape, fc1/kernel/read)]]
+
+Caused by op u'vgg16/fc1/MatMul', defined at:
+  File "keras_cnn_vgg16_mnnist.py", line 102, in <module>
+    fws()
+  File "keras_cnn_vgg16_mnnist.py", line 79, in fws
+    model_output = model(input)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 585, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2027, in call
+    output_tensors, _, _ = self.run_internal_graph(inputs, masks)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2178, in run_internal_graph
+    output_tensors = _to_list(layer.call(computed_tensor, **kwargs))
+  File "/usr/local/lib/python2.7/dist-packages/keras/layers/core.py", line 840, in call
+    output = K.dot(inputs, self.kernel)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/tensorflow_backend.py", line 936, in dot
+    out = tf.matmul(x, y)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/math_ops.py", line 1801, in matmul
+    a, b, transpose_a=transpose_a, transpose_b=transpose_b, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/gen_math_ops.py", line 1263, in _mat_mul
+    transpose_b=transpose_b, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/op_def_library.py", line 768, in apply_op
+    op_def=op_def)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 2336, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 1228, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): Matrix size-incompatible: In[0]: [128,512], In[1]: [25088,4096]
+     [[Node: vgg16/fc1/MatMul = MatMul[T=DT_FLOAT, transpose_a=false, transpose_b=false, _device="/job:localhost/replica:0/task:0/cpu:0"](vgg16/flatten/Reshape, fc1/kernel/read)]]
+Not sure how I should interpret this?
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

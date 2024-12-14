@@ -1,0 +1,42 @@
+nawarnoori commented on 11 Apr 2019
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Send a request with Accept-Language: pt or pt-pt that will trigger a translated DRF message, say, about incorrect date format.
+E.g if you have the following setup:
+class DateOfBirthSerializer(serializers.Serializer):
+    date_of_birth = fields.DateField()
+
+class ValidateViewSet(viewsets.ViewSet):
+    @action(methods=('post',), detail=False)
+    def date_of_birth(self, request):
+        DateOfBirthSerializer(data=request.data).is_valid(raise_exception=True)
+        return Response({})
+
+router = SimpleRouter()
+router.register('validate', ValidateViewSet, 'validate')
+And then you send the following request:
+curl --request POST \
+  --url http://api.com/validate/date_of_birth
+  --header 'accept-language: pt' \
+  --header 'content-type: application/json' \
+  --data '{"date_of_birth": "20000-01-01"}'
+Expected behavior
+As only Brazilian Portuguese is available, pt should fall back to it and it should return:
+{
+  "date_of_birth": [
+    "Formato inválido para data. Use um dos formatos a seguir: YYYY-MM-DD."
+  ]
+Actual behavior
+pt doesn't fallback to any version of Portuguese and so falls back to English:
+{
+  "date_of_birth": [
+    "Date has wrong format. Use one of these formats instead: YYYY-MM-DD."
+  ]
+}
+I know this is essentially regulated by the locale middleware, but what I propose is that we duplicate the "Portuguese (Brazil)" translation for just "Portuguese" and leave "Portuguese (Portugal)" alone. That way there is some form of Portuguese available for the pt accept language header.

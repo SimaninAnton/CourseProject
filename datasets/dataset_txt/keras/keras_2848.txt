@@ -1,0 +1,114 @@
+silentsnooc commented on 26 Mar 2017 •
+edited
+I don't know what I'm doing wrong here. I have had the same problem with another network. I'm sure that I am the lose end here but I just don't get why my network converges to just one prediction and then starts to output the same values for every sample that's been shown to it.
+You can get the data set here: data.csv.zip and at the code I am using:
+import os
+import pandas as pd
+import numpy as np
+
+from keras.engine import Input
+from keras.engine import Model
+from keras.layers import Dense, Dropout
+from keras.models import load_model
+from sklearn.model_selection import train_test_split
+
+
+class FeedForward:
+
+    def __init__(self, input_dim, nb_classes):
+
+        in_x = Input(shape=(input_dim, ), name='in_x')
+
+        h1 = Dense(14, name='h1', activation='relu')(in_x)
+        h1 = Dropout(0.5)(h1)
+
+        h2 = Dense(8, name='h2', activation='relu')(h1)
+        h2 = Dropout(0.5)(h2)
+
+        out = Dense(nb_classes, name='out', activation='softmax')(h2)
+        out = Dropout(0.5)(out)
+
+        self.model = Model(input=[in_x], output=[out])
+
+    def compile_model(self, optimizer='adam', loss='mse'):
+        self.model.compile(optimizer=optimizer, loss=loss, metrics=["accuracy"])
+
+
+if __name__ == '__main__':
+
+    df_data = pd.DataFrame.from_csv('data.csv')
+
+    X = df_data.T[:13].T.as_matrix()
+    y = df_data.T[13:].T.as_matrix()
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=42)
+
+    ffn = FeedForward(input_dim=X.shape[1], nb_classes=y.shape[1])
+    ffn.compile_model()
+
+    nb_epochs = 10
+    nb_samples_in_batch = 10
+
+    # True for new training; False for no training
+    training = True
+
+    if training or not os.path.exists('fnn_example.h5'):
+
+        for epoch in range(nb_epochs):
+
+            print('Epoch {:d} of {:d}'.format(epoch+1, nb_epochs))
+
+            loss = 0
+            accuracy = 0
+            n = 0
+
+            for i in range(0, X_train.shape[0], nb_samples_in_batch):
+
+                X = X_train[i:i+nb_samples_in_batch, :]
+                y = y_train[i:i+nb_samples_in_batch, :]
+
+                # Normalize; note there is no check for divide by 0.
+                X /= (np.max(X, axis=0) - np.min(X, axis=0))
+
+                l, a = ffn.model.train_on_batch(X, y)
+
+                loss += l
+                accuracy += a
+                n += 1
+
+                print('Small test batch ..')
+
+                choice = np.random.choice([i for i in range(X_test.shape[0])], nb_samples_in_batch, replace=False)
+                test_pred = ffn.model.predict(X_test[choice])
+
+                if ((test_pred - test_pred[0]) == 0).all():
+                    print('ALL PREDICTIONS ARE EQUAL?!')
+                else:
+                    print('Got some predictions here ..')
+
+            print('avg. loss: {:.4f}, avg. accuracy: {:.4f}'.format(loss/n, accuracy/n))
+
+        ffn.model.save('fnn_example.h5')
+
+    # Take a look at the test set predictions
+
+    ffn.model = load_model('fnn_example.h5')
+
+    print('Run on entire test set ..')
+
+    for i in range(0, X_test.shape[0], nb_samples_in_batch):
+
+        X = X_test[i:i + nb_samples_in_batch, :]
+        y = y_test[i:i + nb_samples_in_batch, :]
+        X /= (np.max(X, axis=0) - np.min(X, axis=0))
+
+        y_pred = ffn.model.predict(X)
+
+        if ((test_pred - test_pred[0]) == 0).all():
+            print('ALL PREDICTIONS ARE EQUAL?!')
+        else:
+            print('Got some predictions here ..')
+
+    print('All done')
+What I want to do here is to predict one of the classes for each sample given in data.csv.
+Any help on this would be great.

@@ -1,0 +1,66 @@
+Contributor
+PhilipGarnero commented on 17 Dec 2014
+Hello !
+I'm having some trouble using nested serialization with drf 3.0.1:
+I found out that the depth argument ignores what is set in the fields argument and if I remove it,
+I can't have any nested serialization.
+I'm a bit stuck at this point, if I remove it I lose the nested serialization but if I let it, it will put everything it encounters in the nested until throwing errors like AssertionError: May not set both 'read_only' and 'required'.
+Here's my code :
+#models.py
+class Profile(models.Model):
+    user = models.ForeignKey(User)
+    name = models.CharField(max_length=80)
+    avatar = models.ImageField(storage=protected_media, upload_to=to_user_dir)
+
+
+class Adventure(models.Model):
+    name = models.CharField(max_length=50)
+    user_profile = models.ForeignKey(Profile)
+
+#serializers.py
+class ProfileSerializer(serializers.HyperlinkedModelSerializer):
+    avatar = serializers.ImageField(max_length=None, allow_empty_file=False)
+
+    class Meta:
+        model = Profile
+        fields = ("url", "avatar", "name") #user field is not present
+
+class NestedAdventureSerializer(serializers.HyperlinkedModelSerializer):
+    levels = NestedLevelSerializer(source="level_set"), #some uninteresting serializer
+    nested_url = serializers.HyperlinkedIdentityField(view_name='nested_adventure-detail')
+    url = serializers.HyperlinkedIdentityField(view_name='adventure-detail')
+
+    class Meta:
+        model = Adventure
+        fields = ("url", "nested_url", "name", "level_set") #user_profile field is not present
+        depth = 2
+Here's what I get when I print a NestedAdventureSerializer's instance:
+NestedSerializer(read_only=True, required=True):
+    url = HyperlinkedIdentityField(view_name='contenttype-detail')
+    name = CharField(max_length=100)
+    app_label = CharField(max_length=100, required=True)
+    model = CharField(label='Python model class name', max_length=100, required=True)
+    class Meta:
+        validators = [<UniqueTogetherValidator(queryset=ContentType.objects.all(), fields=(u'app_label', u'model'))>] None
+NestedSerializer(read_only=True, required=True):
+    url = HyperlinkedIdentityField(view_name='contenttype-detail')
+    name = CharField(max_length=100)
+    app_label = CharField(max_length=100, required=True)
+    model = CharField(label='Python model class name', max_length=100, required=True)
+    class Meta:
+        validators = [<UniqueTogetherValidator(queryset=ContentType.objects.all(), fields=(u'app_label', u'model'))>] None
+NestedSerializer(read_only=True, required=True):
+    url = HyperlinkedIdentityField(view_name='adventure-detail')
+    name = CharField(max_length=50)
+    user_profile = NestedSerializer(read_only=True):
+        url = HyperlinkedIdentityField(view_name='profile-detail')
+        name = CharField(max_length=80)
+        avatar = ImageField(max_length=100)
+        user = NestedSerializer(read_only=True):
+             # and it goes on with django's User model until throwing assertions
+NestedAdventureSerializer():
+    url = HyperlinkedIdentityField(view_name='adventure-detail')
+    nested_url = HyperlinkedIdentityField(view_name='nested_adventure-detail')
+    name = CharField(max_length=50)
+    level_set = ListSerializer(child=NestedSerializer(read_only=True):, read_only=True)
+Thank you in advance for your help !

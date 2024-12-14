@@ -1,0 +1,39 @@
+Contributor
+parag2489 commented on 11 Feb 2016
+The title is explains the problem in ImageDataGenerator. I defined the data generator as follows:
+datagen = ImageDataGenerator(
+        featurewise_center=False,  # set input mean to 0 over the dataset
+        samplewise_center=False,  # set each sample mean to 0
+        featurewise_std_normalization=False,  # divide inputs by std of the dataset
+        samplewise_std_normalization=False,  # divide each input by its std
+        zca_whitening=False,  # apply ZCA whitening
+        rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
+        width_shift_range=0.5,  # randomly shift images horizontally (fraction of total width)
+        height_shift_range=0.0,  # randomly shift images vertically (fraction of total height)
+        horizontal_flip=False,  # randomly flip images
+        vertical_flip=False)  # randomly flip images
+Now one may assume by reading the ImageDataGenerator documentation that the images will be shifted by 0.5*image_width from left to right (or from right to left). What I found by looking at the shifted images was totally opposite. When width_shift_range>0 and height_shift_range=0, it shifts the image from top to bottom.
+The culprit is in this line in image.py:
+ndimage.interpolation.shift(x, (0, crop_left_pixels, crop_top_pixels), order=0, 
+mode=fill_mode, cval=cval)
+If we change the order of crop_left_pixels and crop_right_pixels, the images will shift as expected. One more thing remains, if crop_left_pixels = 0.2, then the image shifts in one direction only (I think ndimage does it from left to right). This prevents images getting shifted from other direction. Solution? Multiply crop_left_pixels by -1 in a random fashion. The modified function looks as follows:
+def random_shift(x, wrg, hrg, fill_mode="nearest", cval=0.):
+    crop_left_pixels = 0
+    crop_top_pixels = 0
+
+    if wrg:
+        crop = random.uniform(0., wrg)
+        split = random.uniform(0, 1)
+        randSign = 2*np.random.randint(2)-1 #allows cropping from left and right both
+        crop_left_pixels = randSign*int(split*crop*x.shape[2]) #x.shape[2] are actually columns
+    if hrg:
+        crop = random.uniform(0., hrg)
+        split = random.uniform(0, 1)
+    randSign = 2*np.random.randint(2)-1 #allows cropping from top and bottom both
+        crop_top_pixels = randSign*int(split*crop*x.shape[1]) #x.shape[1] are actually rows
+    x = ndimage.interpolation.shift(x, (0, crop_top_pixels, crop_left_pixels),
+                                    order=0,
+                                    mode=fill_mode,
+                                    cval=cval)
+    return x
+If @fchollet can comment on this, then I can submit a pull request or anything else needed as per the norms.

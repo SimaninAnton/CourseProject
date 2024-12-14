@@ -1,0 +1,24 @@
+Member
+bmw commented on 20 Jul 2016 •
+edited
+With #3223, our error handler is getting pretty solid. There are still a few ways things can go wrong though.
+Problems
+An exception or signal occurs during __enter__. The potential problems here are the registered functions don't get run, we'll raise a SignalExit exception, and the error handler's signal handlers are still in use.
+A signal (or theoretically an exception, however, I'm not sure how an exception other than SignalExit occurs) is sent before the self.body_executed = True line in __exit__. This has the same problems as problem 1.
+We get a signal while resetting signal handlers. All signals we've seen so far will likely never be handled and we may not reset all signal handlers.
+This probably isn't a problem, but for the sake of completeness consider the following. What if we get two signals very close together? Imagine the first signal handler is just before the raise SignalExit line and the other runs to completion. If that first signal handler ever also runs to completion, it'll will raise a SignalExit we don't want. I doubt this will happen because a) all signals we're handling are fatal and b) I haven't found a way to resume execution of the previous signal handler if the 2nd signal handler raises an exception (I also haven't found anything saying it's impossible though).
+Mitigations
+Set body_executed to True in the beginning of __enter__ and set it to False before returning. This only barely helps, but any signals that we've set the handler for will be deferred, reducing the chance we don't reset signal handlers.
+Replace body_executed with a threading.Lock. This eliminates problem 4, helps problem 2, and also helps problem 1 if we also do the mitigation above. Setting body_executed to True takes 3 Python bytecode instructions:
+              0 LOAD_GLOBAL              0 (True)
+              3 LOAD_FAST                0 (self)
+              6 STORE_ATTR               1 (body_executed)
+By using the lock like: lock.acquire(False), we get an operation that's atomic with respect to the GIL, meaning no signal can interrupt the operation. See GIL (threading.Lock.acquire is pure C) and the signal documentation about atomicity. It doesn't eliminate problem 1 or 2, but it reduces the window where it can occur.
+As proposed by @cowlicks, wrap all code in __exit__ in a try block except for _reset_signal_handlers and _call_signals which should be placed in a corresponding finally block. This reduces the chance the registered functions get called (there's more code before self.body_executed = True), but reduces the chance that the signal handlers are not restored.
+We use the frame argument given to the signal handler with the inspect module to determine whether or not an exception should be raised. This gets ugly quick. We could just say that do not raise a SignalExit exception if the last frame of the traceback was executing code in the error_handler.py file. The thought here is you were likely executing __enter__, __exit__, or _signal_handler, so should just log the signal and let the previous code continue execution.
+This simple approach has a couple problems though. What if we were executing code called by the ErrorHandler? For example, is the signal module written entirely in C or are we calling into Python code? If the latter, the last frame of the traceback might not be error_handler.py if we're in __enter__. We may need to walk the entire traceback to see if any frame is executing ErrorHandler code.
+Additionally, we could have been executing code from another ErrorHandler instance. This could have occurred during the other ErrorHandler's __init__, __enter__, or __exit__ after/during _reset_signal_handlers. Ideally, we'd want to know if we were executing code from our own ErrorHandler instance, however, I'm not sure if this is possible.
+Conclusion
+Phew. This lists all potential problems with the ErrorHandler I'm aware of and potential mitigations I've considered. I don't think adding much extra complexity is worth addressing the problems here though. Even if the registered functions fail to run, running the client again with certbot rollback will still restore your config. A failure here isn't catastrophic, however, it is less convenient to the user.
+If anyone else has any ideas on problems/mitigations here, I'd love to hear them. I've nerded out about this problem quite a bit.
+1

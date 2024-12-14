@@ -1,0 +1,80 @@
+turicas commented on Nov 7, 2019
+Description
+I'm using download_latency in spider's parse method and it's not available (generating a KeyError) if the response is taken from the cache.
+Steps to Reproduce
+Create a simple spider which uses response.meta["download_latency"] inside parse, called latency.py:
+import scrapy
+
+class LatencySpider(scrapy.Spider):
+    name = "latency"
+    start_urls = ["https://brasil.io/home", "https://brasil.io/datasets", "https://brasil.io/manifesto"]
+
+    def parse(self, response):
+        yield {
+            "url": response.url,
+            "latency": response.meta["download_latency"],
+        }
+Run the spider with cache enabled to store values in the cache:
+scrapy runspider -s HTTPCACHE_ENABLED=true latency.py -o latency.csv
+It's going to run successfully since there's no cache yet.
+Run the spider again (using the same command), so it will use the cache and crashes:
+2019-11-07 10:19:46 [scrapy.core.scraper] ERROR: Spider error processing <GET https://brasil.io/home> (referer: None)
+Traceback (most recent call last):
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/utils/defer.py", line 102, in iter_errback
+    yield next(it)
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/offsite.py", line 29, in process_spider_output
+    for x in result:
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/referer.py", line 339, in <genexpr>
+    return (_set_referer(r) for r in result or ())
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/urllength.py", line 37, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/depth.py", line 58, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/turicas/projects/rows/latency.py", line 10, in parse
+    "latency": response.meta["download_latency"],
+KeyError: 'download_latency'
+2019-11-07 10:19:46 [scrapy.core.scraper] ERROR: Spider error processing <GET https://brasil.io/datasets> (referer: None)
+Traceback (most recent call last):
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/utils/defer.py", line 102, in iter_errback
+    yield next(it)
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/offsite.py", line 29, in process_spider_output
+    for x in result:
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/referer.py", line 339, in <genexpr>
+    return (_set_referer(r) for r in result or ())
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/urllength.py", line 37, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/depth.py", line 58, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/turicas/projects/rows/latency.py", line 10, in parse
+    "latency": response.meta["download_latency"],
+KeyError: 'download_latency'
+2019-11-07 10:19:46 [scrapy.core.scraper] ERROR: Spider error processing <GET https://brasil.io/manifesto> (referer: None)
+Traceback (most recent call last):
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/utils/defer.py", line 102, in iter_errback
+    yield next(it)
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/offsite.py", line 29, in process_spider_output
+    for x in result:
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/referer.py", line 339, in <genexpr>
+    return (_set_referer(r) for r in result or ())
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/urllength.py", line 37, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/turicas/software/pyenv/versions/3.7.3/envs/rows/lib/python3.7/site-packages/scrapy/spidermiddlewares/depth.py", line 58, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/turicas/projects/rows/latency.py", line 10, in parse
+    "latency": response.meta["download_latency"],
+KeyError: 'download_latency'
+Expected behavior: all automatically-created meta keys available to parse in a cache miss should be also available in a cache hit.
+Actual behavior: the automatically-created meta keys are not available if response is taken from the cache.
+Reproduces how often: always.
+Versions
+Scrapy       : 1.8.0
+lxml         : 4.4.1.0
+libxml2      : 2.9.9
+cssselect    : 1.1.0
+parsel       : 1.5.2
+w3lib        : 1.21.0
+Twisted      : 19.7.0
+Python       : 3.7.5 (default, Oct 30 2019, 21:03:20) - [GCC 9.2.1 20191027]
+pyOpenSSL    : 19.0.0 (OpenSSL 1.1.1d  10 Sep 2019)
+cryptography : 2.8
+Platform     : Linux-4.19.0-6-amd64-x86_64-with-debian-bullseye-sid

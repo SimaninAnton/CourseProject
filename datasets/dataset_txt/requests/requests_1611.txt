@@ -1,0 +1,65 @@
+erickt commented on Oct 13, 2014
+Requests does not appear to be escaping cookies appropriately, which triggers this bug:
+>>> import requests
+>>> r = requests.get('http://httpbin.org/cookies',
+...     cookies={
+...       'escaped': '"a=b;b=c"',
+...       'unescaped': 'x=y;y=z',
+...     })
+>>> print r.text
+{
+  "cookies": {
+    "escaped": "a=b;b=c", 
+    "unescaped": "x=y", 
+    "y": "z"
+  }
+}
+According to the RFC 2109 spec, cookies with reserved characters like ; should be escaped with quotes. Here are the relevant definitions from that spec:
+From RFC 2109:
+   av-pairs        =       av-pair *(";" av-pair)
+   av-pair         =       attr ["=" value]        ; optional value
+   attr            =       token
+   value           =       word
+   word            =       token | quoted-string
+
+   cookie          =       "Cookie:" cookie-version
+                           1*((";" | ",") cookie-value)
+   cookie-value    =       NAME "=" VALUE [";" path] [";" domain]
+   cookie-version  =       "$Version" "=" value
+   NAME            =       attr
+   VALUE           =       value
+   path            =       "$Path" "=" value
+   domain          =       "$Domain" "=" value
+
+   set-cookie      =       "Set-Cookie:" cookies
+   cookies         =       1#cookie
+   cookie          =       NAME "=" VALUE *(";" cookie-av)
+   NAME            =       attr
+   VALUE           =       value
+   cookie-av       =       "Comment" "=" value
+                   |       "Domain" "=" value
+                   |       "Max-Age" "=" value
+                   |       "Path" "=" value
+                   |       "Secure"
+                   |       "Version" "=" 1*DIGIT
+
+From RFC 2068:
+          token          = 1*<any CHAR except CTLs or tspecials>
+
+          tspecials      = "(" | ")" | "<" | ">" | "@"
+                         | "," | ";" | ":" | "\" | <">
+                         | "/" | "[" | "]" | "?" | "="
+                         | "{" | "}" | SP | HT
+
+         quoted-string  = ( <"> *(qdtext) <"> )
+
+          qdtext         = <any TEXT except <">>
+If I read requests source correctly, I believe this may actually be a bug in the upstream cookiejar code, which doesn't appear to escape cookies when it is added to the cookie jar. However, the cookies jar appears to work fine:
+>>> import Cookie
+>>> c=Cookie.SimpleCookie()
+>>> c['escaped'] = '"a=b;b=c"'
+>>> c['unescaped'] = 'a=b;b=c'
+>>> print c.output()
+Set-Cookie: escaped="\"a=b\073b=c\""
+Set-Cookie: unescaped="a=b\073b=c"
+You can find the method that does the quoting here.

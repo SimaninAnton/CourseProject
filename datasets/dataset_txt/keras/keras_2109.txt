@@ -1,0 +1,48 @@
+rawmean commented on 20 Jun 2017
+According to ConvLSTM2D documentation, when return_sequences=False, the ConvLSTM2D is supposed to only return the last element of the sequence. Specifically:
+     # Output shape
+        - if `return_sequences`
+             - if data_format='channels_first'
+                5D tensor with shape:
+                `(samples, time, filters, output_row, output_col)`
+             - if data_format='channels_last'
+                5D tensor with shape:
+                `(samples, time, output_row, output_col, filters)`
+        - else
+            - if data_format ='channels_first'
+                4D tensor with shape:
+                `(samples, filters, output_row, output_col)`
+            - if data_format='channels_last'
+                4D tensor with shape:
+                `(samples, output_row, output_col, filters)`
+            where o_row and o_col depend on the shape of the filter and
+            the padding
+But setting return_sequences=False seem to have no effect and the layer continues to return a 5-d tensor.
+Is this a bug? Is there a workaround?
+Here is my code:
+def create_model(input_shape):
+
+    num_filters = 15
+    model = Sequential()
+    model.add(ConvLSTM2D(filters=num_filters, kernel_size=(3, 3),
+                         # input_shape=(None, 40, 40, 1),
+                         input_shape=input_shape,
+                         padding='same', return_sequences=True))
+    model.add(BatchNormalization())
+
+    model.add(ConvLSTM2D(filters=num_filters/2, kernel_size=(3, 3),
+                         padding='same', return_sequences=True))
+    model.add(BatchNormalization())
+
+    model.add(ConvLSTM2D(filters=num_filters, kernel_size=(3, 3),
+                         padding='same', return_sequences=False))
+    model.add(BatchNormalization())
+
+    model.add(Conv2D(filters=1, kernel_size=(3, 3),
+                     activation='sigmoid',
+                     padding='same', data_format='channels_last'))
+
+    opt = optimizers.Adam(lr=1e-4)
+    model.compile(loss='mae', optimizer=opt, metrics=[metrics.mae])
+
+    return model

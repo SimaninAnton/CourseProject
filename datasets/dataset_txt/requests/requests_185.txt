@@ -1,0 +1,194 @@
+bsolomon1124 commented on Sep 28, 2018 •
+edited
+Edit - after investigating this more, it looks like this issue is not specific to requests, per se. Please feel free to close it, but I would greatly appreciate any ideas about what could possibly be different between the two scenarios.
+Same version of requests fails on a straightforward GET request for http://www.for.kg/news-515078-ru.html and a lot of other URLs for this domain as well.
+The only version difference from python3 -m requests.help is ssl: 1000207f versus 1000210f. (And Python 3.6.6 versus 3.7.0, I should mention.)
+Updates at bottom here as I've tried to debug this.
+Here are the headers for each.
+Ubuntu:
+(py36) root@ip-XX-XX-XX-XX:/home/ubuntu/clipslab# curl -I http://www.for.kg/news-515078-ru.html
+HTTP/1.1 302 Moved Temporarily
+Server: nginx
+Date: Thu, 27 Sep 2018 23:33:32 GMT
+Content-Type: text/html; charset=utf-8
+Connection: keep-alive
+location: http://.amazonaws.com
+Access-Control-Allow-Origin: *
+X-Powered-By: PleskLin
+Mac:
+ ~$ curl -I http://www.for.kg/news-515078-ru.html
+HTTP/1.1 200 OK
+Server: nginx
+Date: Thu, 27 Sep 2018 23:33:17 GMT
+Content-Type: text/html; charset=utf-8
+Connection: keep-alive
+Vary: Accept-Encoding
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+Pragma: no-cache
+Set-Cookie: PHPSESSID=XXXXXXX; path=/
+Set-Cookie: nlang=ru; expires=Sat, 28-Sep-2019 23:33:14 GMT; path=/
+Set-Cookie: forkgnews515078=true; expires=Thu, 04-Oct-2018 23:33:17 GMT; path=/
+Access-Control-Allow-Origin: *
+X-Powered-By: PleskLin
+Expected Result
+A 200 status code, a response with content, ... the works.
+Actual Result
+Traceback on Ubuntu
+>>> import requests
+>>> url = 'http://www.for.kg/news-515078-ru.html'
+>>> requests.request('GET', url)
+Traceback (most recent call last):
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/encodings/idna.py", line 165, in encode
+    raise UnicodeError("label empty or too long")
+UnicodeError: label empty or too long
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/api.py", line 58, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/sessions.py", line 512, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/sessions.py", line 644, in send
+    history = [resp for resp in gen] if allow_redirects else []
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/sessions.py", line 644, in <listcomp>
+    history = [resp for resp in gen] if allow_redirects else []
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/sessions.py", line 222, in resolve_redirects
+    **adapter_kwargs
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/sessions.py", line 622, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/requests/adapters.py", line 445, in send
+    timeout=timeout
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 600, in urlopen
+    chunked=chunked)
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 354, in _make_request
+    conn.request(method, url, **httplib_request_kw)
+  File "/usr/lib/python3.6/http/client.py", line 1239, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1285, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1234, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1026, in _send_output
+    self.send(msg)
+  File "/usr/lib/python3.6/http/client.py", line 964, in send
+    self.connect()
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/urllib3/connection.py", line 196, in connect
+    conn = self._new_conn()
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/urllib3/connection.py", line 171, in _new_conn
+    (self._dns_host, self.port), self.timeout, **extra_kw)
+  File "/home/ubuntu/clipslab/py36/lib/python3.6/site-packages/urllib3/util/connection.py", line 56, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+  File "/usr/lib/python3.6/socket.py", line 745, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+UnicodeError: encoding with 'idna' codec failed (UnicodeError: label empty or too long)
+Going to throw a pdb trace in there and try to follow along but that is a hell of a traceback.
+What I can tell is that:
+Original URL redirects
+Response encoding is chunked (see headers below)
+No Problem on Mac
+>>> import requests
+>>> url = 'http://www.for.kg/news-515078-ru.html'
+>>> res = requests.request('GET', url)
+>>> res
+<Response [200]>
+>>> len(res.content)
+28079
+>>> res.headers
+{'Server': 'nginx', 'Date': 'Thu, 27 Sep 2018 20:15:16 GMT', 'Content-Type': 'text/html; charset=utf-8', 'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive', 'Vary': 'Accept-Encoding', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Cache-Control': 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0', 'Pragma': 'no-cache', 'Set-Cookie': 'PHPSESSID=XXXXX; path=/, nlang=ru; expires=Sat, 28-Sep-2019 20:15:16 GMT; path=/, forkgnews515078=true; expires=Thu, 04-Oct-2018 20:15:16 GMT; path=/', 'Access-Control-Allow-Origin': '*', 'X-Powered-By': 'PleskLin', 'Content-Encoding': 'gzip'}
+System Information
+Ubuntu
+Ubuntu 16.04.5 LTS (GNU/Linux 4.4.0-1065-aws x86_64)
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.7"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.6"
+  },
+  "platform": {
+    "release": "4.4.0-1065-aws",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.19.1"
+  },
+  "system_ssl": {
+    "version": "1000207f"
+  },
+  "urllib3": {
+    "version": "1.23"
+  },
+  "using_pyopenssl": false
+}
+Mac
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.7"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.7.0"
+  },
+  "platform": {
+    "release": "17.7.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.19.1"
+  },
+  "system_ssl": {
+    "version": "1000210f"
+  },
+  "urllib3": {
+    "version": "1.23"
+  },
+  "using_pyopenssl": false
+}
+Updates
+On Ubuntu:
+From requests/sessions.py, r = adapter.send(request, **kwargs), I can confirm there is a redirect. (In fact, when I did a similar process with aiohttp, it was the location key, http://.amazonaws.com, that raised an exception. Might be that here too, not sure yet.
+(Pdb) p r
+<Response [302]>
+(Pdb) p r.headers
+{'Server': 'nginx', 'Date': 'Thu, 27 Sep 2018 20:49:01 GMT', 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': '0', 'Connection': 'keep-alive', 'location': 'http://.amazonaws.com', 'Access-Control-Allow-Origin': '*', 'X-Powered-By': 'PleskLin'}
+The AWS address gets used as URL here; to confirm:
+(Pdb) url
+'http://.amazonaws.com'
+(Pdb) prepared_request.url
+'http://.amazonaws.com'
+So the 'location' header gets pulled off the 302 response, which is the input to get_redirect_target(), and used as (next) the URL in the redirect resolve; this leads to another call to self.send(..., allow_redirects=False).
+On Mac:
+It seems where the difference originally arises is that on Mac, I never encounter the 302 response in the first place:
+(Pdb) 
+> /usr/local/lib/python3.7/site-packages/requests/sessions.py(625)send()
+-> elapsed = preferred_clock() - start
+(Pdb) p r
+<Response [200]>
+(Pdb) p r.headers
+{'Server': 'nginx', 'Date': 'Thu, 27 Sep 2018 21:23:35 GMT', 'Content-Type': 'text/html; charset=utf-8', 'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive', 'Vary': 'Accept-Encoding', 'Expires': 'Thu, 19 Nov 1981 08:52:00 GMT', 'Cache-Control': 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0', 'Pragma': 'no-cache', 'Set-Cookie': 'PHPSESSID=XXXXX; path=/, nlang=ru; expires=Sat, 28-Sep-2019 21:23:35 GMT; path=/, forkgnews515078=true; expires=Thu, 04-Oct-2018 21:23:35 GMT; path=/', 'Access-Control-Allow-Origin': '*', 'X-Powered-By': 'PleskLin', 'Content-Encoding': 'gzip'}

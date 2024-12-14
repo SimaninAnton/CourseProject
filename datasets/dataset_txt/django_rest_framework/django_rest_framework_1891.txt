@@ -1,0 +1,33 @@
+Contributor
+cancan101 commented on 7 Apr 2015
+rest_framework.request.request.data is not idempotent. It may raise an exception the first time it is called but then return an empty dict the second time. This is due to how the _parse method is written:
+        try:
+            parsed = parser.parse(stream, media_type, self.parser_context)
+        except:
+            # If we get an exception during parsing, fill in empty data and
+            # re-raise.  Ensures we don't simply repeat the error when
+            # attempting to render the browsable renderer response, or when
+            # logging the request or similar.
+            self._data = QueryDict('', encoding=self._request._encoding)
+            self._files = MultiValueDict()
+            self._full_data = self._data
+            raise
+where it will re-raise the exception but also set a number of fields that will be used the subsequent times that data is called:
+    @property
+    def data(self):
+        if not _hasattr(self, '_full_data'):
+            self._load_data_and_files()
+        return self._full_data
+Here is a test case that demonstrates the issue:
+        request = mock.MagicMock()
+        negotiator = mock.MagicMock()
+        negotiator.select_parser.return_value = JSONParser()
+        request = rest_framework.request.Request(request=request, negotiator=negotiator)
+        request._stream = mock.MagicMock()
+        request._stream.read.return_value.decode.return_value = u''
+
+        with self.assertRaises(ParseError):
+            request.data
+
+        with self.assertRaises(ParseError):
+            request.data

@@ -1,0 +1,108 @@
+msAlcantara commented on 8 Nov 2019 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+I'm trying to code a serializer that receive a list of objects or a single object to insert in database, but when I receive a list with one object of list invalid, I got an AttributeError exception. This errors just occurs when request.data is a list, when is a single object, the validation occurs fine.
+Steps to reproduce
+models.py
+class Entity(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+
+class TimeSeries(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    entity = models.ForeignKey(Entity, on_delete=models.DO_NOTHING)
+    labels = JSONField(default=dict)
+serializers.py
+class TimeSeriesSerializer(serializers.ModelSerializer): 
+    def create(self, validated_data):
+        print(validated_data)
+        timeseries = TimeSeries(
+            name=validated_data.get("name", None),
+            entity=validated_data.get("entity", None),
+            labels=validated_data.get("labels", None),
+        )
+        timeseries.save()
+        return timeseries
+
+    class Meta:
+        model = TimeSeries
+        fields = "__all__"
+views.py
+class TimeSeriesViewSet(viewsets.ModelViewSet):
+    queryset = TimeSeries.objects.all()
+    serializer_class = TimeSeriesSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            data=request.data, many=isinstance(request.data, list)
+        )
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(
+                serializer.data, status=status.HTTP_201_CREATED, headers=headers
+            )
+
+        return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+request
+[
+    { 
+       //without name field
+        "labels": {},
+        "entity": "5b686a9b-2518-4c37-b07b-4d00b476b2f3"
+    },
+      { 
+        "name": "foobar",
+        "labels": {},
+        "entity": "5b686a9b-2518-4c37-b07b-4d00b476b2f3"
+    }
+
+]
+Expected behavior
+some response whit this information
+[{}, {'name': [ErrorDetail(string='This field is required.', code='required')]}]
+Actual behavior
+exception
+Internal Server Error: /timeseries/
+Traceback (most recent call last):
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/django/core/handlers/exception.py", line 34, in inner
+    response = get_response(request)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/django/core/handlers/base.py", line 145, in _get_response
+    response = self.process_exception_by_middleware(e, request)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/django/core/handlers/base.py", line 143, in _get_response
+    response = response.render()
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/django/template/response.py", line 106, in render
+    self.content = self.rendered_content
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/response.py", line 70, in rendered_content
+    ret = renderer.render(self.data, accepted_media_type, context)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/renderers.py", line 725, in render
+    context = self.get_context(data, accepted_media_type, renderer_context)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/renderers.py", line 697, in get_context
+    'post_form': self.get_rendered_html_form(data, view, 'POST', request),
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/renderers.py", line 494, in get_rendered_html_form
+    return self.render_form_for_serializer(existing_serializer)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/renderers.py", line 520, in render_form_for_serializer
+    serializer.data,
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/serializers.py", line 757, in data
+    ret = super().data
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/serializers.py", line 265, in data
+    self._data = self.get_initial()
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/serializers.py", line 595, in get_initial
+    return self.to_representation(self.initial_data)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/serializers.py", line 675, in to_representation
+    self.child.to_representation(item) for item in iterable
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/serializers.py", line 675, in <listcomp>
+    self.child.to_representation(item) for item in iterable
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/serializers.py", line 526, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/home/matheus/dev/myproject/venv/lib/python3.6/site-packages/rest_framework/relations.py", line 265, in to_representation
+    return value.pk
+AttributeError: 'str' object has no attribute 'pk'
+[08/Nov/2019 17:33:08] "POST /timeseries/ HTTP/1.1" 500 22600

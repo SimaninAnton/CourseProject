@@ -1,0 +1,77 @@
+Contributor
+lgautier commented on 20 Oct 2016
+The docstring for keras.layers.Merge results in an error (even after fixing a missing closing parenthesis):
+from keras.models import Sequential, Graph
+from keras.layers import Input, Merge, Dense
+
+model1 = Sequential()
+model1.add(Dense(32))
+
+model2 = Sequential()
+model2.add(Dense(32))
+
+merged_model = Sequential()
+merged_model.add(Merge([model1, model2], mode='concat', concat_axis=1))
+The outcome is:
+Exception                                 Traceback (most recent call last)
+<ipython-input-35-61bf634efdfd> in <module>()
+      1 model1 = Sequential()
+      2 dl = Dense(32)
+----> 3 model1.add(dl)
+      4 
+      5 model2 = Sequential()
+
+/usr/local/lib/python3.5/dist-packages/keras/models.py in add(self, layer)
+    266                 # create an input layer
+    267                 if not hasattr(layer, 'batch_input_shape'):
+--> 268                     raise Exception('The first layer in a Sequential model must '
+    269                                     'get an `input_shape` or '
+    270                                     '`batch_input_shape` argument.')
+
+Exception: The first layer in a Sequential model must get an `input_shape` or `batch_input_shape` argument.
+The example in the docstring appears to be fixed (see further below) by fixing the number of dimensions on input:
+model1 = Sequential()
+
+dl = Dense(32, input_dim=10)
+model1.add(dl)
+
+model2 = Sequential()
+dl = Dense(32, input_dim=5)
+model2.add(dl)
+
+merged_model = Sequential()
+m = Merge(layers=[model1, model2], mode='concat', concat_axis=1)
+merged_model.add(m)
+The model with merged inputs appears to behave like one would expect
+# make it a two-class problem (output a two-dimensional vector)
+from keras.layers import Activation
+merged_model.add(Dense(output_dim=2))
+merged_model.add(Activation('softmax'))
+merged_model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+merged_model.summary()
+____________________________________________________________________________________________________
+Layer (type)                     Output Shape          Param #     Connected to                     
+====================================================================================================
+dense_35 (Dense)                 (None, 32)            352                                          
+____________________________________________________________________________________________________
+dense_36 (Dense)                 (None, 32)            192                                          
+____________________________________________________________________________________________________
+dense_37 (Dense)                 (None, 2)             130         merge_11[0][0]                   
+____________________________________________________________________________________________________
+activation_3 (Activation)        (None, 2)             0           dense_37[0][0]                   
+====================================================================================================
+Total params: 674
+____________________________________________________________________________________________________
+The number of parameters seems right: 32*(10+1) = 352, 32*(5+1) = 192, 2*(32+32+1) = 130, and the parameter estimates can be calculated:
+# dummy test data (100 points)
+import numpy as np
+input1 = np.random.random(size=(100, 10))
+input2 = np.random.random(size=(100, 5))
+
+# dummy ouput a one-hot vector
+cls = np.zeros((100, 2), dtype=np.bool)
+for i in range(cls.shape[0]):
+    cls[i, np.random.randint(0,1)] = True
+
+merged_model.fit([input1, input2], cls)
+I am happy to submit a pull request to fix the doc with the above (and add a unit test if necessary).

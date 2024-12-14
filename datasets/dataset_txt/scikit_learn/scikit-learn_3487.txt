@@ -1,0 +1,31 @@
+srt19170 commented on Oct 28, 2015
+ensemble.GradientBoostingRegressor has an option to provide a base estimator:
+init : BaseEstimator, None, optional (default=None)
+An estimator object that is used to compute the initial predictions. init has to provide fit and predict. If None it uses loss.init_estimator.
+If a base estimator is provided, an error occurs:
+File "C:\Anaconda\lib\site-packages\sklearn\ensemble\gradient_boosting.py", line 981, in fit
+  begin_at_stage, monitor)
+File "C:\Anaconda\lib\site-packages\sklearn\ensemble\gradient_boosting.py", line 1041, in _fit_stages
+  random_state)
+File "C:\Anaconda\lib\site-packages\sklearn\ensemble\gradient_boosting.py", line 771, in _fit_stage
+  self.learning_rate, k=k)
+File "C:\Anaconda\lib\site-packages\sklearn\ensemble\gradient_boosting.py", line 239, in  update_terminal_regions
+  y_pred[:, k], sample_weight)
+IndexError: too many indices for array
+The problem seems to be that the gradient boosting code is expecting the estimator to provide a prediction with shape [n_samples, 1] and (most?) estimators provide a prediction with shape [n_samples, ].
+A possible solution is to reshape the predictions when necessary:
+In BaseGradientBoosting.fit():
+        # init predictions
+        y_pred = self.init_.predict(X)
+        if len(np.shape(y_pred)) == 1:
+            y_pred = np.reshape(y_pred,(-1,1))
+and in BaseGradientBoosting._decision_function():
+def _decision_function(self, X):
+    # for use in inner loop, not raveling the output in single-class case,
+    # not doing input validation.
+    score = self._init_decision_function(X)
+    if len(np.shape(score)) == 1:
+        score = np.reshape(score, (-1,1))
+    predict_stages(self.estimators_, X, self.learning_rate, score)
+    return score
+This fix "works for me" but maybe there's a better approach.

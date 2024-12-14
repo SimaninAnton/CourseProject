@@ -1,0 +1,231 @@
+ghost commented on 30 May 2014
+I have the following simple "Hello World" app:
+from gevent import monkey
+monkey.patch_all()
+from flask import Flask
+from gevent import wsgi
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+  return 'Hello World'
+
+server = wsgi.WSGIServer(('127.0.0.1', 5000), app)
+server.serve_forever()
+As you can see it's pretty straightforward.
+The problem is that despite such simpliness it's pretty slow/inefficient as the following benchmark (made with Apache Benchmark) shows:
+ab -k -n 1000 -c 100 http://127.0.0.1:5000/
+
+Benchmarking 127.0.0.1 (be patient)
+Completed 100 requests
+Completed 200 requests
+Completed 300 requests
+Completed 400 requests
+Completed 500 requests
+Completed 600 requests
+Completed 700 requests
+Completed 800 requests
+Completed 900 requests
+Completed 1000 requests
+Finished 1000 requests
+
+
+Server Software:        
+Server Hostname:        127.0.0.1
+Server Port:            5000
+
+Document Path:          /
+Document Length:        11 bytes
+
+Concurrency Level:      100
+Time taken for tests:   1.515 seconds
+Complete requests:      1000
+Failed requests:        0
+Write errors:           0
+Keep-Alive requests:    0
+Total transferred:      146000 bytes
+HTML transferred:       11000 bytes
+Requests per second:    660.22 [#/sec] (mean)
+Time per request:       151.465 [ms] (mean)
+Time per request:       1.515 [ms] (mean, across all concurrent requests)
+Transfer rate:          94.13 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.6      0       3
+Processing:     1  145  33.5    149     191
+Waiting:        1  144  33.5    148     191
+Total:          4  145  33.0    149     191
+
+Percentage of the requests served within a certain time (ms)
+  50%    149
+  66%    157
+  75%    165
+  80%    173
+  90%    183
+  95%    185
+  98%    187
+  99%    188
+ 100%    191 (longest request)
+Eventually increasing the number of connections and/or concurrency doesn't bring better results, in fact it becomes worse.
+What I'm most concerned about is the fact that I can't go over 700 Requests per second and a Transfer rate of 98 Kbytes/sec.
+Also, the individual Time per request seems to be too much.
+I got curious about what Python and Gevent are doing in the background, or better, what the OS is doing, so I used a strace to determine eventual system-side issues and here's the result:
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 56.46    0.000284           0      1386           close
+ 24.25    0.000122           0      1016           write
+ 10.74    0.000054           0      1000           send
+  4.17    0.000021           0      3652      3271 open
+  2.19    0.000011           0       641           read
+  2.19    0.000011           0      6006           fcntl64
+  0.00    0.000000           0         1           waitpid
+  0.00    0.000000           0         1           execve
+  0.00    0.000000           0         3           time
+  0.00    0.000000           0        12        12 access
+  0.00    0.000000           0        32           brk
+  0.00    0.000000           0         5         1 ioctl
+  0.00    0.000000           0      5006           gettimeofday
+  0.00    0.000000           0         4         2 readlink
+  0.00    0.000000           0       191           munmap
+  0.00    0.000000           0         1         1 statfs
+  0.00    0.000000           0         1         1 sigreturn
+  0.00    0.000000           0         2           clone
+  0.00    0.000000           0         2           uname
+  0.00    0.000000           0        21           mprotect
+  0.00    0.000000           0        69        65 _llseek
+  0.00    0.000000           0        71           rt_sigaction
+  0.00    0.000000           0         1           rt_sigprocmask
+  0.00    0.000000           0         3           getcwd
+  0.00    0.000000           0         1           getrlimit
+  0.00    0.000000           0       243           mmap2
+  0.00    0.000000           0      1838       748 stat64
+  0.00    0.000000           0        74           lstat64
+  0.00    0.000000           0       630           fstat64
+  0.00    0.000000           0         1           getuid32
+  0.00    0.000000           0         1           getgid32
+  0.00    0.000000           0         1           geteuid32
+  0.00    0.000000           0         1           getegid32
+  0.00    0.000000           0         4           getdents64
+  0.00    0.000000           0         3         1 futex
+  0.00    0.000000           0         1           set_thread_area
+  0.00    0.000000           0         2           epoll_ctl
+  0.00    0.000000           0        12         1 epoll_wait
+  0.00    0.000000           0         1           set_tid_address
+  0.00    0.000000           0        26           clock_gettime
+  0.00    0.000000           0         2           openat
+  0.00    0.000000           0         1           set_robust_list
+  0.00    0.000000           0         1           eventfd2
+  0.00    0.000000           0         1           epoll_create1
+  0.00    0.000000           0         1           pipe2
+  0.00    0.000000           0         1           socket
+  0.00    0.000000           0         1           bind
+  0.00    0.000000           0         1           listen
+  0.00    0.000000           0      1000           accept
+  0.00    0.000000           0         1           getsockname
+  0.00    0.000000           0      2000      1000 recv
+  0.00    0.000000           0         1           setsockopt
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.000503                 24977      5103 total
+As you can see there are 5103 errors, the worst offender being the open syscall which I suspect has to do with files not being found (ENOENT). To my surprise epoll didn't look like a troubler, as I heard of many horror stories about it.
+I wish to post the full strace which goes into the detail of every single call, but it is way too large.
+A final note; I also set the following system parameters (which are the maximum allowed amount) hoping it would change the situation but it didn't:
+echo “32768   61000″ > /proc/sys/net/ipv4/ip_local_port_range
+sysctl -w fs.file-max=128000
+sysctl -w net.ipv4.tcp_keepalive_time=300
+sysctl -w net.core.somaxconn=61000
+sysctl -w net.ipv4.tcp_max_syn_backlog=2500
+sysctl -w net.core.netdev_max_backlog=2500
+ulimit -n 1024
+My question is, given that the sample I'm using can't be changed so much to fix these issues, where should I look to correct them?
+For a comparison I made the following "Hello World" script with Wheezy.web & Gevent and I got ~2000 Requests per second:
+from gevent import monkey
+monkey.patch_all()
+from gevent import pywsgi
+from wheezy.http import HTTPResponse
+from wheezy.http import WSGIApplication
+from wheezy.routing import url
+from wheezy.web.handlers import BaseHandler
+from wheezy.web.middleware import bootstrap_defaults
+from wheezy.web.middleware import path_routing_middleware_factory
+
+def helloworld(request):
+    response = HTTPResponse()
+    response.write('hello world')
+    return response
+
+
+routes = [
+    url('hello', helloworld, name='helloworld')
+]
+
+
+options = {}
+main = WSGIApplication(
+    middleware=[
+        bootstrap_defaults(url_mapping=routes),
+        path_routing_middleware_factory
+    ],
+    options=options
+)
+
+
+server = pywsgi.WSGIServer(('127.0.0.1', 5000), main, backlog=128000)
+server.serve_forever()
+And the benchmark results:
+ab -k -n 1000 -c 1000 http://127.0.0.1:5000/hello
+
+Benchmarking 127.0.0.1 (be patient)
+Completed 100 requests
+Completed 200 requests
+Completed 300 requests
+Completed 400 requests
+Completed 500 requests
+Completed 600 requests
+Completed 700 requests
+Completed 800 requests
+Completed 900 requests
+Completed 1000 requests
+Finished 1000 requests
+
+
+Server Software:        
+Server Hostname:        127.0.0.1
+Server Port:            5000
+
+Document Path:          /front
+Document Length:        11 bytes
+
+Concurrency Level:      1000
+Time taken for tests:   0.484 seconds
+Complete requests:      1000
+Failed requests:        0
+Write errors:           0
+Keep-Alive requests:    0
+Total transferred:      170000 bytes
+HTML transferred:       11000 bytes
+Requests per second:    2067.15 [#/sec] (mean)
+Time per request:       483.758 [ms] (mean)
+Time per request:       0.484 [ms] (mean, across all concurrent requests)
+Transfer rate:          343.18 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    8  10.9      0      28
+Processing:     2   78  39.7     56     263
+Waiting:        2   78  39.7     56     263
+Total:         18   86  42.6     66     263
+
+Percentage of the requests served within a certain time (ms)
+  50%     66
+  66%     83
+  75%    129
+  80%    131
+  90%    152
+  95%    160
+  98%    178
+  99%    182
+ 100%    263 (longest request)
+I find Wheezy.web's speed great, but I'd still like to use Flask as it's far simpler and less time consuming to work with.
+2

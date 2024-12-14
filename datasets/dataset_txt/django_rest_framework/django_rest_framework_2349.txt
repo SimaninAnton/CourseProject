@@ -1,0 +1,69 @@
+Collaborator
+xordoquy commented on 10 Oct 2014
+Nesting a ModelSerializer doesn't work out of the box.
+I've started moving an application to angularjs + DRF-3 this week and fall on that issue.
+The original serializer code:
+class NestedInvoiceItem(serializers.ModelSerializer):
+    class Meta:
+        model = models.InvoiceItem
+        fields = ('id', 'description', 'quantity', 'vat', 'amount')
+
+class Invoice(serializers.ModelSerializer):
+    owner = serializers.SlugRelatedField(slug_field='email', read_only=True)
+    client = serializers.SlugRelatedField(slug_field='name', queryset=Client.objects.all())
+    items = NestedInvoiceItem(many=True)
+
+    class Meta:
+        model = models.Invoice
+        fields = ('id', 'notes', 'owner', 'client', 'status', 'items')
+This will lead to a crash:
+  File "/Users/xordoquy/.virtualenvs/wight-invoices/lib/python3.4/site-packages/django/core/handlers/base.py", line 111, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/Users/xordoquy/.virtualenvs/wight-invoices/lib/python3.4/site-packages/django/views/decorators/csrf.py", line 57, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/viewsets.py", line 79, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/views.py", line 413, in dispatch
+    response = self.handle_exception(exc)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/views.py", line 410, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/mixins.py", line 48, in list
+    return Response(serializer.data)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/serializers.py", line 114, in data
+    self._data = self.to_representation(self.instance)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/serializers.py", line 398, in to_representation
+    [self.child.to_representation(item) for item in data],
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/serializers.py", line 398, in <listcomp>
+    [self.child.to_representation(item) for item in data],
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/serializers.py", line 341, in to_representation
+    ret[field.field_name] = field.get_field_representation(instance)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/fields.py", line 217, in get_field_representation
+    return self.to_representation(attribute)
+  File "/Users/xordoquy/Documents/Devs/django-rest-framework/rest_framework/serializers.py", line 398, in to_representation
+    [self.child.to_representation(item) for item in data],
+TypeError: 'RelatedManager' object is not iterable
+At the moment, the work around is:
+class NestedInvoiceItem(serializers.ModelSerializer):
+    class Meta:
+        model = models.InvoiceItem
+        fields = ('id', 'description', 'quantity', 'vat', 'amount')
+
+
+class ListNestedInvoiceItem(serializers.ListSerializer):
+    child = NestedInvoiceItem()
+
+    def to_representation(self, data):
+        return serializers.ReturnList(
+            [self.child.to_representation(item) for item in data.all()],
+            serializer=self
+        )
+
+
+class Invoice(serializers.ModelSerializer):
+    owner = serializers.SlugRelatedField(slug_field='email', read_only=True)
+    client = serializers.SlugRelatedField(slug_field='name', queryset=Client.objects.all())
+    items = ListNestedInvoiceItem()
+
+    class Meta:
+        model = models.Invoice
+        fields = ('id', 'notes', 'owner', 'client', 'status', 'items')

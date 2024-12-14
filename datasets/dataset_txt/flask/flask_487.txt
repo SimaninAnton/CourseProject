@@ -1,0 +1,33 @@
+malthejorgensen commented on 21 Dec 2017
+Using the test_client() inside an app context, seemingly prevents the flask.g-object from being reset.
+A test case like this
+app = flask.Flask(__name__)
+
+@app.route('/')
+def index():
+    if hasattr(flask.g, 'value'):
+        flask.g.value += 1
+    else:
+        flask.g.value = 0
+    return bytes(flask.g.value)
+
+with app.app_context():
+    with app.test_client() as client:
+        resp = client.get('/')
+        # `resp.data` will be '0'
+
+        resp = client.get('/')
+        # `resp.data` will be '1' here
+will return '1' from the second request made by the test client. As the flask.g-object is local to the request, I would expect a '0' to be returned.
+This may outside of the scope of supported use-cases, or simply the way it should behave. I can accept that, but I just wanted it here at least for future users.
+Rationale for using test_client() inside an app context
+The reason I do this is to be able to use url_for() inside my view tests, and have code like
+response = client.post(
+    url_for('blueprint_api.add_user'),
+    json={'name': 'John', 'email': 'john@example.org'},
+)
+Basically I believe that my view tests shouldn't be testing a hard-coded URL (the single source of truth for that should be the route), but rather the logic of the view function.
+Environment
+Python version: 2.7.13
+Flask version: 0.13.0
+Werkzeug version: 0.13

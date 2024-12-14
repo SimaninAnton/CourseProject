@@ -1,0 +1,30 @@
+arthurdarcet commented on 6 Apr 2016
+the asyncio runner does not handle tornado Futures, so the docs should probably warn that using asyncio.gather will fail if one of the gathered coroutine tries to await a tornado coroutine.
+An option would be to try making the asyncio runner able to handle tornado futures: this seems to do the trick arthurdarcet/tornado@master...arthurdarcet:asyncio-runner but i haven't extensively tested it…
+If the asyncio runner handles tornado coroutines, then the to_asyncio_future on the first awaited coroutine.
+Example code:
+import asyncio
+import tornado.gen
+import tornado.ioloop
+import tornado.platform.asyncio
+
+async def do_tornado():
+    await tornado.gen.coroutine(lambda: None)()
+    print('tornado')
+
+async def main():
+    await tornado.gen.multi([do_tornado()])
+    # this will fail:
+    await asyncio.gather(do_tornado())
+
+tornado.platform.asyncio.AsyncIOMainLoop().install()
+
+coro = main()
+# not needed anymore
+#coro = tornado.platform.asyncio.to_asyncio_future(coro)
+
+loop = tornado.ioloop.IOLoop.current()
+loop.run_sync(lambda: coro)
+# or:
+#loop = asyncio.get_event_loop()
+#loop.run_until_complete(coro)

@@ -1,0 +1,64 @@
+levic commented on 7 Dec 2017 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+from django.conf import settings
+
+settings.configure(
+    DEBUG=True,
+    SECRET_KEY='test',
+    ROOT_URLCONF=__name__,
+    MIDDLEWARE_CLASSES=(
+    ),
+)
+django.setup()
+
+from django.db import models
+from rest_framework.routers import DefaultRouter
+from rest_framework.serializers import ModelSerializer
+from rest_framework.viewsets import ModelViewSet
+
+class Foo(models.Model):
+    name = models.CharField(max_length=20)
+    class Meta:
+        app_label='auth'
+
+class FooSerializer(ModelSerializer):
+    class Meta:
+        model = Foo
+        fields = '__all__'
+
+class FooViewSet(ModelViewSet):
+    serializer_class = FooSerializer
+    queryset = Foo.objects.all()
+
+
+router = DefaultRouter()
+router.register('^endpoint1', FooViewSet)
+before_len = len(router.urls)
+
+router.register('^endpoint2', FooViewSet)
+after_len = len(router.urls)
+
+assert before_len != after_len
+Expected behavior
+Nothing
+Actual behavior
+AssertionError: urls has not updated
+Cause
+urls is a property that caches its output in _urls. If a new route is subsequently added then it isn't cleared, so urls will now return an incorrect list. This is just one way it could fail; changing any attribute that affects get_urls will have the same problem.
+Relevant Source
+Relevant change history:
+Initially created as url_patterns in c785628 (2013-04-05)
+url_patterns changed name to urls in b94da24 (2013-04-25)
+It seems that this bug has always been there
+Solution
+There are 2 solutions I see
+[1] Invalidate _urls if something relevant changes. Because url calls get_urls() which can be overridden, this would have to be implemented correctly on every child class (example of where lots of attributes could affect the output: DefaultRouter)
+[2] Stop caching results. It's not clear to me why it needs to be cached at all, or why it's even a property -- if it's only going to be used for generating url patterns then it will be invoked once on startup and then never again. This seems a more robust solution but I may be overlooking cases where url is repeatedly invoked.

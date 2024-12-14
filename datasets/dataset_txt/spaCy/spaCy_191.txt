@@ -1,0 +1,39 @@
+gorsat commented on 2 Nov 2019 •
+edited
+This may be working as intended, but I haven't seen it documented anywhere and for me it was unexpected behavior, so I figured I'd raise it as an issue.
+If you add a new token_match to the tokenizer that conflicts with something in the prefix_search then the prefix_search will win. So, for instance, if you compile something like r"#\w+" as your token match (to tokenize hashtags) it won't work because '#' is included in the default prefix_search. You can remedy this by explicitly removing '#' from the prefix_search.
+This looks like it might be new behavior because I've found examples where folks just used token_match to tokenize hashtags without changing prefix_search and it seemed to work for them. At any rate, whether this behavior is intended or not, I think the precedence of these functions should be clearly documented in the tokenizer section of the reference.
+I'm on Python 3.6.5 with spaCy 2.2.2
+This code:
+import spacy
+import re
+from spacy.tokenizer import _get_regex_pattern
+nlp = spacy.load("en_core_web_sm")
+re_token_match = _get_regex_pattern(nlp.Defaults.token_match)
+re_token_match = f"({re_token_match}|#\w+)"
+nlp.tokenizer.token_match = re.compile(re_token_match).match
+text = "I like #fresh #hashtags"
+doc = nlp(text)
+print([e for e in doc])
+Produces this output:
+[I, like, #, fresh, #, hashtags]
+But if you modify it as follows:
+import spacy
+import re
+from spacy.tokenizer import _get_regex_pattern
+nlp = spacy.load("en_core_web_sm")
+re_token_match = _get_regex_pattern(nlp.Defaults.token_match)
+re_token_match = f"({re_token_match}|#\w+)"
+nlp.tokenizer.token_match = re.compile(re_token_match).match
+
+# begin new stuff
+_prefixes = list(nlp.Defaults.prefixes)
+_prefixes.remove('#')
+nlp.tokenizer.prefix_search = spacy.util.compile_prefix_regex(_prefixes).search
+# end new stuff
+
+text = "I like #fresh #hashtags"
+doc = nlp(text)
+print([e for e in doc])
+It produces this output:
+[I, like, #fresh, #hashtags]

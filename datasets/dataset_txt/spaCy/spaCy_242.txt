@@ -1,0 +1,127 @@
+qcho commented on 18 Oct 2019 •
+edited
+Hi,
+I'm working on training a new entity type. I've been using the python code from the documentation and worked great but now I want to use the CLI because it gives me lot's of new possibilities.
+First I'm running debug-data to check if my data is OK and it is.
+{The only issue ⚠ 2655 training examples also in evaluation data is expected because I'm using the same information for testing purposes} :
+python -m spacy debug-data es --pipeline 'ner' -b 'es_core_news_md' corpus/trainings.json corpus/trainings.json
+
+=========================== Data format validation ===========================
+✔ Corpus is loadable
+
+=============================== Training stats ===============================
+Training pipeline: ner
+Starting with base model 'es_core_news_md'
+2660 training docs
+2660 evaluation docs
+⚠ 2655 training examples also in evaluation data
+
+============================== Vocab & Vectors ==============================
+ℹ 37058 total words in the data (7295 unique)
+ℹ 20000 vectors (533736 unique keys, 50 dimensions)
+
+========================== Named Entity Recognition ==========================
+ℹ 1 new label, 4 existing labels
+0 missing values (tokens with '-' label)
+✔ Good amount of examples for all labels
+✔ Examples without occurrences available for all labels
+✔ No entities consisting of or starting/ending with whitespace
+
+================================== Summary ==================================
+✔ 4 checks passed
+⚠ 1 warning
+Great! as you can see:
+ℹ 1 new label, 4 existing labels
+✔ Good amount of examples for all labels
+Using that information in train results in KeyError: "[E022] Could not find a transition with the name 'U-DATE' in the NER model.":
+python -m spacy train es models --pipeline 'ner' --base-model 'es_core_news_md' corpus/trainings.json corpus/trainings.json
+Training pipeline: ['ner']
+Starting with base model 'es_core_news_md'
+Counting training words (limit=0)
+
+Itn  NER Loss   NER P   NER R   NER F   Token %  CPU WPS
+---  ---------  ------  ------  ------  -------  -------
+✔ Saved model to output directory
+models/model-final
+⠼ Creating best model...
+Traceback (most recent call last):
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/spacy/cli/train.py", line 365, in train
+    losses=losses,
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/spacy/language.py", line 516, in update
+    proc.update(docs, golds, sgd=get_grads, losses=losses, **kwargs)
+  File "nn_parser.pyx", line 419, in spacy.syntax.nn_parser.Parser.update
+  File "nn_parser.pyx", line 521, in spacy.syntax.nn_parser.Parser._init_gold_batch
+  File "ner.pyx", line 108, in spacy.syntax.ner.BiluoPushDown.preprocess_gold
+  File "ner.pyx", line 166, in spacy.syntax.ner.BiluoPushDown.lookup_transition
+KeyError: "[E022] Could not find a transition with the name 'U-DATE' in the NER model."
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/Cellar/python/3.7.4_1/Frameworks/Python.framework/Versions/3.7/lib/python3.7/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/usr/local/Cellar/python/3.7.4_1/Frameworks/Python.framework/Versions/3.7/lib/python3.7/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/spacy/__main__.py", line 35, in <module>
+    plac.call(commands[command], sys.argv[1:])
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/plac_core.py", line 328, in call
+    cmd, result = parser.consume(arglist)
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/plac_core.py", line 207, in consume
+    return cmd, self.func(*(args + varargs + extraopts), **kwargs)
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/spacy/cli/train.py", line 486, in train
+    best_model_path = _collate_best_model(meta, output_path, nlp.pipe_names)
+  File "/Users/qcho/.local/share/virtualenvs/trainings-iWUQvJK_/lib/python3.7/site-packages/spacy/cli/train.py", line 554, in _collate_best_model
+    path2str(best_component_src / component), path2str(best_dest / component)
+TypeError: unsupported operand type(s) for /: 'NoneType' and 'str'
+In a closed Issue #4149 (comment) someone mentioned that he wanted to train a NER model from scratch and @adrianeboyd's suggestion was to use --vectors instead of --base-model. Because when using --base-model the system implies the --base-model already has all the LABEL information.
+I think that assumption IS WRONG or at least there are problems with consistency.
+I expect the train command to infuse the old base-model with my new entities automatically. Or at least have an option to allow that.
+If for some valid reason you think that's not to be expected, at least the debug-data command should be checking this issue and telling me something will be wrong.
+So my workaround for the time being is to run -v instead of -b and is at least working. But I would love to use -b instead.
+python -m spacy train es models --pipeline 'ner' -v 'es_core_news_md' corpus/trainings.json corpus/trainings.json -g0
+
+Training pipeline: ['ner']
+Starting with blank model 'es'
+Loading vector from model 'es_core_news_md'
+Counting training words (limit=0)
+
+Itn  NER Loss   NER P   NER R   NER F   Token %  CPU WPS  GPU WPS
+---  ---------  ------  ------  ------  -------  -------  -------
+  1   5057.718  72.773  69.679  71.193  100.000    27431    27264
+  2   2769.560  84.002  82.410  83.198  100.000    27650    26380
+  3   2194.448  88.356  88.120  88.237  100.000    26348    25580
+  4   1759.354  90.661  90.573  90.617  100.000    28263    29517
+  5   1545.240  91.703  92.104  91.903  100.000    24587    23934
+  6   1298.310  92.855  93.780  93.316  100.000    25262    25663
+  7   1192.217  93.854  94.971  94.409  100.000    25783    25885
+  8   1074.796  94.299  95.651  94.970  100.000    23272    25073
+  9    962.257  95.130  96.331  95.727  100.000    24626    25347
+ 10    830.074  95.681  96.890  96.282  100.000    23892    27996
+ 11    793.578  96.180  97.255  96.714  100.000    22107    23434
+ 12    681.465  96.755  97.789  97.269  100.000    22992    25304
+ 13    644.355  97.093  98.202  97.645  100.000    25474    23495
+ 14    625.250  97.401  98.348  97.872  100.000    25864    25032
+ 15    603.803  97.501  98.567  98.031  100.000    21746    25071
+ 16    507.126  97.669  98.737  98.200  100.000    25211    25085
+ 17    519.947  97.763  98.761  98.260  100.000    24430    24816
+ 18    418.207  98.003  98.955  98.477  100.000    21390    22326
+ 19    393.087  98.027  98.980  98.501  100.000    24128    23566
+ 20    411.454  98.099  99.052  98.574  100.000    24304    24201
+ 21    394.488  98.243  99.150  98.694  100.000    25394    29081
+ 22    349.580  98.244  99.198  98.719  100.000    26097    26228
+ 23    333.129  98.361  99.174  98.766  100.000    24661    23984
+ 24    320.657  98.363  99.247  98.803  100.000    26171    22576
+ 25    285.909  98.457  99.247  98.851  100.000    23868    23846
+ 26    330.953  98.411  99.295  98.851  100.000    21357    28768
+ 27    275.963  98.578  99.368  98.972  100.000    27311    24998
+ 28    309.472  98.649  99.344  98.995  100.000    25955    25420
+ 29    332.513  98.650  99.393  99.020  100.000    25233    26991
+ 30    257.369  98.721  99.417  99.068  100.000    25139    26668
+✔ Saved model to output directory
+models/model-final
+✔ Created best model
+models/model-best
+Info about spaCy
+spaCy version: 2.2.1
+Platform: Darwin-18.7.0-x86_64-i386-64bit
+Python version: 3.7.4

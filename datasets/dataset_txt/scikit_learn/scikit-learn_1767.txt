@@ -1,0 +1,60 @@
+elgehelge commented on Nov 8, 2017 •
+edited
+Description
+An exception is raised when providing FeatureUnion with dict_items. This is not technically a bug judging by the documentation which says "a list" is expected. However this broke some of my code when updating from 0.19.0 to 0.19.1. And (at least to me) accepting dict_items as input seems like an common way to use FeatureUnion.
+Now it's reported - I will let it up to more experienced contributors to judge whether actions should be taken or not.
+Steps/Code to Reproduce
+import numpy as np
+from sklearn.dummy import DummyClassifier
+from sklearn.pipeline import make_pipeline, FeatureUnion
+from sklearn.preprocessing import FunctionTransformer
+
+X = [[0], [0], [1]]
+y = ['x', 'y', 'y']
+
+features = {
+    'unchanged': make_pipeline(
+        FunctionTransformer(lambda X: X, validate=False),
+    ),
+    'add_one': make_pipeline(
+        FunctionTransformer(lambda X: np.array(X)+1, validate=False),
+    ),
+}
+
+will_NOT_fail = list(features.items())  # using this will be fine
+will_fail = features.items()
+
+make_pipeline(
+    FeatureUnion(will_fail),
+    DummyClassifier(),
+).fit(X, y)
+By the way, performing just the transform correctly transforms the features:
+make_pipeline(
+    FeatureUnion(will_fail),
+).transform(X)
+Which would produce the following:
+array([[0, 1],
+       [0, 1],
+       [1, 2]])
+Expected Results
+I would expect using features.items() to produce the same output as using list(features.items())
+Actual Results
+An exception is raised:
+TypeError: 'dict_items' object does not support item assignment
+Raised from the following line:
+scikit-learn/sklearn/pipeline.py
+Line 781 in 3fa7a06
+ self.transformer_list[:] = [ 
+I guess line 711 in the fit() method is never reached:
+(
+scikit-learn/sklearn/pipeline.py
+Line 711 in 3fa7a06
+ self.transformer_list = list(self.transformer_list) 
+)
+Versions
+Darwin-16.7.0-x86_64-i386-64bit
+Python 3.6.3 (default, Oct 19 2017, 13:28:29)
+[GCC 4.2.1 Compatible Apple LLVM 9.0.0 (clang-900.0.38)]
+NumPy 1.13.3
+SciPy 1.0.0
+Scikit-Learn 0.19.1

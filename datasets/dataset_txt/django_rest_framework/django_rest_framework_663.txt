@@ -1,0 +1,154 @@
+mhubig commented on 5 Sep 2017 •
+edited
+The Writable nested serializers example from the official documentation is incomplete. While it focus on creating an AlbumSerializer that can create nested tracks, it misses the fact that the used TrackSerializer can't be used to create tracks, because it lacks the needed album field! If you dare to add the missing album field to the TrackSerializer you go full circle, since now the AlbumSerializer can no longer create albums.
+This leads to a whole lot of confusion as you can see when searching Stackoverflow for 'Writeable Nested Serializers'.
+I think this is a very common scenario and there should be at least some information that this behavior is to be expected! A good solution would be to add some explanation why the serializer behaves like this and what can be done about it ...
+Steps to reproduce
+from django.db import models
+
+class Album(models.Model):
+    album_name = models.CharField(max_length=100)
+    artist = models.CharField(max_length=100)
+
+class Track(models.Model):
+    album = models.ForeignKey(Album, related_name='tracks', on_delete=models.CASCADE)
+    order = models.IntegerField()
+    title = models.CharField(max_length=100)
+    duration = models.IntegerField()
+
+    class Meta:
+        unique_together = ('album', 'order')
+        ordering = ['order']
+
+    def __unicode__(self):
+        return f'{self.order} {self.title}'
+from rest_framework import serializers
+from models import Track, Album
+
+class TrackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Track
+        fields = ('order', 'title', 'duration')
+
+class TrackSerializer2(serializers.ModelSerializer):
+    class Meta:
+        model = Track
+        fields = ('order', 'title', 'duration', 'album')
+
+class AlbumSerializer(serializers.ModelSerializer):
+    tracks = TrackSerializer(many=True)
+
+    class Meta:
+        model = Album
+        fields = ('album_name', 'artist', 'tracks')
+
+    def create(self, validated_data):
+        tracks_data = validated_data.pop('tracks')
+        album = Album.objects.create(**validated_data)
+        for track_data in tracks_data:
+            Track.objects.create(album=album, **track_data)
+        return album
+
+class AlbumSerializer2(serializers.ModelSerializer):
+    tracks = TrackSerializer2(many=True)
+
+    class Meta:
+        model = Album
+        fields = ('album_name', 'artist', 'tracks')
+
+    def create(self, validated_data):
+        tracks_data = validated_data.pop('tracks')
+        album = Album.objects.create(**validated_data)
+        for track_data in tracks_data:
+            Track.objects.create(album=album, **track_data)
+        return album
+from django.test import TestCase
+from django.db.utils import IntegrityError
+from serializers import (TrackSerializer, TrackSerializer2,
+                         AlbumSerializer, AlbumSerializer2)
+
+class ChapterSerializerTests(TestCase):
+    def setUp(self):
+        self.album_data = {
+            'album_name': 'The Grey Album',
+            'artist': 'Danger Mouse',
+            'tracks': [
+                {
+                    'order': 1,
+                    'title': 'Public Service Announcement',
+                    'duration': 245
+                },
+                {
+                    'order': 2,
+                    'title': 'What More Can I Say',
+                    'duration': 264
+                },
+                {
+                    'order': 3,
+                    'title': 'Encore',
+                    'duration': 159
+                },
+            ],
+        }
+
+    def test_create_album_with_nested_tracks(self):
+        serializer = AlbumSerializer(data=self.album_data)
+        is_valid = serializer.is_valid()
+        self.assertDictEqual(serializer.errors, {})
+        self.assertTrue(is_valid)
+        self.assertTrue(serializer.save())
+
+    def test_create_track_with_album_failes(self):
+        album_serializer = AlbumSerializer(data=self.album_data)
+        album_serializer.is_valid()
+        album = album_serializer.save()
+
+        data = {
+            'order': 4,
+            'title': 'December 4th',
+            'duration': 220,
+            'album': album.id
+        }
+        serializer = TrackSerializer(data=data)
+        is_valid = serializer.is_valid()
+        self.assertDictEqual(serializer.errors, {})
+        self.assertTrue(is_valid)
+        error_msg = 'NOT NULL constraint failed: example_track.album_id'
+        with self.assertRaisesMessage(IntegrityError, error_msg):
+            serializer.save()
+
+    def test_create_track_with_album_using_serializer2(self):
+        album_serializer = AlbumSerializer(data=self.album_data)
+        album_serializer.is_valid()
+        album = album_serializer.save()
+
+        data = {
+            'order': 4,
+            'title': 'December 4th',
+            'duration': 220,
+            'album': album.id
+        }
+        serializer = TrackSerializer2(data=data)
+        is_valid = serializer.is_valid()
+        self.assertDictEqual(serializer.errors, {})
+        self.assertTrue(is_valid)
+        self.assertTrue(serializer.save())
+
+    def test_create_album_with_nested_tracks_using_serializer2_fails(self):
+        serializer = AlbumSerializer2(data=self.album_data)
+        is_valid = serializer.is_valid()
+        self.assertDictEqual(serializer.errors, {
+            'tracks': [{
+                'album': ['This field is required.']
+            }, {
+                'album': ['This field is required.']
+            }, {
+                'album': ['This field is required.']
+            }]
+        })
+
+        self.assertFalse(is_valid)
+        error_msg = 'You cannot call `.save()` on a serializer with invalid data.'
+        with self.assertRaisesMessage(AssertionError, error_msg):
+            serializer.save()
+Repo with working code here: https://github.com/mhubig/DRF-Nested-Writeable-Serializer-Bug

@@ -1,0 +1,28 @@
+pengpaiSH commented on 19 Jul 2016
+@fchollet has provided an excellent blog about using Keras as a simplified interface for TensorFlow. In the end of that blog, it introduces the way to use multiple GPUs to train a model.
+with tf.device('/cpu:0'):
+    x = tf.placeholder(tf.float32, shape=(None, 784))
+
+    # shared model living on CPU:0
+    # it won't actually be run during training; it acts as an op template
+    # and as a repository for shared variables
+    model = Sequential()
+    model.add(Dense(32, activation='relu', input_dim=784))
+    model.add(Dense(10, activation='softmax'))
+
+# replica 0
+with tf.device('/gpu:0'):
+    output_0 = model(x)  # all ops in the replica will live on GPU:0
+
+# replica 1
+with tf.device('/gpu:1'):
+    output_1 = model(x)  # all ops in the replica will live on GPU:1
+
+# merge outputs on CPU
+with tf.device('/cpu:0'):
+    preds = 0.5 * (output_0 + output_1)
+
+# we only run the `preds` tensor, so that only the two
+# replicas on GPU get run (plus the merge op on CPU)
+output_value = sess.run([preds], feed_dict={x: data})
+What I am confused is that why do we have to do model averaging in cpu0? My understanding of using multiple GPUs is that Keras could automatically train the model by computing gradients and updating weights more quickly compared with only one replica. In other words, the learning convergence should be more fast. Please correct me if I am wrong. And if Keras could handle such automatic multi-GPU learning fashion, what is the simplest way to implement it (perhaps in just a few lines of codes) ?

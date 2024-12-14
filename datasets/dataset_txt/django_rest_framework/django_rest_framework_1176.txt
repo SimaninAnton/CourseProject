@@ -1,0 +1,181 @@
+Contributor
+mbaragiola commented on 12 Jun 2016
+Checklist
+[] I have verified that that issue exists against the master branch of Django REST framework.
+Did a clean pyvenv-3.5 workspace and git cloned master.
+[] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+Couldn't find anything, but perhaps I'm describing wrong my issue.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+Created a clean test project.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Not yet!
+Steps to reproduce
+models.py
+from django.db import models
+
+
+class Person(models.Model):
+    name = models.CharField(
+        max_length=100,
+        unique=True
+    )
+
+
+class PersonExtension(models.Model):
+    person = models.OneToOneField(
+        Person
+    )
+    extra_data = models.CharField(
+        max_length=100,
+        default="",
+        blank=True
+    )
+serializers.py
+from rest_framework.serializers import HyperlinkedModelSerializer
+
+from prueba import models
+
+
+class PersonSerializer(HyperlinkedModelSerializer):
+
+    class Meta:
+        model = models.Person
+        fields = (
+            'url',
+            'id',
+            'name'
+        )
+
+class PersonExtensionSerializer(HyperlinkedModelSerializer):
+    person = PersonSerializer()
+
+    class Meta:
+        model = models.PersonExtension
+        fields = (
+            'url',
+            'id',
+            'person',
+            'extra_data'
+        )
+
+    def create(self, validated_data):
+        person_data = validated_data.pop('person')
+        person, created = models.Person.objects.update_or_create(
+            pk=person_data.get('id'),
+            defaults=person_data
+        )
+        validated_data['person'] = person
+        person_extension = models.PersonExtension.objects.create(
+            **validated_data
+        )
+        return person_extension
+
+    def update(self, instance, validated_data):
+        person_data = validated_data.get('person')
+        instance.person.name = person_data.get(
+            'name',
+            instance.person.name
+        )
+        instance.person.save()
+        instance.extra_data = validated_data.get(
+            'extra_data',
+            instance.extra_data
+        )
+        instance.save()
+        return instance
+views.py
+from rest_framework.viewsets import ModelViewSet
+
+from prueba import models, serializers
+
+
+class PersonViewSet(ModelViewSet):
+    queryset = models.Person.objects.all()
+    serializer_class = serializers.PersonSerializer
+
+
+class PersonExtensionViewSet(ModelViewSet):
+    queryset = models.PersonExtension.objects.all()
+    serializer_class = serializers.PersonExtensionSerializer
+urls.py
+from django.conf.urls import url, include
+from rest_framework.routers import DefaultRouter
+
+from prueba import views
+
+router = DefaultRouter()
+router.register(r'persons', views.PersonViewSet)
+router.register(r'personextensions', views.PersonExtensionViewSet)
+
+urlpatterns = [
+    url(r'^', include(router.urls)),
+]
+Expected behavior
+POST to localhost:8000/personextensions/
+{
+    "person": {
+        "name": "Hello"
+    },
+    "extra_data": ""
+}
+Person and PersonExtension are both created successfully.
+PUT to localhost:8000/personextensions/1/
+{
+    "url": "http://localhost:8000/personextensions/1/",
+    "id": 1,
+    "person": {
+        "url": "http://localhost:8000/persons/1/",
+        "id": 1,
+        "name": "Hello"
+    },
+    "extra_data": "How are you?"
+}
+extra_data successfully modified to "How are you?"
+PUT to localhost:8000/personextensions/1/
+{
+    "url": "http://localhost:8000/personextensions/1/",
+    "id": 1,
+    "person": {
+        "url": "http://localhost:8000/persons/1/",
+        "id": 1,
+        "name": "Hello 1"
+    },
+    "extra_data": "How are you?"
+}
+Successfully changed name to "Hello 1" and extra_data to "How are you?".
+Actual behavior
+POST to localhost:8000/personextensions/
+{
+    "person": {
+        "name": "Hello"
+    },
+    "extra_data": ""
+}
+Person and PersonExtension are both created successfully.
+PUT to localhost:8000/personextensions/1/
+{
+    "url": "http://localhost:8000/personextensions/1/",
+    "id": 1,
+    "person": {
+        "url": "http://localhost:8000/persons/1/",
+        "id": 1,
+        "name": "Hello"
+    },
+    "extra_data": "How are you?"
+}
+Error: "Person with this name already exists."
+PUT to localhost:8000/personextensions/1/
+{
+    "url": "http://localhost:8000/personextensions/1/",
+    "id": 1,
+    "person": {
+        "url": "http://localhost:8000/persons/1/",
+        "id": 1,
+        "name": "Hello 1"
+    },
+    "extra_data": "How are you?"
+}
+Successfully changed name to "Hello 1" and extra_data to "How are you?".
+Thanks in advance!

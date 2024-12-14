@@ -1,0 +1,46 @@
+saicoco commented on 11 Oct 2016
+Hi, I just wanna concanate a audio feature vector with feature maps which are outputs of conv_layer, show as following code block:
+face_model.add(Convolution2D(375, 3, 3, border_mode='valid', subsample=(2, 2)))
+    face_model.add(BatchNormalization(axis=1))
+    face_model.add(Activation('sigmoid'))
+
+    # audio
+    audio_model = Sequential()
+    audio_model.add(Dense(375, input_dim=375))
+    audio_model.add(Lambda(tile2conv, output_shape=tile_shape))
+
+    # merge modal
+    merge_modal = Sequential()
+    merge_modal.add(Merge([face_model, audio_model], mode='concat', concat_axis=1))
+where the tile2conv and tile_shape show as follow:
+def tile2conv(x):
+    new_x = K.tile(x, 375*6*6)
+    new_x = K.reshape(new_x, (375, 6, 6))
+    return new_x
+
+def tile_shape(input_shape):
+    input_shape = list(input_shape)
+    return (None, input_shape[1], 6, 6)
+Because the face_model outputs is (None,256,6,6), audio_model 's outputs is (None, 375),I wanna tile the (None, 375) to (None, 375, 6, 6), and then Merge them to a feature maps (None, 631, 6, 6), however ,there are error in keras:
+  File "/home/sai/code/frame_play/model_1.py", line 205, in model_conv_fusion
+    merge_modal.add(Merge([face_model, audio_model], mode='concat', concat_axis=1))
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 1188, in __init__
+    self.add_inbound_node(layers, node_indices, tensor_indices)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 572, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 154, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors, mask=input_masks))
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/keras/engine/topology.py", line 1275, in call
+    return K.concatenate(inputs, axis=self.concat_axis)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/keras/backend/theano_backend.py", line 447, in concatenate
+    return T.concatenate([to_dense(x) for x in tensors], axis=axis)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/theano/tensor/basic.py", line 4225, in concatenate
+    return join(axis, *tensor_list)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/theano/gof/op.py", line 611, in __call__
+    node = self.make_node(*inputs, **kwargs)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/theano/tensor/basic.py", line 3750, in make_node
+    axis, tensors, as_tensor_variable_args, output_maker)
+  File "/home/sai/anaconda2/lib/python2.7/site-packages/theano/tensor/basic.py", line 3816, in _make_node_internal
+    raise TypeError("Join() can only join tensors with the same "
+TypeError: Join() can only join tensors with the same number of dimensions.
+I think two tensors have the same dimensions, somebody meet this problem?

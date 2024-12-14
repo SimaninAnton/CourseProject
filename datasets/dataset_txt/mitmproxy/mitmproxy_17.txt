@@ -1,0 +1,183 @@
+KaKi87 commented on 1 Jan
+Summary
+wss://updates doesn't work from web UI through apache rewrite.
+Steps to reproduce
+Download mitmweb binary on a Linux dedicated server
+Run mitmweb using the following command :
+./mitmweb                            \
+    --mode        socks5             \
+    --listen-port 3060               \
+    --web-port    3061               \
+    --set         block_global=false \
+    --no-web-open-browser
+Create a subdomain & point it to your dedicated server
+Create an apache virtual host for your subdomain using the following configuration :
+<VirtualHost *:80>
+    ServerName proxy.kaki87.net
+    # RewriteEngine On
+    # RewriteCond %{HTTPS} off
+    # RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI}
+</VirtualHost>
+Generate a Let's Encrypt certificate for your subdomain, then uncomment the redirection directives
+Create another apache virtual host for your subdomain for HTTPS using the following configuration :
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName proxy.kaki87.net
+    SSLProxyEngine On
+    ProxyRequests Off
+    ProxyPass /.well-known/acme-challenge !
+    ProxyPassReverse /.well-known/acme-challenge !
+    ProxyPass / http://localhost:3061/
+    ProxyPassReverse / http://localhost:3061/
+    RewriteEngine On
+    RewriteCond %{HTTP:UPGRADE} ^WebSocket$ [NC]
+    RewriteCond %{HTTP:CONNECTION} ^Upgrade$ [NC]
+    RewriteRule .* ws://localhost:3061%{REQUEST_URI} [P]
+    SSLCertificateFile /etc/letsencrypt/live/proxy.kaki87.net/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/proxy.kaki87.net/privkey.pem
+    Include /etc/letsencrypt/options-ssl-apache.conf
+</VirtualHost>
+</IfModule>
+Configure your client to use your proxy (proxy.kaki87.net:3060) as SOCKS5
+Listen to your websocket (wss://proxy.kaki87.net/updates) using some tool like websocat
+Open some web page and note that the websocket configuration is working properly :
+{
+   "resource":"flows",
+   "cmd":"add",
+   "data":{
+      "id":"c0c71e00-3d75-438e-ab8d-dc9acc5f8012",
+      "intercepted":false,
+      "client_conn":{
+         "id":"832cafbb-b6e2-4971-a2ed-e640c088cc80",
+         "address":[
+            "::ffff:myipaddress",
+            39036,
+            0,
+            0
+         ],
+         "tls_established":true,
+         "clientcert":null,
+         "timestamp_start":1577877069.7111259,
+         "timestamp_tls_setup":1577877070.014983,
+         "timestamp_end":null,
+         "sni":"kaki87.net",
+         "cipher_name":"ECDHE-RSA-AES128-GCM-SHA256",
+         "alpn_proto_negotiated":"http/1.1",
+         "tls_version":"TLSv1.2"
+      },
+      "server_conn":{
+         "id":"e794e76f-8eeb-4631-bf45-9bbdfdb784c9",
+         "address":[
+            "62.210.109.120",
+            443
+         ],
+         "ip_address":[
+            "62.210.109.120",
+            443
+         ],
+         "source_address":[
+            "62.210.109.120",
+            52565
+         ],
+         "tls_established":true,
+         "sni":"kaki87.net",
+         "alpn_proto_negotiated":"http/1.1",
+         "tls_version":"TLSv1.2",
+         "timestamp_start":1577877077.925917,
+         "timestamp_tcp_setup":1577877077.926266,
+         "timestamp_tls_setup":1577877077.960093,
+         "timestamp_end":null,
+         "via":null
+      },
+      "type":"http",
+      "modified":false,
+      "marked":false,
+      "request":{
+         "method":"GET",
+         "scheme":"https",
+         "host":"62.210.109.120",
+         "port":443,
+         "path":"/",
+         "http_version":"HTTP/1.1",
+         "headers":[
+            [
+               "Host",
+               "kaki87.net"
+            ],
+            [
+               "Connection",
+               "keep-alive"
+            ],
+            [
+               "Cache-Control",
+               "max-age=0"
+            ],
+            [
+               "Upgrade-Insecure-Requests",
+               "1"
+            ],
+            [
+               "User-Agent",
+               "Mozilla/5.0 (Linux; Android 10; MI 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.116 Mobile Safari/537.36"
+            ],
+            [
+               "DNT",
+               "1"
+            ],
+            [
+               "Accept",
+               "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8"
+            ],
+            [
+               "Accept-Language",
+               "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
+            ],
+            [
+               "If-None-Match",
+               "\"e174-5964eacb96540-gzip\""
+            ],
+            [
+               "If-Modified-Since",
+               "Fri, 01 Nov 2019 20:18:53 GMT"
+            ],
+            [
+               "Accept-Encoding",
+               "gzip, deflate, br"
+            ]
+         ],
+         "contentLength":null,
+         "contentHash":null,
+         "timestamp_start":1577877104.6229482,
+         "timestamp_end":1577877104.6537826,
+         "is_replay":false,
+         "pretty_host":"kaki87.net"
+      }
+   }
+}
+Go to your web UI (https://proxy.kaki87.net) and note that the web UI fails to connect to websocket with the following error :
+11:43:58.115 app.js:8 WebSocket connection to 'wss://proxy.kaki87.net/updates' failed: Error during WebSocket handshake: Unexpected response code: 403
+value @ app.js:8
+e @ app.js:8
+1../backends/static @ app.js:2
+s @ app.js:1
+e @ app.js:1
+(anonymous) @ app.js:1
+11:43:58.116 app.js:8 websocket connection errored Arguments [Event, callee: (...), Symbol(Symbol.iterator): ƒ]
+value @ app.js:8
+(anonymous) @ app.js:8
+error (async)
+value @ app.js:8
+e @ app.js:8
+1../backends/static @ app.js:2
+s @ app.js:1
+e @ app.js:1
+(anonymous) @ app.js:1
+11:43:58.118 app.js:8 websocket connection closed CloseEvent {isTrusted: true, wasClean: false, code: 1006, reason: "", type: "close", …}
+value @ app.js:8
+(anonymous) @ app.js:8
+System Information
+Mitmproxy: 5.0.1 binary
+Python:    3.7.5
+OpenSSL:   OpenSSL 1.1.0j  20 Nov 2018
+Platform:  Linux-4.9.0-7-amd64-x86_64-with-debian-9.8
+Thanks

@@ -1,0 +1,97 @@
+sunshineatnoon commented on 21 Mar 2016
+I wrote a custom loss function and use theano as the backend. But when my model compiles, it takes like forever. I did unit test on my loss function, it takes few minutes to give the result. But in Keras, it takes really long to compile. Here is my unit test of my loss function:
+def overlap(x1,w1,x2,w2):
+    """
+    Args:
+      x1: x for the first box
+      w2: width for the first box
+      x2 : x for the second box
+      w2: width for the second box
+    """
+    l1 = x1 - w1*w1/2
+    l2 = x2 - w2*w2/2
+    left = T.switch(T.lt(l1,l2),l2,l1)
+    r1 = x1 + w1*w1/2
+    r2 = x2 + w2*w2/2
+    right = T.switch(T.lt(r1,r2),r1,r2)
+    return right - left
+
+def box_intersection(a,b):
+    """
+    Args:
+      a: the first box, a n*4 tensor
+      b: the second box,another n*4 tensor
+    Returns:
+      area: n*1 tensor, indicating the intersection area of each two boxes
+    """
+    w = overlap(a[:,0],a[:,3],b[:,0],b[:,3])
+    h = overlap(a[:,1],a[:,2],b[:,1],b[:,2])
+    w = T.switch(T.lt(w,0),0,w)
+    h = T.switch(T.lt(h,0),0,h)
+    area = w*h
+    return area
+
+def box_union(a,b):
+    i = box_intersection(a,b)
+    area_a = a[:,2]*a[:,3]
+    area_b = b[:,2]*b[:,3]
+    u = area_a*area_a + area_b*area_b - i
+    return u
+
+def box_iou(a,b):
+    #the net and groud truth are all the square root of height and width
+    return box_intersection(a,b)/box_union(a,b)
+
+def custom_loss_2(y_pred,y_true):
+    loss = 0.0
+
+    for i in range(49):
+        a = y_pred[:,i*30:i*30+4]
+        b = y_pred[:,i*30+5:i*30+9]
+        gt = y_true[:,i*25:i*25+4]
+
+        #iou bewteen box a and gt
+        iou_a_gt = box_iou(a,gt)
+
+        #iou bewteen box b and gt
+        iou_b_gt = box_iou(b,gt)
+
+        #mask is either 0 or 1, 1 indicates box b has a higher iou with gt than box a
+        mask = T.switch(T.lt(iou_a_gt,iou_b_gt),1,0)
+
+        #loss bewteen box a and gt
+        loss_a_gt = T.sum(T.square(a - gt),axis=1) * 5
+
+        #loss bewteen box b and gt
+        loss_b_gt = T.sum(T.square(b - gt),axis=1) * 5
+
+        loss = loss + y_true[:,i*25+4] * (1 - mask) * loss_a_gt
+        loss = loss + y_true[:,i*25+4] * mask * loss_b_gt
+
+        #confident loss bewteen a and gt
+        closs_a_gt = T.square(y_pred[:,i*30+4] - y_true[:,i*25+4])
+        #confident loss bewteen b and gt
+        closs_b_gt = T.square(y_pred[:,i*30+9] - y_true[:,i*25+4])
+
+        loss = loss + closs_a_gt * (1-mask) * y_true[:,i*25+4]
+        loss = loss + closs_b_gt * mask * y_true[:,i*25+4]
+
+        #if the cell has no obj
+        loss = loss + closs_a_gt * (1-y_true[:,i*25+4]) * 0.5
+        loss = loss + closs_b_gt * (1-y_true[:,i*25+4]) * 0.5
+
+        #add loss for the conditioned classification error
+        loss = loss + T.sum(T.square(y_pred[:,i*30+10:i*30+30] - y_true[:,i*25+5:i*25+25]),axis=1)
+    loss = T.sum(loss)
+    return loss
+
+y_pred = T.dmatrix('y_pred')
+y_true = T.dmatrix('y_true')
+loss = custom_loss_2(y_pred,y_true)
+f = theano.function([y_pred,y_true],loss)
+
+y_pred = np.random.rand(2,1470)
+y_true = np.random.rand(2,1225)
+
+print f(y_pred,y_true)
+Also, my ground truth target and predictions from the network is with different shapes, will that be OK? Thanks!

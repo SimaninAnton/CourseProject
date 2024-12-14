@@ -1,0 +1,89 @@
+wml1993 commented on 28 Sep 2016
+'''Trains a LSTM on the IMDB sentiment classification task.
+The dataset is actually too small for LSTM to be of any advantage
+compared to simpler, much faster methods such as TF-IDF + LogReg.
+Notes:
+RNNs are tricky. Choice of batch size is important,
+choice of loss and optimizer is critical, etc.
+Some configurations won't converge.
+LSTM loss decrease patterns during training can be quite different
+from what you see with CNNs/MLPs/etc.
+'''
+from future import print_function
+import numpy as np
+np.random.seed(1337) # for reproducibility
+from keras.preprocessing import sequence
+from keras.utils import np_utils
+from keras.models import Sequential,Model
+from keras.layers import Dense, Dropout, Activation, Embedding,Input,merge
+from keras.layers import LSTM, SimpleRNN, GRU
+from keras.datasets import imdb
+from keras.optimizers import SGD, Adadelta, Adagrad, Adam, Adamax
+import theano
+max_features = 26656
+maxlen = 35 # cut texts after this number of words (among top max_features most common words)
+batch_size = 32
+EmbeddingOutFeature = 100;
+print('Loading data...')
+(X_train, y_train), (X_test, y_test) = imdb.load_data(nb_words=max_features)
+X_test = np.load("../../document/9_26/new_rnn_int32_test.npy")
+X_train = np.load("../../document/9_26/new_rnn_int32_train.npy")
+y_train =np.load('../new_9_18/Tag_version2.npy')
+y_test = np.load("../new_9_18/Test_Tag_version2.npy")
+maskingTrain = np.load('maskingTrain.npy')
+maskingTest = np.load("maskingTest.npy")
+print (X_train)
+print(len(X_train), 'train sequences')
+print(len(X_test), 'test sequences')
+np.set_printoptions(threshold=np.nan)
+print ("handle padding")
+print('Pad sequences (samples x time)')
+X_train = sequence.pad_sequences(X_train, maxlen=maxlen)
+X_test = sequence.pad_sequences(X_test, maxlen=maxlen)
+print (type(X_train))
+maskingTrain = sequence.pad_sequences(maskingTrain, maxlen=maxlen)
+maskingTest = sequence.pad_sequences(maskingTest, maxlen=maxlen)
+X_train.astype("float32")
+X_test.astype("float32")
+X_train = X_train.astype("float32")
+X_test = X_test.astype("float32")
+maskingTrain = maskingTrain.astype("float32")
+print('X_train shape:', X_train.shape)
+print('X_test shape:', X_test.shape)
+print('Build model...')
+model = Sequential()
+model.add(Embedding(max_features, 50, dropout=0.2))
+model.add(LSTM(100, dropout_W=0.2, dropout_U=0.2)) # try using a GRU instead, for fun
+model.add(Dense(19,activation="softmax"))
+try using different optimizers and different optimizer configs
+mainInput = Input((maxlen,),dtype="int32",name="main_input")
+x = Embedding(max_features,EmbeddingOutFeature,dropout=0.3)(mainInput)
+lstm how to work, i do not know so i need to learn more
+lstmOut = LSTM(output_dim=100,dropout_U=0.3,dropout_W=0.3,)(x)
+MainLoss = Dense(19,activation="sigmod",name="MainLoss")(lstmOut)
+maskInput =Input((maxlen,),dtype="int32",name="mask_input")
+print (type(maskInput))
+y = merge([lstmOut,maskInput],mode="concat",)
+print (type(y))
+result = Dense(19,activation="softmax",name="main_loss")(y)
+sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+create model
+model = Model(input=[mainInput,maskInput],output=result)
+model.compile(optimizer=sgd, loss="categorical_crossentropy",
+metrics=['accuracy'])
+print('Train...')
+model.fit([X_train,maskingTrain],y_train, batch_size=batch_size, nb_epoch=300,
+validation_data=([X_test,maskingTest],y_test))
+score, acc = model.evaluate(X_test, y_test,
+batch_size=batch_size)
+print('Test score:', score)
+print('Test accuracy:', acc)
+this is my code,
+the problem is Traceback (most recent call last):
+File "C:/Users/Administrator/PycharmProjects/src/document/9_26/TwoInputRNN.py", line 82, in
+result = Dense(19,activation="softmax",name="main_loss")(y)
+File "C:\Anaconda2\lib\site-packages\keras\engine\topology.py", line 465, in call
+self.assert_input_compatibility(x)
+File "C:\Anaconda2\lib\site-packages\keras\engine\topology.py", line 389, in assert_input_compatibility
+str(K.dtype(x)))
+Exception: Input 0 is incompatible with layer main_loss: expected dtype=float32, found dtype=float64

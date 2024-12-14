@@ -1,0 +1,119 @@
+dobesv commented on Aug 2, 2017 •
+edited
+Sending a POST request with an empty body read from an empty file and a Content-Length: 0 header times out after a long time instead of doing normal processing.
+Expected Result
+Sending an empty body from a file with Content-Length: 0 should send the request and return a result in a similar amount of time as a non-empty request, or a request without Content-Length: 0, or an empty body provided as a string.
+For example:
+$ cat repro2.py 
+import requests, tempfile
+
+with tempfile.NamedTemporaryFile() as tf:
+    print requests.Session().send(requests.Request('POST', 'https://www.google.com', data=open(tf.name)).prepare())
+
+$ python repro2.py 
+<Response [405]>
+Or using a string body:
+$ cat repro3.py 
+import requests, tempfile
+
+print requests.Session().send(requests.Request('POST', 'https://www.google.com', headers={'Content-Length': u'0'}, data='').prepare())
+
+$ python repro3.py 
+<Response [405]>
+Or a non-empty file:
+$ cat repro5.py 
+import requests, tempfile
+
+with tempfile.NamedTemporaryFile() as tf:
+    tf.write('x')
+    tf.flush()
+    print requests.post('https://www.google.com', headers={'Content-Length': u'0'}, data=open(tf.name))
+
+$ python repro5.py 
+<Response [405]>
+Actual Result
+However, with the specific combination of a Content-Length: 0 header and an empty open file descriptor, the request times out after 4 minutes with an error.
+$ pip freeze | grep requests
+requests==2.18.2
+$ cat repro1.py
+import requests, tempfile
+
+with tempfile.NamedTemporaryFile() as tf:
+    requests.Session().send(requests.Request('POST', 'https://www.google.com', headers={'Content-Length': u'0'}, data=open(tf.name)).prepare())
+$ time python repro1.py 
+Traceback (most recent call last):
+  File "repro1.py", line 4, in <module>
+    requests.Session().send(requests.Request('POST', 'https://www.google.com', headers={'Content-Length': u'0'}, data=open(tf.name)).prepare())
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/sessions.py", line 612, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/adapters.py", line 490, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', BadStatusLine("''",))
+
+real 4m0.480s
+user 0m0.296s
+sys 0m0.040s
+$ cat repro4.py 
+import requests, tempfile
+
+with tempfile.NamedTemporaryFile() as tf:
+    print requests.post('https://www.google.com', headers={'Content-Length': u'0'}, data=open(tf.name))
+
+$ time python repro4.py 
+Traceback (most recent call last):
+  File "repro4.py", line 4, in <module>
+    print requests.post('https://www.google.com', headers={'Content-Length': u'0'}, data=open(tf.name))
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/api.py", line 112, in post
+    return request('post', url, data=data, json=json, **kwargs)
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/api.py", line 58, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/sessions.py", line 502, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/sessions.py", line 612, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/ubuntu/env/lib/python2.7/site-packages/requests/adapters.py", line 490, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', BadStatusLine("''",))
+
+real 4m5.474s
+user 0m0.288s
+sys 0m0.036s
+Reproduction Steps
+import requests, tempfile
+
+with tempfile.NamedTemporaryFile() as tf:
+    print requests.post('https://www.google.com', headers={'Content-Length': u'0'}, data=open(tf.name))
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  }, 
+  "cryptography": {
+    "version": "1.5.2"
+  }, 
+  "implementation": {
+    "name": "CPython", 
+    "version": "2.7.13"
+  }, 
+  "platform": {
+    "release": "4.4.0-78-generic", 
+    "system": "Linux"
+  }, 
+  "pyOpenSSL": {
+    "openssl_version": "1000207f", 
+    "version": "16.1.0"
+  }, 
+  "requests": {
+    "version": "2.18.2"
+  }, 
+  "system_ssl": {
+    "version": "1000207f"
+  }, 
+  "urllib3": {
+    "version": "1.22"
+  }, 
+  "using_pyopenssl": true
+}
+Workaround
+Check if the file is empty before sending and, if it is, substitute the file descriptor for an empty string.

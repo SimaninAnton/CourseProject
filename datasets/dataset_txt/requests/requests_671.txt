@@ -1,0 +1,44 @@
+pablocoo commented on May 15, 2017
+I'm trying to create executable for my script, which uses requests module.
+When running I get error:
+Import error: No module named ordered_dict
+After further inspection the problem occurs in requests/compat.py file, on:
+from .packages.urllib3.packages.ordered_dict import OrderedDict
+I think the the problem is fact, that module is imported from subdirectory, but in my environment requests/packages does not contain other modules, as they are imported externally.
+requests/packages/init.py contains some workaround that allows to correcly import required libraries:
+'''
+Debian and other distributions "unbundle" requests' vendored dependencies, and
+rewrite all imports to use the global versions of urllib3 and chardet.
+The problem with this is that not only requests itself imports those
+dependencies, but third-party code outside of the distros' control too.
+In reaction to these problems, the distro maintainers replaced
+requests.packages with a magical "stub module" that imports the correct
+modules. The implementations were varying in quality and all had severe
+problems. For example, a symlink (or hardlink) that links the correct modules
+into place introduces problems regarding object identity, since you now have
+two modules in sys.modules with the same API, but different identities::
+requests.packages.urllib3 is not urllib3
+With version 2.5.2, requests started to maintain its own stub, so that
+distro-specific breakage would be reduced to a minimum, even though the whole
+issue is not requests' fault in the first place. See
+#2375 for the corresponding pull
+request.'''
+from __future__ import absolute_import
+import sys
+
+try:
+    from . import urllib3
+except ImportError:
+    import urllib3
+    sys.modules['%s.urllib3' % __name__] = urllib3
+
+try:
+    from . import chardet
+except ImportError:
+    import chardet
+    sys.modules['%s.chardet' % __name__] = chardet
+But PyInstaller doesn't seem to recognize it. Is there an option/hook to use this configuration?
+I'm using:
+Ubuntu Mate, 16.04.2 LTS
+requests - 2.9.1 - installed through pip
+Pyinstaller - 3.2.1 - compiled from source

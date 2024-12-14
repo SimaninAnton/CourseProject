@@ -1,0 +1,44 @@
+Member
+amueller commented on Feb 3, 2017
+I was a bit surprised to find that SVC doesn't do tie-breaking for OVO, as you can see here:
+import numpy as np
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+from sklearn.svm import SVC
+from sklearn.datasets import make_blobs
+X, y = make_blobs(random_state=27)
+
+svm = SVC(kernel="linear", C=1).fit(X, y)
+
+# here goes the matplotlib code... why oh why?
+xlim = [X[:, 0].min(), X[:, 0].max()]
+ylim = [X[:, 1].min(), X[:, 1].max()]
+
+xs = np.linspace(xlim[0], xlim[1], 1000)
+ys = np.linspace(ylim[0], ylim[1], 1000)
+xx, yy = np.meshgrid(xs, ys)
+
+pred = svm.predict(np.c_[xx.ravel(), yy.ravel()])
+
+colors = [plt.cm.Accent(i) for i in [0, 4, 7]]
+plt.figure(dpi=300)
+
+points = plt.scatter(X[:, 0], X[:, 1], c=y, cmap="Accent")
+classes = [(0, 1), (0, 2), (1, 2)]
+line = np.linspace(X[:, 1].min() - 5, X[:, 1].max() + 5)
+plt.imshow(-pred.reshape(xx.shape), cmap="Accent", alpha=.2, extent=(xlim[0], xlim[1], ylim[1], ylim[0]))
+
+for coef, intercept, col in zip(svm.coef_, svm.intercept_, classes):
+    line2 = -(line * coef[1] + intercept) / coef[0]
+    plt.plot(line2, line, "-", c=colors[col[0]])
+    plt.plot(line2, line, "--", c=colors[col[1]])
+plt.xlim(xlim)
+plt.ylim(ylim)
+plt.gca().set_aspect("equal")
+If you use our OvO instead, you get this:
+I'm not sure if there is a better way to do tie-breaking, but this looks odd.
+I guess I would have expected the regions to be convex, but that's impossible here.
+I'm not sure if there's anything to fix, but maybe we can have an example that shows that OvO tie-breaking is really counter-intuitive? I don't know.
+I think I'm surprised that each region in the tie-breaking triangle has more corners that there are classes. It seems to me there could be a more natural tie-breaking strategy.
+Also, maybe we should ask upstream at libsvm why they didn't do anything (or if they did)

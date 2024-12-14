@@ -1,0 +1,28 @@
+Contributor
+ThomasWaldmann commented on 4 Feb 2011
+quoting from flask.helpers.send_file:
+# if we know the file modification date, we can store it as the
+# current time to better support conditional requests. Werkzeug
+# as of 0.6.1 will override this value however in the conditional
+# response with the current time. This will be fixed in Werkzeug
+# with a new release, however many WSGI servers will still emit
+# a separate date header.
+if mtime is not None:
+rv.date = int(mtime)
+These 2 lines break clientside caching because they emit a wrong Date header.
+As by rfc 2616, the Date header should tell when the Response originated from
+the server (== current server time), but this code sets it to the mtime of
+the static file (== some time in the past).
+This obviously at least breaks Firefox 3.6, because it'll always consider its
+cache entry as stale then (even when the Expires date and max-age would
+normally not lead to staleness).
+Wrong behaviour:
+1st request -> 200, all further requests (directly afterwards) -> 304
+Correct behaviour (wrong code removed):
+1st request -> 200,
+(NO further requests happening until Expires is reached),
+next request (after expiry) -> 304
+Wrong behaviour was introduced after 0.6.2 due to unknown reasons by:
+85ff63c
+I don't see how this shall "better support conditional requests", it rather
+looks like breaking caching and doing lots of unneeded requests.

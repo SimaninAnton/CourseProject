@@ -1,0 +1,104 @@
+naelmusleh commented on 28 Nov 2015
+Detail is also on: http://stackoverflow.com/questions/33963771/drf-listserializer-error-expected-a-list-of-items-but-got-type-int
+I am trying to serialize a list of objects by passing many=True to the serializer. If I pass an instance instead of a list without many=True, the serializer works. I am still trying to understand how serializers work but having trouble debugging this issue. I am using DRF 3.3.0
+View: (Error in line 3 below)
+class BubbleExamView(object):
+    def get_context_data(self, **kwargs):
+       sections = self.data.exam.section_set.all()
+       if serializers.TakeSectionSerializer(
+           sections, self.data.user.id, many=True).is_valid(raise_exception=True):
+              sections_json = renderer.render(serializers.TakeSectionSerializer(
+            sections, self.data.user.id, many=True).data)
+            context = {
+                'exam': self.data.exam,
+                'sections_json': sections_json,
+                'student': self.data.user,
+                'course': self.data.exam.course,
+            }
+            context.update(kwargs)
+       return super(BubbleExamView, self).get_context_data(**context)
+       ....
+       ....
+Serializer:
+class FullAssetSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField('get_image_url')
+
+    def get_image_url(self, asset):
+        if asset.image:
+            return default_storage.url(asset.image.name)
+
+    class Meta:
+        model = models.Asset
+        fields = ('id', 'asset_type', 'text', 'image',)
+
+class FullQuestionAssetSerializer(serializers.ModelSerializer):
+    asset = FullAssetSerializer()
+
+    class Meta:
+        model = models.QuestionAsset
+        fields = ('id', 'order', 'asset')
+
+class StubbedSectionSerializer(serializers.ModelSerializer):
+    """Serialize a section object, without any of the assets or questions"""
+    class Meta:
+        model = models.Section
+        fields = ('id', 'exam', 'name', 'number', 'duration', 'break_duration')
+
+class TakeSectionSerializer(StubbedSectionSerializer):
+    """Serialize a section object, along with all the assets and questions that are contained in the section
+    in order to display it to a student taking the exam"""
+    class Meta(StubbedSectionSerializer.Meta):
+        fields = StubbedSectionSerializer.Meta.fields + ('assets', 'examquestions')
+
+    examquestions = serializers.SerializerMethodField('get_exam_questions')
+    assets = FullAssetSerializer(many=True)
+
+    def __init__(self, section, user_id, **kwargs):
+        super(TakeSectionSerializer, self).__init__(section, **kwargs)
+        self.user_id = user_id
+
+    def get_exam_questions(self, section):
+        examquestions = section.examquestion_set.all()
+
+        kwargs = {
+            'exam_question__section_id':section.id,
+            'exam_response__user_id':self.user_id,
+        }
+        choiceresponses = models.ChoiceQuestionResponse.objects.filter(**kwargs)
+        textresponses = models.TextQuestionResponse.objects.filter(**kwargs)
+
+        for eq, response in utils.zip_responses(
+            examquestions,
+            itertools.chain(choiceresponses, textresponses),
+            'exam_question_id'
+        ):
+            eq.response = response
+
+        return ExamQuestionSerializer(examquestions, many=True).data
+Traceback
+Traceback:
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/core/handlers/base.py" in get_response
+  132.                     response = wrapped_callback(request, *callback_args, **callback_kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/utils/decorators.py" in inner
+  145.                     return func(*args, **kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/views/generic/base.py" in view
+  71.             return self.dispatch(request, *args, **kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/utils/decorators.py" in _wrapper
+  34.             return bound_func(*args, **kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/contrib/auth/decorators.py" in _wrapped_view
+  22.                 return view_func(request, *args, **kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/utils/decorators.py" in bound_func
+  30.                 return func.__get__(self, type(self))(*args2, **kwargs2)
+File "/vagrant/Devel/chalktalk-legacy/chalktalk/chalktalk/shared/view_utils.py" in dispatch
+  21.         return super(CheckPermissionsMixin, self).dispatch(request, *args, **kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/views/generic/base.py" in dispatch
+  89.         return handler(request, *args, **kwargs)
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/django/views/generic/base.py" in get
+  158.         context = self.get_context_data(**kwargs)
+File "/vagrant/Devel/chalktalk-legacy/chalktalk/chalktalk/apps/exams_sat/views_take.py" in get_context_data
+  508.             sections, self.data.user.id, many=True).is_valid(raise_exception=True):
+File "/home/vagrant/.virtualenvs/chalktalk-legacy/local/lib/python2.7/site-packages/rest_framework/serializers.py" in is_valid
+  221.             raise ValidationError(self.errors)
+
+Exception Type: ValidationError at /sat/474/208/bubble/
+Exception Value: {u'non_field_errors': [u'Expected a list of items but got type "int".']}

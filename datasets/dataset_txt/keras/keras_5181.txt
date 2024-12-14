@@ -1,0 +1,104 @@
+MRLoghmani commented on 13 May 2016
+I'm working on a recurrent architecture for motion classification. My current module seems to work, but I would like to use GridSearch to explore different ranges in the hyper-parameter space. It seems that I have some dimensionality problem, but I cannot figure out what it is. I created a sample code with a fake input to allow you understand my problem.
+Here is my code:
+import numpy as np
+from keras.models import Sequential
+from keras.layers.core import Activation, Dropout , Dense
+from keras.layers.recurrent import LSTM, GRU
+from keras.layers.wrappers import TimeDistributed
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.grid_search import GridSearchCV
+
+def make_model( nb_hidden_1, nb_hidden_2, dropout ):
+
+    nb_input = 225
+    nb_output = 4
+
+    model = Sequential()
+
+    model.add(GRU(nb_hidden_1, input_dim=nb_input,
+                  activation = 'relu',
+                  return_sequences=True))
+
+    model.add(Dropout(dropout))
+
+    model.add(GRU(nb_hidden_2,
+                  activation = 'relu',
+                  return_sequences=True))
+
+    model.add(Dropout(dropout))
+
+    model.add(TimeDistributed(Dense(nb_output,
+                                    activation = 'softmax')))
+
+    model.compile( loss = 'categorical_crossentropy',
+                   optimizer = 'rmsprop',
+                   metrics=["accuracy"])
+
+    return model
+
+
+#params (dimensions)
+nb_classes = 4
+nb_samples = 100
+nb_tsteps = 45
+nb_features = 225
+
+#GridSearch params
+nb_hidden_1 = [100, 50]
+nb_hidden_2 = [50, 20]
+dropout = [0.2, 0.3]
+
+#fake training set
+temp = range(1012500)
+X_train = np.reshape( temp, (100, 45, 225) )
+temp = [1, 0, 0, 0]*4500
+y_train = np.reshape( temp, (100, 45, 4) )
+
+print ( np.shape(X_train), np.shape(y_train) )
+
+my_classifier = KerasClassifier(make_model, batch_size=5)
+validator = GridSearchCV(my_classifier,
+                         param_grid={'nb_epoch': [50, 70],
+                                     'nb_hidden_1': nb_hidden_1,
+                                     'nb_hidden_2': nb_hidden_2,
+                                     'dropout': dropout},
+                         scoring='log_loss',
+                         n_jobs=1)
+
+validator.fit(X_train, y_train)
+and here is my ERROR:
+Traceback (most recent call last):
+File "C:/Users/GVlab/Desktop/MRL/test_GS.py", line 66, in
+validator.fit(X_train, y_train)
+File "C:\Python27\lib\site-packages\sklearn\grid_search.py", line 804, in fit
+return self._fit(X, y, ParameterGrid(self.param_grid))
+File "C:\Python27\lib\site-packages\sklearn\grid_search.py", line 553, in _fit
+for parameters in parameter_iterable
+File "C:\Python27\lib\site-packages\sklearn\externals\joblib\parallel.py", line 800, in call
+while self.dispatch_one_batch(iterator):
+File "C:\Python27\lib\site-packages\sklearn\externals\joblib\parallel.py", line 658, in dispatch_one_batch
+self._dispatch(tasks)
+File "C:\Python27\lib\site-packages\sklearn\externals\joblib\parallel.py", line 566, in _dispatch
+job = ImmediateComputeBatch(batch)
+File "C:\Python27\lib\site-packages\sklearn\externals\joblib\parallel.py", line 180, in init
+self.results = batch()
+File "C:\Python27\lib\site-packages\sklearn\externals\joblib\parallel.py", line 72, in call
+return [func(_args, *_kwargs) for func, args, kwargs in self.items]
+File "C:\Python27\lib\site-packages\sklearn\cross_validation.py", line 1531, in _fit_and_score
+estimator.fit(X_train, y_train, *_fit_params)
+File "C:\Python27\lib\site-packages\keras\wrappers\scikit_learn.py", line 148, in fit
+history = self.model.fit(X, y, *_fit_args)
+File "C:\Python27\lib\site-packages\keras\models.py", line 405, in fit
+sample_weight=sample_weight)
+File "C:\Python27\lib\site-packages\keras\engine\training.py", line 1046, in fit
+callback_metrics=callback_metrics)
+File "C:\Python27\lib\site-packages\keras\engine\training.py", line 784, in _fit_loop
+outs = f(ins_batch)
+File "C:\Python27\lib\site-packages\keras\backend\theano_backend.py", line 507, in call
+return self.function(*inputs)
+File "c:\users\gvlab\theano\theano\compile\function_module.py", line 821, in call
+allow_downcast=s.allow_downcast)
+File "c:\users\gvlab\theano\theano\tensor\type.py", line 178, in filter
+data.shape))
+TypeError: ('Bad input argument to theano function with name "C:\Python27\lib\site-packages\keras\backend\theano_backend.py:503" at index 1(0-based)', 'Wrong number of dimensions: expected 3, got 2 with shape (5, 2).')

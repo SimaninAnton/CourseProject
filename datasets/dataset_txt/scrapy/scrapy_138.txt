@@ -1,0 +1,62 @@
+qbolgi commented on Jun 6, 2019 •
+edited
+Hi,
+I havea Scrapy Spider set up. I have urls that I scrape and then I store multiple results by url. I have nested arrays in each item.
+I'd like to use images urls contained in these items to download images but I can't do that.
+`def init(self, *args, **kwargs):
+data_file = pkgutil.get_data(
+"auctions_results", "json/input/demo_db_urls_glenmarch.json")
+self.data = json.loads(data_file)
+def start_requests(self):
+    for item in self.data:
+        request = scrapy.Request(item['gm_url'], callback=self.parse)
+        request.meta['item'] = item
+        yield request
+
+def parse(self, response):
+    item = response.meta['item']
+    item['results'] = []
+
+    for caritem in response.css("div.car-item-border"):
+        data = AuctionItem()
+
+        data["marque"] = caritem.css("div.make::text").extract_first().strip().split(" ", 2)[1]
+        data["model"] = caritem.css("div.make::text").extract_first().strip().split(" ", 2)[2]
+        data["model_year"] = caritem.css("div.make::text").extract_first().strip().split(" ", 1)[0]
+        data["price_str"] = caritem.css("div.price::text").extract_first().strip().replace(",", " ")
+        
+        if caritem.css("div.price::text").extract_first().find("Estimate"):
+            data["price_int"] = re.sub("\D", "", data["price_str"])
+            data["price_int"] = int(data["price_int"])
+            data["price_currency"] = re.sub(
+                "[0-9]", "", data["price_str"]).replace(" ", "")
+            data["sold"] = True
+        else:
+            data["price_int"] = None
+            data["price_currency"] = None
+            data["sold"] = False
+            
+        data["auction_house"] = caritem.css("div.auctionHouse::text").extract_first().split("-", 1)[0].strip()
+        data["auction_country"] = caritem.css("div.auctionHouse::text").extract_first().rsplit(",", 1)[1].strip()
+        data["auction_date"] = caritem.css("div.date::text").extract_first().replace(",", "").strip()
+        
+        if " - " in data["auction_date"]:
+            auctiondate = re.sub(r".*-", "", data["auction_date"]).strip()
+            data["auction_datetime"] = datetime.strptime(auctiondate, '%d %B %Y').date()
+        else:
+            data["auction_datetime"] = datetime.strptime(data["auction_date"], '%d %B %Y').date()
+
+        auctionurl = caritem.css("div.view-auction a::attr(href)").extract_first()
+        if auctionurl != None and "/auction-cars/show-backup-image" not in auctionurl:
+            data["auction_url"] = caritem.css("div.view-auction a::attr(href)").extract_first()
+        else :
+            data["auction_url"] = None
+
+        data["image_urls"] = caritem.css("div.view-auction a img::attr(src)").extract_first()
+
+        item['results'].append(data)
+        
+    yield item`
+My output in JSON look like this:
+{ "objectID": 10202, "gm_url": "myurl", "results": [{ "marque": "Alfa", "model": "Romeo Giulia Sprint GT Veloce 1600", "model_year": "1966", "price_str": "€49 280", "price_int": 49280, "price_currency": "€", "sold": true, "auction_house": "RM Sotheby's", "auction_country": "Italy", "auction_date": "25 - 27 November 2016", "auction_datetime": "2016-11-27", "auction_url": null, "image_urls": "imagesurl" }, { "marque": "Alfa", "model": "Romeo Giulia Sprint GT Veloce Coupe", "model_year": "1966", "price_str": "€46 000", "price_int": 46000, "price_currency": "€", "sold": true, "auction_house": "Bonhams", "auction_country": "France", "auction_date": "6 February 2014", "auction_datetime": "2014-02-06", "auction_url": "https://www.bonhams.com//auctions/21768/lot/434/?category=list&length=100000&page=1", "image_urls": "imagesurl" }] }
+How can I download images from "images_urls" ?

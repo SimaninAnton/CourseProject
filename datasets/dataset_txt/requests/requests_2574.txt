@@ -1,0 +1,69 @@
+foxx commented on Feb 15, 2012
+Hey,
+One of our developers (Randy Tobias) encountered a problem today when attempting to query a URL which is collected from the 'Location' header.
+The following code will fail:
+_url = "http://www.example.com/?hello=hello world"
+requests.get(_url)
+The only way to make this work is to patch up the query string with urlencode - therefore I am submitting this patch for consideration. I believe that enough websites send back broken "Location" headers for this to be included in the core.
+Without it, we get the following exception:
+webapp.libs._requests.exceptions.ConnectionError: HTTPSConnectionPool(host=u'online2.statefarm.com', port=443): Max retries exceeded with url: /apps/iarqapply/launch.redirect?postalCode=07017&productId=F1MRW45Q500&effectiveDate=20120214&applicationName=Auto&stateAbbreviation=NJ&regionalOffice=17&endEffectiveDate=20120315&city=East Orange
+Here is the patch:
+# models.py
+
+def patch_url(i):
+    import urlparse
+    import urllib
+    o = urlparse.urlparse(i)
+
+    _n = urlparse.ParseResult(
+        scheme = o.scheme,
+        netloc = o.netloc,
+        path = o.path,
+        params = o.params,
+        query = urllib.urlencode(urlparse.parse_qsl(o.query)),
+        fragment = o.fragment,
+    )
+
+    return _n.geturl()
+
+class Request(object):
+    """The :class:`Request <Request>` object. It carries out all functionality of
+    Requests. Recommended interface is with the Requests functions.
+    """
+
+    def __init__(self,
+        url=None,
+        headers=dict(),
+        files=None,
+        method=None,
+        data=dict(),
+        params=dict(),
+        auth=None,
+        cookies=None,
+        timeout=None,
+        redirect=False,
+        allow_redirects=False,
+        proxies=None,
+        hooks=None,
+        config=None,
+        _poolmanager=None,
+        verify=None,
+        session=None):
+
+        #: Float describes the timeout of the request.
+        #  (Use socket.setdefaulttimeout() as fallback)
+        self.timeout = timeout
+
+        #: Request URL.
+
+        # if isinstance(url, str):
+            # url = url.encode('utf-8')
+            # print(dir(url))
+
+        self.url = patch_url(url)
+Before patch: https://online2.statefarm.com/apps/iarqapply/launch.redirect?postalCode=07017&productId=F1MRW45Q500&effectiveDate=20120214&applicationName=Auto&stateAbbreviation=NJ&regionalOffice=17&endEffectiveDate=20120315&city=East Orange
+After patch: https://online2.statefarm.com/apps/iarqapply/launch.redirect?postalCode=07017&productId=F1MRW45Q500&effectiveDate=20120214&applicationName=Auto&stateAbbreviation=NJ&regionalOffice=17&endEffectiveDate=20120315&city=East+Orange
+Many thanks
+Cal Leeming
+Simplicity Media Ltd
+Randy Tobias

@@ -1,0 +1,118 @@
+v1k45 commented on 6 Aug 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a view and serializer which take duration as input using DurationField.
+Test view and serializer used for reproducing this issue:
+from rest_framework import serializers, views
+
+class DurationSerializer(serializers.Serializer):
+    duration = serializers.DurationField()
+
+
+class DRFDurationAPI(views.APIView):
+    def post(self, request, *args, **kwargs):
+        serializer = DurationSerializer(data=request.data)
+        if serializer.is_valid(raise_exception=True):
+            return Response({"success": True})
+Send an out of range value as input for duration field.
+Example data
+{
+ "duration": "1000000000 10:11:12"
+}
+Expected behavior
+Receive a ValidationError by view, similar to the validation error we get if the input format is incorrect:
+{"duration":["Duration is too large."]}
+Actual behavior
+We get a 500 Error, with the following exception message:
+OverflowError at /api/duration
+days=1000000000; must have magnitude <= 999999999
+
+Request Method: POST
+Request URL: http://localhost:8000/api/duration
+Django Version: 1.10.7
+Python Executable: /home/vikas/.virtualenvs/venv/bin/python
+Python Version: 3.5.3
+Python Path: ['/home/vikas/code/work/venv', '/home/vikas/code/work/project', '/home/vikas/.virtualenvs/venv/lib/python35.zip', '/home/vikas/.virtualenvs/venv/lib/python3.5', '/home/vikas/.virtualenvs/venv/lib/python3.5/plat-x86_64-linux-gnu', '/home/vikas/.virtualenvs/venv/lib/python3.5/lib-dynload', '/usr/lib/python3.5', '/usr/lib/python3.5/plat-x86_64-linux-gnu', '/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages']
+Server time: Sun, 6 Aug 2017 13:41:52 +0000
+Installed Applications:
+['django.contrib.sites',
+ 'django.contrib.admin',
+ 'django.contrib.auth',
+ 'django.contrib.contenttypes',
+ 'django.contrib.sessions',
+ 'django.contrib.messages',
+ 'django.contrib.staticfiles',
+ 'rest_framework',
+]
+Installed Middleware:
+['django.middleware.security.SecurityMiddleware',
+ 'django.contrib.sessions.middleware.SessionMiddleware',
+ 'django.middleware.common.CommonMiddleware',
+ 'django.middleware.csrf.CsrfViewMiddleware',
+ 'django.contrib.auth.middleware.AuthenticationMiddleware',
+ 'django.contrib.auth.middleware.SessionAuthenticationMiddleware',
+ 'django.contrib.messages.middleware.MessageMiddleware',
+ 'django.middleware.clickjacking.XFrameOptionsMiddleware']
+
+
+Traceback:  
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/core/handlers/exception.py" in inner
+  42.             response = get_response(request)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/core/handlers/base.py" in _legacy_get_response
+  249.             response = self._get_response(request)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/core/handlers/base.py" in _get_response
+  187.                 response = self.process_exception_by_middleware(e, request)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/core/handlers/base.py" in _get_response
+  185.                 response = wrapped_callback(request, *callback_args, **callback_kwargs)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/views/decorators/csrf.py" in wrapped_view
+  58.         return view_func(*args, **kwargs)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/views/generic/base.py" in view
+  68.             return self.dispatch(request, *args, **kwargs)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/views.py" in dispatch
+  489.             response = self.handle_exception(exc)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/views.py" in handle_exception
+  449.             self.raise_uncaught_exception(exc)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/views.py" in dispatch
+  486.             response = handler(request, *args, **kwargs)
+
+File "/home/vikas/code/work/venv/project/views.py" in post
+  900.         if serializer.is_valid(raise_exception=True):
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/serializers.py" in is_valid
+  237.                 self._validated_data = self.run_validation(self.initial_data)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/serializers.py" in run_validation
+  432.         value = self.to_internal_value(data)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/serializers.py" in to_internal_value
+  462.                 validated_value = field.run_validation(primitive_value)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/fields.py" in run_validation
+  525.         value = self.to_internal_value(data)
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/rest_framework/fields.py" in to_internal_value
+  1306.         parsed = parse_duration(six.text_type(value))
+
+File "/home/vikas/.virtualenvs/venv/lib/python3.5/site-packages/django/utils/dateparse.py" in parse_duration
+  127.         return datetime.timedelta(**kw)
+
+Exception Type: OverflowError at /api/duration
+Exception Value: days=1000000000; must have magnitude <= 999999999
+If a more long value is passed as days, the execption message changes to
+Python int too large to convert to C long
+A simple try/except statement in DurationField will fix this issue. I can send a pull request if this issue is accepted.

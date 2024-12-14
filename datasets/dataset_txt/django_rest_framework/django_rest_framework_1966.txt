@@ -1,0 +1,23 @@
+dnelson86 commented on 7 Mar 2015
+Hi,
+Motivation: I have a partitioned InnoDB database which has ~10M rows per partition. A COUNT(*) on any partition (with or without additional WHERE clauses) takes a few seconds.
+In pagination, when walking through the pages, the pagination._get_count() function is called each time, which executes this "global" count each time. In my use case, this can be quite a problem.
+I would prefer if pagination_class.paginate_queryset() cached the count, depending on filtering, etc.
+My current hack is to replace:
+    def paginate_queryset(self, queryset, request, view=None):
+        self.count = _get_count(queryset)
+with e.g.
+    def paginate_queryset(self, queryset, request, view=None):
+        from django.core.cache import cache
+
+        cache_key = request.path
+        skipGetKeys = ['offset','limit']
+        filter_query = [key+value for key,value in request.GET.iteritems() if key not in skipGetKeys]
+        cache_key += '_'.join(filter_query)
+
+        self.count = cache.get(cache_key)
+
+        if self.count == None:
+            self.count = _get_count(queryset)
+            cache.set(cache_key,self.count,None)
+I'm not sure how general this is, but I think could be useful for some cases (for me, each paginated REST response then takes ~300ms instead of ~5000ms).

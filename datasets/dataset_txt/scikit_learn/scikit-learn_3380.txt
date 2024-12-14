@@ -1,0 +1,135 @@
+Contributor
+fabio-t commented on Nov 18, 2015
+..or at least that is my rough guess of the following error.
+It doesn't happen often, but still it does happen. I have datasets made of many more features than samples, if that changes anything.
+In this case, these were the data shapes passed to model.fit and .predict (90% of the other experiments, with the same data, succeeded):
+x_train: (39, 5000)
+y_train: (39,)
+x_test: (9, 5000)
+the Y is a 1d array.
+It looks like 5-fold CV within LassoLarsCV has given x_train 31 samples, and y_train 32 samples.
+y_pred = model.fit(x_train, y_train).predict(x_test)
+  File "/home/ft583445/.local/lib/python2.7/site-packages/sklearn/linear_model/least_angle.py", line 1093, in fit
+    for train, test in cv)
+  File "/home/ft583445/.local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 812, in __call__
+    self.retrieve()
+  File "/home/ft583445/.local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 762, in retrieve
+    raise exception
+sklearn.externals.joblib.my_exceptions.JoblibValueError: JoblibValueError
+___________________________________________________________________________
+Multiprocessing exception:
+...........................................................................
+/rwthfs/rz/cluster/home/ft583445/ig440396_diabetes/code/regression.py in <module>()
+    274             print "x_train shape:", x_train.shape
+    275             print "x_test shape:",  x_test.shape
+    276             print
+    277 
+    278             # fit the model and calculate predictions
+--> 279             model, y_pred = fit_model(args, x_train, y_train_i, x_test, y_test_i, response_name)
+    280 
+    281             print y_test_i
+    282             print y_pred
+    283 
+
+...........................................................................
+/rwthfs/rz/cluster/home/ft583445/ig440396_diabetes/code/regression.py in fit_model(args=Namespace(append_output=False, dir_files_ext_cv=...', xtrain_file='', ytest_file='', ytrain_file=''), x_train=array([[ 1.65041978, -0.24217034, -0.80250769, ....  0.33      ,
+         5.49      ,  1.75      ]]), y_train=array([ 1.01538462,  1.01941748,  0.91150442,  0...84615385,  0.856     ,  0.81052632,  0.81318681]), x_test=array([[ 1.89897237, -0.47821484, -0.79928168, ....  0.33      ,
+         5.13      ,  1.65      ]]), y_test=array([ 1.        ,  0.98019802,  0.88495575,  0...97029703,  0.97169811,  0.90243902,  1.08737864]), response_name='WAISTvsHIP')
+     96     ############## LASSO-LARS #############
+     97 
+     98     elif args.model == "lassolars":
+     99         model = LassoLarsCV(cv=cv, n_jobs=args.njobs, max_n_alphas=n_alphas, max_iter=args.max_iterations, normalize=args.model_normalise, verbose=False)
+    100 
+--> 101         y_pred = model.fit(x_train, y_train).predict(x_test)
+        y_pred = undefined
+        model.fit = <bound method LassoLarsCV.fit of LassoLarsCV(cop...ositive=False, precompute='auto', verbose=False)>
+        x_train = array([[ 1.65041978, -0.24217034, -0.80250769, ....  0.33      ,
+         5.49      ,  1.75      ]])
+        y_train.predict = undefined
+        x_test = array([[ 1.89897237, -0.47821484, -0.79928168, ....  0.33      ,
+         5.13      ,  1.65      ]])
+    102 
+    103         log_alphas = -np.log10(model.cv_alphas_)
+    104 
+    105         util.save_mse_path_plot(log_alphas, -np.log10(model.alpha_), model.cv_mse_path_, "LarsLasso", mse_path_filename)
+
+...........................................................................
+/home/ft583445/.local/lib/python2.7/site-packages/sklearn/linear_model/least_angle.py in fit(self=LassoLarsCV(copy_X=True, cv=5, eps=2.22044604925...positive=False, precompute='auto', verbose=False), X=array([[ 1.65041978, -0.24217034, -0.80250769, ....  0.33      ,
+         5.49      ,  1.75      ]]), y=array([ 1.01538462,  1.01941748,  0.91150442,  0...84615385,  0.856     ,  0.81052632,  0.81318681]))
+   1088             delayed(_lars_path_residues)(
+   1089                 X[train], y[train], X[test], y[test], Gram=Gram, copy=False,
+   1090                 method=self.method, verbose=max(0, self.verbose - 1),
+   1091                 normalize=self.normalize, fit_intercept=self.fit_intercept,
+   1092                 max_iter=self.max_iter, eps=self.eps, positive=self.positive)
+-> 1093             for train, test in cv)
+        cv = sklearn.cross_validation.KFold(n=39, n_folds=5, shuffle=False, random_state=None)
+   1094         all_alphas = np.concatenate(list(zip(*cv_paths))[0])
+   1095         # Unique also sorts
+   1096         all_alphas = np.unique(all_alphas)
+   1097         # Take at most max_n_alphas values
+
+...........................................................................
+/home/ft583445/.local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py in __call__(self=Parallel(n_jobs=2), iterable=<generator object <genexpr>>)
+    807             if pre_dispatch == "all" or n_jobs == 1:
+    808                 # The iterable was consumed all at once by the above for loop.
+    809                 # No need to wait for async callbacks to trigger to
+    810                 # consumption.
+    811                 self._iterating = False
+--> 812             self.retrieve()
+        self.retrieve = <bound method Parallel.retrieve of Parallel(n_jobs=2)>
+    813             # Make sure that we get a last message telling us we are done
+    814             elapsed_time = time.time() - self._start_time
+    815             self._print('Done %3i out of %3i | elapsed: %s finished',
+    816                         (len(self._output), len(self._output),
+
+---------------------------------------------------------------------------
+Sub-process traceback:
+---------------------------------------------------------------------------
+ValueError                                         Tue Nov 17 19:02:51 2015
+PID: 19501  Python 2.7.9: /usr/local_rwth/sw/python/2.7.9/x86_64/bin/python
+...........................................................................
+/home/ft583445/.local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.pyc in __call__(self=<sklearn.externals.joblib.parallel.BatchedCalls object>)
+     67     def __init__(self, iterator_slice):
+     68         self.items = list(iterator_slice)
+     69         self._size = len(self.items)
+     70 
+     71     def __call__(self):
+---> 72         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+     73 
+     74     def __len__(self):
+     75         return self._size
+     76 
+
+...........................................................................
+/home/ft583445/.local/lib/python2.7/site-packages/sklearn/linear_model/least_angle.pyc in _lars_path_residues(X_train=memmap([[-0.33195527, -0.20371084,  0.55340384, ... -0.12140702,
+        -0.04736245,  0.01198944]]), y_train=array([ 0.03538555,  0.03941841, -0.06849464, -0... ,  0.01074167,
+        0.02000093, -0.00999907]), X_test=array([[ 0.20727756, -0.06134185, -0.57404149, .... -0.48580645,
+        -0.19290323,  0.03967742]]), y_test=array([-0.02390151, -0.0085705 , -0.0382515 , -0...2, -0.12399907,
+       -0.16947275, -0.16681226]), Gram='auto', copy=False, method='lasso', verbose=0, fit_intercept=True, normalize=True, max_iter=3000, eps=2.2204460492503131e-16, positive=False)
+    938         X_train[:, nonzeros] /= norms[nonzeros]
+    939 
+    940     alphas, active, coefs = lars_path(
+    941         X_train, y_train, Gram=Gram, copy_X=False, copy_Gram=False,
+    942         method=method, verbose=max(0, verbose - 1), max_iter=max_iter, eps=eps,
+--> 943         positive=positive)
+    944     if normalize:
+    945         coefs[nonzeros] /= norms[nonzeros][:, np.newaxis]
+    946     residues = np.dot(X_test, coefs) - y_test[:, np.newaxis]
+    947     return alphas, active, coefs, residues.T
+
+...........................................................................
+/home/ft583445/.local/lib/python2.7/site-packages/sklearn/linear_model/least_angle.pyc in lars_path(X=memmap([[-0.33195527, -0.20371084,  0.55340384, ... -0.12140702,
+        -0.04736245,  0.01198944]]), y=array([ 0.03538555,  0.03941841, -0.06849464, -0... ,  0.01074167,
+        0.02000093, -0.00999907]), Xy=None, Gram=None, max_iter=3000, alpha_min=0, method='lasso', copy_X=False, eps=2.2204460492503131e-16, copy_Gram=False, verbose=0, return_path=True, return_n_iter=False, positive=False)
+    186             Gram = np.dot(X.T, X)
+    187     elif copy_Gram:
+    188         Gram = Gram.copy()
+    189 
+    190     if Xy is None:
+--> 191         Cov = np.dot(X.T, y)
+    192     else:
+    193         Cov = Xy.copy()
+    194 
+    195     if verbose:
+
+ValueError: shapes (5000,31) and (32,) not aligned: 31 (dim 1) != 32 (dim 0)

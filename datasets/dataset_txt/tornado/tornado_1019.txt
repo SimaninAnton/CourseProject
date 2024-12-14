@@ -1,0 +1,66 @@
+Contributor
+tahajahangir commented on 5 Jan 2013
+(Also posted on http://stackoverflow.com/q/14162950/326792)
+This code, shows memory leak in tornado's gen module, when connections are closed without reading the response:
+import gc
+from tornado import web, ioloop, gen
+
+class MainHandler(web.RequestHandler):
+    @web.asynchronous
+    @gen.engine
+    def get(self):
+        gc.collect()
+        print len(gc.garbage)  # print zombie objects count
+        self.a = '*' * 500000000  # ~500MB data
+        CHUNK_COUNT = 100
+        try:
+            for i in xrange(CHUNK_COUNT):
+                self.write('*' * 10000)  # write ~10KB of data
+                yield gen.Task(self.flush)  # wait for reciever to recieve
+            print 'finished'
+        finally:
+            print 'finally'
+
+application = web.Application([
+    (r"/", MainHandler),
+    ])
+
+application.listen(8888)
+ioloop.IOLoop.instance().start()
+and now, run a simple test client, multiple times
+#!/usr/bin/python
+import urllib
+urlopen('http://127.0.0.1:8888/')  # exit without reading response
+Now, server output shows, incremental memory usage:
+0
+WARNING:root:Write error on 8: [Errno 104] Connection reset by peer
+1
+WARNING:root:Read error on 8: [Errno 104] Connection reset by peer
+WARNING:root:error on read
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/iostream.py", line 361, in _handle_read
+    if self._read_to_buffer() == 0:
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/iostream.py", line 428, in _read_to_buffer
+    chunk = self._read_from_socket()
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/iostream.py", line 409, in _read_from_socket
+    chunk = self.socket.recv(self.read_chunk_size)
+error: [Errno 104] Connection reset by peer
+2
+ERROR:root:Uncaught exception GET / (127.0.0.1)
+HTTPRequest(protocol='http', host='127.0.0.1:8888', method='GET', uri='/', version='HTTP/1.0', remote_ip='127.0.0.1', body='', headers={'Host': '127.0.0.1:8888', 'User-Agent': 'Python-urllib/1.17'})
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/web.py", line 1021, in _stack_context_handle_exception
+    raise_exc_info((type, value, traceback))
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/web.py", line 1139, in wrapper
+    return method(self, *args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/gen.py", line 120, in wrapper
+    runner.run()
+  File "/usr/local/lib/python2.7/dist-packages/tornado-2.4.1-py2.7.egg/tornado/gen.py", line 345, in run
+    yielded = self.gen.send(next)
+  File "test.py", line 10, in get
+    self.a = '*' * 500000000
+MemoryError
+ERROR:root:500 GET / (127.0.0.1) 3.91ms
+If you set CHUNK_COUNT to 1, the 10KB of data can be written to OS connection buffer, and 'finished' and 'finally' texts will be printed to console, and because generator is completed, no memory leak occurs.
+But the strange part is that if your remove the try/finally block, the problem disappears!! (even with CHUNK_COUNT set to 100)
+Is this a bug on CPython or tornado or ...?!

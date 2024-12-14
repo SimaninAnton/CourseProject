@@ -1,0 +1,33 @@
+uranusjr commented on 24 Mar 2015
+Reproduction
+urls.py
+from django.conf.urls import patterns, include, url
+from django.contrib.auth import get_user_model
+from rest_framework import routers, serializers, viewsets
+
+User = get_user_model()
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('username', 'is_superuser', 'url',)
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+router = routers.DefaultRouter()
+router.register(r'users', UserViewSet)
+
+urlpatterns = patterns(
+    '',
+    url(r'^api/', include(router.urls, namespace='api')),      # HERE.
+)
+Add a user (with manage.py createsuperuser or whatever), and visit /api/users/ to see this error:
+ImproperlyConfigured at /api/users/
+
+Could not resolve URL for hyperlinked relationship using view name "user-detail". You may have failed to include the related model in your API, or incorrectly configured the `lookup_field` attribute on this field.
+Description
+After some digging into the source, the reason seems to be that rest_framework.utils.field_mapping.get_detail_view_name does not take URL namespaces into account, and generates a wrong view name (user-detail in the example; the correct name should be api:user-detail).
+I know that the documentation says that if you use namespaces, you need to provide view_name manually, but this still seems wrong to me. Namespacing with view names is pretty common practice (AFAIK), and Django REST Framework’s API root does support it. It might be able to (weakly IMO) justify requiring explicit configuration for custom fields, but with automatically generated fields this should be handled automatically. Or at least provide better error messages.
+1

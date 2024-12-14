@@ -1,0 +1,28 @@
+tarzanjw commented on Sep 14, 2013
+When Server responses 401 with qop in WWW-Authenticate header is : "auth,auth-int". Requests package send "None" as Authorization header. It's wrong.
+www-authenticate: ...qop=auth,auth-int...
+Requests package does correctly for:
+www-authenticate: ...qop=auth...
+from debuging, file requests/auth.py, line 109:
+    if qop == 'auth':
+        if nonce == self.last_nonce:
+            self.nonce_count += 1
+        else:
+            self.nonce_count = 1
+
+        ncvalue = '%08x' % self.nonce_count
+        s = str(self.nonce_count).encode('utf-8')
+        s += nonce.encode('utf-8')
+        s += time.ctime().encode('utf-8')
+        s += os.urandom(8)
+
+        cnonce = (hashlib.sha1(s).hexdigest()[:16])
+        noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop, hash_utf8(A2))
+        respdig = KD(hash_utf8(A1), noncebit)
+    elif qop is None:
+        respdig = KD(hash_utf8(A1), "%s:%s" % (nonce, hash_utf8(A2)))
+    else:
+        # XXX handle auth-int.
+        return None
+I saw that when you parse headers for qop argument, you did not split it into some option.
+Did I misunderstand or something else?

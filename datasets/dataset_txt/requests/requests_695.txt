@@ -1,0 +1,40 @@
+Miserlou commented on Apr 21, 2017
+Hey all!
+Note: This issue may be out of scope for the requests project, I'm not sure, but honestly I'd really appreciate your help in explaining the rationale behind some of the behavior related to this section of the codebase (related PR discussion). Let me know if this ticket is out of scope and we can move the discussion back downstream.
+I'm currently working on adding Python3.6 support to Zappa - it pretty much works, except for the requests library. Any time import requests is called, this happens:
+   'message':'An uncaught exception happened while servicing this request. You can investigate this with the `zappa tail` command.',
+   'traceback':[
+      'Traceback (most recent call last):\n',
+      ' File "/var/task/requests/packages/__init__.py", line 27, in <module>\n from . import urllib3\n',
+      ' File "/var/task/requests/packages/urllib3/__init__.py", line 8, in <module>\n from .connectionpool import (\n',
+      ' File "/var/task/requests/packages/urllib3/connectionpool.py", line 11, in <module>\n from .exceptions import (\n',
+      ' File "/var/task/requests/packages/urllib3/exceptions.py", line 2, in <module>\n from .packages.six.moves.http_client import (\n',
+      "ModuleNotFoundError: No module named 'requests.packages.urllib3.packages.six'\n",
+      '\nDuring handling of the above exception, another exception occurred:\n\n',
+      'Traceback (most recent call last):\n',
+      ' File "/var/task/handler.py", line 471, in handler\n response = Response.from_app(self.wsgi_app, environ)\n',
+      ' File "/var/task/werkzeug/wrappers.py", line 903, in from_app\n return cls(*_run_wsgi_app(app, environ, buffered))\n',
+      ' File "/var/task/werkzeug/test.py", line 884, in run_wsgi_app\n app_rv = app(environ, start_response)\n',
+      ' File "/var/task/zappa/middleware.py", line 66, in __call__\n response = self.application(environ, encode_response)\n',
+      ' File "/var/task/flask/app.py", line 1997, in __call__\n return self.wsgi_app(environ, start_response)\n',
+      ' File "/var/task/flask/app.py", line 1985, in wsgi_app\n response = self.handle_exception(e)\n',
+      ' File "/var/task/flask/app.py", line 1540, in handle_exception\n reraise(exc_type, exc_value, tb)\n',
+      ' File "/var/task/flask/_compat.py", line 33, in reraise\n raise value\n',
+      ' File "/var/task/flask/app.py", line 1982, in wsgi_app\n response = self.full_dispatch_request()\n',
+      ' File "/var/task/flask/app.py", line 1614, in full_dispatch_request\n rv = self.handle_user_exception(e)\n',
+      ' File "/var/task/flask/app.py", line 1517, in handle_user_exception\n reraise(exc_type, exc_value, tb)\n',
+      ' File "/var/task/flask/_compat.py", line 33, in reraise\n raise value\n',
+      ' File "/var/task/flask/app.py", line 1612, in full_dispatch_request\n rv = self.dispatch_request()\n',
+      ' File "/var/task/flask/app.py", line 1598, in dispatch_request\n return self.view_functions[rule.endpoint](**req.view_args)\n',
+      ' File "/var/task/app3.py", line 10, in home\n import requests\n',
+      ' File "/var/task/requests/__init__.py", line 60, in <module>\n from .packages.urllib3.exceptions import DependencyWarning\n',
+      ' File "/var/task/requests/packages/__init__.py", line 29, in <module>\n import urllib3\n',
+      ' File "/var/task/urllib3/__init__.py", line 8, in <module>\n from .connectionpool import (\n',
+      ' File "/var/task/urllib3/connectionpool.py", line 11, in <module>\n from .exceptions import (\n',
+      ' File "/var/task/urllib3/exceptions.py", line 2, in <module>\n from .packages.six.moves.http_client import (\n',
+      "ModuleNotFoundError: No module named 'urllib3.packages.six'\n"
+It looks to me like the vendoring of requests's urllib3 is conflicting with the urllib3 in the Lambda environment.
+I'd really prefer not to add a special case for the import of requests - is there a recommended way of packaging or configuring of requests that avoids this problem?
+(For some context, for those who don't know how Zappa works, we are creating a virtual environment one system, packaging it up into a zip and deploying it to another system, which may or may not be on the same operating system. For pure-python projects, this isn't usually a problem, but since there is some operating-system dependent logic here, maybe it is here, although it hasn't been a problem for the 2.7 environment.)
+Any ideas what's happening here?
+Thanks!

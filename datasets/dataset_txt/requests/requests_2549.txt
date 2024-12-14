@@ -1,0 +1,43 @@
+joelverhagen commented on Mar 12, 2012
+This problem is Python 3 specific. I am performing this test on Python 3.2.2 and requests 0.10.8.
+Take a look at the following minimal example code.
+import requests
+import io
+
+response = requests.post("http://www.joelverhagen.com/sandbox/tests/upload.php", data = {
+    "foo": "bar",
+    "jibba": "jabba",
+})
+
+print("-- WITHOUT UPLOAD --")
+print(response.text)
+
+exampleFile = io.StringIO("Hello, world.")
+exampleFile.seek(0)
+
+response = requests.post("http://www.joelverhagen.com/sandbox/tests/upload.php", data = {
+    "foo": "bar",
+    "jibba": "jabba",
+}, files = {
+    "file": ("file.txt", exampleFile)
+})
+
+print("-- WITH UPLOAD --")
+print(response.text)
+The script being queries is on my own website, and I will leave it up until this issue is closed. The output is the following:
+-- WITHOUT UPLOAD --
+Array
+(
+    [jibba] => jabba
+    [foo] => bar
+)
+
+-- WITH UPLOAD --
+Array
+(
+    [b'jibba'] => jabba
+    [b'foo'] => bar
+)
+As you can see, the keys of the data keyword argument are not encoded correctly when there is a file upload. I have done some digging, and I have tracked down the problem. In models.py, there is a static method on the Request class called _encode_params. This encodes each of the values and keys to UTF-8 bytes using .encode('utf-8'). In Python 3, this results in the new bytes type, whereas in Python 2, a normal string was returned.
+This doesn't cause a problem until urllib3's encode_multipart_formdata function (in filepost.py) uses the string formatting operator % and %s to concat the key into the request body. This basically ends up calling str() on the bytes object which is why we see the b'' literal in the key name.
+I wasn't sure whether this is a problem with urllib3 or requests because I'm not sure if shazow want bytes or strings being sent to encode_multipart_formdata.

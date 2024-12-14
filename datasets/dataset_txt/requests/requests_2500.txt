@@ -1,0 +1,56 @@
+esaurito commented on Apr 29, 2012
+I'm using requests to download asynchronously and parse the content of a bunch of URLs from different hosts. When the number of URLs is small (up to 1000 URLs) all works fine. When I run the same script with 10000 I get the following error only when there are about 10 URLs left to download:
+Traceback (most recent call last):
+  File "many_async_req.py", line 35, in <module>
+  File "/home/alex/code/.virtualenvs/testreq/local/lib/python2.7/site-packages/requests-0.11.2-py2.7.egg/requests/async.py", line 83, in map
+  File "/home/alex/code/.virtualenvs/testreq/local/lib/python2.7/site-packages/gevent/greenlet.py", line 487, in joinall
+ImportError: No module named queue
+Sometimes the script just hangs with about 10 URLs left. I observed this behavior with requests installed from pipy and with the code downloaded from the development branch.
+This happened to me using the version of gevent from pypi and using the latest version downloaded from gevent's Google Code repository.
+I'm using a virtualenv with only the relevant modules installed:
+(testreq)alex@haiku:~/code$ pip freeze
+certifi==0.0.8
+chardet==1.0.1
+distribute==0.6.19
+gevent==0.13.7
+greenlet==0.3.4
+requests==0.11.2
+wsgiref==0.1.2
+To reproduce the error I'm using the following script (that is a stripped-down version of the original) that basically just print the status code of each URL.
+import codecs
+import random
+from requests import async
+from requests import defaults
+import sys
+
+defaults.defaults['base_headers']['User-Agent'] = "Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko/20100101 Firefox/11.0"
+defaults.defaults['max_retries'] = 5
+defaults.defaults['verbose'] = sys.stderr
+
+
+def check(response):
+    global counter
+    print "\t %s HTTP status code: %s" % (counter, response.status_code)
+    counter += 1
+
+
+def load_urls(fname):
+    """ Read URLs from file and remove duplicates """
+    with codecs.open(fname, 'r', 'utf-8') as fh:
+        urls = list(set([url.strip() for url in fh.readlines()]))
+        random.shuffle(urls)
+        return urls
+
+if __name__ == '__main__':
+
+    urls = load_urls('urls.txt')
+    limit = int(sys.argv[1])
+    urls = urls[:limit]
+    rs = []
+    counter = 0
+    todo = len(urls)
+    for url in urls:
+            rs.append(async.get(url, hooks=dict(response=check), timeout=5.0))
+    async.map(rs, size=10)
+    print "To check: %s" % todo
+    print "To checked: %s" % counter

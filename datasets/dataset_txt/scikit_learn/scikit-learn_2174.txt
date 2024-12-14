@@ -1,0 +1,127 @@
+Contributor
+joernhees commented on May 29, 2017 •
+edited by TomDLT
+Description
+The current implementation of SGDClassifier has an n_jobs=1 arg. If left at its default, it seems to get stuck when used from within a GridSearchCVwith n_jobs=i with i=-1 or i>1.
+After debugging and cutting this down for hours, i stumbled over http://scikit-learn.org/dev/faq.html#why-do-i-sometime-get-a-crash-freeze-with-n-jobs-1-under-osx-or-linux . Yes, this is python 2, but i'm not entirely sure it is the same problem, as simply switching the two n_jobs args (-1 in SGDClassifier and 1 in GridSearchCV) will work?!? Also commenting out the MLPClassifier block in the example below will work?!?
+The behavior caught me off-guard in a huge grid-search job over many classifiers :-/. Interestingly none of the KNeighborsClassifier, SVC, DecisionTreeClassifier, RandomForestClassifier, GradientBosstingClassifier, AdaBoostClassifier, MLPClassifier, GassianNB and QuadraticDiscriminantAnalysis classifiers got stuck?!?
+Steps/Code to Reproduce
+Some experimentation skeleton... try swapping the n_jobs as indicated...
+from sklearn import datasets
+from sklearn.neural_network import MLPClassifier
+from sklearn.linear_model import SGDClassifier
+from sklearn.model_selection import GridSearchCV
+
+
+def grid(clf, param_grid):
+    clf = GridSearchCV(
+        clf, param_grid,
+        n_jobs=-1,
+        # pre_dispatch='n_jobs',
+        verbose=10,
+    )
+    return clf
+
+
+def main():
+    clf_grid = [
+        (
+            MLPClassifier(),
+            {
+                'alpha': [0.0001, 1],
+                'hidden_layer_sizes': [
+                    (100,), (10, 10),
+                ],
+            }
+        ),
+        (
+            SGDClassifier(
+                # n_jobs=-1  # if GridSearchCV n_jobs=1, this works
+            ),
+            {
+                'loss': ['log', 'modified_huber'],
+                'class_weight': ['balanced', None]
+            },
+        ),
+    ]
+
+    d = datasets.load_digits()
+    X, y = d.data, d.target
+
+    for c, pg in clf_grid:
+        clf = grid(c, pg)
+        clf.fit(X, y)
+
+
+if __name__ == '__main__':
+    main()
+Expected Results
+Use multi-processing to speed up computation, don't get stuck.
+Actual Results
+Gets stuck when MLP-block is above SGD and GridSearchCV n_jobs != 1 and SGDClassifier n_jobs == 1. Prints something like this:
+Fitting 3 folds for each of 4 candidates, totalling 12 fits
+[CV] alpha=0.0001, hidden_layer_sizes=(100,) .........................
+[CV] alpha=0.0001, hidden_layer_sizes=(100,) .........................
+[CV] alpha=0.0001, hidden_layer_sizes=(100,) .........................
+[CV] alpha=0.0001, hidden_layer_sizes=(10, 10) .......................
+[CV] alpha=0.0001, hidden_layer_sizes=(10, 10) .......................
+[CV] alpha=0.0001, hidden_layer_sizes=(10, 10) .......................
+[CV] alpha=1, hidden_layer_sizes=(100,) ..............................
+[CV] alpha=1, hidden_layer_sizes=(100,) ..............................
+[CV]  alpha=0.0001, hidden_layer_sizes=(100,), score=0.901007, total=   0.5s
+[Parallel(n_jobs=-1)]: Done   1 tasks      | elapsed:    0.6s
+[CV] alpha=1, hidden_layer_sizes=(100,) ..............................
+[CV]  alpha=0.0001, hidden_layer_sizes=(10, 10), score=0.733221, total=   0.7s
+[CV] alpha=1, hidden_layer_sizes=(10, 10) ............................
+[CV]  alpha=1, hidden_layer_sizes=(100,), score=0.874161, total=   0.5s
+[CV] alpha=1, hidden_layer_sizes=(10, 10) ............................
+[Parallel(n_jobs=-1)]: Done   3 out of  12 | elapsed:    1.0s remaining:    3.1s
+[CV]  alpha=0.0001, hidden_layer_sizes=(100,), score=0.925249, total=   1.3s
+[CV] alpha=1, hidden_layer_sizes=(10, 10) ............................
+[CV]  alpha=0.0001, hidden_layer_sizes=(100,), score=0.948247, total=   1.4s
+[Parallel(n_jobs=-1)]: Done   5 out of  12 | elapsed:    1.4s remaining:    2.0s
+<path>/venv/lib/python2.7/site-packages/sklearn/neural_network/multilayer_perceptron.py:563: ConvergenceWarning: Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.
+  % (), ConvergenceWarning)
+[CV]  alpha=0.0001, hidden_layer_sizes=(10, 10), score=0.909850, total=   1.5s
+<path>/venv/lib/python2.7/site-packages/sklearn/neural_network/multilayer_perceptron.py:563: ConvergenceWarning: Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.
+  % (), ConvergenceWarning)
+[CV]  alpha=0.0001, hidden_layer_sizes=(10, 10), score=0.873754, total=   1.6s
+[Parallel(n_jobs=-1)]: Done   7 out of  12 | elapsed:    1.6s remaining:    1.1s
+[CV]  alpha=1, hidden_layer_sizes=(10, 10), score=0.736577, total=   0.6s
+<path>/venv/lib/python2.7/site-packages/sklearn/neural_network/multilayer_perceptron.py:563: ConvergenceWarning: Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.
+  % (), ConvergenceWarning)
+[CV]  alpha=1, hidden_layer_sizes=(10, 10), score=0.885382, total=   1.3s
+[Parallel(n_jobs=-1)]: Done   9 out of  12 | elapsed:    2.0s remaining:    0.7s
+[CV]  alpha=1, hidden_layer_sizes=(100,), score=0.931894, total=   2.1s
+<path>/venv/lib/python2.7/site-packages/sklearn/neural_network/multilayer_perceptron.py:563: ConvergenceWarning: Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.
+  % (), ConvergenceWarning)
+[CV]  alpha=1, hidden_layer_sizes=(10, 10), score=0.891486, total=   1.2s
+<path>/venv/lib/python2.7/site-packages/sklearn/neural_network/multilayer_perceptron.py:563: ConvergenceWarning: Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.
+  % (), ConvergenceWarning)
+<path>/venv/lib/python2.7/site-packages/sklearn/neural_network/multilayer_perceptron.py:563: ConvergenceWarning: Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.
+  % (), ConvergenceWarning)
+[CV]  alpha=1, hidden_layer_sizes=(100,), score=0.966611, total=   2.2s
+[Parallel(n_jobs=-1)]: Done  12 out of  12 | elapsed:    2.3s finished
+Fitting 3 folds for each of 4 candidates, totalling 12 fits
+[CV] loss=log, class_weight=balanced .................................
+[CV] loss=log, class_weight=balanced .................................
+[CV] loss=log, class_weight=balanced .................................
+[CV] loss=modified_huber, class_weight=balanced ......................
+[CV] loss=modified_huber, class_weight=balanced ......................
+[CV] loss=modified_huber, class_weight=balanced ......................
+[CV] loss=log, class_weight=None .....................................
+[CV] loss=log, class_weight=None .....................................
+[CV] loss=log, class_weight=None .....................................
+[CV] loss=modified_huber, class_weight=None ..........................
+[CV] loss=modified_huber, class_weight=None ..........................
+[CV] loss=modified_huber, class_weight=None ..........................
+<stuck here forever, 0 % CPU usage>
+Doesn't get stuck when GridSearchCV``n_jobs == 1 and SGDClassifier n_jobs != 1
+Versions
+Darwin-15.6.0-x86_64-i386-64bit
+Python 2.7.13 (default, Dec 17 2016, 23:03:43)
+[GCC 4.2.1 Compatible Apple LLVM 8.0.0 (clang-800.0.42.1)]
+NumPy 1.12.1
+SciPy 0.19.0
+Scikit-Learn 0.18.1
+(Sadly cannot switch over to py3 due to other dependencies :-/)

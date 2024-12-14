@@ -1,0 +1,23 @@
+cjnolet commented on 19 Jan 2017
+I am implementing the loss function for the fully convolutional neural network outlined in the paper "Synthetic Data for Text Localization in Natural Images" and I'm scratching my head trying to figure out what I'm doing wrong. Here's a snippet of the loss function I've implemented:
+def fcrn_loss(y_true, y_pred):
+  loss = K.square(y_pred - y_true)
+
+  images = []
+  for i in range(0, mini_batch_size):
+    c = y_true[i, 6, :, :].reshape((1, 16, 16))
+    final_c = (c * loss[i, 6, :, :])
+    c = T.set_subtensor(c[(c<=0).nonzero()], weight)
+
+    final_loss_parts = [(c * loss[i, j, :, :].reshape(1, 16, 16))).reshape((1, 16, 16)) for j in range(0, 6)]
+    final_loss_parts.append(final_c)
+
+    images.append(K.concatenate(final_loss_parts))
+
+  return K.mean(K.concatenate(images).reshape((mini_batch_size, 7, 16, 16)), axis = 1)
+So my network basically outputs 7 different feature maps where each corresponding element index in each feature map represents a single feature of a vector of 7 total features. An input image is broken up into 256 cells (16 across the image and 16 down the image) using convolutional layers. The network is trying to predict, holistically, the presence and dimensions/location of a bounding box around text for each cell of the image. One of the output features, a confidence value, c (the feature in the 7th feature map) basically determines the likelihood of that cell containing the center of a bounding box around text. The special logic I needed to add to the standard mean squared error loss function is that 1) for each cell, if c == 0, ignore the loss for the 6 other output features, and 2) for each cell, if c == 0, take only a fraction of the loss for c and increase that fraction throughout training until it ultimately takes 100% of the loss. This last part is due to the fact there are many more negative cells than positive cells.
+My questions / concerns:
+The standard mean squared error loss function in the objectives.py file seems to use axis = -1 for the mean. Since this is a fully convolutional network and the output is a tensor, I would think I would want to perform the mean across the features in axis = 1 and not the last axis, right? Was there a reason why axis = -1 is used in all the loss functions? Was it just because most neural network assume to have a vector as output?
+I'm learning how Keras/Theano compile an actual execution graph of the operations necessary to perform the calculation of the gradients and I'm trying to better understand the special conventions / assumptions that are made about the lazily-evaluated functions so that I don't hinder the proper calculation of the gradients.
+Right now, running this as is, is giving me a really giant loss during training (the 10's of thousands) and the accuracy doesn't seem to go up very high. I'm thinking that this might be because the operations that I've inserted between the squaring and the mean of the MSE loss function are causing something wonky to happen in the calculation of the final gradient that gets back propagated.
+3

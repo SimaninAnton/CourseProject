@@ -1,0 +1,186 @@
+Contributor
+arthurmensch commented on May 27, 2015
+From sklearn.decomposition.dict_learning, using sparse_encode triggers error when using a large input X with algorithm 'lasso_cd'. I was not able to reproduce this bug using simple examples, as it seems to come from a memory mapping error, owing to X being large.
+Call line :
+            maps = sparse_encode(data_flat.T, U, alpha=self.alpha, algorithm='lasso_'+self.method, n_jobs=3)
+Output :
+Traceback (most recent call last):
+  File "/media/data/Documents/Work/parietal-python/examples/plot_dict_learning.py", line 64, in <module>
+    model.fit(data)
+  File "/media/data/Documents/Work/parietal-python/parietal/learn/decompositions/dictionary_model.py", line 180, in fit
+    maps = sparse_encode(data_flat.T, U, alpha=self.alpha, algorithm='lasso_'+self.method, n_jobs=self.n_jobs)
+  File "/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/decomposition/dict_learning.py", line 256, in sparse_encode
+    for this_slice in slices)
+  File "/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 666, in __call__
+    self.retrieve()
+  File "/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 549, in retrieve
+    raise exception_type(report)
+sklearn.externals.joblib.my_exceptions.JoblibValueError: JoblibValueError
+___________________________________________________________________________
+Multiprocessing exception:
+    ...........................................................................
+/media/data/Documents/Work/parietal-python/examples/plot_dict_learning.py in <module>()
+     59 #                                 reduction='encode', reduction_factor=1.2*np.sqrt(N_SUBJECTS))
+     60 models = [dict_model_none]
+     61 
+     62 # Fit models
+     63 for model in models:
+---> 64     model.fit(data)
+     65     # maps_ = model.maps_
+     66     # n_maps_, _ = maps_.shape
+     67     # # if n_maps_ != N_SUBJECT:
+     68     # #     maps_ = np.concatenate((maps_, np.zeros((n_maps-n_maps_, n_voxels))), axis=0)
+
+...........................................................................
+/media/data/Documents/Work/parietal-python/parietal/learn/decompositions/dictionary_model.py in fit(self=DictModel(alpha=3, maps_only=False, mem=Memory(c...,
+     reduction_factor=1, tol=0.0001, verbose=2), data=array([[[-0.78251106, -0.40772033, -0.03013193, ...0.60377657,
+         -0.58464795, -0.88078177]]]), data_flat=array([[-0.6502697 , -0.28052581,  0.03125997, .... -0.60377831,
+        -0.58465951, -0.88077778]]), V_init=array([[-0.63966742,  0.        ,  0.        , ....  0.        ,
+         0.        ,  0.        ]]), pre_fit=True)
+    175                 data_flat = pca.components_.dot(data_flat)
+    176                 self.reduction_time_ += time.time() - t0
+    177             if self.verbose >= 1:
+    178                 print 'Learning code :'
+    179             t0 = time.time()
+--> 180             maps = sparse_encode(data_flat.T, U, alpha=self.alpha, algorithm='lasso_'+self.method, n_jobs=self.n_jobs)
+        maps = undefined
+        data_flat.T = array([[-0.6502697 ,  1.26799078,  0.40838867, .... -1.05512315,
+        -1.60722143, -0.88077778]])
+        U = array([[-0.00236816,  0.02024865, -0.00139323, .... -0.0444645 ,
+        -0.03973441, -0.01998085]])
+        self.alpha = 3
+        self.method = 'cd'
+        self.n_jobs = 3
+    181             self.encoding_time_ += time.time() - t0
+    182             if self.verbose >= 1:
+    183                 print 'Done'
+    184         else:
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/decomposition/dict_learning.py in sparse_encode(X=array([[-0.6502697 ,  1.26799078,  0.40838867, .... -1.05512315,
+        -1.60722143, -0.88077778]]), dictionary=array([[-0.00236816,  0.02024865, -0.00139323, .... -0.0444645 ,
+        -0.03973441, -0.01998085]]), gram=array([[ 1.        , -0.09361734, -0.1616115 , ....  0.59338606,
+         0.04236759,  1.        ]]), cov=array([[ -3.62598394,  -2.31830304,  -2.34356363...1.67244792,
+         -0.50818722,  -5.37480025]]), algorithm='lasso_cd', n_nonzero_coefs=None, alpha=3, copy_cov=False, init=None, max_iter=1000, n_jobs=3)
+    251         delayed(_sparse_encode)(
+    252             X[this_slice], dictionary, gram, cov[:, this_slice], algorithm,
+    253             regularization=regularization, copy_cov=copy_cov,
+    254             init=init[this_slice] if init is not None else None,
+    255             max_iter=max_iter)
+--> 256         for this_slice in slices)
+        this_slice = undefined
+        slices = [slice(0, 22124, None), slice(22124, 44248, None), slice(44248, 66371, None)]
+    257     for this_slice, this_view in zip(slices, code_views):
+    258         code[this_slice] = this_view
+    259     return code
+    260 
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py in __call__(self=Parallel(n_jobs=3), iterable=<generator object <genexpr>>)
+    661             if pre_dispatch == "all" or n_jobs == 1:
+    662                 # The iterable was consumed all at once by the above for loop.
+    663                 # No need to wait for async callbacks to trigger to
+    664                 # consumption.
+    665                 self._iterating = False
+--> 666             self.retrieve()
+        self.retrieve = <bound method Parallel.retrieve of Parallel(n_jobs=3)>
+    667             # Make sure that we get a last message telling us we are done
+    668             elapsed_time = time.time() - self._start_time
+    669             self._print('Done %3i out of %3i | elapsed: %s finished',
+    670                         (len(self._output),
+
+    ---------------------------------------------------------------------------
+    Sub-process traceback:
+    ---------------------------------------------------------------------------
+    ValueError                                         Wed May 27 10:03:03 2015
+PID: 14053Python 2.7.6: /home/arthur/.virtualenvs/parietal-python/bin/python
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/decomposition/dict_learning.pyc in _sparse_encode(X=memmap([[-0.6502697 ,  1.26799078,  0.40838867, ...  2.16620431,
+         0.26053854, -0.7225649 ]]), dictionary=array([[-0.00236816,  0.02024865, -0.00139323, .... -0.0444645 ,
+        -0.03973441, -0.01998085]]), gram=array([[ 1.        , -0.09361734, -0.1616115 , ....  0.59338606,
+         0.04236759,  1.        ]]), cov=array([[ -3.62598394,  -2.31830304,  -2.34356363...5.80205829,
+          4.13207823,  -3.81881073]]), algorithm='lasso_cd', regularization=3, copy_cov=False, init=None, max_iter=1000)
+    109         alpha = float(regularization) / n_features  # account for scaling
+    110         clf = Lasso(alpha=alpha, fit_intercept=False, precompute=gram,
+    111                     max_iter=max_iter, warm_start=True)
+    112         clf.coef_ = init
+    113         # Copying X to avoid buffer source-array read only error
+--> 114         clf.fit(dictionary.T, X.T)
+    115         new_code = clf.coef_
+    116 
+    117     elif algorithm == 'lars':
+    118         try:
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.pyc in fit(self=Lasso(alpha=0.00483870967742, copy_X=True, fit_i... selection='cyclic', tol=0.0001, warm_start=True), X=array([[-0.00236816,  0.06091933,  0.0514941 , .... -0.0432963 ,
+        -0.02150148, -0.01998085]]), y=array([[-0.6502697 , -0.28052581,  0.03125997, .... -0.25777117,
+        -0.40672367, -0.7225649 ]]))
+    668                           fit_intercept=False, normalize=False, copy_X=True,
+    669                           verbose=False, tol=self.tol, positive=self.positive,
+    670                           X_mean=X_mean, X_std=X_std, return_n_iter=True,
+    671                           coef_init=coef_[k], max_iter=self.max_iter,
+    672                           random_state=self.random_state,
+--> 673                           selection=self.selection)
+    674             coef_[k] = this_coef[:, 0]
+    675             dual_gaps_[k] = this_dual_gap[0]
+    676             self.n_iter_.append(this_iter[0])
+    677 
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.pyc in enet_path(X=array([[-0.00236816,  0.06091933,  0.0514941 , .... -0.0432963 ,
+        -0.02150148, -0.01998085]]), y=array([ -6.50269696e-01,   1.26799078e+00,   4.0...e+00,
+         1.35652531e+00,   4.22439627e-01]), l1_ratio=1.0, eps=None, n_alphas=1, alphas=array([ 0.00483871]), precompute=array([[ 1.        , -0.09361734, -0.1616115 , ....  0.59338606,
+         0.04236759,  1.        ]]), Xy=array([ -3.62598394,  -6.28233266,   6.36262432,... -7.18900381,
+        -5.29046887,  -7.51199686]), copy_X=True, coef_init=array([ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  ...0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.]), verbose=False, return_n_iter=True, positive=False, **params={'X_mean': array([ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  ...0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.]), 'X_std': array([ 1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.,  ...1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.]), 'fit_intercept': False, 'max_iter': 1000, 'normalize': False, 'random_state': None, 'selection': 'cyclic', 'tol': 0.0001})
+    423                 coef_, l1_reg, l2_reg, X, y, max_iter, tol, rng, random)
+    424         elif isinstance(precompute, np.ndarray):
+    425             precompute = check_array(precompute, 'csc', dtype=np.float64, order='F')
+    426             model = cd_fast.enet_coordinate_descent_gram(
+    427                 coef_, l1_reg, l2_reg, precompute, Xy, y, max_iter,
+--> 428                 tol, rng, random, positive)
+    429         elif precompute is False:
+    430             model = cd_fast.enet_coordinate_descent(
+    431                 coef_, l1_reg, l2_reg, X, y, max_iter, tol, rng, random,
+    432                 positive)
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/linear_model/cd_fast.so in sklearn.linear_model.cd_fast.enet_coordinate_descent_gram (sklearn/linear_model/cd_fast.c:5584)()
+    485 
+    486 
+    487 
+    488 
+    489 
+--> 490 
+    491 
+    492 
+    493 
+    494 
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/linear_model/cd_fast.so in View.MemoryView.memoryview_cwrapper (sklearn/linear_model/cd_fast.c:15515)()
+    609 
+    610 
+    611 
+    612 
+    613 
+--> 614 
+    615 
+    616 
+    617 
+    618 
+
+...........................................................................
+/home/arthur/.virtualenvs/parietal-python/local/lib/python2.7/site-packages/sklearn/linear_model/cd_fast.so in View.MemoryView.memoryview.__cinit__ (sklearn/linear_model/cd_fast.c:12061)()
+    316 
+    317 
+    318 
+    319 
+    320 
+--> 321 
+    322 
+    323 
+    324 
+    325 
+
+ValueError: buffer source array is read-only
+___________________________________________________________________________

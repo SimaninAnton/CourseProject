@@ -1,0 +1,111 @@
+fferroni commented on 24 Jun 2017
+Running Tensorflow 1.2 and Keras 2.0.5
+Trying to apply a convolutional encoder to frame timeseries.
+The following works:
+# Define encoder for single frame
+frame = Input(shape=(height, width, 4))
+encoder = Conv2D(64, kernel_size=(3, 3), activation=elu, padding='same', name='conv1')(frame)
+encoder = MaxPool2D(pool_size=(2,2), name='pool1')(encoder)
+encoder = Conv2D(128, kernel_size=(3, 3), activation=elu, padding='same', name='conv2')(encoder)
+encoder = MaxPool2D(pool_size=(2,2), name='pool2')(encoder)
+encoder_model = Model(inputs=frame, outputs=encoder)
+
+# Apply this encoder to each frame in sequence, and finally apply recurrent convolution with prediction
+frames = Input(shape=(seq_len, height, width, 4))
+rnn = TimeDistributed(encoder_model)(frames)
+rnn = ConvLSTM2D(128, kernel_size=(3, 3), activation=elu, padding='same', name='conv3_lstm')(rnn)
+rnn = Flatten(name='flatten')(rnn)
+rnn = Dense(nb_outputs, name='prediction')(rnn)
+model = Model(inputs=frames, outputs=rnn)
+
+model.compile(optimizer=opt, loss='mse', metrics=['mae'])
+model.summary()
+However, if I add Dropout layers in the encoder model, like:
+# Define encoder for single frame
+frame = Input(shape=(height, width, 4))
+encoder = Conv2D(64, kernel_size=(3, 3), activation=elu, padding='same', name='conv1')(frame)
+encoder = MaxPool2D(pool_size=(2,2), name='pool1')(encoder)
+encoder = Dropout(0.25)(encoder)
+encoder = Conv2D(128, kernel_size=(3, 3), activation=elu, padding='same', name='conv2')(encoder)
+encoder = MaxPool2D(pool_size=(2,2), name='pool2')(encoder)
+encoder = Dropout(0.25)(encoder)
+encoder_model = Model(inputs=frame, outputs=encoder)
+
+# Apply this encoder to each frame in sequence, and finally apply recurrent convolution with prediction
+frames = Input(shape=(seq_len, height, width, 4))
+rnn = TimeDistributed(encoder_model)(frames)
+rnn = ConvLSTM2D(128, kernel_size=(3, 3), activation=elu, padding='same', name='conv3_lstm')(rnn)
+rnn = Flatten(name='flatten')(rnn)
+rnn = Dense(nb_outputs, name='prediction')(rnn)
+model = Model(inputs=frames, outputs=rnn)
+
+model.compile(optimizer=opt, loss='mse', metrics=['mae'])
+model.summary()
+then it does not work, and I get an issue at fitting time:
+__________________________________________________________
+Epoch 1/1000
+2017-06-24 18:16:01.268148: W tensorflow/core/framework/op_kernel.cc:1158] Invalid argument: You must feed a value for placeholder tensor 'dropout_1/keras_learning_phase' with dtype bool
+  [[Node: dropout_1/keras_learning_phase = Placeholder[dtype=DT_BOOL, shape=<unknown>, _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+Traceback (most recent call last):
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1139, in _do_call
+    return fn(*args)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1121, in _run_fn
+    status, run_metadata)
+  File "/home/francesco/anaconda3/lib/python3.6/contextlib.py", line 89, in __exit__
+    next(self.gen)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/framework/errors_impl.py", line 466, in raise_exception_on_not_ok_status
+    pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'dropout_1/keras_learning_phase' with dtype bool
+  [[Node: dropout_1/keras_learning_phase = Placeholder[dtype=DT_BOOL, shape=<unknown>, _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+  [[Node: mul_1/_67 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_3028_mul_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File "steering-speed-prediction.py", line 193, in <module>
+    verbose=1)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/legacy/interfaces.py", line 88, in wrapper
+    return func(*args, **kwargs)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/engine/training.py", line 1902, in fit_generator
+    class_weight=class_weight)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/engine/training.py", line 1642, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 2269, in __call__
+    **self.session_kwargs)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 789, in run
+    run_metadata_ptr)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 997, in _run
+    feed_dict_string, options, run_metadata)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1132, in _do_run
+    target_list, options, run_metadata)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1152, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'dropout_1/keras_learning_phase' with dtype bool
+  [[Node: dropout_1/keras_learning_phase = Placeholder[dtype=DT_BOOL, shape=<unknown>, _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+  [[Node: mul_1/_67 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_3028_mul_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+Caused by op 'dropout_1/keras_learning_phase', defined at:
+  File "steering-speed-prediction.py", line 161, in <module>
+    encoder = Dropout(0.25)(encoder)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/engine/topology.py", line 596, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/layers/core.py", line 111, in call
+    training=training)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 2602, in in_train_phase
+    training = learning_phase()
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 115, in learning_phase
+    name='keras_learning_phase')
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/ops/array_ops.py", line 1530, in placeholder
+    return gen_array_ops._placeholder(dtype=dtype, shape=shape, name=name)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/ops/gen_array_ops.py", line 1954, in _placeholder
+    name=name)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/framework/op_def_library.py", line 767, in apply_op
+    op_def=op_def)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/framework/ops.py", line 2506, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/home/francesco/anaconda3/lib/python3.6/site-packages/tensorflow/python/framework/ops.py", line 1269, in __init__
+    self._traceback = _extract_stack()
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'dropout_1/keras_learning_phase' with dtype bool
+  [[Node: dropout_1/keras_learning_phase = Placeholder[dtype=DT_BOOL, shape=<unknown>, _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+  [[Node: mul_1/_67 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_3028_mul_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+I guess I can use TimeDistributed for each layer if it were a sequential model, and every now and then used Dropout without a TimeDistributed wrapper, but it gets a bit messy if the encode is complicated and I need a graph like structure for it...
+Solution anyone?
+Thanks!

@@ -1,0 +1,46 @@
+Contributor
+tirkarthi commented on 28 Dec 2016 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+from rest_framework import serializers, exceptions, status
+
+class FooException(exceptions.ValidationError):
+    status_code = status.HTTP_410_GONE
+
+class Foo(serializers.Serializer):
+    def validate(self, data):
+        raise FooException(detail="hello")
+
+foo = Foo(data={1: 1})
+
+try: foo.is_valid(raise_exception=True)
+except exceptions.ValidationError as e: print e.status_code
+Expected behavior
+Status code should be 410 since custom ValidationError is thrown
+Actual behavior
+Status code is 400 # Default ValidationError status code is thrown
+In the serializer methods while calling is_valid with exception as True the custom ValidationError is captured and then the default ValidationError is thrown with detail and without change in the status_code at https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/serializers.py#L234-L244
+        if not hasattr(self, '_validated_data'):
+            try:
+                self._validated_data = self.run_validation(self.initial_data)
+            except ValidationError as exc:
+                self._validated_data = {}
+                self._errors = exc.detail
+            else:
+                self._errors = {}
+
+        if self._errors and raise_exception:
+            raise ValidationError(self.errors) # Default Validation Error is raised with no status code change
+Will make a PR soon along with changes in other places too where status code is replaced along with test cases. Kindly confirm the issue.
+Similar places :
+https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/serializers.py#L427-L433
+https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/serializers.py#L453-L470
+Thanks for all the good work!
+2

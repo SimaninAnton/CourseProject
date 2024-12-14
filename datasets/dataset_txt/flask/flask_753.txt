@@ -1,0 +1,66 @@
+eromoe commented on 9 Sep 2016 •
+edited
+I think it is a bug.
+My code:
+from __future__ import unicode_literals, absolute_import
+from flask import Blueprint, request, jsonify
+from flask_restful import Api, Resource
+from six.moves.urllib.parse import unquote
+from src.share import filemgr
+
+api = Blueprint('api', __name__, url_prefix='/api')
+api_wrap = Api(api)
+
+@api.route('/list', methods=['get'])
+def list():
+    path = unquote(request.args.get('path', '/'))
+    only_folder = request.args.get('only_folder', False)
+    nodes = filemgr.list(path)
+    if only_folder:
+        nodes = filter(lambda x:x.isfolder, nodes)
+    return jsonify(nodes)
+ajax get:
+var path = 'c - 副本'
+ajax({
+  url: 'http://localhost:5000/api/list',
+  params: {
+    path: encodeURI(path)
+  }
+});
+But get path decode incorrectly : u'c - \xe5\x89\xaf\xe6\x9c\xac'.
+It should be 'c - \xe5\x89\xaf\xe6\x9c\xac' or u'c - \u526f\u672c''
+I debug into list() and found:
+>>> request.url
+u'http://localhost:5000/api/list?path=c%2520-%2520%25E5%2589%25AF%25E6%259C%25AC'
+
+>>> request.args.get('path', '/')
+u'c%20-%20%E5%89%AF%E6%9C%AC'
+
+>>> unquote(request.args.get('path', '/'))
+u'c - \xe5\x89\xaf\xe6\x9c\xac'
+Here the string can not be decode, the correct string is 'c - \xe5\x89\xaf\xe6\x9c\xac', without u prefix.
+Debug into request.args at Lib\site-packages\werkzeug\wrappers.py
+in line 431
+@cached_property
+def args(self):
+    """The parsed URL parameters.  By default an
+    :class:`~werkzeug.datastructures.ImmutableMultiDict`
+    is returned from this function.  This can be changed by setting
+    :attr:`parameter_storage_class` to a different type.  This might
+    be necessary if the order of the form data is important.
+    """
+    return url_decode(wsgi_get_bytes(self.environ.get('QUERY_STRING', '')),
+                      self.url_charset, errors=self.encoding_errors,
+                      cls=self.parameter_storage_class)
+I try some value:
+>>> wsgi_get_bytes(self.environ.get('QUERY_STRING', ''))
+'path=c%2520-%2520%25E5%2589%25AF%25E6%259C%25AC'
+
+>>> url_decode(wsgi_get_bytes(self.environ.get('QUERY_STRING', '')),
+                          self.url_charset, errors=self.encoding_errors,
+                          cls=self.parameter_storage_class)
+ImmutableMultiDict([('path', u'c%20-%20%E5%89%AF%E6%9C%AC')])
+
+
+`url_decode` decode querystring into wrong.
+The problem is url_decode, should not decode here, because the querystring maybe quote(like my situation)

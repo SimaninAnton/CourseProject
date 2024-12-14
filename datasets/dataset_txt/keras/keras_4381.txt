@@ -1,0 +1,67 @@
+dk1013 commented on 15 Sep 2016 •
+edited
+I'm using latest version of Keras with theano backend.
+Here is a short description of my problem (a code that reproduces the problem is also shown):
+I have a convolution network with a 1-channel 2D input.
+This input layer is shared by two nodes, each performing some convolution operations.
+Then outputs of the two nodes are merged by another node, which produces the final output.
+I am expecting to get an output dimension of (batch_size, 2x4x9), which is (15, 72).
+However, the error message says I am getting (30, 72), which is (2xbatch_size, 2x4x9).
+It seems something is wrong with the merge node by looking at "2xbatch_size".
+The structure of my model is:
+Here is my model:
+batch_size = 15
+x = 2
+
+def create_batch_generator():
+    while True:
+        yield ({'input': np.random.random((batch_size,1,16,36)).astype(np.float32),
+                'output': np.random.random((batch_size,x*4*9)).astype(np.float32)})
+
+
+def get_model():
+    model = Graph()
+    model.add_input(name='input',input_shape=(1,16,36))
+    # path 1
+    model.add_node(MaxPooling2D(pool_size=(2,2)),name='node11',input='input')
+    model.add_node(Convolution2D(8,3,3,border_mode='same',subsample=(2,2),activation='relu'),
+                   name='node12',input='node11')
+    # path 2
+    model.add_node(Convolution2D(8,3,3,border_mode='same',subsample=(2,2),activation='relu'),
+                   name='node21',input='input')
+    model.add_node(Convolution2D(8,3,3,border_mode='same',subsample=(2,2),activation='relu'),
+                   name='node22',input='node21')
+
+    # merge
+    model.add_node(Convolution2D(x,1,1,border_mode='same',activation='linear'),
+                   name='node_merge1',merge_mode='concat',concat_axis=0,inputs=['node12','node22'])
+    model.add_node(Flatten(),name='node_merge2',input='node_merge1')
+    model.add_output(name='output',input='node_merge2')
+
+    optimizer = SGD()
+    model.compile(loss='mean_squared_error', optimizer=optimizer)
+    return model
+
+
+model = get_model()
+model.fit_generator(create_batch_generator(),samples_per_epoch=10000, nb_epoch=100)
+The error info is pasted here:
+Traceback (most recent call last):
+  File "test_merge.py", line 43, in <module>
+    model.fit_generator(create_batch_generator(),samples_per_epoch=10000, nb_epoch=100)
+  File "/home/dikai/bin/anaconda2/lib/python2.7/site-packages/keras/legacy/models.py", line 646, in fit_generator
+    max_q_size=max_q_size)
+  File "/home/dikai/bin/anaconda2/lib/python2.7/site-packages/keras/engine/training.py", line 1364, in fit_generator
+    raise e
+ValueError: GpuElemwise. Input dimension mis-match. Input 1 (indices start at 0) has shape[0] == 15, but the output's size on that axis is 30.
+Apply node that caused the error: GpuElemwise{Sub}[(0, 0)](GpuReshape{2}.0, GpuFromHost.0)
+Toposort index: 160
+Inputs types: [CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix)]
+Inputs shapes: [(30, 72), (15, 72)]
+Inputs strides: [(72, 1), (72, 1)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[GpuCAReduce{pre=sqr,red=add}{0,1}(GpuElemwise{Sub}[(0, 0)].0), GpuElemwise{Composite{((i0 * i1 * i2 * i3) / i4)}}[(0, 3)](CudaNdarrayConstant{[[ 2.]]}, GpuDimShuffle{x,x}.0, GpuDimShuffle{0,x}.0, GpuElemwise{Sub}[(0, 0)].0, GpuElemwise{Mul}[(0, 0)].0)]]
+I have tried to make this minimum example as simple as possible.
+Any idea of where I was doing wrong?
+Thanks a lot for your help!
+1

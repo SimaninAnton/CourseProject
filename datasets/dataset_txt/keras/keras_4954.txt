@@ -1,0 +1,101 @@
+soloice commented on 17 Jun 2016 •
+edited
+I have a vehicle identification problem, and designed a model which:
+uses triplet loss to generate a deep hash of image,
+use another auxiliary output to predict the vehicle ID given an image.
+For your reference, triplet loss means input 3 images (1 anchor, 1 positive, 1 negative, where anchor and positive image are of the same car, while negative is an image of another car), and generate 3 deep hash of them using a shared vision model. The deep hash is expected to satisfy: images of the same car have similar deep hashs, while the distance between deep hashs of different cars are as far as possible)
+Here is my model:
+def __init__(self, deep_id_dim=3000, aux_weight=0.1, nb_epoch=20, nb_classes=5043, model_name='my_model1'):
+        self.batch_size = 100
+        self.nb_epoch = nb_epoch
+        self.vision_model = Sequential()
+        self.model = None
+        self.hash_len = deep_id_dim
+        self.aux_weight = aux_weight
+        self.nb_classes = nb_classes
+        self.model_name = model_name
+        self.build_model2()
+
+    def build_model2(self):
+        def euclidean_distance(vecs):
+            x, y = vecs
+            return K.sum(K.square(x - y), axis=1, keepdims=True)
+
+        def euclidean_dist_output_shape(shapes):
+            shape1, _ = shapes
+            return shape1[0], 1
+
+        def triplet_loss(y_true, y_pred):
+            # Use y_true as alpha
+            mse0, mse1 = y_pred[:, 0], y_pred[:, 1]
+            return K.maximum(0.0, mse0 - mse1 + y_true[:, 0])
+
+        # input image dimensions
+        img_rows, img_cols, img_channel = 50, 50, 3
+        # number of convolutional filters to use
+        nb_filters = 10
+        # size of pooling area for max pooling
+        nb_pool = 2
+        # convolution kernel size
+        nb_conv = 5
+
+        # build a vision model
+        self.vision_model.add(Convolution2D(nb_filters, nb_conv, nb_conv, activation='relu',
+                                            input_shape=(img_channel, img_rows, img_cols)))
+        self.vision_model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
+        self.vision_model.add(Flatten())
+        self.vision_model.add(Dense(self.hash_len))
+
+        img1 = Input(shape=(img_channel, img_rows, img_cols), name='X1')
+        img2 = Input(shape=(img_channel, img_rows, img_cols), name='X2')
+        img3 = Input(shape=(img_channel, img_rows, img_cols), name='X3')
+        hash1, hash2 = self.vision_model(img1), self.vision_model(img2)
+        hash3 = self.vision_model(img3)
+        vid = Dense(self.nb_classes, activation='softmax', name='aux_output')(hash1)
+
+        distance_layer = Lambda(euclidean_distance, output_shape=euclidean_dist_output_shape)
+        dist12 = distance_layer([hash1, hash2])
+        dist13 = distance_layer([hash1, hash3])
+        merged_out = merge([dist12, dist13], mode='concat', name='main_output')
+        self.model = Model(input=[img1, img2, img3], output=[merged_out, vid])
+        self.model.summary()
+        print(self.model.output_shape)
+        print('DeepID dim:', self.hash_len)
+        self.model.compile(optimizer='adadelta',
+                           loss={'main_output': triplet_loss, 'aux_output': 'categorical_crossentropy'},
+                           loss_weights={'main_output': 1., 'aux_output': self.aux_weight})
+In the code above, self.vision_model is used to generate deep hash, then the Lambda layer is used to calculate the distance between (anchor, positive) and that between (anchor, negative). The main_output expects there is a margin of y_true[0] between d(anchor, negative) and d(anchor, positive).
+An auxiliary output is also added to the deep hash layer, using a softmax layer to predict the vehicle ID of the anchor image.
+when I save model with
+def save_model(self, overwrite=True):
+        model_path = '../model/'
+        if not os.path.exists(model_path):
+            os.mkdir(model_path)
+        # save the wrapper distance model
+        yaml_string = self.model.to_yaml()
+        open(os.path.join(model_path, self.model_name + '_arch.yaml'), 'w').write(yaml_string)
+        self.model.save_weights(os.path.join(model_path, self.model_name + '_weights.h5'), overwrite)
+
+        # save the inner vision model
+        model_name = self.model_name + '_vision'
+        yaml_string = self.vision_model.to_yaml()
+        open(os.path.join(model_path, model_name + '_arch.yaml'), 'w').write(yaml_string)
+        self.vision_model.save_weights(os.path.join(model_path, model_name + '_weights.h5'), overwrite)
+it works well. But, when I use JSON, it reports:
+File "main.py", line 53, in <module>
+    model.save_model()
+  File "/media/mmr6-raid5/test1/group2/vehicles/src6/nn_model.py", line 101, in save_model
+    json_string = self.model.to_json()
+  File "/home/test1/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 2412, in to_json
+    return json.dumps(model_config, default=get_json_type, **kwargs)
+  File "/usr/lib/python2.7/json/__init__.py", line 250, in dumps
+    sort_keys=sort_keys, **kw).encode(obj)
+  File "/usr/lib/python2.7/json/encoder.py", line 207, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/usr/lib/python2.7/json/encoder.py", line 270, in iterencode
+    return _iterencode(o, 0)
+  File "/home/test1/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 2409, in get_json_type
+    raise TypeError('Not JSON Serializable')
+TypeError: Not JSON Serializable
+However, I found that if I remove the auxiliary output, JSON also works fine. Is it a known failure with multiple output? Or is there anything wrong with my model?
+Thanks for your patience.

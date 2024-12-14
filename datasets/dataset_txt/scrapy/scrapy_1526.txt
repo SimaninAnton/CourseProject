@@ -1,0 +1,87 @@
+cbourjau commented on Jul 13, 2013
+Hello,
+The SitemapSpider is very prone to invalid xml which like on www.wired.com/sitemap.xml. Trying to scrap that site using the Sitemap spider in release 0.17 gives the error
+cElementTree.ParseError: XML or text declaration not at start of entity: line 2, column 0
+since the xml file starts with a blank line. This behaviour was discussed on the scrapy mailing list (https://groups.google.com/forum/#!topic/scrapy-users/BAHTPS-91VA) where Paul Tremberth pointed out that lxml's parser provides a recovery possibility which is easily enabled. Copying from his post:
+>>> import lxml.etree
+>>> lxml.etree.parse('http://www.wired.com/sitemap.xml')
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "lxml.etree.pyx", line 3197, in lxml.etree.parse (src/lxml/lxml.etree.c:65042)
+  File "parser.pxi", line 1571, in lxml.etree._parseDocument (src/lxml/lxml.etree.c:93101)
+  File "parser.pxi", line 1600, in lxml.etree._parseDocumentFromURL (src/lxml/lxml.etree.c:93388)
+  File "parser.pxi", line 1500, in lxml.etree._parseDocFromFile (src/lxml/lxml.etree.c:92445)
+  File "parser.pxi", line 1047, in lxml.etree._BaseParser._parseDocFromFile (src/lxml/lxml.etree.c:89329)
+  File "parser.pxi", line 577, in lxml.etree._ParserContext._handleParseResultDoc (src/lxml/lxml.etree.c:84711)
+  File "parser.pxi", line 676, in lxml.etree._handleParseResult (src/lxml/lxml.etree.c:85816)
+  File "parser.pxi", line 616, in lxml.etree._raiseParseError (src/lxml/lxml.etree.c:85138)
+lxml.etree.XMLSyntaxError: XML declaration allowed only at the start of the document, line 2, column 6
+>>> xmlp = lxml.etree.XMLParser(recover=True)
+>>> lxml.etree.parse('http://www.wired.com/sitemap.xml', parser=xmlp)
+<lxml.etree._ElementTree object at 0x7fdc3d13ea70>
+>>> root = lxml.etree.parse('http://www.wired.com/sitemap.xml', parser=xmlp).getroot()
+>>> print lxml.etree.tostring(root, pretty_print=True)
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+<!-- cache: cached = yes name = sitemap_jspCache key = sitemap -->
+<sitemap>
+<loc>http://www.wired.com/sitemap1.xml</loc>
+<lastmod>2013-07-11</lastmod>
+</sitemap>
+
+<sitemap>
+<loc>http://www.wired.com/sitemap2.xml</loc>
+<lastmod>2013-07-11</lastmod>
+</sitemap>
+
+<sitemap>
+<loc>http://www.wired.com/sitemap3.xml</loc>
+<lastmod>2013-07-11</lastmod>
+</sitemap>
+
+<!-- end cache -->
+</sitemapindex>
+This is my first ever bug report and hence I do not know how to post a possible patch correctly, but for the time being, the following did the trick for me:
+diff --git a/scrapy/utils/sitemap.py b/scrapy/utils/sitemap.py
+index 71d8122..d14d93e 100644
+--- a/scrapy/utils/sitemap.py
++++ b/scrapy/utils/sitemap.py
+@@ -5,17 +5,16 @@ Note: The main purpose of this module is to provide support for the
+ SitemapSpider, its API is subject to change without notice.
+ """
+
+-from cStringIO import StringIO
+-from xml.etree.cElementTree import ElementTree
++import lxml.etree
++
+
+ class Sitemap(object):
+     """Class to parse Sitemap (type=urlset) and Sitemap Index
+     (type=sitemapindex) files"""
+
+     def __init__(self, xmltext):
+-        tree = ElementTree()
+-        tree.parse(StringIO(xmltext))
+-        self._root = tree.getroot()
++        xmlp = lxml.etree.XMLParser(recover=True)
++        self._root = lxml.etree.fromstring(xmltext, parser=xmlp)
+         rt = self._root.tag
+         self.type = self._root.tag.split('}', 1)[1] if '}' in rt else rt
+
+@@ -26,6 +25,8 @@ class Sitemap(object):
+                 tag = el.tag
+                 name = tag.split('}', 1)[1] if '}' in tag else tag
+                 d[name] = el.text.strip() if el.text else ''
++            if not 'loc' in d.keys():
++                continue
+             yield d
+
+ def sitemap_urls_from_robots(robots_text):
+I am happy to provide more information if needed.
+Specs:
+Scrapy : 0.17.0
+lxml : 3.1.0.0
+libxml2 : 2.9.0
+Twisted : 12.3.0
+Python : 2.7.4 (default, Apr 19 2013, 18:28:01) - [GCC 4.7.3]
+Platform: Linux-3.6.11-030611-generic-x86_64-with-Ubuntu-13.04-raring

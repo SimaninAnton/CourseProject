@@ -1,0 +1,39 @@
+candesic commented on Jan 7, 2016
+I'm trying to use scikit-learn on a cluster running Red Hat Enterprise Server 7.1. I can load either openBLAS or Atlas libraries (both compiled under GCC). I've opted for Atlas because numpy gave some dire warning about openBLAS.
+pip install scikit-learn completes with no errors. But then,
+Python 2.7.9 (default, Sep 10 2015, 11:09:45) 
+[GCC 4.9.2] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from sklearn import cluster
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/cluster/__init__.py", line 6, in <module>
+    from .spectral import spectral_clustering, SpectralClustering
+  File "/imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/cluster/spectral.py", line 16, in <module>
+    from ..metrics.pairwise import pairwise_kernels
+  File "/imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/metrics/__init__.py", line 33, in <module>
+    from . import cluster
+  File "/imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/metrics/cluster/__init__.py", line 19, in <module>
+    from .unsupervised import silhouette_samples
+  File "/imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/metrics/cluster/unsupervised.py", line 10, in <module>
+    from ..pairwise import pairwise_distances
+  File "/imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/metrics/pairwise.py", line 29, in <module>
+    from .pairwise_fast import _chi2_kernel_fast, _sparse_manhattan
+ImportError: /imports/home1/ucesga2/venv/lib/python2.7/site-packages/sklearn/metrics/pairwise_fast.so: undefined symbol: ATL_dasum
+OK, so pairwise_fast.so isn't linked to some library - Atlas by the sounds of it?
+(venv)[foo@bar scikit-learn]$ ldd build/lib.linux-x86_64-2.7/sklearn/metrics/pairwise_fast.so
+    linux-vdso.so.1 =>  (0x00007fff777fe000)
+    libm.so.6 => /lib64/libm.so.6 (0x00007fc8abe4b000)
+    libpython2.7.so.1.0 => /shared/ucl/apps/python/2.7.9/gnu-4.9.2/lib/libpython2.7.so.1.0 (0x00007fc8aba45000)
+    libpthread.so.0 => /lib64/libpthread.so.0 (0x00007fc8ab829000)
+    libc.so.6 => /lib64/libc.so.6 (0x00007fc8ab467000)
+    libdl.so.2 => /lib64/libdl.so.2 (0x00007fc8ab263000)
+    libutil.so.1 => /lib64/libutil.so.1 (0x00007fc8ab060000)
+    /lib64/ld-linux-x86-64.so.2 (0x00007fc8ac396000)
+No sign of Atlas there?
+So, I tried to compile everything manually. Starting with numpy, which installs fine and links to Atlas. Then scikit-learn. Again, the config stage reports finding Atlas and the build and install goes without any errors. But the same import error occurs and ldd gives the same output.
+I notice that the specific compiler lines being called for this library are:
+gcc -fno-strict-aliasing -g -O2 -DNDEBUG -g -fwrapv -O3 -Wall -Wstrict-prototypes -fPIC -DHAVE_CBLAS -DNO_ATLAS_INFO=-1 -Isklearn/src/cblas -I/imports/home1/ucesga2/venv/lib/python2.7/site-packages/numpy/core/include -I/imports/home1/ucesga2/venv/lib/python2.7/site-packages/numpy/core/include -I/shared/ucl/apps/python/2.7.9/gnu-4.9.2/include/python2.7 -c sklearn/metrics/pairwise_fast.c
+
+gcc -pthread -shared build/temp.linux-x86_64-2.7/sklearn/metrics/pairwise_fast.o -L/shared/ucl/apps/atlas/3.10.2/gnu-4.9.2/lib -L/shared/ucl/apps/python/2.7.9/gnu-4.9.2/lib -Lbuild/temp.linux-x86_64-2.7 -lcblas -lm -lpython2.7 -o build/lib.linux-x86_64-2.7/sklearn/metrics/pairwise_fast.so
+Unfortunately that doesn't mean much to me. I don't understand why the -lcblas argument is seemingly ignored by the linker.

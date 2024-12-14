@@ -1,0 +1,11 @@
+Contributor
+dieuwkehupkes commented on 17 Dec 2016
+In #4594 @fchollet mentions that masking for sequence to sequence learning is fixed. However, even after pulling the latest keras version, there still seems to be a problem with computing the accuracies for variable length sequence to sequence model.
+The padded values are correctly masked when computing the loss function, but when the metrics are computed in the evaluation the padded values are not excluded anymore, resulting in incorrect metric values. This makes it difficult to evaluate a testset with variable sequence length. I wrote a small network that illustrates the problem:
+https://gist.github.com/dieuwkehupkes/ed019c412eefa46388ff3624674c7186
+It illustrates that when model.evaluate is called, the computed loss value and metric value are not identical, even if they are both set to mse.
+When looking at training.py my conclusion is that the mask is actually never applied when computing the metric values. For the loss, an array of weighted lossfunctions is created and when the loss is computed both the sample weights and mask are taken as an argument. When the metrics values are computed the functions are taken straight out of metrics.py without taking into account the mask.
+I think the problem can be solved by adding a masked_metrics method to training.py that transforms the metrics functions into functions that also take the mask as argument and give them a treatment similar to the lossfunction. The only problem with this method is that it also requires a change in metrics.py, because currently the metrics are outputing scalars, which makes excluding the padded values more difficult. A solution to this could be to add an additional parameter axis that is set to None by default but is set to -1 when computing the masked_metrics, the sum/mean/whatever can then be taken afterwards to get the scalar.
+Another option would be to add the mask as an optional parameter to the functions in metrics.py, but this would lead to some repetition of code.
+I'd be happy to try to fix this, please let me know what you think!
+3

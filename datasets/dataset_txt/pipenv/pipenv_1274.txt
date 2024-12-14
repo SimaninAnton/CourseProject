@@ -1,0 +1,100 @@
+DArtagan commented on 29 Mar 2018
+Hi there!
+I've been working with pipenv since December and tracking its prodigious development. After a lot or reading, "application deployment" is the area of Pipenv/Pipfiles that is still most hazy to me. This could be a documentation/workflow discussion as much as a code one.
+Primary question
+Can the Pipfile.lock be installed seperately from the Python package it's made for?
+Context
+I am part of an organization that builds lots of Python apps. Even though these are "apps" (think concrete dependencies), we leverage setup.py as much as possible for tracking metadata, dependencies, and generally trying to be good Python citizens. Our Pipfiles use the pipenv install -e . method to lock the setup.py dependencies into the Pipfile.lock (which then also fixes the editable local package inside the lock). When it comes time for deployment, the package artifact is zipped up and and sent out to servers for deployment. On the destination server, the package is unzipped and we run pipenv install --deploy --system to set up in our clean environment.
+If the Pipfile.lock could be distributed and installed seperately:
+If using source distributions (which aren't kosher for libraries, though it seems they're still common for apps), no need to unpack the source before installation (as in the above Context).
+Python apps could be pre-built as a wheel for distribution.
+Containers builds could keep the relatively unchanging dependency installation step and often-changing package installation steps seperate (don't break the cache) for smoother builds.
+App distributions could be installed and managed on the system generally, rather than as an editable-style local directory. Or apps and dependencies could be purely virtual (which could have some interesting spin-offs for creating hot-loading tools.)
+It's possible that this may be asking pipenv do something it wasn't designed for and that this would be better done in pip (when pip eventually supports Pipfiles). My research hasn't led me to how Cargo or Ruby have solved this, can anyone multilingually-versed comment?
+Whatever the discussion result, I'm happy and able to contribute back to code or documentation.
+$ python -m pipenv.help output
+Steps to replicate
+The "Actual behaviour" and "Expected behaviour" bits have been tucked into these steps, specifically 6 and 7.
+Start a package with a basic setup.py file.
+from distutils.core import setup
+
+setup(
+    name='simple-test',
+    install_requires=[
+        'requests',
+    ]
+)
+Lock the package with pipenv install -e .. The resulting Pipfile whould look like:
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+"e1839a8" = {path = ".", editable = true}
+
+[dev-packages]
+
+[requires]
+python_version = "3.6"
+And the Pipfile.lock
+pipenv run python setup.py sdist
+Copy the Pipfile.lock and the source distribution (dist/example.tar.gz) to another location.
+Attempt installation of only the Pipfile.lock with pipenv install --deploy --ignore-pipfile. This produces the actual behaviour:
+$ pipenv install --deploy --ignore-pipfile
+Creating a virtualenv for this project▒
+Using C:\Python36\python.exe (3.6.4) to create virtualenv▒
+Running virtualenv with interpreter C:\Python36\python.exe
+Using base prefix 'C:\\Python36'
+New python executable in C:\Users\dartagan\.virtualenvs\pipenv_test_simple-z0csqUmF\Scripts\python.exe
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: C:\Users\dartagan\.virtualenvs\pipenv_test_simple-z0csqUmF
+Installing dependencies from Pipfile.lock (86895b)▒
+An error occurred while installing -e .! Will try again.
+Installing initially▒failed dependencies▒
+
+Directory '.' is not installable. File 'setup.py' not found.
+Verbose version:
+With this step's work-around, the alternate behaviour could flow on from here:
+# Edit Pipfile.lock to remove these lines:
+"e1839a8": {
+    "editable": true,
+    "path": "."
+},
+Now installing from the Pipfile.lock looks like:
+$ pipenv install --deploy --ignore-pipfile
+Creating a virtualenv for this project▒
+Using C:\Python36\python.exe (3.6.4) to create virtualenv▒
+Running virtualenv with interpreter C:\Python36\python.exe
+Using base prefix 'C:\\Python36'
+New python executable in C:\Users\dartagan\.virtualenvs\pipenv_test_simple-z0csqUmF\Scripts\python.exe
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: C:\Users\dartagan\.virtualenvs\pipenv_test_simple-z0csqUmF
+Installing dependencies from Pipfile.lock (86895b)
+And then install the application:
+$ pipenv install simple-test-0.0.0.tar.gz
+Installing simple-test-0.0.0.tar.gz▒
+Processing c:\users\dartagan\downloads\pipenv_test_simple\simple-test-0.0.0.tar.gz
+Requirement already satisfied: requests in c:\users\dartagan\.virtualenvs\pipenv_test_simple-z0csqumf\lib\site-packages (from simple-test==0.0.0)
+Requirement already satisfied: certifi>=2017.4.17 in c:\users\dartagan\.virtualenvs\pipenv_test_simple-z0csqumf\lib\site-packages (from requests->simple-test==0.0.0)
+Requirement already satisfied: chardet<3.1.0,>=3.0.2 in c:\users\dartagan\.virtualenvs\pipenv_test_simple-z0csqumf\lib\site-packages (from requests->simple-test==0.0.0)
+Requirement already satisfied: idna<2.7,>=2.5 in c:\users\dartagan\.virtualenvs\pipenv_test_simple-z0csqumf\lib\site-packages (from requests->simple-test==0.0.0)
+Requirement already satisfied: urllib3<1.23,>=1.21.1 in c:\users\dartagan\.virtualenvs\pipenv_test_simple-z0csqumf\lib\site-packages (from requests->simple-test==0.0.0)
+Building wheels for collected packages: simple-test
+  Running setup.py bdist_wheel for simple-test: started
+  Running setup.py bdist_wheel for simple-test: finished with status 'done'
+  Stored in directory: C:\Users\dartagan\AppData\Local\pip\Cache\wheels\60\e6\f6\c9e6329df51f0426af5df1e20a3f133b1c6af2669913e4164e
+Successfully built simple-test
+Installing collected packages: simple-test
+Successfully installed simple-test-0.0.0
+
+Adding simple-test-0.0.0.tar.gz to Pipfile's [packages]▒
+Pipfile.lock (86895b) out of date, updating to (18d9db)▒
+Locking [dev-packages] dependencies▒
+Locking [packages] dependencies▒
+Updated Pipfile.lock (18d9db)!
+Installing dependencies from Pipfile.lock (18d9db)▒
+To activate this project's virtualenv, run the following:
+ $ pipenv shell

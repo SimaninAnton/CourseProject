@@ -1,0 +1,27 @@
+mbarakaja commented on 2 Sep 2018
+At this moment, when a Flask test client method uses the json argument, a new application context is created in the line below.
+flask/flask/testing.py
+Line 82 in b9b88b0
+ with app.app_context(): 
+The problem is that when the above created context goes out of scope, anything registered to teardown_appcontext is called. This is the case of Flask-SQLAlchemy, which remove the current session when that happens.
+This is problematic is some tests scenarios.
+I am using PostgreSQL SAVEPOINT to rollback any changes made by a test case. My approach is similar to this example provided by SQLAlchemy here, so I'm not going to put all my code here, just a shallow example.
+I have a class that creates a nested transaction and rollback everything when needed.
+client = app.test_client()
+trn = TransactionManager(database)
+
+with app.app_context():
+    trn.start() # start a new nested transaction
+
+    client.post('/products', data=json.dumps({'name': 'Cake'}))
+    client.get('/products')
+    
+    trn.end() # Rollback before the session is removed.
+The above works well because everything happens inside the same transaction and each test client interaction can see changes made to the database by previous client calls.
+But using the json argument, the POST call will first create an application context, which immediately will go out of scope making Flask-SQLAlchemy's teardown_appcontext registered function remove the current session before the next client call, making each database interaction in a different transaction.
+Why do we need an application context to dump the JSON string?
+flask/flask/testing.py
+Line 83 in b9b88b0
+ kwargs['data'] = json_dumps(kwargs.pop('json')) 
+I don't understand, but if the the above logic is necessary I think the code should check first if there is an application context pushed already using has_app_context.
+Am I doing something wrong or I am missing something?

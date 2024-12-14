@@ -1,0 +1,99 @@
+Contributor
+dustinfarris commented on 13 Nov 2013
+I extended Django's User and have an Account and Lesson like so:
+class User(AbstractUser):
+    account = models.ForeignKey(
+        'accounts.Account', 
+        blank=True, 
+        null=True, 
+        related_name='users')
+    active_lesson = models.ForeignKey(
+        'lessons.Lesson', 
+        null=True, 
+        blank=True)
+
+class Account(models.Model):
+    owner = models.ForeignKey(
+        User, 
+        related_name='accounts_owned')
+    admins = models.ManyToManyField(
+        User, 
+        blank=True, 
+        null=True, 
+        related_name='accounts_administered')
+
+class Lesson(models.Model):
+    account = models.ForeignKey(
+        'account.Account', 
+        null=True, 
+        blank=True)
+    owner = models.ForeignKey(
+        'users.User', 
+        null=True, 
+        blank=True)
+I have an Account serializer that embeds the related admins (User):
+class AccountSerializer(serializers.ModelSerializer):
+    admins = UserSerializer(many=True)
+    class Meta:
+        model = Account
+All is fine and good until I run my tests. When the test module tries to import the Account Serializer I get this traceback:
+Traceback (most recent call last):
+  File "./manage.py", line 15, in <module>
+    execute_from_command_line(sys.argv)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/__init__.py", line 399, in execute_from_command_line
+    utility.execute()
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/__init__.py", line 392, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/commands/test.py", line 50, in run_from_argv
+    super(Command, self).run_from_argv(argv)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/base.py", line 242, in run_from_argv
+    self.execute(*args, **options.__dict__)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/commands/test.py", line 71, in execute
+    super(Command, self).execute(*args, **options)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/base.py", line 285, in execute
+    output = self.handle(*args, **options)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/south/management/commands/test.py", line 8, in handle
+    super(Command, self).handle(*args, **kwargs)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/core/management/commands/test.py", line 88, in handle
+    failures = test_runner.run_tests(test_labels)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/test/runner.py", line 144, in run_tests
+    suite = self.build_suite(test_labels, extra_tests)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/django/test/runner.py", line 63, in build_suite
+    tests = self.test_loader.loadTestsFromName(label)
+  File "/usr/local/Cellar/python3/3.3.2/Frameworks/Python.framework/Versions/3.3/lib/python3.3/unittest/loader.py", line 96, in loadTestsFromName
+    module = __import__('.'.join(parts_copy))
+  File "/Users/dustin/Sites/lms/tests/integration/test_accounts_api.py", line 4, in <module>
+    from accounts.serializers import AccountSerializer
+  File "/Users/dustin/Sites/lms/app/accounts/serializers.py", line 7, in <module>
+    class AccountSerializer(serializers.ModelSerializer):
+  File "/Users/dustin/Sites/lms/app/accounts/serializers.py", line 8, in AccountSerializer
+    admins = UserSerializer(many=True)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/rest_framework/serializers.py", line 162, in __init__
+    self.fields = self.get_fields()
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/rest_framework/serializers.py", line 198, in get_fields
+    default_fields = self.get_default_fields()
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/rest_framework/serializers.py", line 645, in get_default_fields
+    field = self.get_related_field(model_field, related_model, to_many)
+  File "/Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/rest_framework/serializers.py", line 733, in get_related_field
+    'queryset': related_model._default_manager,
+AttributeError: 'str' object has no attribute '_default_manager'
+Running pdb on the breaking line I get the following:
+> /Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/rest_framework/serializers.py(733)get_related_field()
+    732         import ipdb; ipdb.set_trace()
+--> 733         kwargs = {
+    734             'queryset': related_model._default_manager,
+
+ipdb> related_model
+<class 'accounts.models.Account'>
+ipdb> c
+> /Users/dustin/.virtualenvs/lms/lib/python3.3/site-packages/rest_framework/serializers.py(733)get_related_field()
+    732         import ipdb; ipdb.set_trace()
+--> 733         kwargs = {
+    734             'queryset': related_model._default_manager,
+
+ipdb> related_model
+'lessons.Lesson'
+ipdb> c
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+Again, this only happens when I run the tests. runserver doesn't throw any errors and the API works as expected. Thoughts?

@@ -1,0 +1,71 @@
+mglowacki100 commented on Dec 21, 2019
+Description
+I want to use ColumnTransformer with make_column_selector.
+When all transformers provide get_feature_names then for whole ColumnTransformer method get_feature_names works after fit.
+Unfortunately when make_column_selector returns empty list of columns then transformer stays unfitted (discussed: #12071) and subsequently raise error on get_feature_names(). In my toy-example, I've used OneHotEncoder from https://github.com/scikit-learn-contrib/categorical-encoding.
+Current behavior is not a bug but is undesired if we want resilient pipelines. As a solution, I see attributes: transformers_in, transformers_out for ColumnTransformer similarly to planned features_in, features_out. In such case get_feature_names will be applied only on transformers_out.
+Steps/Code to Reproduce
+import pandas as pd
+from sklearn.compose import ColumnTransformer, make_column_selector
+from category_encoders import OneHotEncoder
+
+
+df = pd.DataFrame(
+    {"x1": ["a", "a", "b", "c"], "x2": ["z", "z", "z", "z"], "y": [1, 0, 1, 0]}
+)
+
+X, y = df, df.pop("y")
+
+ct = ColumnTransformer(
+    transformers=[
+        ("One-hot_enc_EMPTY", OneHotEncoder(use_cat_names=True), make_column_selector(pattern='_')),
+        ("One-hot_enc", OneHotEncoder(use_cat_names=True), make_column_selector(pattern='x')),
+    ],
+    remainder="drop",
+    verbose=True,
+)
+
+ct.fit(X, y)
+ct.get_feature_names()
+Actual Results
+runfile('/home/mglowacki/Desktop/issue__.py', wdir='/home/mglowacki/Desktop')
+[ColumnTransformer] ... (1 of 1) Processing One-hot_enc, total=   0.0s
+Traceback (most recent call last):
+
+  File "<ipython-input-3-4225168516fb>", line 1, in <module>
+    runfile('/home/mglowacki/Desktop/issue__.py', wdir='/home/mglowacki/Desktop')
+
+  File "/home/mglowacki/anaconda3/envs/py37/lib/python3.7/site-packages/spyder_kernels/customize/spydercustomize.py", line 827, in runfile
+    execfile(filename, namespace)
+
+  File "/home/mglowacki/anaconda3/envs/py37/lib/python3.7/site-packages/spyder_kernels/customize/spydercustomize.py", line 110, in execfile
+    exec(compile(f.read(), filename, 'exec'), namespace)
+
+  File "/home/mglowacki/Desktop/issue__.py", line 31, in <module>
+    ct.get_feature_names()
+
+  File "/home/mglowacki/anaconda3/envs/py37/lib/python3.7/site-packages/sklearn/compose/_column_transformer.py", line 365, in get_feature_names
+    trans.get_feature_names()])
+
+  File "/home/mglowacki/anaconda3/envs/py37/lib/python3.7/site-packages/category_encoders/one_hot.py", line 406, in get_feature_names
+    'Must transform data first. Affected feature names are not known before.')
+
+ValueError: Must transform data first. Affected feature names are not known before.
+Versions
+System:
+    python: 3.7.4 (default, Aug 13 2019, 20:35:49)  [GCC 7.3.0]
+executable: /home/mglowacki/anaconda3/envs/py37/bin/python
+   machine: Linux-4.4.0-141-generic-x86_64-with-debian-stretch-sid
+
+Python dependencies:
+       pip: 19.1.1
+setuptools: 41.0.1
+   sklearn: 0.22
+     numpy: 1.16.5
+     scipy: 1.3.2
+    Cython: 0.29.13
+    pandas: 0.24.2
+matplotlib: 3.0.3
+    joblib: 0.13.2
+
+Built with OpenMP: True

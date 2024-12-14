@@ -1,0 +1,40 @@
+chubin commented on 2 Apr 2019 •
+edited
+@app.route('/', defaults={'path': ''}, methods=['GET', 'POST'])
+def catch_all(path):
+     session_id = 'session1'
+     if session_id not in sessions:
+         session = Session()
+         sessions[session_id] = session
+     else:
+         session = sessions[session_id]
+
+     session.start()
+     queue = register_queue()
+     def events():
+         try:
+             if queue:
+                 while True:
+                     for _, data in queue:
+                         yield data
+         finally:
+             # THIS POINT HERE IS NEVER BEING REACHED
+             # FOR SOME CLIENTS, becase the connection
+             # is getting stuck in the CLOSE_WAIT state
+
+             deregister_queue(queue)
+             if len(queues) == 0:
+                 session.kill()
+                 del sessions[session_id]
+
+  return Response(events(), content_type='text/event-stream')
+Expected Behavior
+All sockets are getting closed after they are closed from the client side.
+Actual Behavior
+Some sockets are getting stuck in the CLOSE_WAIT state
+after they are closed from the client side.
+Environment
+Python version: Python 2.7.16rc1
+Flask version: Flask==1.0.2
+Werkzeug version: Werkzeug==0.15.1
+gevent version: gevent==1.4.0

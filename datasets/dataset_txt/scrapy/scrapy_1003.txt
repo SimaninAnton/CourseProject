@@ -1,0 +1,121 @@
+seaguest commented on Mar 1, 2016
+Hello,
+To avoid crawling duplicated URLs, I store all crawled URLs in database, and then check if one URL requested is already in DB or not.
+Here is my filter class:
+class CustomFilter(RFPDupeFilter):
+    """A dupe filter that considers specific ids in the url"""
+    db = DBManager(settings[ 'MONGODB_VISITED_URLS' ])
+
+    def request_seen(self, request):
+        if self.db.exist("url", request.url):
+            return True
+        else:
+            visitedUrl = VisitedURL()
+            visitedUrl['url'] = request.url
+            visitedUrl['orgDupURL'] = None
+            self.db.insert(visitedUrl)
+            return False
+However I found request_seen method gets called 3 times for one page crawling, here are stack trace for the 3 calls in order:
+------------------------------ 1
+request_seen [filter.py:18]
+enqueue_request [scheduler.py:51]
+schedule [engine.py:189]
+crawl [engine.py:183]
+_process_spidermw_output [scraper.py:183]
+[defer.py:63]
+_oneWorkUnit [task.py:491]
+_tick [task.py:645]
+runUntilCurrent [base.py:825]
+mainLoop [base.py:1203]
+run [base.py:1194]
+start [crawler.py:251]
+[start.py:15]
+run [pydevd.py:931]
+[pydevd.py:1524]
+------------------------------ 2
+request_seen [filter.py:18]
+enqueue_request [scheduler.py:51]
+schedule [engine.py:189]
+crawl [engine.py:183]
+_handle_downloader_output [engine.py:155]
+_runCallbacks [defer.py:588]
+_startRunCallbacks [defer.py:501]
+callback [defer.py:393]
+_runCallbacks [defer.py:588]
+_startRunCallbacks [defer.py:501]
+callback [defer.py:393]
+connectionLost [http11.py:320]
+_bodyDataFinished_CONNECTED [_newclient.py:1161]
+dispatcher [_newclient.py:916]
+connectionLost [_newclient.py:537]
+_disconnectParser [_newclient.py:1513]
+_finishResponse_WAITING [_newclient.py:1487]
+dispatcher [_newclient.py:916]
+_finished [_newclient.py:440]
+dataReceived [http.py:1478]
+rawDataReceived [_newclient.py:299]
+dataReceived [basic.py:578]
+dataReceived [_newclient.py:385]
+dataReceived [_newclient.py:1533]
+dataReceived [endpoints.py:102]
+_dataReceived [tcp.py:215]
+doRead [tcp.py:209]
+_doReadOrWrite [posixbase.py:597]
+callWithContext [context.py:81]
+callWithContext [context.py:118]
+callWithContext [log.py:84]
+callWithLogger [log.py:101]
+doPoll [epollreactor.py:396]
+mainLoop [base.py:1206]
+run [base.py:1194]
+start [crawler.py:251]
+[start.py:15]
+run [pydevd.py:931]
+[pydevd.py:1524]
+------------------------------ 3
+request_seen [filter.py:18]
+enqueue_request [scheduler.py:51]
+schedule [engine.py:189]
+crawl [engine.py:183]
+_handle_downloader_output [engine.py:155]
+_runCallbacks [defer.py:588]
+_startRunCallbacks [defer.py:501]
+callback [defer.py:393]
+_runCallbacks [defer.py:588]
+_startRunCallbacks [defer.py:501]
+callback [defer.py:393]
+connectionLost [http11.py:320]
+_bodyDataFinished_CONNECTED [_newclient.py:1161]
+dispatcher [_newclient.py:916]
+connectionLost [_newclient.py:537]
+_disconnectParser [_newclient.py:1513]
+_finishResponse_WAITING [_newclient.py:1487]
+dispatcher [_newclient.py:916]
+_finished [_newclient.py:440]
+dataReceived [http.py:1478]
+rawDataReceived [_newclient.py:299]
+dataReceived [basic.py:578]
+dataReceived [_newclient.py:385]
+dataReceived [_newclient.py:1533]
+dataReceived [endpoints.py:102]
+dataReceived [policies.py:120]
+_flushReceiveBIO [tls.py:392]
+dataReceived [tls.py:422]
+_dataReceived [tcp.py:215]
+doRead [tcp.py:209]
+_doReadOrWrite [posixbase.py:597]
+callWithContext [context.py:81]
+callWithContext [context.py:118]
+callWithContext [log.py:84]
+callWithLogger [log.py:101]
+doPoll [epollreactor.py:396]
+mainLoop [base.py:1206]
+run [base.py:1194]
+start [crawler.py:251]
+[start.py:15]
+run [pydevd.py:931]
+[pydevd.py:1524]
+I thought that this method should be called only once for one page, why it gets called 3 times?
+this brought me a problem, seems the DB access gets a pb, the result are not reflected, in the end I have 3 record in DB.
+I will look into the pb, but I would still need to understand why this method gets 3 calls, did I make something wrong?
+thanks and best regards

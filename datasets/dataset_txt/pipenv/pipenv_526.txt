@@ -1,0 +1,224 @@
+Contributor
+jeremycarroll commented on 22 Oct 2018 •
+edited
+Issue description
+I am setting up my development environment to begin working on the dependency resolution issues, which interest me.
+I can run the tests either with pipenv run py.test or with ./run_tests.sh.
+In either case I was getting one test failure, test_uninstall.py; drilling down it was because I had PIP_FIND_LINKS set in my environment to our proprietary repo (https://s3-us-west-1.amazonaws.com/[private URL omitted]/package_index.html). Unsetting this variable resolved the issue.
+My belief is this might be a real bug, but is not important to me.
+Expected result
+The test should pass.
+Actual result
+At commit
+87551b9 with the following patch
+diff --git a/pipenv/vendor/requirementslib/models/utils.py b/pipenv/vendor/requirementslib/models/utils.py
+index cba63295..ea84b21f 100644
+--- a/pipenv/vendor/requirementslib/models/utils.py
++++ b/pipenv/vendor/requirementslib/models/utils.py
+@@ -38,6 +38,7 @@ def optional_instance_of(cls):
+ 
+ 
+ def init_requirement(name):
++    print(name)
+     req = Requirement.parse(name)
+     req.vcs = None
+     req.local_file = None
+I get the following output
+$ pipenv run py.test tests/integration/test_uninstall.py -v
+Loading .env environment variables…
+============================================================================= test session starts ==============================================================================
+platform darwin -- Python 3.7.0, pytest-3.8.2, py-1.6.0, pluggy-0.7.1 -- /Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/bin/python3.7
+cachedir: .pytest_cache
+rootdir: /Users/jeremycarroll/work/pipenv, inifile: pytest.ini
+plugins: xdist-1.23.2, tap-2.3, forked-0.2, flaky-3.4.0, pypi-0.1.1
+[gw0] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw1] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw2] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw3] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw4] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw5] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw6] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw7] darwin Python 3.7.0 cwd: /Users/jeremycarroll/work/pipenv
+[gw0] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw1] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw2] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw3] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw4] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw5] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw6] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+[gw7] Python 3.7.0 (default, Aug 22 2018, 15:22:33)  -- [Clang 9.1.0 (clang-902.0.39.2)]
+gw0 [5] / gw1 [5] / gw2 [5] / gw3 [5] / gw4 [5] / gw5 [5] / gw6 [5] / gw7 [5]
+scheduling tests via LoadScheduling
+
+tests/integration/test_uninstall.py::test_uninstall_all_local_files 
+tests/integration/test_uninstall.py::test_uninstall 
+tests/integration/test_uninstall.py::test_normalize_name_uninstall 
+tests/integration/test_uninstall.py::test_mirror_uninstall 
+tests/integration/test_uninstall.py::test_uninstall_all_dev 
+[gw4] [ 20%] PASSED tests/integration/test_uninstall.py::test_normalize_name_uninstall 
+[gw2] [ 40%] FAILED tests/integration/test_uninstall.py::test_uninstall_all_local_files 
+[gw0] [ 60%] PASSED tests/integration/test_uninstall.py::test_uninstall 
+[gw1] [ 80%] PASSED tests/integration/test_uninstall.py::test_mirror_uninstall 
+[gw3] [100%] PASSED tests/integration/test_uninstall.py::test_uninstall_all_dev 
+
+=================================================================================== FAILURES ===================================================================================
+________________________________________________________________________ test_uninstall_all_local_files ________________________________________________________________________
+[gw2] darwin -- Python 3.7.0 /Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/bin/python3.7
+
+PipenvInstance = <class 'tests.integration.conftest._PipenvInstance'>, testsroot = '/Users/jeremycarroll/work/pipenv/tests'
+
+    @pytest.mark.files
+    @pytest.mark.uninstall
+    @pytest.mark.install
+    def test_uninstall_all_local_files(PipenvInstance, testsroot):
+        file_name = "requests-2.19.1.tar.gz"
+        # Not sure where travis/appveyor run tests from
+        source_path = os.path.abspath(os.path.join(testsroot, "test_artifacts", file_name))
+    
+        with PipenvInstance() as p:
+            shutil.copy(source_path, os.path.join(p.path, file_name))
+            os.mkdir(os.path.join(p.path, "requests"))
+            c = p.pipenv("install {}".format(file_name))
+            assert c.return_code == 0
+            c = p.pipenv("uninstall --all")
+>           assert c.return_code == 0
+E           AssertionError: assert 1 == 0
+E            +  where 1 = <Command 'pipenv uninstall --all'>.return_code
+
+tests/integration/test_uninstall.py:93: AssertionError
+----------------------------------------------------------------------------- Captured stdout call -----------------------------------------------------------------------------
+$ pipenv install requests-2.19.1.tar.gz
+Installing requests-2.19.1.tar.gz…
+cb6d3b1
+Looking in indexes: https://pypi.org/simple, https://packagecloud.io/syapse/General/pypi/simple
+Looking in links: https://s3-us-west-1.amazonaws.com/[omitted]/package_index.html
+Processing ./requests-2.19.1.tar.gz
+Collecting chardet<3.1.0,>=3.0.2 (from requests==2.19.1)
+  Downloading https://files.pythonhosted.org/packages/bc/a9/01ffebfb562e4274b6487b4bb1ddec7ca55ec7510b22e4c51f14098443b8/chardet-3.0.4-py2.py3-none-any.whl (133kB)
+Collecting idna<2.8,>=2.5 (from requests==2.19.1)
+  Downloading https://files.pythonhosted.org/packages/4b/2a/0276479a4b3caeb8a8c1af2f8e4355746a97fab05a372e4a2c6a6b876165/idna-2.7-py2.py3-none-any.whl (58kB)
+Collecting urllib3<1.24,>=1.21.1 (from requests==2.19.1)
+  Downloading https://files.pythonhosted.org/packages/bd/c9/6fdd990019071a4a32a5e7cb78a1d92c53851ef4f56f62a3486e6a7d8ffb/urllib3-1.23-py2.py3-none-any.whl (133kB)
+Collecting certifi>=2017.4.17 (from requests==2.19.1)
+  Downloading https://files.pythonhosted.org/packages/56/9d/1d02dd80bc4cd955f98980f28c5ee2200e1209292d5f9e9cc8d030d18655/certifi-2018.10.15-py2.py3-none-any.whl (146kB)
+Building wheels for collected packages: requests
+  Running setup.py bdist_wheel for requests: started
+  Running setup.py bdist_wheel for requests: finished with status 'done'
+  Stored in directory: /var/folders/4n/1qzp_6d94_9_scpdvf25t9tr0000gq/T/pipenv-5fyj3a5l-cache/wheels/e7/84/47/fe57a4d992ebe1014bf0f52f8e3e269667f7c67e34225eef34
+Successfully built requests
+Installing collected packages: chardet, idna, urllib3, certifi, requests
+Successfully installed certifi-2018.10.15 chardet-3.0.4 idna-2.7 requests-2.19.1 urllib3-1.23
+
+Adding cb6d3b1 to Pipfile's [packages]…
+Installing dependencies from Pipfile.lock (f41041)…
+cb6d3b1
+cb6d3b1
+To activate this project's virtualenv, run pipenv shell.
+Alternatively, run a command inside the virtualenv with pipenv run.
+
+Creating a virtualenv for this project…
+Pipfile: /private/var/folders/4n/1qzp_6d94_9_scpdvf25t9tr0000gq/T/pipenv-ofdc_5zk-project/Pipfile
+Using /Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/bin/python3.7 (3.7.0) to create virtualenv…
+Already using interpreter /Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/bin/python3.7
+Using real prefix '/usr/local/Cellar/python/3.7.0/Frameworks/Python.framework/Versions/3.7'
+New python executable in /private/var/folders/4n/1qzp_6d94_9_scpdvf25t9tr0000gq/T/pipenv-ofdc_5zk-project/.venv/bin/python3.7
+Also creating executable in /private/var/folders/4n/1qzp_6d94_9_scpdvf25t9tr0000gq/T/pipenv-ofdc_5zk-project/.venv/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /private/var/folders/4n/1qzp_6d94_9_scpdvf25t9tr0000gq/T/pipenv-ofdc_5zk-project/.venv
+Creating a Pipfile for this project…
+Pipfile.lock not found, creating…
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+Updated Pipfile.lock (f41041)!
+
+$ pipenv uninstall --all
+Un-installing all packages from virtualenv…
+-f https://s3-us-west-1.amazonaws.com/[omitted]/package_index.html
+
+Traceback (most recent call last):
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/packaging/requirements.py", line 90, in __init__
+    req = REQUIREMENT.parseString(requirement_string)
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 1654, in parseString
+    raise exc
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 1644, in parseString
+    loc, tokens = self._parse( instring, 0 )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 1402, in _parseNoCache
+    loc,tokens = self.parseImpl( instring, preloc, doActions )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 3417, in parseImpl
+    loc, exprtokens = e._parse( instring, loc, doActions )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 1402, in _parseNoCache
+    loc,tokens = self.parseImpl( instring, preloc, doActions )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 3739, in parseImpl
+    return self.expr._parse( instring, loc, doActions, callPreParse=False )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 1402, in _parseNoCache
+    loc,tokens = self.parseImpl( instring, preloc, doActions )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 3400, in parseImpl
+    loc, resultlist = self.exprs[0]._parse( instring, loc, doActions, callPreParse=False )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 1406, in _parseNoCache
+    loc,tokens = self.parseImpl( instring, preloc, doActions )
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/pyparsing.py", line 2711, in parseImpl
+    raise ParseException(instring, loc, self.errmsg, self)
+pkg_resources._vendor.pyparsing.ParseException: Expected W:(abcd...) (at char 0), (line:1, col:1)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/__init__.py", line 2963, in __init__
+    super(Requirement, self).__init__(requirement_string)
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/_vendor/packaging/requirements.py", line 94, in __init__
+    requirement_string[e.loc:e.loc + 8]))
+pkg_resources.extern.packaging.requirements.InvalidRequirement: Invalid requirement, parse error at "'-f https'"
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/bin/pipenv", line 11, in <module>
+    load_entry_point('pipenv', 'console_scripts', 'pipenv')()
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/core.py", line 764, in __call__
+    return self.main(*args, **kwargs)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/core.py", line 717, in main
+    rv = self.invoke(ctx)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/core.py", line 1137, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/core.py", line 956, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/core.py", line 555, in invoke
+    return callback(*args, **kwargs)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/decorators.py", line 64, in new_func
+    return ctx.invoke(f, obj, *args, **kwargs)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/click/core.py", line 555, in invoke
+    return callback(*args, **kwargs)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/cli/command.py", line 291, in uninstall
+    pypi_mirror=state.pypi_mirror,
+  File "/Users/jeremycarroll/work/pipenv/pipenv/core.py", line 2014, in do_uninstall
+    do_purge(allow_global=system)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/core.py", line 1149, in do_purge
+    dep = Requirement.from_line(package)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/requirementslib/models/requirements.py", line 870, in from_line
+    r = NamedRequirement.from_line(line)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/requirementslib/models/requirements.py", line 65, in from_line
+    req = init_requirement(line)
+  File "/Users/jeremycarroll/work/pipenv/pipenv/vendor/requirementslib/models/utils.py", line 42, in init_requirement
+    req = Requirement.parse(name)
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/__init__.py", line 3009, in parse
+    req, = parse_requirements(s)
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/__init__.py", line 2956, in parse_requirements
+    yield Requirement(line)
+  File "/Users/jeremycarroll/.virtualenvs/pipenv-4nomzuu4/lib/python3.7/site-packages/pkg_resources/__init__.py", line 2965, in __init__
+    raise RequirementParseError(str(e))
+pkg_resources.RequirementParseError: Invalid requirement, parse error at "'-f https'"
+
+Command failed...
+===Flaky Test Report===
+
+
+===End Flaky Test Report===
+=========================================================================== short test summary info ============================================================================
+FAIL tests/integration/test_uninstall.py::test_uninstall_all_local_files
+===================================================================== 1 failed, 4 passed in 58.72 seconds ======================================================================
+Steps to replicate
+Use commit 87551b9 and set PIP_FIND_LINKS to a valid links folder (I have not tried with an invalid one) and run ./run_tests.sh
+If you're on macOS, run the following:
+$ pipenv run pipenv --support | pbcopy
+$ pipenv --support

@@ -1,0 +1,92 @@
+kleptog commented on 2 Feb 2018
+Tornado: 4.5.2 (but the code it the same in current versions)
+We internally have implemented proxy support for the AsyncHTTPClient. The standard advice is to use the Curl HTTP client but on the platform we were using it had some issues with the client EC certificates, which the Tornado client has no problems with. Anyway, we're running into a problem with uncaught exceptions and think there is a bug in the tornado code.
+In tornado/simple_httpclient.py the code looks at follows:
+class _HTTPConnection(httputil.HTTPMessageDelegate):
+    [...]
+    def __init__(self, io_loop, client, request, release_callback,
+                 final_callback, max_buffer_size, tcp_client,
+                 max_header_size, max_body_size):
+        [...]
+        with stack_context.ExceptionStackContext(self._handle_exception):
+            [...]
+            self.tcp_client.connect(host, port, af=af,
+                                    ssl_options=ssl_options,
+                                    max_buffer_size=self.max_buffer_size,
+                                    callback=self._on_connect)
+Note that self.tcp_client is an instance of the TCPClient class and TCPClient.connect is marked @gen.coroutine. Note that instead of yielding on the connect it uses the callback argument which the wrapper handles for you.
+The problem is that if the connect method throws an exception, sometimes but not always (it apparently depends on where the exception is thrown) becomes an uncaught exception. The stack trace is as follows:
+2018-02-01 15:16:29,792 ERROR    testprogram Exiting due to uncaught exception in  <functools.partial object at 0x7f193956a368>
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/tornado/ioloop.py", line 605, in _run_callback
+    ret = callback()
+  File "/usr/local/lib/python2.7/dist-packages/tornado/stack_context.py", line 345, in wrapped
+    raise_exc_info(exc)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/stack_context.py", line 316, in wrapped
+    ret = fn(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/gen.py", line 289, in <lambda>
+    future, lambda future: callback(future.result()))
+  File "/usr/local/lib/python2.7/dist-packages/tornado/concurrent.py", line 238, in result
+    raise_exc_info(self._exc_info)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/gen.py", line 1069, in run
+    yielded = self.gen.send(value)
+  File "/usr/local/lib/python2.7/dist-packages/shared-0.1-py2.7.egg/shared/connect.py", line 47, in connect
+    raise HTTPError(start_line.code, start_line.reason)
+HTTPError: HTTP 503: Service Unavailable
+The callback passed to connect (self._on_connect) does not expect to be passed an exception tuple, and the with ExceptionStackContext won't catch it either if it is not in the first part of the connect method. You are apparently not allowed to yield within a with StackContext block, so that explains the lack of yield. But then I don't understand how exceptions in the connect are supposed to propagate from TCPClient.connect. I've also tried other things like setting stream.error to the exception and simply returning the stream, but cause strange effects (double stack traces, and still the unexpected exception).
+What am I missing?
+For reference, the proxy support we wrote is here:
+from tornado.simple_httpclient import SimpleAsyncHTTPClient
+
+
+class ProxiedAsyncHTTPClient(SimpleAsyncHTTPClient):
+
+    def initialize(self, io_loop, proxy_host, proxy_port, *args, **kwargs):
+        super(ProxiedAsyncHTTPClient, self).initialize(io_loop, *args, **kwargs)
+        self.tcp_client = ProxiedTCPClient(io_loop, proxy_host, proxy_port)
+
+class ProxiedTCPClient(object):
+    """ Copy from TCPClient with support for HTTP proxies """
+
+    def __init__(self, io_loop, proxy_host, proxy_port):
+        self.io_loop = io_loop
+        self.proxy_host = proxy_host
+        self.proxy_port = proxy_port
+        self.resolver = ThreadedResolver(io_loop=io_loop)
+
+    def close(self):
+        self.resolver.close()
+
+    @coroutine
+    def connect(self, host, port, af=socket.AF_UNSPEC, ssl_options=None,
+                max_buffer_size=None):
+        addrinfo = yield self.resolver.resolve(self.proxy_host, self.proxy_port, af)
+        connector = _Connector(
+            addrinfo, self.io_loop, functools.partial(self._create_stream, max_buffer_size))
+        af, addr, stream = yield connector.start()
+
+        # Do the proxy stuff (note that timeouts are checked at a higher level)
+        yield stream.write("CONNECT {}:{} HTTP/1.0\r\n\r\n".format(host, port))
+        response = yield stream.read_until_regex(b"\r?\n\r?\n", max_bytes=65536)
+
+        data = native_str(response.decode('latin1')).lstrip("\r\n")
+        eol = data.find("\n")
+        start_line = parse_response_start_line(data[:eol].rstrip("\r"))
+        if start_line.code != 200:
+            stream.close()
+            raise HTTPError(start_line.code, start_line.reason)
+
+# Uncomment these lines to get double stacktraces
+#        stream.error = Exception("Test")
+#        stream.close()
+#        raise Return(stream)
+        if ssl_options is not None:
+            stream = yield stream.start_tls(False, ssl_options=ssl_options,
+                                            server_hostname=host)
+
+        raise Return(stream)
+
+    def _create_stream(self, max_buffer_size, af, addr):
+        stream = IOStream(socket.socket(af),
+                          max_buffer_size=max_buffer_size)
+        return stream.connect(addr)

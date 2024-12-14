@@ -1,0 +1,58 @@
+Contributor
+anx-ckreuzberger commented on 23 Aug 2017 •
+edited
+edit: After further investigation, I found that it is not an issue with yield, but with the request/response cycle of DRF and the Browsable API. It's not an issue of DRF itself, DRF works fine.
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I have a model with a many to many relationship, whereas the related model has another many to many relationship: a Meeting can have several Contacts, a Contact can be in several Meetings. In addition, each contact and each meeting can be tagged. So it's literally n:n all the way (so it's something like this: Tags <--> Meetings <--> Contacts <--> Tags).
+My Problem is in rendering the form for the Meeting, whereas the serializer looks like this:
+class MeetingSerializer(serializers.ModelSerializer):
+    attending_contacts = serializers.PrimaryKeyRelatedField(
+        source='attending_contacts',
+        many=True,
+        required=False
+    )
+
+    tags = serializers.PrimaryKeyRelatedField(
+        source='tags',
+        many=True,
+        required=False
+    )
+
+    class Meta:
+        model = Meeting
+        fields = ('attending_contacts', 'tags', '...',)
+In addition, I have a @receiver(post_init) on all of these models, which I can disable in my BaseModelViewSet by doing this:
+class BaseModelViewSet(ModelViewSet):
+    def dispatch(self, request, *args, **kwargs):
+        if request.method in ["GET", "HEAD", "OPTIONS"]:
+            # disable PostInitHandler for GET/HEAD/OPTIONS calls
+            with SomePostInitHandler.enabled(False):
+                return super(BaseModelViewSet, self).dispatch(request, *args, **kwargs)
+        return super(BaseModelViewSet, self).dispatch(request, *args, **kwargs)
+The post_init handler is not very complicated, it just stores the current model instance in memory, so that I can track changes on the model. For instance, when accessing a Meeting, it stores all info about the meeting, including Tags and Contacts in memory. Basically I just want to track any changes on attending contacts and tags.
+Obviously, this is not needed for GET/HEAD/OPTIONS calls, because data is not modified within these calls.
+My post_init looks something like this:
+@receiver(post_init, sender=Meeting)
+def store_meeting_initial(sender, instance, *args, **kwargs):
+    if not SomePostInitHandler.get_enabled():
+        return
+    # store attending contacts and tags 
+    instance.__original_data = {
+        'attending_contacts': instance.attending_contacts.all(),
+        'tags': instance.tags.all()
+    }
+Expected behavior
+When accessing the browsable API for the Meeting Form with a GET request, I would expect my post_init method NOT to be called.
+Actual behavior
+When accessing the browsable API where the Form for Meetings is rendered, the post_init method is called. This behaviour leads to additional API calls (for retrieving attending_contacts and tags).
+I analyzed the code and found that this is caused by the usage iter_options in the template for rendering the select-dropdown-form. Basically, iter_optionsuses yield (see rest_framework/fields.py Lines 212-230 ) to provide all of my Contacts and Tags for the Meeting, which results in the post_init method being called.
+Fixing
+I would love to help out fixing this issue, though I've not been able to do anything about it as the iter_options is not defined on a class, but as a function within the module fields (and I really really do not want to monkey patch...).
+Any insight on this by the developers would help me creating a PR for this.

@@ -1,0 +1,68 @@
+AhmedRekik93 commented on 12 Jun 2019 •
+edited
+System information
+Have I written custom code (as opposed to using example directory): No
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Linux Ubuntu 16.04
+TensorFlow backend (yes / no): yes
+TensorFlow version: tensorflow_gpu 1.5.0
+Keras version: latest 2.2.4, pulled from master
+Python version: 2.7 (executed on Jupyter)
+Describe the current behavior
+To reduce the amount of code to build my Convolutional Keras model, I want to loop through different Conv2D layers stored in a list, in order to stack layers together, instead of calling Conv2D n times that results into a long code.
+My model should be multi-layered and uses residual blocks, where each block shares a specific number of feature maps across all its hidden convolutional layers. Unfortunately, through looping across Conv2D blocks, if two Conv2Ds at positions i and i+1 have a different input_shape, the i+1 layer fails to infer the correct input shape.
+Here is a minimal code to reproduce the error:
+fm = 8
+n = 100
+inputs = Input((512, 512,1))
+layers = [Conv2D( fm, 3,  kernel_initializer='glorot_normal', padding='same')] * n
+
+h = inputs
+for i in range(0, len(layers)):
+    z = layers[i](h)
+    h = Activation('relu')(z)
+The models holds with n Conv2D layers. The construction, however, breaks at i = 1, where layers[i] expects a input shape of (512, 512, 1) (similar to the shape of the very first input layer), where it should be bound correctly if I don't use a for loop.
+Bellow is the error stacktrace:
+ValueError                                Traceback (most recent call last)
+<ipython-input-9-a034e0a2ff2a> in <module>()
+      1 h = inputs
+      2 for i in range(0, len(layers)):
+----> 3     z = layers[i](h)
+      4     h = Activation('relu')(z)
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/base_layer.pyc in __call__(self, inputs, **kwargs)
+    432             # Raise exceptions in case the input is not compatible
+    433             # with the input_spec set at build time.
+--> 434             self.assert_input_compatibility(inputs)
+    435 
+    436             # Handle mask propagation.
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/base_layer.pyc in assert_input_compatibility(self, inputs)
+    344                                 str(axis) + ' of input shape to have '
+    345                                 'value ' + str(value) +
+--> 346                                 ' but got shape ' + str(x_shape))
+    347             # Check shape.
+    348             if spec.shape is not None:
+
+ValueError: Input 0 is incompatible with layer conv2d_6: expected axis -1 of input shape to have value 1 but got shape (None, 512, 512, 8)
+Describe the expected behavior
+To overcome to this behavior, as a workaround, one can pass the input_shape explicitly to each Conv2D constructor. But if I would have 300 convolutional layers with different sizes henced by MaxPool2D or UpSampling2D, this might be time-consuming and yields redundancy in code in order to bind different blocks together.
+Ideal, would be, that the Conv2D infer automatically the input_shape from the output shape of the previous layers.
+Or at least, it might be a nice optional feature.
+Code to reproduce the issue
+Code given in a section above is minimal. Here is a more elaborated code, to give an intuition of the encountered error:
+fm = 8
+n = 50
+inputs = Input((512, 512,1))
+layers_8 = [Conv2D( fm, 3,  kernel_initializer='glorot_normal', padding='same')] * n
+layers_16 = [Conv2D( 2*fm, 3,  kernel_initializer='glorot_normal', padding='same')] * n
+
+h = inputs
+# Breaks here
+for i in range(0, len(layers_8)):
+    z = layers_8[i](h)
+    h = Activation('relu')(z)
+# Breaks here, if you dodge the previous error with the work-around.
+for i in range(0, len(layers_16)):
+    z = layers_16[i](h)
+    h = Activation('relu')(z)
+Thank you for your attention.

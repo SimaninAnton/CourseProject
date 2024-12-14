@@ -1,0 +1,50 @@
+pkadambi commented on 1 Jul 2017
+Hi Everyone!
+I'm trying to use Adam's momentum term as part of an extra cost in my loss function but I have no idea how to implement this.
+This loss function basically has the following pseudocode:
+def my_loss(y_pred, y_true, current_weights, second_moment):
+    normal_loss=K.categorial_cross_entropy(y_pred,y_true)
+    additional_term=K.dot(K.square(weights - K.sigmoid(current_weights)), second_moment)
+    return normal_loss + additional_term
+Where second_moment is the v_t term from the Adam in optimizers.py (important part shown at the bottom). Current_weights are the weights of the model at the current training step.
+My question is:
+How do I pass the current model weights and current second_moment from Adam in optimizers.py to my own loss in losses.py? How should I go about implementing something like this?
+Would it be easier to implement this additional term as a regularizer?
+A second line of questioning:
+Is this feasible to implement in Keras, or should I go lower level down to pure tensorflow to do this?
+For reference: v_t from optimizers.py
+        grads = self.get_gradients(loss, params)
+        self.updates = [K.update_add(self.iterations, 1)]
+
+        lr = self.lr
+        if self.initial_decay > 0:
+            lr *= (1. / (1. + self.decay * self.iterations))
+
+        t = self.iterations + 1
+        lr_t = lr * (K.sqrt(1. - K.pow(self.beta_2, t)) /
+                     (1. - K.pow(self.beta_1, t)))
+
+        ms = [K.zeros(K.get_variable_shape(p), dtype=K.dtype(p)) for p in params]
+        vs = [K.zeros(K.get_variable_shape(p), dtype=K.dtype(p)) for p in params]
+        self.weights = [self.iterations] + ms + vs
+
+        for p, g, m, v in zip(params, grads, ms, vs):
+            m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
+
+#THIS is the second moment I want from Adam--------------------------------------------------
+            v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g) 
+#THIS is the second moment I want from Adam--------------------------------------------------
+
+            p_t = p - lr_t * m_t / (K.sqrt(v_t) + self.epsilon)
+
+            self.updates.append(K.update(m, m_t))
+            self.updates.append(K.update(v, v_t))
+
+            new_p = p_t
+            # apply constraints
+            if p in constraints:
+                c = constraints[p]
+                new_p = c(new_p)
+            self.updates.append(K.update(p, new_p))
+        return self.updates
+Thanks!

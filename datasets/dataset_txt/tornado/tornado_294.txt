@@ -1,0 +1,84 @@
+gabeorlanski commented on 20 Aug 2017 •
+edited
+Hi there. So I am having the issue where a my tornado handler for scraping is skipping over random urls in a list of urls I give it.
+Here is the code:
+import sys
+
+from tornado import gen, ioloop
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.queues import Queue
+
+
+class Scraper():
+ def __init__(self, destinations=None, transform=None, headers={}, max_clients=50, maxsize=100, connect_timeout=1200, request_timeout=600):
+
+  """Instantiate a tornado async http client to do multiple concurrent requests"""
+
+  if None in [destinations, transform]:
+   sys.stderr.write('You must pass both collection of URLS and a transform function')
+   raise SystemExit
+
+  self.max_clients = max_clients
+  self.maxsize = maxsize
+  self.connect_timeout = connect_timeout
+  self.request_timeout = request_timeout
+
+  AsyncHTTPClient.configure("tornado.simple_httpclient.SimpleAsyncHTTPClient", max_clients=self.max_clients)
+
+  self.http_client = AsyncHTTPClient()
+  self.queue = Queue(maxsize=maxsize)
+  self .destinations = destinations
+  self.transform = transform
+  self.headers = headers
+  self.read(self.destinations)
+  self.get(self.transform, self.headers, self.connect_timeout, self.request_timeout, self.http_client)
+  self.loop = ioloop.IOLoop.current()
+  self.join_future = self.queue.join()
+  self.count = 1
+  def done(future):
+   self.loop.stop()
+
+  self.join_future.add_done_callback(done)
+  self.loop.start()
+
+ @gen.coroutine
+ def read(self, destinations):
+  for url in destinations:
+   yield self.queue.put(url)
+
+ @gen.coroutine
+ def get(self, transform, headers, connect_timeout, request_timeout, http_client):
+  while not self.queue.empty():
+   url = yield self.queue.get()
+
+   try:
+    request = HTTPRequest(url, connect_timeout=connect_timeout, request_timeout=request_timeout, method="GET", headers=headers)
+   except Exception as e:
+    sys.stderr.write('Destination {0} returned error {1}'.format(url, str(e) + '\n'))
+
+   future = self.http_client.fetch(request)
+
+   def done_callback(future):
+    print("--------------------------")
+    print("Current: "+str(self.count))
+                                    print(future.result().code)
+    self.count+=1
+    body = future.result().body
+    url = future.result().effective_url
+    transform(body, url=url)
+    self.queue.task_done()
+
+   try:
+    future.add_done_callback(done_callback)
+    yield gen.sleep(0.1)
+   except Exception as e:
+    sys.stderr.write(str(e))
+    self.queue.put(url)
+So when it skips, say on number 37, the console output will look like:
+---------------------------------
+Current: 37
+---------------------------------
+Current: 38
+200
+I don't know what is going on with it that is making it skip over, I have tried putting try except around them to make it work but that did not tell me anything I did not already know
+Also, for my sake, is this making requests asynchronously?

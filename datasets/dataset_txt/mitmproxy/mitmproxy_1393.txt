@@ -1,0 +1,55 @@
+Contributor
+mame82 commented on 30 Jun 2015
+Hey,
+I've got a proble with a custom inline-script, running mitmproxy-0.12.1 (not the provided 11.3) on kali-1.1.0, after an apt-get upgrade. So I don't know exactly what causes the problem, but it wasn't there before.
+The custom script-code (stripped down to error parts)
+from libmproxy.protocol.http import decoded
+from bs4 import BeautifulSoup
+
+def response(context, flow):
+    if flow.response.headers.get_first("content-type", "").startswith("text/html"):
+        with decoded(flow.response):  # automatically decode gzipped responses.
+            # context.log("Type " + str(type(flow.response.content)))
+            html = BeautifulSoup(flow.response.content)
+            if html.head:
+                # here some header-modifying-code, which isn't relevant for raising this error
+                flow.response.content = str(html)
+                context.log("Manipulated response header.")
+Error-Dump of mitmproxy/mitmdump
+Script error:
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/script.py", line 123, in run
+    return (True, f(self.ctx, *args, **kwargs))
+  File "/usr/share/doc/mitmproxy/examples/modify_response_header_error.py", line 12, in response
+    context.log("Manipulated response header.")
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/protocol/http.py", line 78, in __exit__
+    self.o.encode(self.ce)
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/protocol/http.py", line 151, in encode
+    self.content = encoding.encode(e, self.content)
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/encoding.py", line 33, in encode
+    return encoding_map[e](content)
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/encoding.py", line 55, in encode_gzip
+    gf.write(content)
+  File "/usr/lib/python2.7/gzip.py", line 228, in write
+    if len(data) > 0:
+TypeError: object of type 'int' has no len()
+encoding.py shouldn't have changed since my last usage of the script (and it worked)
+For testing I've changed the if html.head: to if html.head and html.body: to make sure there's content present before encoding again, but with no effect.
+Comparing to the examples, I've found that iframe_injector.py is producing exactly the same error because it uses the decoded() method.
+Script error:
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/script.py", line 123, in run
+    return (True, f(self.ctx, *args, **kwargs))
+  File "/usr/share/doc/mitmproxy/examples/iframe_injector.py", line 27, in response
+    context.log("Iframe inserted.")
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/protocol/http.py", line 78, in __exit__
+    self.o.encode(self.ce)
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/protocol/http.py", line 151, in encode
+    self.content = encoding.encode(e, self.content)
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/encoding.py", line 33, in encode
+    return encoding_map[e](content)
+  File "/usr/local/lib/python2.7/dist-packages/mitmproxy-0.12.1-py2.7.egg/libmproxy/encoding.py", line 55, in encode_gzip
+    gf.write(content)
+  File "/usr/lib/python2.7/gzip.py", line 228, in write
+    if len(data) > 0:
+TypeError: object of type 'int' has no len()

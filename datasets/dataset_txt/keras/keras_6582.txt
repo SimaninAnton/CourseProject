@@ -1,0 +1,49 @@
+Contributor
+mmmikael commented on 8 Oct 2015
+There is a noticeable speed difference for training VGG-like networks between Keras and Caffe on large inputs.
+Here is a toy network I am using for benchmarking (e.q. first layers of VGG nets):
+s = (850, 649)  # input image size
+layers = [
+    Convolution2D(64, 3, 3, activation='relu', border_mode='same', input_shape=(1, s[0], s[1])),
+    Convolution2D(64, 3, 3, activation='relu', border_mode='same'),
+    Convolution2D(21, 3, 3, activation='relu', border_mode='same'),
+    Permute((2, 3, 1)),
+    Activation('softmax')
+]
+model = Sequential()
+for l in layers:
+    model.add(l)
+In this example, outputs are images of same size as the inputs and I use a slightly modified categorical_crossentropy loss to sum over spatial dims.
+The benchmark is run as follows:
+# compile
+t = now()
+model.compile(optimizer='adagrad', loss=categorical_crossentropy_2d)
+print('Compilation time %s' % (now() - t))
+
+# train
+t = now()
+model.fit(x, y, batch_size=1, nb_epoch=1)
+print('Training time for %d images (batch_size=1): %s' % (n_images, (now() - t)))
+t = now()
+model.fit(x, y, batch_size=n_images, nb_epoch=1)
+print('Training time for %d images (batch_size=%s): %s' % (n_images, n_images, (now() - t)))
+
+# predict
+t = now()
+model.predict(x)
+print('Prediction time for %d images: %s' % (n_images, (now() - t)))
+with outputs:
+Compilation time 0:00:18.592734
+Epoch 1/1
+10/10 [==============================] - 15s - loss: 17846727.2000    
+Training time for 10 images (batch_size=1): 0:00:15.480930
+Epoch 1/1
+10/10 [==============================] - 9s - loss: 176363904.0000
+Training time for 10 images (batch_size=10): 0:00:09.365067
+Prediction time for 10 images: 0:00:00.774903
+For some reason, there is a huge difference between training and prediction time.
+The complete python file is available here,
+The same training with Caffe is much faster. Around 2.5 seconds for 10 images:
+Average Forward pass: 35.1625 ms.
+Average Backward pass: 171.409 ms.
+Average Forward-Backward: 206.647 ms.

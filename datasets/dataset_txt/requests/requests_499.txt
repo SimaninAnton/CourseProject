@@ -1,0 +1,86 @@
+Contributor
+asieira commented on Sep 22, 2017 •
+edited
+After reading http://docs.python-requests.org/en/master/user/advanced/#session-objects I tried setting request headers on a session to ensure that all requests made using that session object would include those headers with their values unchanged. However, I am running into a strange corruption issue that I would like to share with you.
+Expected Result
+That the X-Api-Key header I set on the session would be correctly sent to the server, unchanged, on all requests made using the session object.
+Actual Result
+For some reason, the value of the X-Api-Key header is being changed and causing a 401 error when authenticating to the API endpoint I am trying to contact.
+Reproduction Steps
+import requests
+
+print requests.__version__
+
+s = requests.Session()
+s.headers.update({
+    "X-Api-Key": '<redacted>TU=',
+    "Accept-Encoding": "gzip, deflate",
+    "User-Agent": "magnet-sdk-python",
+    "Accept": "application/json"
+})
+
+response = s.request('GET', 'https://api.niddel.com/v2/me')
+print response.status_code
+
+response = s.request('GET', 'https://api.niddel.com/v2/me')
+print response.status_code
+The expected output for this is:
+2.18.4
+200
+200
+What I consistently get instead is:
+2.18.4
+200
+401
+More importantly, on the server-side logs I enabled logging of the first and last few characters of the API key for troubleshooting purposes. On the first case, they match the (valid) API key I wrote on the test code. In the failed request, the last few characters inexplicably changed from xTU= to +w==.
+So for some reason the X-Api-Key header contents are being corrupted on the 2nd and later requests of a session. Curiously enough, the same thing does not happen if I perform completely separate requests:
+import requests
+
+headers = {"X-Api-Key": '<redacted>TU=',
+           "Accept-Encoding": "gzip, deflate",
+           "User-Agent": "magnet-sdk-python",
+           "Accept": "application/json"}
+
+response = requests.request('GET', 'https://api.niddel.com/v2/me', headers=headers)
+print response.status_code
+
+response = requests.request('GET', 'https://api.niddel.com/v2/me', headers=headers)
+print response.status_code
+Which gives me two 200 status codes, as expected.
+I thought long and hard about whether this could be a server-side error related to multiple requests on persistent connections. But I have plenty of code that uses libcurl and also does requests like these using persistent connections at a large scale, and this error never manifested itself. So I am thinking this might be an issue on requests (or perhaps urllib3).
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": ""
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "2.7.10"
+  },
+  "platform": {
+    "release": "16.7.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "9081df"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}
+👍 1

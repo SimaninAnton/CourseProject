@@ -1,0 +1,38 @@
+bzhong2 commented on 8 Jun 2017
+Hello,
+I am following the blog for transfer learning https://blog.keras.io/building-powerful-image-classification-models-using-very-little-data.html.
+##First I compute the saved the bottleneck features and build a new model and train it with the bottleneck features:
+input_layer = Input(shape=base_model.output_shape[1:])
+x = GlobalAveragePooling2D()(input_layer)
+x = Dense(512, activation='relu',name='fc_new_1')(x)
+x = Dropout(0.2)(x)
+x = Dense(512, activation='relu',name='fc_new_2')(x)
+x = Dense(num_classes, activation='softmax',name='logit_new')(x)
+Add_layers = Model(inputs=input_layer, outputs=x,name='Add_layers')
+##Then I put this new model at the end of pretrained models:
+base_model = ResNet50(include_top=False, weights='imagenet', input_shape=(img_shape[0],img_shape[1],3))
+x = base_model.output
+predictions = Add_layers(x)
+model = Model(inputs=base_model.input, outputs=predictions)
+model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
+##Then, I evaluate the model :
+score = model.evaluate_generator(train_generator, nb_train_samples // batch_size_finetuning)
+print('The evaluation of the entire model before fine tuning : ')
+print(score)
+score = model.evaluate_generator(validation_generator, nb_validation_samples // batch_size_evaluation)
+print('The evaluation of the entire model before fine tuning : ')
+print(score)
+And get training loss and accuracy : [0.015362062912073827, 1.0]
+validation loss and accuracy : [0.89740632474422455, 0.75]
+##Just one line below it, I trained the new model:
+model.fit_generator(train_generator,
+steps_per_epoch= nb_train_samples // batch_size_finetuning,
+epochs=finetuning_epoch,
+validation_data=validation_generator,
+validation_steps=nb_validation_samples // batch_size_evaluation,
+callbacks=[checkpointer_finetuning,history_finetuning,TB_finetuning,lrate_finetuning,Eartly_Stopping_finetuning]);
+Then the output is :
+31/31 [==============================] - 35s - loss: 3.4004 - acc: 0.3297 - val_loss: 0.9591 - val_acc: 0.7083
+Weird thing is : This problem only happens if I use Resnet50 and Inceptionv3 but not with vgg16. I am pretty sure that changing the pretrained model is the only difference. I understand that the dropout might make it different but it should not be this large and vgg16 has no obvious problem at all.
+Another weird thing is: If I change every layer to be .trainable = False and compile, the validation accuracy will still decrease dramatically. I even checked the weights of every layer and if .trainable = False weights will not change and .trainable = True weights will change.
+Any help is appreciated!!! THANKS!!!

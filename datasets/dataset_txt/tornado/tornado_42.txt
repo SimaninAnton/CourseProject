@@ -1,0 +1,20 @@
+amTorrinha commented on 10 Jul 2019
+I'm using Tornado to run as a Proxy Server that receives several requests from a client, redirecting most of them. However, in some specific cases, I want to establish a ssl connection between client and proxy. To do this, my idea was to use the start_tls function to convert the client's IOStream into an SSLIOStream, sending a self-signed certificate to the client, which will be used to encrypt their following communications.
+In my client, I use Python Requests to perform the request, redirecting it to the proxy :
+proxies = {
+   'http' : 'http://user:1@localhost:8888',
+   'https': 'http://user:1@localhost:8888'  
+  }
+
+r = requests.request('GET', 'https://www.somedomain.com/', proxies = proxies, verify = False)
+In my proxy, I'm using a RequestHandler that receives and deals with the requests. Inside the connect function, which will be called for https connections, I have the following code for the specific cases mentioned above:
+class MainHandler(tornado.web.RequestHandler):
+
+   async def connect(self):
+      self.client = self.request.connection.stream
+      #some code
+      ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)                                                                                                        
+      ssl_context.load_cert_chain(certfile="ssl/cert.pem", keyfile="ssl/key.pem")                                                                                            
+      client_future = self.client.start_tls(server_side=True, ssl_options=ssl_context)
+      self.client = await client_future
+The problem here is that the future's result is never set, so it blocks in the await. My goal is to send a self-signed certificate to the client, in order to be able to decrypt the client's data before sending it to the domain, by"upgrading" the client connection (self.client) to an SSL connection, with the handshake done, between my server and the client. Is this the best way to do it, or is there a better solution?

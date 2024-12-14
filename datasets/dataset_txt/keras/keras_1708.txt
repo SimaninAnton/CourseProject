@@ -1,0 +1,42 @@
+InonS commented on 28 Aug 2017 •
+edited
+I'm running a basic Inception module on MNIST data, and running into an incompatibility in the shape parameter that is built in order to pass to the initializer of a Conv2d layer.
+I'm not sure if something in my usage is incorrect, or if this is genuinely a bug.
+TL;DR
+initializers.py, line 204, in __call__
+    scale /= max(1., float(fan_in + fan_out) / 2)
+TypeError: float() argument must be a string or a number, not 'Dimension'
+Summary
+My input is defined Tensor("input_1:0", shape=(?, 28, 28, 1), dtype=float32)
+Layer.__call__() uses the _keras_shape attribute of the tensor to form input_shapes = [(None, Dimension(28), Dimension(28), Dimension(1))], i.e. wrapping the integer dimensionalities with a Dimension
+Then _Conv.build() creates kernel_shape = (1, 1, Dimension(1), 64)
+Finally VarianceScaling.__call__() tries to use this shape in doing scale /= max(1., float(fan_in + fan_out) / 2), and fails
+Setup
+Keras 2.0.8
+Backend: Tensorflow 1.3.0
+Traceback
+Using TensorFlow backend.
+DEBUG:root:x_train[0].shape = (28, 28), y_train[0].shape = ()
+Backend TkAgg is interactive backend. Turning interactive mode on.
+Traceback (most recent call last):
+  ...
+  File "...\testKerasFunctional.py", line 70, in run
+    inception = inception_module(input_img)
+  File "...\testKerasFunctional.py", line 47, in inception_module
+    return concatenate([tower_1(input_img), tower_2(input_img), tower_3(input_img)], axis=1)
+  File "...\testKerasFunctional.py", line 30, in conv_tower
+    first_layer = conv2d_of(1)(input_img)
+  File "...\keras\engine\topology.py", line 575, in __call__
+    self.build(input_shapes[0])
+  File "...\keras\layers\convolutional.py", line 134, in build
+    constraint=self.kernel_constraint)
+  File "...\keras\legacy\interfaces.py", line 87, in wrapper
+    return func(*args, **kwargs)
+  File "...\keras\engine\topology.py", line 396, in add_weight
+    weight = K.variable(initializer(shape),
+  File "...\keras\initializers.py", line 204, in __call__
+    scale /= max(1., float(fan_in + fan_out) / 2)
+TypeError: float() argument must be a string or a number, not 'Dimension'
+Possibly related
+#7687
+1

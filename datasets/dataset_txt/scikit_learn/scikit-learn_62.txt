@@ -1,0 +1,138 @@
+JiaHong-Lee commented on Dec 27, 2019 •
+edited
+Description
+As the title above.
+Steps/Code to Reproduce
+from sklearn.utils import parallel_backend
+from sklearn.cluster import SpectralClustering
+from joblibspark import register_spark
+
+register_spark() # register spark backend
+
+cluster = SpectralClustering(n_clusters=2, n_jobs=2)
+with parallel_backend('spark', n_jobs=4):
+  labels = cluster.fit_predict(train)
+Expected Results
+Returns labels
+Actual Results
+TypeError: '>' not supported between instances of 'NoneType' and 'int'.
+Suspected Cause
+The n_jobs is of class NoneType while the max_num_concurrent_tasks is of int type. This can be found by printing out its type in the joblibspark backend file.
+The fit_predict() method in Spectral Clustering does not pass the n_jobs during the call to super().fit_predict(). n_jobs is of class NoneType because that is the default value of n_jobs. There isn't any other place that sets the super()'s parameters.
+See:
+scikit-learn/sklearn/cluster/_spectral.py
+Line 545 in 7e85a6d
+ return super().fit_predict(X, y) 
+Versions
+System:
+python: 3.7.5 (default, Dec 17 2019, 23:58:27) [GCC 7.4.0]
+executable: /home/zacque/sync/work/work/spark/spark/bin/python
+machine: Linux-4.15.0-72-generic-x86_64-with-debian-buster-sid
+Python dependencies:
+pip: 19.2.3
+setuptools: 41.2.0
+sklearn: 0.22
+numpy: 1.18.0
+scipy: 1.4.1
+Cython: None
+pandas: 0.25.3
+matplotlib: None
+joblib: 0.14.1
+Built with OpenMP: True
+Edit: Add Trackbacks
+Traceback for fit_predict():
+TypeErrorTraceback (most recent call last)
+<ipython-input-7-8974ec8c7587> in <module>
+      9 cluster = SpectralClustering(n_clusters=2, n_jobs=2)
+     10 with parallel_backend('spark', n_jobs=4):
+---> 11   cluster = cluster.fit_predict(train)
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/cluster/_spectral.py in fit_predict(self, X, y)
+    543             Cluster labels.
+    544         """
+--> 545         return super().fit_predict(X, y)
+    546 
+    547     @property
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/base.py in fit_predict(self, X, y)
+    460         # non-optimized default implementation; override when a better
+    461         # method is possible for a given clustering algorithm
+--> 462         self.fit(X)
+    463         return self.labels_
+    464 
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/cluster/_spectral.py in fit(self, X, y)
+    508             self.affinity_matrix_ = pairwise_kernels(X, metric=self.affinity,
+    509                                                      filter_params=True,
+--> 510                                                      **params)
+    511 
+    512         random_state = check_random_state(self.random_state)
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/metrics/pairwise.py in pairwise_kernels(X, Y, metric, filter_params, n_jobs, **kwds)
+   1907         raise ValueError("Unknown kernel %r" % metric)
+   1908 
+-> 1909     return _parallel_pairwise(X, Y, func, n_jobs, **kwds)
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/metrics/pairwise.py in _parallel_pairwise(X, Y, func, n_jobs, **kwds)
+   1345     X, Y, dtype = _return_float_dtype(X, Y)
+   1346 
+-> 1347     if effective_n_jobs(n_jobs) == 1:
+   1348         return func(X, Y, **kwds)
+   1349 
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/joblib/parallel.py in effective_n_jobs(n_jobs)
+    387     """
+    388     backend, _ = get_active_backend()
+--> 389     return backend.effective_n_jobs(n_jobs=n_jobs)
+    390 
+    391 
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/joblibspark/backend.py in effective_n_jobs(self, n_jobs)
+     90             # n_jobs=-1 means requesting all available workers
+     91             n_jobs = max_num_concurrent_tasks
+---> 92         if n_jobs > max_num_concurrent_tasks:
+     93             n_jobs = max_num_concurrent_tasks
+     94             warnings.warn("limit n_jobs to be maxNumConcurrentTasks in spark: " + str(n_jobs))
+
+TypeError: '>' not supported between instances of 'NoneType' and 'int'
+Complete traceback for fit():
+TypeErrorTraceback (most recent call last)
+<ipython-input-21-e15e40d84322> in <module>
+      9 cluster = SpectralClustering(n_clusters=2, n_jobs=2)
+     10 with parallel_backend('spark', n_jobs=4):
+---> 11   cluster = cluster.fit(train)
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/cluster/_spectral.py in fit(self, X, y)
+    508             self.affinity_matrix_ = pairwise_kernels(X, metric=self.affinity,
+    509                                                      filter_params=True,
+--> 510                                                      **params)
+    511
+    512         random_state = check_random_state(self.random_state)
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/metrics/pairwise.py in pairwise_kernels(X, Y, metric, filter_params, n_jobs, **kwds)
+   1907         raise ValueError("Unknown kernel %r" % metric)
+   1908
+-> 1909     return _parallel_pairwise(X, Y, func, n_jobs, **kwds)
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/sklearn/metrics/pairwise.py in _parallel_pairwise(X, Y, func, n_jobs, **kwds)
+   1345     X, Y, dtype = _return_float_dtype(X, Y)
+   1346
+-> 1347     if effective_n_jobs(n_jobs) == 1:
+   1348         return func(X, Y, **kwds)
+   1349
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/joblib/parallel.py in effective_n_jobs(n_jobs)
+    387     """
+    388     backend, _ = get_active_backend()
+--> 389     return backend.effective_n_jobs(n_jobs=n_jobs)
+    390
+    391
+
+~/sync/work/work/spark/spark/lib/python3.7/site-packages/joblibspark/backend.py in effective_n_jobs(self, n_jobs)
+     90             # n_jobs=-1 means requesting all available workers
+     91             n_jobs = max_num_concurrent_tasks
+---> 92         if n_jobs > max_num_concurrent_tasks:
+     93             n_jobs = max_num_concurrent_tasks
+     94             warnings.warn("limit n_jobs to be maxNumConcurrentTasks in spark: " + str(n_jobs))
+
+TypeError: '>' not supported between instances of 'NoneType' and 'int'

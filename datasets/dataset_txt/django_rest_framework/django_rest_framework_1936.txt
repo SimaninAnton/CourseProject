@@ -1,0 +1,40 @@
+vladlep commented on 17 Mar 2015
+Hi,
+I think there is a bug in the decoding of multipart POSTs. I tried to do my best to document this and make it easy to replicate it. If more information is needed please let me know.
+I am having the current models:
+class Cost(models.Model):
+    number = models.CharField("Cost number", max_length=50)
+    image = FileField(upload_to=generate_cost_name, null=True, blank=True)
+    description = models.TextField(blank=True)
+    amount = models.DecimalField(_('Total amount'), decimal_places=2, max_digits=40, null=True, blank=True)
+    date = models.DateField(default=timezone.now)
+    created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True)
+
+class CostLine(models.Model):
+    cost = models.ForeignKey(Cost, related_name='cost_lines')
+    amount = models.DecimalField(decimal_places=2, max_digits=40, null=True, blank=True)
+    tax_rate = models.DecimalField(decimal_places=2, max_digits=40, null=True, blank=True)
+    created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True)
+I want to build an api that supports to create a cost with multiple cost lines. It should support this type of POST:
+{  
+    'number': "Test-0001",
+    'amount': 200,
+    'description': 'lunch',
+    'date': '2015-01-16',
+    'cost_lines': [
+        {
+            'amount': 150,
+            'tax_rate': 21
+        },
+        {
+            'amount': 50,
+            'tax_rate': 6
+        }],
+    'image': some_image
+}
+This works if i do not make a multipart POST (do not send an image), but it fails if I do. Looking in the debugger I could see that in the create method of the CreateModelMixin the request.data is decoded differently in the 2 cases. In the multipart call the data is not decoded correctly, from a list it turns into a dictionary with only the last entry, in my example: { 'amount': 50, 'tax_rate': 6 }
+I made a demo project where you can replicate the issue: https://github.com/vladlep/django-playaround . There are 2 tests in the cost app that highlight the problem.
+Thanks,
+Vlad

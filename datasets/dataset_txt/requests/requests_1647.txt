@@ -1,0 +1,24 @@
+cecton commented on Sep 10, 2014
+Hello,
+Use Case
+I run a process using subprocess and give the stdout as data of a POST request. Since it is a file-descriptor, it has a fileno, and super_len() "stat" the file descriptor and use the st_size to determine the length.
+The problem is: if the st_size returned is 0, it is possibly due to other reasons, in this case: the length is not determined (despite st_size is 0). But requests send a header specifying a Content-Length of 0 whilst it is actually not determined.
+Work Around
+Wrap the stream in a generator, so the method fileno() cannot be accessed anymore.
+request.post(url, data=(x for x in p.stdout))
+Another Use Case
+[14:05:31] ~ > mkfifo /tmp/a
+[14:05:35] ~ > stat /tmp/a
+  File: ‘/tmp/a’
+  Size: 0               Blocks: 0          IO Block: 4096   fifo
+Device: 1eh/30d Inode: 514910      Links: 1
+Access: (0644/prw-r--r--)  Uid: ( 1001/ openerp)   Gid: (  100/   users)
+Access: 2014-09-10 14:05:35.415835558 +0200
+Modify: 2014-09-10 14:05:35.415835558 +0200
+Change: 2014-09-10 14:05:35.415835558 +0200
+ Birth: -
+The size of a named pipe is 0.
+Fix
+According to man 2 stat:
+For most files under the /proc directory, stat() does not return the file size in the st_size field; instead the field is returned with the value 0.
+I guess super_len() should return st_size if st_size if bigger than 0, otherwise None.

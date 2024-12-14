@@ -1,0 +1,32 @@
+picomancer commented on 12 Dec 2013
+I'm writing a Tornado TCP server. (Not HTTP.) There are not a tremendous amount of examples on the Internet, and those that exist tend to use callbacks instead of generators. I prefer generators.
+I think the read_until functions and the write function should be callable from a function with the @tornado.gen.coroutine marker with an API similar to the following:
+@tornado.gen.coroutine
+def echo_server_main_loop(self):
+    try:
+        while True:
+            line = yield read_until(self.stream, "\n")
+            message_id = next(self.message_id_alloc)
+            yield write(self.stream, line)
+    except tornado.iostream.StreamClosedError:
+        pass
+    return
+In fact, the documentation for the gen module led me to believe that this behavior was supported. The documentation as of this writing says that:
+def myfunc(self):
+    http_client.fetch("http://example.com", callback=self.on_fetch)
+    return
+
+def on_fetch(self, response):
+    # process the response...
+can be transformed into:
+@tornado.gen.coroutine
+def myfunc(self):
+    response = yield http_client.fetch("http://example.com")
+    # process the response...
+I assumed that a similar transformation could be done with the Tornado functions for non-HTTP TCP reading and writing, since the documentation does say that "Most asynchronous functions in Tornado return a Future...Task works with any function that takes a callback keyword argument..."
+Unfortunately neither of the above statements applies to the read_until functions, which means in practice that these features are useless for non-HTTP TCP servers! The write function is wrappable by a task, but it does not return a Future either.
+This documentation seemed to imply the first code snippet is a supported, or even preferred, usage of the Tornado API -- but this only seems to be the case with the HTTP versions of the methods I'm actually using. Tracking down the problem took me quite a while.
+I propose modifying the API for read_until and write as follows: The callback parameter should be made optional with a default of some non-callable sentinel object CB_FUTURE defined at the module level (for example CB_FUTURE = 1). (1) When the callback parameter is CB_FUTURE, a Future will be returned. (2) When the callback parameter is not CB_FUTURE, then None will be returned and the given callback will be called when the operation completes.
+Because of change (1), the first code snippet will work as desired. Because of change (2), existing code which uses these functions will not break, because the existing API requires two positional arguments to be present, and the second positional argument will be something other than the sentinel object for code that was written before this change was proposed.
+If the above API change is too constraining, I would prefer adding prominent warnings to the gen package docs that the read_until and write methods do not support the gen API.
+Finally, to see wrappers I've written that support the new API, take a look at https://github.com/picomancer/echoserver

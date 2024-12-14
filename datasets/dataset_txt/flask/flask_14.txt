@@ -1,0 +1,57 @@
+austinhoag commented on 18 Dec 2019 •
+edited
+I have a testing fixture to make a test client in my flask app:
+@pytest.fixture(scope='session') 
+def test_client():
+ """ Create the application and the test client. 
+ """
+ print('----------Setup test client----------')
+ app = create_app(config_class=config.TestConfig)
+ testing_client = app.test_client()
+
+ ctx = app.test_request_context() 
+ ctx.push()
+ yield testing_client # this is where the testing happens
+ print('-------Teardown test client--------')
+ ctx.pop()
+I would like to add a header for "User-Agent" to this test request context because in my application I check the browser of the user. I am retrieving the browser name in my app via
+user_agent = flask.request.user_agent.browser
+This line returns None if I use the test client above. While I can successfully set the 'User-Agent' header in individual requests within a single test, e.g.:
+user_agent_str = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+
+response = test_client.get('/some_flask_route',
+  environ_base={'HTTP_USER_AGENT': user_agent_str},
+  follow_redirects=True)
+After doing this:
+flask.request.user_agent.browser
+returns 'chrome' as expected.
+However, this is very redundant because it requires me to insert the environ_base line of code into every single one of my many tests.
+Expected Behavior
+I would expect that I could set the header when I make the test request context in my test fixture, e.g.:
+user_agent_str = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+
+@pytest.fixture(scope='session') 
+def test_client():
+ """ Create the application and the test client. 
+ """
+ print('----------Setup test client----------')
+ app = create_app(config_class=config.TestConfig)
+ testing_client = app.test_client()
+ ctx = app.test_request_context(environ_base={'HTTP_USER_AGENT': user_agent_str}) 
+ ctx.push()
+ yield testing_client # this is where the testing happens
+ print('-------Teardown test client--------')
+ ctx.pop()
+and this would set the environment for all requests, eliminating the need to set environ_base in every one of my requests.
+Actual Behavior
+While adding environ_base into test_request_context() does not break the fixture, it does not set the 'User-Agent' header and
+flask.request.user_agent.browser
+returns None.
+Environment
+Python version: 3.7.3
+Flask version: 1.1.1
+Werkzeug version: 0.15.4
+I have tried the solution suggested in the question here: https://stackoverflow.com/questions/15278285/setting-mocking-request-headers-for-flask-app-unit-test
+but it does nothing. I am simply running the flask server on localhost with no deployment yet, i.e. essentially just:
+app = Flask(__name__)
+app.run(host='127.0.0.1',port=5000,debug=True)

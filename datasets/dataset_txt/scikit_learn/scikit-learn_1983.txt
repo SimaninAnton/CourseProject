@@ -1,0 +1,16 @@
+fcharras commented on Aug 11, 2017 •
+edited
+The last improvements to Pipeline enable using GridSearchCV on several sequential estimators without unnecessary computations. However it relies on pickling and caching to disk (or to /dev/shm) which still can have a significant cost.
+Let's assume A,B are transformers and C is a classifier, with sets of possible parameters Sa, Sb and Sc. We want to find the best parameters in Sa, Sb and Sc such that the pipeline object Pipeline(A,B,C) has the best score. When using:
+GridSearchCV( Pipeline(A,B,C), params= Sa x Sb x Sc )
+there will be virtually as much pickling/unpickling as the number of elemenets in Sa x Sb x Sc and it could add up to hours. However if we transform it into the following object:
+GridSearchCV( 
+    Pipeline(A,
+        GridSearchCV(
+            Pipeline(B,
+                GridSearchCV( C, params=Sc )
+            ), 
+        params=Sb )
+    ),
+params=Sa)
+wouldn't it do the same grid optimization more efficiently ? There would be only one pass on each estimator with a given set of parameters. The drawbacks are that it would require more memory (since one intermediate result for each step would always be stored), and that it's uneasy to read and extract results.

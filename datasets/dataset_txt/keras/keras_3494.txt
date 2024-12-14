@@ -1,0 +1,42 @@
+Contributor
+patyork commented on 12 Jan 2017 •
+edited
+See below code. Theano, with the 'tf' default ordering, causes incorrect behavior from the DeConvolutional2D layer.
+from keras.models import Sequential
+from keras.layers import Deconvolution2D
+import numpy as np
+
+# This gives an unexpected output shape
+model = Sequential()
+model.add(Deconvolution2D(3, 3, 3, output_shape=(None, 14, 14, 3), border_mode='valid', dim_ordering='tf', input_shape=(12, 12, 3)))
+
+model.compile(loss='mse', optimizer='adam')
+
+print 'Actual Output Shape: ', model.predict(np.ones((1, 12, 12, 3))).shape
+# >> Actual Output Shape:  (1, 14, 3, 3)
+
+
+# This works, and gives reasonable output
+model = Sequential()
+model.add(Deconvolution2D(3, 3, 3, output_shape=(None, 3, 14, 14), border_mode='valid', dim_ordering='th', input_shape=(3, 12, 12)))
+
+model.compile(loss='mse', optimizer='adam')
+
+print 'Actual Output Shape: ', model.predict(np.ones((1, 3, 12, 12))).shape
+# >> Actual Output Shape:  (1, 3, 14, 14)
+This turns out to be that the output_shape parameter that the DeConv2D layer takes does not respect the dim_ordering. You can get around this by using 'th' ordering for the output_shape parameter, even if you're working entirely in 'tf' ordering, like below, but this is highly counterintuitive:
+from keras.models import Sequential
+from keras.layers import Deconvolution2D
+import numpy as np
+
+output_shape_tf = (None, 14, 14, 3) #does not give correct results
+output_shape_th = (None, 3, 14, 14) #does give correct results
+
+model = Sequential()
+model.add(Deconvolution2D(3, 3, 3, output_shape=output_shape_th, border_mode='valid', dim_ordering='tf', input_shape=(12, 12, 3)))
+#model.add(Deconvolution2D(3, 3, 3, output_shape=output_shape_tf, border_mode='valid', dim_ordering='tf', input_shape=(12, 12, 3)))
+
+model.compile(loss='mse', optimizer='adam')
+
+print 'Actual Output Shape: ', model.predict(np.ones((1, 12, 12, 3))).shape
+# >> Actual Output Shape:  (1, 14, 14, 3)

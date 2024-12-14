@@ -1,0 +1,116 @@
+Contributor
+michael-k commented on 22 Jan 2018 •
+edited by carltongibson
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question.
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. #5761
+Steps to reproduce
+Preparation
+Create these 2 models with the serializer and the view:
+class Collection(Model):
+    pass
+
+class Document(Model):
+    collection = models.ForeignKey(Collection, on_delete=models.CASCADE)
+    uid = models.TextField()
+    blob = postgres_fields.JSONField(default=dict)
+
+    class Meta():
+        unique_together = (('collection', 'uid'), )
+
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = '__all__'
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Document.objects.all(),
+                fields=('collection', 'uid')
+            )
+        ]
+
+class DocumentView(viewsets.ModelViewSet):
+    serializer_class = DocumentSerializer
+Exploit
+Create two Documents (can be in the same collection) and send update requests for both documents in parallel:
+# drf-race-condition.py
+import sys
+from datetime import datetime, timedelta
+
+import requests
+
+document_ids = [1, 2]  # TODO: adjust
+base_url = 'http://example.org/'  # TODO: adjust
+
+def send_request(index):
+    document_update_response = requests.patch(
+        url=f'{base_url}documents/{document_ids[index]}/',
+        headers=headers,
+        json={'blob': ''},
+    )
+    if document_update_response.status_code == 200:
+        print(index, document_update_response.status_code)
+
+if __name__ == '__main__':
+    index = int(sys.argv[1])
+    end = datetime.now() + timedelta(seconds=5)
+    while end > datetime.now():
+        send_request(index=index)
+#!/bin/bash
+
+python3 drf-race-condition.py 0 &
+python3 drf-race-condition.py 1 &
+Expected behavior
+The documents are updated without any side effects.
+Actual behavior
+We run into 500 status codes. (ie. IntegrityError: duplicate key value violates unique constraint "document_document_collection_id_1234_uniq"; DETAIL: Key (collection_id, uid)=(1, 'foo') already exists.)
+It's even worse, when the documents are in different collections. Then one of them gets the other one's uid assigned.
+The problem
+Serializers are instances of rest_framework.fields.Field and the following code (inside of run_validators) is responsible for running validators:
+django-rest-framework/rest_framework/fields.py
+Lines 533 to 538 in 78367ba
+ for validator in self.validators: 
+     if hasattr(validator, 'set_context'): 
+         validator.set_context(self) 
+        try: 
+         validator(value) 
+validator.set_context() sets validator.instance:
+django-rest-framework/rest_framework/validators.py
+Lines 106 to 112 in 78367ba
+     def set_context(self, serializer): 
+         """ 
+         This hook is called by the serializer instance, 
+         prior to the validation call being made. 
+         """ 
+         # Determine the existing instance, if this is an update operation. 
+         self.instance = getattr(serializer, 'instance', None) 
+Then validator() uses this instance. validator is the same instance for every instance of the serializer: DocumentSerializer(instance=d).validators[0] is DocumentSerializer(instance=d2).validators[0]. If two serializers call validator.set_context(self) before any one of them calls validator(value), both use the same instance.
+Changing uid
+It's even worse, when the documents are in different collections. Then one of them gets the other one's uid assigned.
+validator.filter_queryset() adds uid (not sure why collection did not behave as I expected) to attr, which reference the serializers validated_data. This way uid of the wrong instance ends up in serializer and serializer.save() uses it.
+django-rest-framework/rest_framework/validators.py
+Lines 130 to 139 in 78367ba
+     def filter_queryset(self, attrs, queryset): 
+         """ 
+         Filter the queryset to all instances matching the given attributes. 
+         """ 
+         # If this is an update, then any unprovided field should 
+         # have it's value set based on the existing instance attribute. 
+         if self.instance is not None: 
+             for field_name in self.fields: 
+                 if field_name not in attrs: 
+                     attrs[field_name] = getattr(self.instance, field_name) 
+Is this only theoretical?
+The IntegrityError happened nearly 3000 times in the last 8 weeks on our production plattform. Every time a customer sent multiple PATCH requests to our plattform.
+The IntegrityError and the changing uid happened reliably on every execution of the script against our staging plattform.
+Possible fixes
+Pass serializer/serializer_field to __call__ and drop set_context.
+Django's validators do not expect a second argument. According to drf's documentation one “can use any of Django's existing validators“.
+This can be solved by using inspect (which has differents APIs for Python 2 and 3) or by catching the TypeError (which could come from within the call). => Both solutions have their downsides.
+This would be a breaking change!
+Clone the validator before calling set_context.
+8

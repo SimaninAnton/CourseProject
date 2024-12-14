@@ -1,0 +1,86 @@
+jsocol commented on 13 Aug 2015
+This is a very specific set of circumstances, so I've included as minimal a reproduction as I can below. I recognize that it's probably too esoteric to bother fixing, but I figured it was worth writing down.
+On OS X (at least on 10.10.4) if you
+Configure AsyncHTTPClient with the CurlAsyncHTTPClient
+Make a request using requests in the main process (HTTP or HTTPS)
+Then call .bind(PORT) .start(n) (for any n) and start the IOLoop
+Then use AsyncHTTPClient (with @gen.coroutine or @web.asynchronous) or HTTPClient to make an HTTPS request in a handler
+The worker process dies
+I tried this on Tornado 4.0.2, 4.2.1, and master, using the most recent released requests (2.7.0) and pycurl ('PycURL/7.19.5.1 libcurl/7.37.1 SecureTransport zlib/1.2.5'), the curl version is:
+$ curl --version
+curl 7.37.1 (x86_64-apple-darwin14.0) libcurl/7.37.1 SecureTransport zlib/1.2.5
+Protocols: dict file ftp ftps gopher http https imap imaps ldap ldaps pop3 pop3s rtsp smtp smtps telnet tftp 
+Features: AsynchDNS GSS-Negotiate IPv6 Largefile NTLM NTLM_WB SSL libz 
+Some things which prevent the issue from occurring:
+I can't reproduce this on Ubuntu 14.04 with the libcurl4-openssl-dev or libcurl4-gnutls-dev libraries, so I think it might be related to SecureTransport somehow.
+Using the default AsyncHTTPClient.
+Moving the requests.get() call until after .start(0).
+Using .listen() instead of bind/start.
+Making an HTTP request in the handler instead of HTTPS.
+Here's the output of the log:
+2015-08-13 12:01:24,882 [INFO] 80378 [requests.packages.urllib3.connectionpool]: Starting new HTTP connection (1): jamessocol.com
+2015-08-13 12:01:25,355 [DEBUG] 80378 [requests.packages.urllib3.connectionpool]: "GET / HTTP/1.1" 200 None
+2015-08-13 12:01:25,363 [INFO] 80378 [tornado.general]: Starting 4 processes
+2015-08-13 12:01:32,542 [DEBUG] 80385 [tornado.curl_httpclient]: GET https://github.com/
+2015-08-13 12:01:32,544 [DEBUG] 80385 [tornado.curl_httpclient]: Hostname was NOT found in DNS cache
+2015-08-13 12:01:32,578 [DEBUG] 80385 [tornado.curl_httpclient]: Trying 192.30.252.130...
+2015-08-13 12:01:32,595 [DEBUG] 80385 [tornado.curl_httpclient]: Connected to github.com (192.30.252.130) port 443 (#0)
+2015-08-13 12:01:33,063 [WARNING] 80378 [tornado.general]: child 3 (pid 80385) killed by signal 11, restarting
+And here's the full reproduction (the logging config is to get the PID and turn on the requests logging, otherwise you can ignore it)
+import logging.config
+
+from tornado import web, httpclient, httpserver, ioloop
+
+import requests
+
+
+def configure_logging():
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': True,
+        'formatters': {
+            'standard': {
+                'format': ('%(asctime)s [%(levelname)s] %(process)d '
+                           '[%(name)s]: %(message)s'),
+            },
+        },
+        'handlers': {
+            'default': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'standard',
+            },
+        },
+        'loggers': {
+            'tornado': {
+                'propagate': True,
+            },
+            'requests': {
+                'propagate': True,
+            },
+        },
+        'root': {
+            'handlers': ['default'],
+            'level': 'DEBUG',
+        },
+    }
+    logging.config.dictConfig(LOGGING)
+
+
+class DemoHandler(web.RequestHandler):
+    def get(self):
+        client = httpclient.HTTPClient()
+        client.fetch('https://github.com/')
+        self.write('hi\n')
+        self.finish()
+
+
+if __name__ == '__main__':
+    configure_logging()
+    httpclient.AsyncHTTPClient.configure(
+        'tornado.curl_httpclient.CurlAsyncHTTPClient')
+    app = web.Application([web.url(r'^/$', DemoHandler)])
+    http_server = httpserver.HTTPServer(app)
+    requests.get('http://jamessocol.com/')
+    http_server.bind(5001)
+    http_server.start(0)
+    ioloop.IOLoop.instance().start()

@@ -1,0 +1,198 @@
+tsantor commented on 20 Aug 2015
+I have Slide and Chart models, and slides can contain only 1 chart. When serializing the data it fails with the below error:
+AttributeError: Got AttributeError when attempting to get a value for field csv on serializer ChartSerializer.
+The serializer field might be named incorrectly and not match any attribute or key on the RelatedManager instance.
+Original exception text was: 'RelatedManager' object has no attribute 'csv'.
+However, if I simply change:
+chart = ChartSerializer(many=True)
+in my SlideSerializer (code below) it works. This makes the 'chart' property a list in JSON though when it should be an object as there can only be one Chart, not many (or in this case one) chart objects in a list.
+Here are my models (extracts of relevant info only):
+# models.py
+
+...
+
+class Slide(models.Model):
+    TYPE_MEDIA = 'media'
+    TYPE_CHART = 'chart'
+    TYPE_CHOICES = (
+        (TYPE_MEDIA, 'Media'),
+        (TYPE_CHART, 'Chart'),
+    )
+
+    title = models.CharField(max_length=255,)
+
+    type = models.CharField(choices=TYPE_CHOICES, max_length=5, default=TYPE_MEDIA)
+
+    media = models.FileField(
+        verbose_name='media',
+        upload_to='slides',
+        null=True,
+        blank=True,
+    )
+
+    internal_only = models.BooleanField(default=False)
+
+    creation_date = models.DateTimeField(auto_now_add=True)
+    modified_date = models.DateTimeField(auto_now=True)
+
+
+class Chart(models.Model):
+    slide = models.ForeignKey(Slide, related_name='chart')
+
+    csv = models.FileField(
+        verbose_name='csv',
+        upload_to='charts'
+    )
+
+    vertical_label = models.CharField(max_length=255,)
+    horizontal_label = models.CharField(max_length=255,)
+
+    creation_date = models.DateTimeField(auto_now_add=True)
+    modified_date = models.DateTimeField(auto_now=True)
+
+
+class ChartSeriesLabel(models.Model):
+    """Series label associated with a chart"""
+
+    chart = models.ForeignKey(Chart, related_name='serieslabels')
+
+    number = models.CharField(max_length=255,)
+    label = models.CharField(max_length=255,)
+
+    creation_date = models.DateTimeField(auto_now_add=True)
+    modified_date = models.DateTimeField(auto_now=True)
+
+
+class ChartDataLabel(models.Model):
+    """Data label associated with a chart"""
+
+    chart = models.ForeignKey(Chart, related_name='datalabels')
+
+    date = models.DateField()
+    label = models.CharField(max_length=255,)
+
+    creation_date = models.DateTimeField(auto_now_add=True)
+    modified_date = models.DateTimeField(auto_now=True)
+And my serializers:
+# serializers.py
+
+...
+
+class SeriesLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChartSeriesLabel
+        fields = ('number', 'label',)
+
+
+class DataLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChartDataLabel
+        fields = ('date', 'label',)
+
+
+class ChartSerializer(serializers.ModelSerializer):
+    serieslabels = SeriesLabelSerializer(many=True)
+    datalabels = DataLabelSerializer(many=True)
+
+    class Meta:
+        model = Chart
+        fields = ('csv', 'vertical_label', 'horizontal_label', 'serieslabels', 'datalabels')
+
+
+class SlideSerializer(serializers.ModelSerializer):
+    chart = ChartSerializer()
+
+    class Meta:
+        model = Slide
+        fields = ('title', 'type', 'media', 'chart')
+Output with chart = ChartSerializer(many=True) in SlideSerializer:
+...
+
+{
+    "title": "Slide 3",
+    "type": "chart",
+    "media": null,
+    "chart": [
+        {
+            "csv": "/media/commodities/Hall_of_Fame_Inductees.csv",
+            "vertical_label": "Vert",
+            "horizontal_label": "Horiz",
+            "serieslabels": [
+                {
+                    "number": "1",
+                    "label": "One"
+                },
+                {
+                    "number": "2",
+                    "label": "Two"
+                },
+                {
+                    "number": "3",
+                    "label": "Three"
+                }
+            ],
+            "datalabels": [
+                {
+                    "date": "2015-07-22",
+                    "label": "This"
+                },
+                {
+                    "date": "2015-07-23",
+                    "label": "That"
+                },
+                {
+                    "date": "2015-07-31",
+                    "label": "The other"
+                }
+            ]
+        }
+    ]
+},
+
+...
+Note that chart is a JSON list indicating that it could be many charts
+Expected output with chart = ChartSerializer() in SlideSerializer:
+...
+
+{
+    "title": "Slide 3",
+    "type": "chart",
+    "media": null,
+    "chart": {
+        "csv": "/media/commodities/Hall_of_Fame_Inductees.csv",
+        "vertical_label": "Vert",
+        "horizontal_label": "Horiz",
+        "serieslabels": [
+            {
+                "number": "1",
+                "label": "One"
+            },
+            {
+                "number": "2",
+                "label": "Two"
+            },
+            {
+                "number": "3",
+                "label": "Three"
+            }
+        ],
+        "datalabels": [
+            {
+                "date": "2015-07-22",
+                "label": "This"
+            },
+            {
+                "date": "2015-07-23",
+                "label": "That"
+            },
+            {
+                "date": "2015-07-31",
+                "label": "The other"
+            }
+        ]
+    }
+},
+
+...
+But instead it throws the error above.
+2

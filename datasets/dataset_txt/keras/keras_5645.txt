@@ -1,0 +1,42 @@
+LiuAndYang commented on 28 Mar 2016
+I need to merge two layers and get the abosulte difference of them, cancate it with some other features (element-wise product ) then sent them to a DNN. But the merge layer only support 'sum', 'ave'....., these are not i need, i tried to add a abs_diff(X) (refer to the kindly given answer) to merge layers. But get wrong result after two iteraions, the loss become nan, but if i change the abs_diff to a 'ave' Merge layer, It works well. Does the abs_diff(X) caused that, Or my network goes wrong? I can't figure it out. Thanks.
+def abs_diff(X):
+    s = X[0]
+    for i in range(1, len(X)):
+        s -= X[i]
+    s = K.abs(s)
+    return s
+
+print('Build model...')
+left = Sequential()
+left.add(Embedding(max_features,300, input_length=maxlen, mask_zero=True, weights=[embedding_weights]))
+left.add(LSTM(300, dropout_W=0.5, dropout_U=0.1, return_sequences=False))  # try using a GRU instead, for fun
+left.add(Dropout(0.2))
+left.add(Dense(100))
+
+right = Sequential()
+right.add(Embedding(max_features, 300, input_length=maxlen, mask_zero=True, weights=[embedding_weights]))
+right.add(LSTM(300, dropout_W=0.5, dropout_U=0.1, return_sequences=False))  # try using a GRU instead, for fun
+right.add(Dropout(0.2))
+right.add(Dense(100))
+modeld = Sequential()
+modeld.add(LambdaMerge([left, right], abs_diff))
+
+modelm = Sequential()
+modelm.add(Merge([left, right], mode='mul',concat_axis=1))
+
+modell = Sequential()
+modell.add(Merge([modeld, modelm], mode='concat',concat_axis=1))
+
+modelc = Sequential()
+modelc.add(Merge([left, right], mode='concat',concat_axis=1))
+
+model = Sequential()
+model.add(Merge([modell, modelc], mode='concat',concat_axis=1))
+model.add(Dense(400, activation = 'tanh'))
+model.add(Dense(300, activation = 'tanh'))
+model.add(Dense(200, activation = 'tanh'))
+model.add(Dense(30, activation = 'tanh'))
+model.add(Dense(nb_classes))
+model.add(Activation('softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')

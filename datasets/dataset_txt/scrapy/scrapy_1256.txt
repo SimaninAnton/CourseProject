@@ -1,0 +1,39 @@
+Contributor
+jdemaeyer commented on Apr 4, 2015
+I'm new, so here's a quick intro: Hi! I'm Jakob :) I came upon this while working on my GSoC proposal.
+During Julia's GSoC, settings priorities were introduced to allow updating settings from different places without paying attention to order. They work great for 'simple' (non-compound) settings, but there are two issues with the dictionary-like settings (e.g. DOWNLOADER_MIDDLEWARES or EXTENSIONS) mainly used to manage extensions:
+They are fiddly to update (and not overwrite) when honoring priorities and mutability (#1110)
+They only assign a single priority to the complete dictionary. As this contains no information on which keys exactly were changed with what priority, the dictionary priority is not very meaninful. It forbids updating a key still at default setting (lowest priority) with a medium priority as soon as any key has been updated with a higher priority.
+This should prove especially problematic for the proposed add-on structure (SEP-021, discussed in #591). To resolve this, every key could have its own priority associated with it. @curita suggested making the compound setting variables an instance of the Settings class (and no longer an instance of dict). This could further clean up the Settings API by deprecating the _BASE settings, as the 'real' settings dictionaries (without appendix) could be used for default settings without fearing that they get lost when reading from settings.py. I've gathered some thoughts on this in my proposal (rather long, sorry, tl;dr is that it should be possible in a fully transparent, as in "backwards-compatible with no changes to the API", fashion):
+As the Settings class already provides a __getitem__() method, this will introduce no API change to reading these settings.
+There are currently three places where the dict-like settings are written to:
+When defined in scrapy/settings/default_settings.py
+When reading from settings.py in the Settings.setmodule() method
+When combining the dictionaries with their _BASE in scrapy.utils.conf.build_component_list()
+Scrapy's code could be updated in the following fashion with full backwards compatibility, even for non-intended uses (such as users working directly on a _BASE dictionary):
+Complete Settings dictionary-like interface by implementing:
+__setitem__(self, k, v) method that will use some default priority (maybe 'project')
+__iter__(self) method which returns an iterator over Settings.attributes
+update(self, custom, priority = 'project') method that behaves like dict.update() while respecting mutability and priorities. If custom is a dict object, the given priority will be used for all keys. If it is a Settings object, the already existing per-key priority values will be used. The setdict() method should become a proxy to this (more general) method
+Deprecate _BASE dictionaries by replacing them with empty ones (for backwards-compatibility) and moving default settings into 'real' dictionary, i.e.
+SPIDER_MIDDLEWARES = {}
+SPIDER_MIDDLEWARES_BASE = {
+    'scrapy.contrib.spidermiddleware.httperror.HttpErrorMiddleware': 50,
+    # ...
+}
+becomes
+  SPIDER_MIDDLEWARES_BASE = {}
+  SPIDER_MIDDLEWARES = Settings( values = {
+      'scrapy.contrib.spidermiddleware.httperror.HttpErrorMiddleware': 50,
+      # ...
+      }, priority = 'default' )
+Configuration in settings.py should be no different for the user. The Settings.setmodule() method should therefore recognise which of its attributes are themselves Settings instances, and call their respective update() methods instead of replacing them. Alternatively, this check could be done in the SettingsAttribute.set() method.
+Introduce a small change to the build_component_list() helper function such that it works on Settings instances instead of on dict:
+def build_component_list(base, custom):
+    # ...
+    # OLD:  compdict = base.copy()
+    compdict = Settings(base, priority = 'default')
+    # As before:
+    compdict.update(custom)
+    # ...
+For the 1.0 release, the settings, middleware managers and build_component_list() helper function could be tidied up by removing support for the deprecated _BASE settings

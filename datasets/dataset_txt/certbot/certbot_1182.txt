@@ -1,0 +1,161 @@
+tomas-samot commented on 12 May 2017 •
+edited
+My operating system is (include version):
+Host: Ubuntu Server 16.04
+Docker container: php:7.0-apache Using Debian Jessie
+Certbot 0.10.2
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+sudo apt-get install python-certbot-apache -t jessie-backports
+I ran this command and it produced this output:
+Hostname of container is samot.ninja
+cert.sh
+#!/bin/bash
+DOMAIN="samot.ninja"
+
+if [ ! -f /firstcertgen ]; then
+  touch /firstcertgen
+  certbot --apache --break-my-certs --rsa-key-size 4096 --agree-tos --register-unsafely-without-email --redirect -d "${DOMAIN}"
+else
+  echo "File found! /firstcertgen"
+fi
+Bash History
+root@samot:~# /./cert.sh 
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Registering without email!
+Starting new HTTPS connection (1): acme-v01.api.letsencrypt.org
+Obtaining a new certificate
+Performing the following challenges:
+tls-sni-01 challenge for samot.ninja
+Enabled Apache socache_shmcb module
+Enabled Apache ssl module
+Waiting for verification...
+Cleaning up challenges
+Generating key (4096 bits): /etc/letsencrypt/keys/0000_key-certbot.pem
+Creating CSR: /etc/letsencrypt/csr/0000_csr-certbot.pem
+Created an SSL vhost at /etc/apache2/sites-available/000-default-le-ssl.conf
+Enabled Apache socache_shmcb module
+Enabled Apache ssl module
+Deploying Certificate to VirtualHost /etc/apache2/sites-available/000-default-le-ssl.conf
+Enabling available site: /etc/apache2/sites-available/000-default-le-ssl.conf
+Enabled Apache rewrite module
+Redirecting vhost in /etc/apache2/sites-available/000-default.conf to ssl vhost in /etc/apache2/sites-available/000-default-le-ssl.conf
+
+-------------------------------------------------------------------------------
+Congratulations! You have successfully enabled https://samot.ninja
+
+You should test your configuration at:
+https://www.ssllabs.com/ssltest/analyze.html?d=samot.ninja
+-------------------------------------------------------------------------------
+
+IMPORTANT NOTES:
+ - Congratulations! Your certificate and chain have been saved at
+   /etc/letsencrypt/live/samot.ninja/fullchain.pem. Your cert will
+   expire on 2017-08-09. To obtain a new or tweaked version of this
+   certificate in the future, simply run certbot again with the
+   "certonly" option. To non-interactively renew *all* of your
+   certificates, run "certbot renew"
+ - Your account credentials have been saved in your Certbot
+   configuration directory at /etc/letsencrypt. You should make a
+   secure backup of this folder now. This configuration directory will
+   also contain certificates and private keys obtained by Certbot so
+   making regular backups of this folder is ideal.
+ - If you like Certbot, please consider supporting our work by:
+
+   Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+   Donating to EFF:                    https://eff.org/donate-le
+
+root@samot:~# cat /etc/apache2/sites-available/000-default.conf
+<VirtualHost *:80>
+ # The ServerName directive sets the request scheme, hostname and port that
+ # the server uses to identify itself. This is used when creating
+ # redirection URLs. In the context of virtual hosts, the ServerName
+ # specifies what hostname must appear in the request's Host: header to
+ # match this virtual host. For the default virtual host (this file) this
+ # value is not decisive as it is used as a last resort host regardless.
+ # However, you must set it for any further virtual host explicitly.
+ #ServerName www.example.com
+
+ ServerAdmin webmaster@localhost
+ DocumentRoot /var/www/html
+
+ # Available loglevels: trace8, ..., trace1, debug, info, notice, warn,
+ # error, crit, alert, emerg.
+ # It is also possible to configure the loglevel for particular
+ # modules, e.g.
+ #LogLevel info ssl:warn
+
+ ErrorLog ${APACHE_LOG_DIR}/error.log
+ CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+ # For most configuration files from conf-available/, which are
+ # enabled or disabled at a global level, it is possible to
+ # include a line for only one particular virtual host. For example the
+ # following line enables the CGI configuration for this host only
+ # after it has been globally disabled with "a2disconf".
+ #Include conf-available/serve-cgi-bin.conf
+RewriteEngine on
+RewriteCond %{SERVER_NAME} =s
+RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,QSA,R=permanent]
+</VirtualHost>
+
+# vim: syntax=apache ts=4 sw=4 sts=4 sr noet
+Certbot's behavior differed from what I expected because:
+RewriteCond %{SERVER_NAME} =s This line in the apache config is missing samot.ninja. With the config like this it does not force a redirect to https.
+When I change it to this:
+RewriteCond %{SERVER_NAME} =samot.ninja
+The forced redirect works.
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+cat /var/log/letsencrypt/letsencrypt.log | grep 'samot'
+2017-05-11 18:18:48,271:DEBUG:certbot.main:Arguments: ['--apache', '--break-my-certs', '--rsa-key-size', '4096', '--agree-tos', '--register-unsafely-without-email', '--redirect', '-d', 'samot.ninja']
+    "value": "samot.ninja"
+    "value": "samot.ninja"
+2017-05-11 18:18:50,202:INFO:certbot.auth_handler:tls-sni-01 challenge for samot.ninja
+    "value": "samot.ninja"
+          "hostname": "samot.ninja",
+2017-05-11 18:18:58,331:DEBUG:certbot.client:CSR: CSR(file='/etc/letsencrypt/csr/0000_csr-certbot.pem', data='0\x82\x04\x840\x82\x02l\x02\x01\x020\x161\x140\x12\x06\x03U\x04\x03\x0c\x0bsamot.ninja0\x82\x02"0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x01\x05\x00\x03\x82\x02\x0f\x000\x82\x02\n\x02\x82\x02\x01\x00\xd0\x87E\xafe\xd0\xd9\xc0\xf3\xb8\xce \xff\xfc\xe9R\x03Z\xfey\x10\xf0\x81E\x9d\x10d[Wf\x07\xf2](\x84*\xdf)AoqA\xc0\x8d<\xb1\xb0\x89\x1b\x9b1\xb5c\xa7uA\x97\xd1e\x9c\xc58\xcb\x85\x03u\xf7\x7fh{\x02\xadMl\xa4\xf34 -=\xe9\xb5Bo\xbb?]\xb7M\x15\n|y\xbbN2\xed\x91\x89\x829k\x82\x95s\xf8N%\xf6\xd4\xe3\xc8\x10\xf6\xa2\xf9\xdc\x04\xe7`\xdb"\xc1\x99\xa0\xb3y\x9c;\xa7_\xf2\xcd\x15\xc1N\xbd\x0b\x984\x91Mw\xf0\x80\xebW\xf1\xfd\xdd\xc2\xa5G\x161\xcd\x80\'\x89\xac\xa3\xd1\xacqt\x9dz\xcb\xf5D\x80{\xcf\xcd\x18Kt#\x96i\xbb\x15n\xe9G\xe9t\xf9;D\xe9\x87\xdd\r\xccC\xd0U\xc6\xad\xd2\xb5=\x13\x9cF\x82\x17\xad\xc6\x12\xc2\xff\xb2l\x81\xe1<rbf-\x07\xad\x08\xc5\x8d~\xee\xf0\xab\xfb\x1b?\x07\xd1\xde\x86\xeeX\x80\xba<\xec\r\xf0\xfb\x05\xa6W\x93\xf4#\xb3\x9b@tH*ak\x94\x8a\xd2-\xb1\xccA\xef\\\xfa\xa4\x97i\xe3\xb3/\xed\x8b\xf73\xde\xf4\xc8\x1b\t\r\xfeT\x91\xf4\xb5v.U\xbdrE\xcf\x87;\xf4\xc4\xbf\xe1\xea\xff\x1b\xd7\x98^\x812\xa3\x9e\x12\xd5\\\xf5\xa1&\x1d\x8b.\xff\x95\x12\xba\x9fn\xf1\x1b\x80c\x17<9\xe9_\xa0u\x1a\x9f\x10\xa4\xd5\xa6\xd0u\xd7\x82\x1b\xdc\xda*\xcaY\'\xf4\xbc\xa0\xb33\xb2\xc8fJ\xce\'\xbbuU\xc6\x84\xcb\xb9+xO\x9f;\x0c\x98\xc0\xffFu>\x13*\x18*\xb3\xb7}/\x9b\x1f\xbf\xfd\xab\rWc\xa4\xd5\xf2\x96\xaf\xbc\xca\x8a\xe5\xca\x06\xe0%I>\xaf\x05\x05h\xc8d\xf6\xceL\xa0U\xf1r\xf0\xad\x8a\x96\xe0\xa2\xe7\x07S\xde-\x8biY5Ya]\xff\xdd\xf0\xa97\xce\xed^(\xa0\xc3k\x86\x94\xde\xff\xc4"*\xa8I\xd4Y\x99\x82\xb7\x89\xb6\x03\xbf\xa6\xe3[\xd3x\xb7\xda\x86\x07\x98|\xaf\x05?$\x1f\xb7&\xc1 \x97\xd7\xdf(\xcb\xc7p\x14\xde\xf0U\xe9\x02\x03\x01\x00\x01\xa0)0\'\x06\t*\x86H\x86\xf7\r\x01\t\x0e1\x1a0\x180\x16\x06\x03U\x1d\x11\x04\x0f0\r\x82\x0bsamot.ninja0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x0b\x05\x00\x03\x82\x02\x01\x00\xcf\xfd\xa9\xa4Z\x05\xe3\xda\xd1\x04zS\x08\xc3\xd1\xfb\xdc`\xd2X\xe2{j\xdf\xeap0\xb56\x1f\xa1r\xfe \xef\xf0Yp\xf9O\xd9\xf6\xa9\xbb\r%.\xc5\xc6\xe49\xa7\x91\xca\x1e\x15o\xf2\xc91jpA\x82\x06\xf6\x89\xba\xca1\xc8\xab\thv\xb8\xbc,\xb2\x9e\xd4A\x7fD\xd9\xa4*\x9e.y\xee\xd1\xe4\xe0I\xd7\xf2\x9f\x88\xd4J\xef\xa0\xc0\x9b\x8a\xd7\x964\xd2\x93\xe7\xd5\t ?\x1c\x81d\xd6LI\xc1z\xea\x9c\x19\x17Iu\x02B\r\x92agv\xc5`2|[\x84\xa00\x9eGs.\xfb\xd5|\xa2\xb3X\xec\xcbj\xe5\xf4\x99\xdf\xb0\xad\xe0\x00\x04\xf0\x9c\xb7%\x0c\xc8o@1\xb9\xa0\x8f\x08)\xeb\xac\x83r3\x1d4d\x92S~7D?4{!\xa2\xc9\x84U\'\xbd\xa8\x86E\xcd1\xb0>\xd3\t\x80<\xe6\xcci4\x95\xdb41#\xcc]9\x19\xf0+5pIV\xb4\x0c\xd2\xc6\xa1\x95\xde\xf2\xbe\x1a\xdc\x86\x1b\xe6f\xe1\xc4B\xc5\xa71p0#\n\xe9\x9e]\x1b9s\x9f[L\x17Kh\xd3\xae`\xa0f\xa5\x7f\x00\xb0g}\x03df2\xaf\xa8\x19df(\xe4\xa0(D\xc3m\x11\x99N\xb0ci\x19-\x1a\x13\x14\xceL\x92\xb4\x9bv\xfa\xf4\x92\xe4c\xf4\xd7c/\x01\xfe\xd3\xdf\xcb\xe0?\x94\x0f\x82\xd5\x065\xdd\xd4y\xeaP\xed>\xa3.\xb5Q\x97\xe0\xa1\xcb\x13\x8f\\\xd1\xbaW1\x1a%\xb4t\x9f\xfa\xfbC\x84\xc47\xa2\xfd#1\xe5l\xa6\xd6\xe8\x8e\xbe\x82\x8a\x11\xda\x0br\xe9 \xd5\xb4\xda,\x96\xfc\x85\xbf\x86\xfbr\xc4\xcc\xc7\xa8\x7f\xbe\xa8/"\xe5\x9d\x98cE6\xb2\xcdu-c[\xce\x87*\xf1v\x0e\xc8\xcd)\x9a\x01N&/\xa6\tA\x8f\xd2U\xabL\xf3\xad\x13\xb9\xed\xafU+\xeb\x13\x92^JE\x91I?\xe6\x85:jek\xde\xb7\xc9E\xfa\xfbw\xb7\x17`f<\x96(s\xf6B\x95\xe4\x88X3\x1b\xc7\xc0\x01\x1dY=\xbb\xcbW\x046\x95(+\xb0/\xff\xcb\xe9\xca\xac\xe9\xa4', form='der'), domains: [u'samot.ninja']
+2017-05-11 18:18:58,895:DEBUG:certbot.storage:Archive directory /etc/letsencrypt/archive/samot.ninja and live directory /etc/letsencrypt/live/samot.ninja created.
+2017-05-11 18:18:58,895:DEBUG:certbot.storage:Writing certificate to /etc/letsencrypt/live/samot.ninja/cert.pem.
+2017-05-11 18:18:58,896:DEBUG:certbot.storage:Writing private key to /etc/letsencrypt/live/samot.ninja/privkey.pem.
+2017-05-11 18:18:58,896:DEBUG:certbot.storage:Writing chain to /etc/letsencrypt/live/samot.ninja/chain.pem.
+2017-05-11 18:18:58,896:DEBUG:certbot.storage:Writing full chain to /etc/letsencrypt/live/samot.ninja/fullchain.pem.
+2017-05-11 18:18:58,896:DEBUG:certbot.storage:Writing README to /etc/letsencrypt/live/samot.ninja/README.
+2017-05-11 18:19:00,068:DEBUG:certbot.storage:Writing new config /etc/letsencrypt/renewal/samot.ninja.conf.
+2017-05-11 18:19:00,069:DEBUG:certbot.reporter:Reporting to user: Congratulations! Your certificate and chain have been saved at /etc/letsencrypt/live/samot.ninja/fullchain.pem. Your cert will expire on 2017-08-09. To obtain a new or tweaked version of this certificate in the future, simply run certbot again with the "certonly" option. To non-interactively renew *all* of your certificates, run "certbot renew"
+Dockerfile for building the image:
+# sudo docker run -p 80:80 -p 443:443 -d -t --name PrivateBin -h samot.ninja -i privatebin
+# Build with:
+# docker build PrivateBin -t privatebin
+FROM php:7.0-apache
+EXPOSE 80
+EXPOSE 443
+
+ENV PRIVATEBIN_URL https://github.com/PrivateBin/PrivateBin/archive/master.zip
+
+ADD cert.sh /cert.sh
+RUN chmod a+x /cert.sh
+
+RUN apt-get update
+RUN apt-get install -y wget
+RUN apt-get install -y unzip
+RUN apt-get install -y cron
+
+RUN set -x \
+  && cd /var/www/html \
+  && rm -rf *
+
+RUN cd /tmp \
+    && wget $PRIVATEBIN_URL \
+    && unzip master.zip \
+    && cd PrivateBin-master \
+    && mv * /var/www/html \
+    && cd /var/www/html
+
+RUN echo 'deb http://ftp.debian.org/debian jessie-backports main' >> /etc/apt/sources.list
+RUN apt-get update
+RUN apt-get install -y python-certbot-apache -t jessie-backports
+
+RUN rm -rf /var/lib/apt/lists/*
+
+RUN echo "************************************************************************************************"
+RUN echo "Don't forget to edit & run /cert.sh"

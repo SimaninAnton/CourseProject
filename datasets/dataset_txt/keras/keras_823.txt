@@ -1,0 +1,18 @@
+Contributor
+joelthchao commented on 12 Aug 2018
+In GRUCell and LSTMCell, we speedup GRU and LSTM by combining multiple recurrent weights to a big one (#2523, #2633). However, it introduces problem when we want to initalize RNN recurrent weight with Identity initializer, since shape of the combined weight is not square.
+To reproduce this bug:
+from keras.layers import Input, LSTM
+x = Input(shape=(16, 4))
+out = LSTM(4, recurrent_initializer='identity')(x)
+We may fix it by adding weight individually:
+_recurrent_kernels = [
+    self.add_weight(
+        shape=(self.units, self.units),
+        name='recurrent_kernel_{}'.format(t),
+        initializer=self.recurrent_initializer,
+        regularizer=self.recurrent_regularizer,
+        constraint=self.recurrent_constraint)
+    for t in ('i', 'f', 'c', 'p')
+ ]
+self.recurrent_kernel = K.concatenate(_recurrent_kernels)

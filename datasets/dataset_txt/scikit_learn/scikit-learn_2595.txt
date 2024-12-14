@@ -1,0 +1,60 @@
+zacwellmer commented on Nov 12, 2016 •
+edited
+In the Scorer.py file it is mentioned in the header that:
+y is the
+ground truth labeling (or None in the case of unsupervised models)
+However the _PredictScorer function will crash if you try running this with an evaluation metric like silhouette_score.
+Example:
+from sklearn.metrics import make_scorer, silhouette_score
+from sklearn.cluster import AgglomerativeClustering
+from sklearn import datasets
+
+
+class Model():
+    def __init__(self):
+        self.model = AgglomerativeClustering(n_clusters=10)
+    def predict(self, inputs):
+        self.model.fit(inputs)
+        return self.model.labels_
+
+digits = datasets.load_digits(n_class=10)
+X = digits.data
+
+scoring = make_scorer(silhouette_score)
+
+model = Model()
+
+print scoring(model, X, y_true=None)
+Expected Results
+the silhouette_score should be printed. In our case it should look something like this.
+0.178496599406
+Actual Results
+Traceback (most recent call last):
+  File "test_file.py", line 20, in <module>
+    print scoring(model, X, y_true=None)
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/metrics/scorer.py", line 98, in __call__
+    **self._kwargs)
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/metrics/cluster/unsupervised.py", line 100, in silhouette_score
+    return np.mean(silhouette_samples(X, labels, metric=metric, **kwds))
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/metrics/cluster/unsupervised.py", line 163, in silhouette_samples
+    X, labels = check_X_y(X, labels, accept_sparse=['csc', 'csr'])
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/utils/validation.py", line 521, in check_X_y
+    ensure_min_features, warn_on_dtype, estimator)
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/utils/validation.py", line 407, in check_array
+    _assert_all_finite(array)
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/utils/validation.py", line 58, in _assert_all_finite
+    " or a value too large for %r." % X.dtype)
+ValueError: Input contains NaN, infinity or a value too large for dtype('float64').
+A dirty fix to this is to just plug your input values(X in our example case) in as y_true. However, it seems that an actual fix to this would be as simple as changing the _PredictScorer if chain from:
+if sample_weight is not None:
+    return self._sign * self._score_func(y_true, y_pred, sample_weight=sample_weight, **self._kwargs)
+else:
+    return self._sign * self._score_func(y_true, y_pred, **self._kwargs)
+to:
+if sample_weight is not None:
+    return self._sign * self._score_func(y_true, y_pred, sample_weight=sample_weight, **self._kwargs)
+elif y_true == None:
+    return self._sign * self._score_func(X, y_pred, **self._kwargs)
+else:
+    return self._sign * self._score_func(y_true, y_pred, **self._kwargs)
+I'm not sure if this will cause errors somewhere else in the project though. If it turns out the change is this simple I'm more then willing to submit a pull request.

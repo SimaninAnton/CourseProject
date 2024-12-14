@@ -1,0 +1,39 @@
+joewreschnig commented on Jul 24, 2015
+When a 1D array is passed to Pipeline's inverse_transform method it wraps it in another array before processing it (pipeline.py, line 306). This means, e.g., an inverse_transform on a pipeline containing just one element can produce a different result than an inverse_transform on only that element, which confused me greatly when replacing an explicit set of transform calls with a Pipeline.
+The following script shows the problem, using a trivial transformer.
+import numpy as np
+
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
+
+
+class Add1Transform(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        return X + 1
+
+    def inverse_transform(self, X):
+        return X - 1
+
+
+def test_pipeline_transform_1d():
+    X = np.array(range(10))
+    xfrm = Add1Transform()
+    pipeline = Pipeline([('xfrm', xfrm)])
+
+    X_back1 = xfrm.inverse_transform(xfrm.transform(X))
+    X_back2 = pipeline.inverse_transform(pipeline.transform(X))
+    print "Transform:", X_back1
+    print "Pipelined:", X_back2
+    if not np.array_equal(X_back1, X_back2):
+        raise SystemExit("Results do not match.")
+
+if __name__ == "__main__":
+    test_pipeline_transform_1d()
+When I run it, it says:
+Transform: [0 1 2 3 4 5 6 7 8 9]
+Pipelined: [[0 1 2 3 4 5 6 7 8 9]]
+Results do not match.
+I am not well-versed in numpy/sklearn, so maybe there is a reason for this wrapping. But I suspect it's a bug, and even if it's not I think it should be documented more loudly.

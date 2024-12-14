@@ -1,0 +1,72 @@
+DizietAsahi commented on Dec 19, 2019 •
+edited
+Description
+As explained by user august on StackOverflow, calling plot_confusion_matrix can result in a plot in which some labels are invisible because they are the same color as the background.
+I think I tracked to problem to an error in the calculation for the thresh value in ConfusionMatrixDisplay.plot() [Line 96]
+Instead of
+thresh = (cm.max() - cm.min()) / 2.
+I believe the line should read
+thresh = cm.min()+(cm.max() - cm.min()) / 2.
+this seems too small of a change to do a full PR, but I can do it if needed
+Steps/Code to Reproduce
+Example (from the StackOverflow question):
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn import datasets, svm
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import plot_confusion_matrix
+
+np.random.seed(3851)
+
+# import some data to play with
+bc = datasets.load_breast_cancer()
+X = bc.data
+y = bc.target
+class_names = bc.target_names
+
+# Split the data into a training set and a test set
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+np.random.shuffle(y_test)
+
+# Run classifier, using a model that is too regularized (C too low) to see
+# the impact on the results
+classifier = svm.SVC(kernel='linear', C=0.0001).fit(X_train, y_train)
+
+np.set_printoptions(precision=2)
+
+# Plot non-normalized confusion matrix
+titles_options = [("Confusion matrix, without normalization", None),
+                  ("Normalized confusion matrix", 'true')]
+for title, normalize in titles_options:
+    disp = plot_confusion_matrix(classifier, X_test, y_test,
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+
+    print(title)
+    print(disp.confusion_matrix)
+
+plt.show()
+Expected Results
+The expected results are two plots, with clearly visible labels. Fixing line 96 as suggested above produces the following plots:
+
+Actual Results
+With the original thresh calculations, the output is:
+
+Versions
+System:
+python: 3.8.0 | packaged by conda-forge | (default, Nov 22 2019, 19:11:19) [Clang 9.0.0 (tags/RELEASE_900/final)]
+executable: /Users/_/opt/anaconda3/envs/test/bin/python
+machine: macOS-10.14.6-x86_64-i386-64bit
+Python dependencies:
+pip: 19.3.1
+setuptools: 42.0.2.post20191201
+sklearn: 0.22
+numpy: 1.17.3
+scipy: 1.3.3
+Cython: None
+pandas: 0.25.3
+matplotlib: 3.1.2
+joblib: 0.14.1
+Built with OpenMP: True

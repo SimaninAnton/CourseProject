@@ -1,0 +1,662 @@
+jeff1evesque commented on 6 Oct 2016 •
+edited
+My application has automatic pytest on the travis ci, which implements live_server, so the app context only lives for the duration of the unit tests. This contraption was devised using a series of docker containers. Long story short, I didn't have time to replicate this automated process for my vagrant development environment. So, I created some unit tests, which predicates on the following assumptions:
+create self contain vagrant vm with my application
+download virtualbox with virtualbox guest
+download vagrant
+clone repository
+finally run cd /path/to/clone/repository && vagrant up
+app context needs to be created by manually running (cd /vagrant && python app.py &)
+Then, the problems begin happening when I run a series of requests.post against the flask app. I run such processes by triggering my manual pytests, which does a combination of assert against multiple requests.post. So, in the same vagrant vm, I would run (cd /vagrant/test && pytest manual). This would run any python scripts prefixed with pytest_*.py, or configure_.*.py, in the manual/ directory.
+When I run my manual unit tests one pass through, the tests succeed, and as intended:
+vagrant@vagrant-ubuntu-trusty-64:/vagrant/test$ pytest manual
+========================================= test session starts ==========================================
+platform linux2 -- Python 2.7.6, pytest-3.0.3, py-1.4.31, pluggy-0.4.0
+rootdir: /vagrant/test/manual, inifile: pytest.ini
+plugins: flask-0.10.0
+collected 20 items
+
+manual/configure_database.py .
+manual/configure_redis.py .
+manual/authentication/pytest_crypto.py .
+manual/authentication/pytest_validate_password.py .
+manual/programmatic_interface/dataset_url/pytest_svm_dataset_url.py ....
+manual/programmatic_interface/dataset_url/pytest_svr_dataset_url.py ....
+manual/programmatic_interface/file_upload/pytest_svm_file_upload.py ....
+manual/programmatic_interface/file_upload/pytest_svr_file_upload.py ....
+
+====================================== 20 passed in 51.27 seconds ======================================
+However, if I run the same tests again, without restarting flask, it breaks:
+vagrant@vagrant-ubuntu-trusty-64:/vagrant/test$ pytest manual
+========================================= test session starts ==========================================
+platform linux2 -- Python 2.7.6, pytest-3.0.3, py-1.4.31, pluggy-0.4.0
+rootdir: /vagrant/test/manual, inifile: pytest.ini
+plugins: flask-0.10.0
+collected 20 items
+
+manual/configure_database.py .
+manual/configure_redis.py .
+manual/authentication/pytest_crypto.py .
+manual/authentication/pytest_validate_password.py .
+manual/programmatic_interface/dataset_url/pytest_svm_dataset_url.py ....
+manual/programmatic_interface/dataset_url/pytest_svr_dataset_url.py ....
+manual/programmatic_interface/file_upload/pytest_svm_file_upload.py ....
+manual/programmatic_interface/file_upload/pytest_svr_file_upload.py [2016-10-05 01:11:23,116] ERROR in app: Exception on /load-data/ [POST]
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1988, in wsgi_app
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1641, in full_dispatch_request
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1544, in handle_user_exception
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1639, in full_dispatch_request
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1625, in dispatch_request
+  File "/vagrant/interface/views.py", line 85, in load_data
+  File "/vagrant/brain/load_data.py", line 78, in load_data_new
+  File "/vagrant/brain/session/base_data.py", line 129, in save_premodel_dataset
+  File "/vagrant/brain/session/data/save_dataset.py", line 34, in dataset
+  File "/vagrant/brain/database/save_feature.py", line 86, in save_feature
+  File "/vagrant/brain/database/db_query.py", line 98, in sql_connect
+AttributeError: 'SQL' object has no attribute 'cursor'
+Traceback (most recent call last):
+  File "app.py", line 32, in <module>
+    app.run(host='0.0.0.0')
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 843, in run
+    run_simple(host, port, self, **options)
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 694, in run_simple
+    inner()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 659, in inner
+    srv.serve_forever()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 499, in serve_forever
+    HTTPServer.serve_forever(self)
+  File "/usr/lib/python2.7/SocketServer.py", line 238, in serve_forever
+    self._handle_request_noblock()
+  File "/usr/lib/python2.7/SocketServer.py", line 297, in _handle_request_noblock
+    self.handle_error(request, client_address)
+  File "/usr/lib/python2.7/SocketServer.py", line 295, in _handle_request_noblock
+    self.process_request(request, client_address)
+  File "/usr/lib/python2.7/SocketServer.py", line 321, in process_request
+    self.finish_request(request, client_address)
+  File "/usr/lib/python2.7/SocketServer.py", line 334, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python2.7/SocketServer.py", line 649, in __init__
+    self.handle()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 216, in handle
+    rv = BaseHTTPRequestHandler.handle(self)
+  File "/usr/lib/python2.7/BaseHTTPServer.py", line 340, in handle
+    self.handle_one_request()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 251, in handle_one_request
+    return self.run_wsgi()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 193, in run_wsgi
+    execute(self.server.app)
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 181, in execute
+    application_iter = app(environ, start_response)
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 2000, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1991, in wsgi_app
+    response = self.make_response(self.handle_exception(e))
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1746, in make_response
+    rv = self.response_class.force_type(rv, request.environ)
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/wrappers.py", line 847, in force_type
+    response = BaseResponse(*_run_wsgi_app(response, environ))
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/wrappers.py", line 56, in _run_wsgi_app
+    from werkzeug.test import run_wsgi_app as _run_wsgi_app
+ImportError: No module named test
+Error in sys.excepthook:
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/dist-packages/apport_python_hook.py", line 63, in apport_excepthook
+    from apport.fileutils import likely_packaged, get_recent_crashes
+  File "/usr/lib/python2.7/dist-packages/apport/__init__.py", line 5, in <module>
+    from apport.report import Report
+ImportError: No module named report
+
+Original exception was:
+Traceback (most recent call last):
+  File "app.py", line 32, in <module>
+    app.run(host='0.0.0.0')
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 843, in run
+    run_simple(host, port, self, **options)
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 694, in run_simple
+    inner()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 659, in inner
+    srv.serve_forever()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 499, in serve_forever
+    HTTPServer.serve_forever(self)
+  File "/usr/lib/python2.7/SocketServer.py", line 238, in serve_forever
+    self._handle_request_noblock()
+  File "/usr/lib/python2.7/SocketServer.py", line 297, in _handle_request_noblock
+    self.handle_error(request, client_address)
+  File "/usr/lib/python2.7/SocketServer.py", line 295, in _handle_request_noblock
+    self.process_request(request, client_address)
+  File "/usr/lib/python2.7/SocketServer.py", line 321, in process_request
+    self.finish_request(request, client_address)
+  File "/usr/lib/python2.7/SocketServer.py", line 334, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python2.7/SocketServer.py", line 649, in __init__
+    self.handle()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 216, in handle
+    rv = BaseHTTPRequestHandler.handle(self)
+  File "/usr/lib/python2.7/BaseHTTPServer.py", line 340, in handle
+    self.handle_one_request()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 251, in handle_one_request
+    return self.run_wsgi()
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 193, in run_wsgi
+    execute(self.server.app)
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/serving.py", line 181, in execute
+    application_iter = app(environ, start_response)
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 2000, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1991, in wsgi_app
+    response = self.make_response(self.handle_exception(e))
+  File "/usr/local/lib/python2.7/dist-packages/flask/app.py", line 1746, in make_response
+    rv = self.response_class.force_type(rv, request.environ)
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/wrappers.py", line 847, in force_type
+    response = BaseResponse(*_run_wsgi_app(response, environ))
+  File "/usr/local/lib/python2.7/dist-packages/werkzeug/wrappers.py", line 56, in _run_wsgi_app
+    from werkzeug.test import run_wsgi_app as _run_wsgi_app
+ImportError: No module named test
+FFFF
+
+=============================================== FAILURES ===============================================
+____________________________________________ test_data_new _____________________________________________
+
+    def test_data_new():
+        '''@test_data_new
+
+        This method tests the 'data_new' session.
+
+        '''
+
+>       assert requests.post(
+            endpoint_url,
+            headers=headers,
+            data=get_sample_json('svr-data-new.json', 'svr')
+        )
+
+manual/programmatic_interface/file_upload/pytest_svr_file_upload.py:71:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/usr/lib/python2.7/dist-packages/requests/api.py:88: in post
+    return request('post', url, data=data, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/api.py:44: in request
+    return session.request(method=method, url=url, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:455: in request
+    resp = self.send(prep, **send_kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:558: in send
+    r = adapter.send(request, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <requests.adapters.HTTPAdapter object at 0x7fe471358810>, request = <PreparedRequest [POST]>
+stream = False, timeout = <urllib3.util.Timeout object at 0x7fe4706dc0d0>, verify = True, cert = None
+proxies = OrderedDict()
+
+    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        """Sends PreparedRequest object. Returns Response object.
+
+            :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
+            :param stream: (optional) Whether to stream the request content.
+            :param timeout: (optional) The timeout on the request.
+            :param verify: (optional) Whether to verify SSL certificates.
+            :param cert: (optional) Any user-provided SSL certificate to be trusted.
+            :param proxies: (optional) The proxies dictionary to apply to the request.
+            """
+
+        conn = self.get_connection(request.url, proxies)
+
+        self.cert_verify(conn, request.url, verify, cert)
+        url = self.request_url(request, proxies)
+        self.add_headers(request)
+
+        chunked = not (request.body is None or 'Content-Length' in request.headers)
+
+        if stream:
+            timeout = TimeoutSauce(connect=timeout)
+        else:
+            timeout = TimeoutSauce(connect=timeout, read=timeout)
+
+        try:
+            if not chunked:
+                resp = conn.urlopen(
+                    method=request.method,
+                    url=url,
+                    body=request.body,
+                    headers=request.headers,
+                    redirect=False,
+                    assert_same_host=False,
+                    preload_content=False,
+                    decode_content=False,
+                    retries=self.max_retries,
+                    timeout=timeout
+                )
+
+            # Send the request.
+            else:
+                if hasattr(conn, 'proxy_pool'):
+                    conn = conn.proxy_pool
+
+                low_conn = conn._get_conn(timeout=timeout)
+
+                try:
+                    low_conn.putrequest(request.method,
+                                        url,
+                                        skip_accept_encoding=True)
+
+                    for header, value in request.headers.items():
+                        low_conn.putheader(header, value)
+
+                    low_conn.endheaders()
+
+                    for i in request.body:
+                        low_conn.send(hex(len(i))[2:].encode('utf-8'))
+                        low_conn.send(b'\r\n')
+                        low_conn.send(i)
+                        low_conn.send(b'\r\n')
+                    low_conn.send(b'0\r\n\r\n')
+
+                    r = low_conn.getresponse()
+                    resp = HTTPResponse.from_httplib(
+                        r,
+                        pool=conn,
+                        connection=low_conn,
+                        preload_content=False,
+                        decode_content=False
+                    )
+                except:
+                    # If we hit any problems here, clean up the connection.
+                    # Then, reraise so that we can handle the actual exception.
+                    low_conn.close()
+                    raise
+                else:
+                    # All is well, return the connection to the pool.
+                    conn._put_conn(low_conn)
+
+        except socket.error as sockerr:
+            raise ConnectionError(sockerr)
+
+        except MaxRetryError as e:
+>           raise ConnectionError(e)
+E           ConnectionError: HTTPConnectionPool(host='localhost', port=5000): Max retries exceeded with url: /load-data/ (Caused by <class 'httplib.BadStatusLine'>: '')
+
+/usr/lib/python2.7/dist-packages/requests/adapters.py:378: ConnectionError
+___________________________________________ test_data_append ___________________________________________
+
+    def test_data_append():
+        '''@test_data_append
+
+        This method tests the 'data_append' session.
+
+        '''
+
+>       assert requests.post(
+            endpoint_url,
+            headers=headers,
+            data=get_sample_json('svr-data-append.json', 'svr')
+        )
+
+manual/programmatic_interface/file_upload/pytest_svr_file_upload.py:85:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/usr/lib/python2.7/dist-packages/requests/api.py:88: in post
+    return request('post', url, data=data, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/api.py:44: in request
+    return session.request(method=method, url=url, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:455: in request
+    resp = self.send(prep, **send_kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:558: in send
+    r = adapter.send(request, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <requests.adapters.HTTPAdapter object at 0x7fe4706fa5d0>, request = <PreparedRequest [POST]>
+stream = False, timeout = <urllib3.util.Timeout object at 0x7fe4706fa8d0>, verify = True, cert = None
+proxies = OrderedDict()
+
+    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        """Sends PreparedRequest object. Returns Response object.
+
+            :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
+            :param stream: (optional) Whether to stream the request content.
+            :param timeout: (optional) The timeout on the request.
+            :param verify: (optional) Whether to verify SSL certificates.
+            :param cert: (optional) Any user-provided SSL certificate to be trusted.
+            :param proxies: (optional) The proxies dictionary to apply to the request.
+            """
+
+        conn = self.get_connection(request.url, proxies)
+
+        self.cert_verify(conn, request.url, verify, cert)
+        url = self.request_url(request, proxies)
+        self.add_headers(request)
+
+        chunked = not (request.body is None or 'Content-Length' in request.headers)
+
+        if stream:
+            timeout = TimeoutSauce(connect=timeout)
+        else:
+            timeout = TimeoutSauce(connect=timeout, read=timeout)
+
+        try:
+            if not chunked:
+                resp = conn.urlopen(
+                    method=request.method,
+                    url=url,
+                    body=request.body,
+                    headers=request.headers,
+                    redirect=False,
+                    assert_same_host=False,
+                    preload_content=False,
+                    decode_content=False,
+                    retries=self.max_retries,
+                    timeout=timeout
+                )
+
+            # Send the request.
+            else:
+                if hasattr(conn, 'proxy_pool'):
+                    conn = conn.proxy_pool
+
+                low_conn = conn._get_conn(timeout=timeout)
+
+                try:
+                    low_conn.putrequest(request.method,
+                                        url,
+                                        skip_accept_encoding=True)
+
+                    for header, value in request.headers.items():
+                        low_conn.putheader(header, value)
+
+                    low_conn.endheaders()
+
+                    for i in request.body:
+                        low_conn.send(hex(len(i))[2:].encode('utf-8'))
+                        low_conn.send(b'\r\n')
+                        low_conn.send(i)
+                        low_conn.send(b'\r\n')
+                    low_conn.send(b'0\r\n\r\n')
+
+                    r = low_conn.getresponse()
+                    resp = HTTPResponse.from_httplib(
+                        r,
+                        pool=conn,
+                        connection=low_conn,
+                        preload_content=False,
+                        decode_content=False
+                    )
+                except:
+                    # If we hit any problems here, clean up the connection.
+                    # Then, reraise so that we can handle the actual exception.
+                    low_conn.close()
+                    raise
+                else:
+                    # All is well, return the connection to the pool.
+                    conn._put_conn(low_conn)
+
+        except socket.error as sockerr:
+            raise ConnectionError(sockerr)
+
+        except MaxRetryError as e:
+>           raise ConnectionError(e)
+E           ConnectionError: HTTPConnectionPool(host='localhost', port=5000): Max retries exceeded with url: /load-data/ (Caused by <class 'socket.error'>: [Errno 111] Connection refused)
+
+/usr/lib/python2.7/dist-packages/requests/adapters.py:378: ConnectionError
+_________________________________________ test_model_generate __________________________________________
+
+    def test_model_generate():
+        '''@test_model_generate
+
+        This method tests the 'model_generate' session.
+
+        '''
+
+>       assert requests.post(
+            endpoint_url,
+            headers=headers,
+            data=get_sample_json('svr-model-generate.json', 'svr')
+        )
+
+manual/programmatic_interface/file_upload/pytest_svr_file_upload.py:99:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/usr/lib/python2.7/dist-packages/requests/api.py:88: in post
+    return request('post', url, data=data, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/api.py:44: in request
+    return session.request(method=method, url=url, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:455: in request
+    resp = self.send(prep, **send_kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:558: in send
+    r = adapter.send(request, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <requests.adapters.HTTPAdapter object at 0x7fe4706f1ed0>, request = <PreparedRequest [POST]>
+stream = False, timeout = <urllib3.util.Timeout object at 0x7fe4706939d0>, verify = True, cert = None
+proxies = OrderedDict()
+
+    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        """Sends PreparedRequest object. Returns Response object.
+
+            :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
+            :param stream: (optional) Whether to stream the request content.
+            :param timeout: (optional) The timeout on the request.
+            :param verify: (optional) Whether to verify SSL certificates.
+            :param cert: (optional) Any user-provided SSL certificate to be trusted.
+            :param proxies: (optional) The proxies dictionary to apply to the request.
+            """
+
+        conn = self.get_connection(request.url, proxies)
+
+        self.cert_verify(conn, request.url, verify, cert)
+        url = self.request_url(request, proxies)
+        self.add_headers(request)
+
+        chunked = not (request.body is None or 'Content-Length' in request.headers)
+
+        if stream:
+            timeout = TimeoutSauce(connect=timeout)
+        else:
+            timeout = TimeoutSauce(connect=timeout, read=timeout)
+
+        try:
+            if not chunked:
+                resp = conn.urlopen(
+                    method=request.method,
+                    url=url,
+                    body=request.body,
+                    headers=request.headers,
+                    redirect=False,
+                    assert_same_host=False,
+                    preload_content=False,
+                    decode_content=False,
+                    retries=self.max_retries,
+                    timeout=timeout
+                )
+
+            # Send the request.
+            else:
+                if hasattr(conn, 'proxy_pool'):
+                    conn = conn.proxy_pool
+
+                low_conn = conn._get_conn(timeout=timeout)
+
+                try:
+                    low_conn.putrequest(request.method,
+                                        url,
+                                        skip_accept_encoding=True)
+
+                    for header, value in request.headers.items():
+                        low_conn.putheader(header, value)
+
+                    low_conn.endheaders()
+
+                    for i in request.body:
+                        low_conn.send(hex(len(i))[2:].encode('utf-8'))
+                        low_conn.send(b'\r\n')
+                        low_conn.send(i)
+                        low_conn.send(b'\r\n')
+                    low_conn.send(b'0\r\n\r\n')
+
+                    r = low_conn.getresponse()
+                    resp = HTTPResponse.from_httplib(
+                        r,
+                        pool=conn,
+                        connection=low_conn,
+                        preload_content=False,
+                        decode_content=False
+                    )
+                except:
+                    # If we hit any problems here, clean up the connection.
+                    # Then, reraise so that we can handle the actual exception.
+                    low_conn.close()
+                    raise
+                else:
+                    # All is well, return the connection to the pool.
+                    conn._put_conn(low_conn)
+
+        except socket.error as sockerr:
+            raise ConnectionError(sockerr)
+
+        except MaxRetryError as e:
+>           raise ConnectionError(e)
+E           ConnectionError: HTTPConnectionPool(host='localhost', port=5000): Max retries exceeded with url: /load-data/ (Caused by <class 'socket.error'>: [Errno 111] Connection refused)
+
+/usr/lib/python2.7/dist-packages/requests/adapters.py:378: ConnectionError
+__________________________________________ test_model_predict __________________________________________
+
+    def test_model_predict():
+        '''@test_model_predict
+
+        This method tests the 'model_predict' session.
+
+        '''
+
+>       assert requests.post(
+            endpoint_url,
+            headers=headers,
+            data=get_sample_json('svr-model-predict.json', 'svr')
+        )
+
+manual/programmatic_interface/file_upload/pytest_svr_file_upload.py:113:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/usr/lib/python2.7/dist-packages/requests/api.py:88: in post
+    return request('post', url, data=data, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/api.py:44: in request
+    return session.request(method=method, url=url, **kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:455: in request
+    resp = self.send(prep, **send_kwargs)
+/usr/lib/python2.7/dist-packages/requests/sessions.py:558: in send
+    r = adapter.send(request, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <requests.adapters.HTTPAdapter object at 0x7fe4706f3850>, request = <PreparedRequest [POST]>
+stream = False, timeout = <urllib3.util.Timeout object at 0x7fe4706f3410>, verify = True, cert = None
+proxies = OrderedDict()
+
+    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        """Sends PreparedRequest object. Returns Response object.
+
+            :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
+            :param stream: (optional) Whether to stream the request content.
+            :param timeout: (optional) The timeout on the request.
+            :param verify: (optional) Whether to verify SSL certificates.
+            :param cert: (optional) Any user-provided SSL certificate to be trusted.
+            :param proxies: (optional) The proxies dictionary to apply to the request.
+            """
+
+        conn = self.get_connection(request.url, proxies)
+
+        self.cert_verify(conn, request.url, verify, cert)
+        url = self.request_url(request, proxies)
+        self.add_headers(request)
+
+        chunked = not (request.body is None or 'Content-Length' in request.headers)
+
+        if stream:
+            timeout = TimeoutSauce(connect=timeout)
+        else:
+            timeout = TimeoutSauce(connect=timeout, read=timeout)
+
+        try:
+            if not chunked:
+                resp = conn.urlopen(
+                    method=request.method,
+                    url=url,
+                    body=request.body,
+                    headers=request.headers,
+                    redirect=False,
+                    assert_same_host=False,
+                    preload_content=False,
+                    decode_content=False,
+                    retries=self.max_retries,
+                    timeout=timeout
+                )
+
+            # Send the request.
+            else:
+                if hasattr(conn, 'proxy_pool'):
+                    conn = conn.proxy_pool
+
+                low_conn = conn._get_conn(timeout=timeout)
+
+                try:
+                    low_conn.putrequest(request.method,
+                                        url,
+                                        skip_accept_encoding=True)
+
+                    for header, value in request.headers.items():
+                        low_conn.putheader(header, value)
+
+                    low_conn.endheaders()
+
+                    for i in request.body:
+                        low_conn.send(hex(len(i))[2:].encode('utf-8'))
+                        low_conn.send(b'\r\n')
+                        low_conn.send(i)
+                        low_conn.send(b'\r\n')
+                    low_conn.send(b'0\r\n\r\n')
+
+                    r = low_conn.getresponse()
+                    resp = HTTPResponse.from_httplib(
+                        r,
+                        pool=conn,
+                        connection=low_conn,
+                        preload_content=False,
+                        decode_content=False
+                    )
+                except:
+                    # If we hit any problems here, clean up the connection.
+                    # Then, reraise so that we can handle the actual exception.
+                    low_conn.close()
+                    raise
+                else:
+                    # All is well, return the connection to the pool.
+                    conn._put_conn(low_conn)
+
+        except socket.error as sockerr:
+            raise ConnectionError(sockerr)
+
+        except MaxRetryError as e:
+>           raise ConnectionError(e)
+E           ConnectionError: HTTPConnectionPool(host='localhost', port=5000): Max retries exceeded with url: /load-data/ (Caused by <class 'socket.error'>: [Errno 111] Connection refused)
+
+/usr/lib/python2.7/dist-packages/requests/adapters.py:378: ConnectionError
+================================ 4 failed, 16 passed in 119.02 seconds =================================
+When the flask errors, it also kills the app.py process, which I verified by running netstat -ntlup:
+vagrant@vagrant-ubuntu-trusty-64:/vagrant/test$ netstat -ntlup
+(No info could be read for "-p": geteuid()=1000 but you should be root.)
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+tcp        0      0 127.0.0.1:3306          0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:6379          0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:55019           0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:111             0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      -
+tcp6       0      0 :::111                  :::*                    LISTEN      -
+tcp6       0      0 :::22                   :::*                    LISTEN      -
+tcp6       0      0 :::56952                :::*                    LISTEN      -
+udp        0      0 0.0.0.0:111             0.0.0.0:*                           -
+udp        0      0 0.0.0.0:40866           0.0.0.0:*                           -
+udp        0      0 0.0.0.0:679             0.0.0.0:*                           -
+udp        0      0 0.0.0.0:52672           0.0.0.0:*                           -
+udp        0      0 127.0.0.1:739           0.0.0.0:*                           -
+udp        0      0 0.0.0.0:68              0.0.0.0:*                           -
+udp6       0      0 :::111                  :::*                                -
+udp6       0      0 :::42109                :::*                                -
+udp6       0      0 :::679                  :::*                                -
+udp6       0      0 :::34032                :::*                                -
+Notice: there is no process running on the default port 5000.
+So, I did some minor debugging, and found that my application never throttles 70.2% memory, of the 512MB virtualbox virtual machine. When the application finishes the series of requests.post, it returns to baseline measure:
+Note: top is always updating the processes in the terminal output, which is why I pasted two screenshots. Also, these screenshots are taken about 8 hours since I ran my last attempt of my manual unit tests, which killed app.py. So, app.py is not currently running.
+I haven't configured uwsgi, or gunicorn. I'm hoping if I configure gunicorn, it will create work processes, that can handle such requests.post against app.py more elegantly, to prevent app.py from exiting. But, I'm not sure if my problem is an internal flask bug, given my use case. Therefore, I'm not sure if gunicorn will solve my problem.
+The database user which runs the application, is allowed unlimited connections, and queries. So, I don't know why my application stops running on the second iteration of the manual pytest's. Additionally, when my manual unit tests run, I make sure I empty the database tables, which will be operated on. Since, configure_database.py is the first file alphabetically closest to the start of the alphabet, it runs first. So, the database is always refreshed on each iteration, and the database user that performs the TRUNCATE operation on each of the database tables, has adequate permission. I did have another idea, since I was getting errors related to database cursor. Specifically, I thought that maybe my application was heavy on the database operations. And, for the first time, I checked my database api db_query.py, and realized that after each database transaction, including during connection, and disconnection, I write to a log file. I think after running my manual unit tests, I checked in the corresponding text log file, and it was already 301MB. This is just from writing to the logs for running the manual unit tests twice. So, I commented out all instances of writing to a logfile, in db_query.py, the API for all of my database queries, and my errors still persists.

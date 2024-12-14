@@ -1,0 +1,69 @@
+cliffxuan commented on 15 Oct 2014
+I'm trying to run multiple processes and at the same time use the concurrent.futures.ProcessPoolExecutor to run CPU intensive jobs. The first few requests are happily served, but then a KeyError is raised from concurrent.futures.process, and the server hangs.
+Is this a bug in Tornado?
+This is the simplest form I stripped the code to.
+server:
+"""
+server runs 2 processes and does job on a ProcessPoolExecutor
+"""
+import tornado.web
+import tornado.ioloop
+import tornado.gen
+import tornado.options
+import tornado.httpserver
+
+from concurrent.futures import ProcessPoolExecutor
+
+
+class MainHandler(tornado.web.RequestHandler):
+
+    executor = ProcessPoolExecutor(1)
+
+    @tornado.gen.coroutine
+    def post(self):
+        num = int(self.request.body)
+        result = yield self.executor.submit(pow, num, 2)
+        self.finish(str(result))
+
+
+application = tornado.web.Application([
+    (r"/", MainHandler),
+])
+
+
+def main():
+    tornado.options.parse_command_line()
+    server = tornado.httpserver.HTTPServer(application)
+    server.bind(8888)
+    server.start(2)
+    tornado.ioloop.IOLoop.instance().start()
+
+
+if __name__ == '__main__':
+    main()
+client
+"""
+client
+"""
+from tornado.httpclient import AsyncHTTPClient
+from tornado.gen import coroutine
+from tornado.ioloop import IOLoop
+
+
+@coroutine
+def remote_compute(num):
+    rsp = yield AsyncHTTPClient().fetch(
+        'http://127.0.0.1:8888', method='POST', body=str(num))
+    print 'result:', rsp.body
+
+IOLoop.instance().run_sync(lambda: remote_compute(10))
+error traceback
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/usr/local/Cellar/python/2.7.7_2/Frameworks/Python.framework/Versions/2.7/lib/python2.7/threading.py", line 810, in __bootstrap_inner
+    self.run()
+  File "/usr/local/Cellar/python/2.7.7_2/Frameworks/Python.framework/Versions/2.7/lib/python2.7/threading.py", line 763, in run
+    self.__target(*self.__args, **self.__kwargs)
+  File "/Users/cliffxuan/.virtualenvs/executor/lib/python2.7/site-packages/concurrent/futures/process.py", line 216, in _queue_management_worker
+    work_item = pending_work_items[result_item.work_id]
+KeyError: 0

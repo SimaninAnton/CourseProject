@@ -1,0 +1,42 @@
+pilliq commented on 24 Jun 2017
+Running Flask with an SSL context that uses cert files which the process does not have permission to results in a silent fail on the server.
+Allowing the process to have access to the files fixes this problem.
+Server code used:
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route('/')
+def hello:
+    return 'hi'
+
+if __name__ == '__main__':
+    context = ('/path/to/cert.pem','/path/to/key.pem')
+    app.run(debug=True, ssl_context=context)
+Expected Behavior
+A stack saying the process cannot access the cert files. Ideally this trace would appear during startup before the first request is made.
+For example, when using pyopenssl with the same files, the following trace is thrown on startup:
+Traceback (most recent call last):
+  File "server.py", line 20, in <module>
+    context.use_privatekey_file('/path/to/private/key.pem')
+  File "/home/user/.virtualenvs/dev/local/lib/python2.7/site-packages/OpenSSL/SSL.py", line 798, in use_privatekey_file
+    self._raise_passphrase_exception()
+  File "/home/user/.virtualenvs/dev/local/lib/python2.7/site-packages/OpenSSL/SSL.py", line 777, in _raise_passphrase_exception
+    _raise_current_error()
+  File "/home/user/.virtualenvs/dev/local/lib/python2.7/site-packages/OpenSSL/_util.py", line 54, in exception_from_error_queue
+    raise exception_type(errors)
+OpenSSL.SSL.Error: [('system library', 'fopen', 'Permission denied'), ('BIO routines', 'FILE_CTRL', 'system lib'), ('SSL routines', 'SSL_CTX_use_PrivateKey_file', 'system lib')]
+Actual Behavior
+After a request, the server returns a 200 response and disconnects the socket:
+curl clients receive a 200 and then throw errno 35 (Unknown SSL protocol error in connection to [secure site]:443).
+nc clients return a 200 and immediately disconnect.
+Web browsers report the following error:
+What makes this problem worse is that Flask does not acknowledge that an attempted connection was made. Throughout all three of the above requests this is all that Flask printed in debug mode:
+ * Running on https://0.0.0.0:5000/ (Press CTRL+C to quit)
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger pin code: 000-000-000
+Environment
+Python version: 2.7.6
+Flask version: 0.12.2 (also tested on 0.10.1)
+Werkzeug version: 0.12.2 (also tested on 0.11.5)

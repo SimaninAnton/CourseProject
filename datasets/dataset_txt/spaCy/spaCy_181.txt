@@ -1,0 +1,54 @@
+Contributor
+prilopes commented on 5 Nov 2019
+How to reproduce the behaviour
+I'm trying to create a method to use on_match in DependencyMatcher. I've done this successfully for Matcher and follow much of the same logic.
+When I get the matches using something like this:
+matches = dep_matcher(doc)
+for match in matches:
+     print(match)
+If I understand correctly match is a tuple with match_id (the rule that was triggered) and a list of nodes that match my pattern.
+When defining an on_match method, I would expect matches[i] to return the same tuple, but that is not the case. Am I missing something??
+I created the following script to help illustrate the problem
+from spacy.matcher import DependencyMatcher
+from spacy import load
+
+
+def my_on_match(matcher, doc, i, matches):
+    print('inside my_on_match')
+    match = matches[i]
+    print(match)
+    print('================')
+
+
+nlp = load('en_core_web_sm')
+doc = nlp('The quick brown fox jumped over the lazy dog.')
+
+dep_matcher = DependencyMatcher(nlp.vocab)
+
+dep_pattern = [
+    {"SPEC": {"NODE_NAME": "jumped"}, "PATTERN": {"ORTH": "jumped"}},
+    {"SPEC": {"NODE_NAME": "fox", "NBOR_RELOP": ">", "NBOR_NAME": "jumped"}, "PATTERN": {"ORTH": "fox"}},
+    {"SPEC": {"NODE_NAME": "quick", "NBOR_RELOP": ".", "NBOR_NAME": "jumped"}, "PATTERN": {"ORTH": "fox"}},
+]
+
+dep_matcher.add('no_on_match', None, dep_pattern)
+dep_matcher.add('with_on_match', my_on_match, dep_pattern)
+
+matches = dep_matcher(doc)
+
+print('all matches')
+for match in matches:
+     print(match)
+Your Environment
+spaCy version: 2.1.8
+Platform: Linux-4.15.0-66-generic-x86_64-with-Ubuntu-18.04-bionic
+Python version: 3.6.7
+I might have found the problem
+I was reading the code for DependencyMatcher and found these lines on dependencymatcher.pyx (start at line 240 on master branch and line 237 for tag 2.1.8):
+    for i, (ent_id, nodes) in enumerate(matched_key_trees):
+                on_match = self._callbacks.get(ent_id)
+                if on_match is not None:
+                    on_match(self, doc, i, matches)
+So, if my line of thought is correct, on the last line of the excerpt (243 on master branch), should it be matched_key_trees instead of matches?
+I'd appreciate any light on this issue. :-)
+1

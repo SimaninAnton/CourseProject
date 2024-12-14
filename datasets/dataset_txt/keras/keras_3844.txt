@@ -1,0 +1,63 @@
+daniele-sartiano commented on 23 Nov 2016
+How can I use a Keras trained model with Tensorflow C++ API?
+I need to integrate the predict function in a C++ project.
+I already exported the model using the following code:
+`
+from keras import backend as K
+from tensorflow.contrib.session_bundle import exporter
+K.set_learning_phase(0)  # all new operations will be in test mode from now on
+
+# serialize the model and get its weights, for quick re-building    
+config = previous_model.get_config()
+weights = previous_model.get_weights()
+model = Sequential.from_config(config)
+model.set_weights(weights)
+
+export_path = 'export' # where to save the exported graph
+export_version = 1 # version number (integer)
+
+saver = tf.train.Saver(sharded=True)
+model_exporter = exporter.Exporter(saver)
+
+signature = exporter.classification_signature(input_tensor=model.input,
+                                              scores_tensor=model.output)
+
+with tf.Session() as sess:
+    init = tf.initialize_all_variables()
+    sess.run(init)
+    model_exporter.init(sess.graph.as_graph_def(),
+                        default_graph_signature=signature)
+    model_exporter.export(export_path, tf.constant(export_version), sess)
+`
+and the loading of the model via C++ API si done by the following code:
+`#include "tensorflow/core/public/session.h"
+#include "tensorflow/core/platform/env.h"
+using namespace tensorflow;
+int main(int argc, char* argv[]) {
+// Initialize a tensorflow session
+Session* session;
+Status status = NewSession(SessionOptions(), &session);
+if (!status.ok()) {
+std::cout << "session ko\n" << status.ToString() << "\n";
+return 1;
+} else {
+std::cout << "session ok\n" << status.ToString() << "\n";
+}
+GraphDef graph_def;
+status = ReadBinaryProto(Env::Default(), "export/00000001/export-00000-of-00001", &graph_def);
+if (!status.ok()) {
+std::cout << "readbinaryproto ko\n" << status.ToString() << "\n";
+return 1;
+} else {
+std::cout << "readbinaryproto ok\n" << status.ToString() << "\n";
+}
+// Add the graph to the session
+status = session->Create(graph_def);
+if (!status.ok()) {
+std::cout << "session->create ko\n" << status.ToString() << "\n";
+return 1;
+} else {
+std::cout << "session->create ok\n" << status.ToString() << "\n";
+}
+}`
+Now I would like to use the model for the prediction step, Is there a way to translate/convert the predicted_class method (Sequential model) with the C++ API of Tensorflow?

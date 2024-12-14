@@ -1,0 +1,46 @@
+socketpair commented on 6 Apr 2017 •
+edited
+Well,
+async def xxx():
+    ...
+
+@gen.coroutine
+def qwe():
+    yield xxx()
+
+async def asd():
+    await xxx()
+
+IOLoop.current().add_future(qwe, lambda fut: (fut.exception() or fut.result()))  # success
+IOLoop.current().add_future(asd, lambda fut: (fut.exception() or fut.result()))  # failed. (yes, asd is not a future)
+So what is the best way to run coroutine in background ? I wrote this:
+# See tornado.htt1connection.HTTP1ServerConnection.start_serving
+def run_background_task(coroutine):
+    @gen.coroutine
+    def wrapper():
+        raise gen.Return((yield coroutine))
+
+    future = wrapper()
+    IOLoop.current().add_future(future, lambda fut: (fut.exception() or fut.result()))
+    return future
+Example of usage:
+class MyModule:
+    def start(self):
+        self._cancelled = False
+        self._fut = run_background_task(self._endless())
+
+    async def _endless(self):
+        while not self._cancelled:
+            await gen.sleep(1)
+
+    async def stop(self):
+        self._cancelled = True
+        try:
+            await self._fut
+        except Exception:
+            pass
+
+module = MyModule()
+module.start()
+...
+await module.stop()

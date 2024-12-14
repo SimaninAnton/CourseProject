@@ -1,0 +1,49 @@
+nur-ag commented on 4 May 2017 •
+edited
+The following script reproduces the issue. ValueError: Missing layer: mix is thrown when
+you try to copy the model, even though it compiles and can be trained just fine. I have looked at keras/engine/topology.py, trying to hack up a quick fix but that didn't get me far. It looks like it assumes all inputs for a layer will have been created before it, but I couldn't sort the layers to manage the actual dependencies.
+Also, if there is a better alternative to frozen = Model.from_config(m.get_config()), then frozen.set_weights(m.get_weights()), I'd love to know—this is the way I am 'freezing' the state of a model while I go on training with it.
+import numpy as np
+from keras.models import Model
+from keras.layers import Input, Reshape, LSTM, Activation, add
+from keras.layers.convolutional import Conv2D, MaxPooling2D
+
+
+n = 256
+sequence_length = 10
+vector_length = 32
+
+
+# create a model with two inputs
+left = Input(name='left_in',  shape=(sequence_length, vector_length))
+right = Input(name='right_in', shape=(sequence_length, vector_length))
+
+# create a layer that we will use a few times
+encoder = LSTM(vector_length, name='encoder', activation='tanh', implementation=2, return_sequences=True)
+
+# apply the previous layer to one computation branch, mix with another
+left_enc = encoder(left)
+mix_enc = add([left_enc, right], name='mix')
+
+# apply the re-usable layer to the mix
+output = encoder(mix_enc)
+
+# the model compiles and looks fine
+m = Model(inputs=[left, right], outputs=output)
+print m.summary()
+
+m.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
+left = right = output = np.random.random((n, sequence_length, vector_length))
+
+# it can be fit...
+m.fit({'left_in': left, 'right_in': right}, output, epochs=2, batch_size=32, verbose=0)
+
+# but blows up if you try to copy it!
+m_copy = Model.from_config(m.get_config())
+EDIT: I don't think it matters in this case, but I'm using Theano.
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

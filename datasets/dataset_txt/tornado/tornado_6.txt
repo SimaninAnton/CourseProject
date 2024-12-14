@@ -1,0 +1,95 @@
+kriek commented on 16 Dec 2019
+Hi there,
+I'm trying to build a tornado application (webserver.py) that connects to a TCP server (tcpserver.py). The application has a global tcp_reader coroutine responsible to read data from the server (and eventually share it via websockets).
+This coroutine is added as a callback to the mainloop using main_loop.add_callback(tcp_reader).
+When the application starts, it starts receiving data from the TCP server (counter incremented every second) as expected.
+But as soon as a browser opens http://localhost:8080/, a GeneratorExit is triggered in the tcp_reader coroutine and its task is destroyed:
+Starting server at port: 8080
+0
+1
+2
+3
+4
+5
+6
+Oops
+ERROR:asyncio:Task was destroyed but it is pending!
+task: <Task pending name='Task-1' coro=<tcp_reader() done, defined at webserver.py:13> wait_for=<Future pending cb=[<TaskWakeupMethWrapper object at 0x7fde40a22ac0>()]> cb=[IOLoop.add_future.<locals>.<lambda>() at /home/sly/.envs/scientific/lib/python3.8/site-packages/tornado/ioloop.py:690]>
+WARNING:tornado.access:404 GET /favicon.ico (::1) 0.73ms
+I'm quite new to both tornado and asyncio and I don't get the reason for the task destruction.
+If the page is requested first and the tcpserver.py started after that, the problem does not occur.
+webserver.py
+import asyncio
+import os
+
+from tornado.web import RequestHandler, StaticFileHandler, Application, url
+from tornado import ioloop
+
+
+class MainHandler(RequestHandler):
+    def get(self):
+        self.render("index.html")
+
+
+async def tcp_reader():
+    while True:
+        try:
+            reader, writer = await asyncio.open_connection('127.0.0.1', 8888)
+        except ConnectionRefusedError:
+            print("ConnectionRefused")
+            await asyncio.sleep(1)
+            continue
+        while True:
+            try:
+                data = await reader.read(1024)
+            except GeneratorExit:
+                print("Oops")
+                raise
+            if not data:
+                writer.close()
+                await writer.wait_closed()
+                break
+            print(data.decode(), end='')
+
+
+def main():
+    port = os.environ.get("PORT", 8080)
+    clients = []
+    app = Application([
+        url(r"/", MainHandler),
+    ])
+    print("Starting server at port: %s" % port)
+    app.listen(port)
+    main_loop = ioloop.IOLoop.current()
+    main_loop.add_callback(tcp_reader)
+    ioloop.IOLoop.current().start()
+
+
+if __name__ == '__main__':
+    main()
+tcpserver.py
+import asyncio
+from itertools import count
+
+async def handle_connection(reader, writer):
+    try:
+        print("open")
+        for i in count():
+            writer.write(f'{i}\n'.encode())
+            await writer.drain()
+            await asyncio.sleep(1)
+    except ConnectionResetError:
+        print("closed")
+
+async def main():
+    server = await asyncio.start_server(
+        handle_connection, '127.0.0.1', 8888)
+    addr = server.sockets[0].getsockname()
+    print(f'Serving on {addr}')
+
+    async with server:
+        await server.serve_forever()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+I'm using python 3.8 and tornado 6.0.3 under Ubuntu

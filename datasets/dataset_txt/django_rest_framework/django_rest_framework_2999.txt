@@ -1,0 +1,123 @@
+roberts81 commented on 29 Nov 2012
+I assumed that I would be able to pickle the .data from Serializers without an issue, but it is failing on a certain nested Serializer of mine.
+This bug has been been really hard to pinpoint what the problem is, since it happens deeply nested in some recursive pickle juice, but it looks like its trying to pickle the class for the model where the dictionary came from, for some reason related to the fact that the dict is actually a SortedDictWithMetadata. I assume it may be the Metadata?
+When I run pickle.dumps on .data from my serializer i get:
+PicklingError: Can't pickle <class 'menus.models.Day'>: attribute lookup menus.models.Day failed
+or
+PicklingError: Can't pickle <class 'menus.models.Day'>: it's not found as menus.models.Day
+depending on the path to run it (the latter is if I try to pickle it directly, former comes from if i try to let pylibmc pickle it).
+One of the few useful clues that I have is that if I cast the problem dictionary to a plain dict from the SortedDictWithMetadata then it becomes picklable, so I assume something about SortedDictWithMetadata is the problem. And I've double checked my dictionary and its all native types.
+While I realize I probably haven't provided enough info for a resolution, I wanted to open the issue to see if it rings a bell for anyone, and then I'll follow up with a failed test or something in the next few days when i get some time to do so. In the mean time, i'm going to recursively cast all my SortedDictWithMetadata's to dicts before pickling to get past this issue.
+Also, I'm using nested Serializers, 4 deep. The error happens on any of the resulting dictionaries.
+menu_week (MenuWeekSerializer) --> days (MenuDaySerializer) --> menu_items (MenuItemSerializer) --> food (FoodSerializer)
+Here's the mostly useless stack trace:
+(food is the inner most dictionary of the rats nest that raises the error (rounded_nutrition_info is picklable) )
+>>> food
+{'id': 12, 'name': u'some name', 'description': u'some description', 'image_url': u'/media/food_images/a.png', 'hoverpic_url': u'/media/food_images/a150x0_q85.jpg', 'price': None, 'ingredients': u'ingredients', 'rounded_nutrition_info': {'mg_sodium': 0, 'g_carbs': 0, 'g_sugar': 0}}
+>>> type(food)
+<class 'rest_framework.serializers.SortedDictWithMetadata'>
+>>> df = dict(food)
+>>> pickle.dumps(df)
+'blob.'
+>>> pickle.dumps(f)
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 1374, in dumps
+    Pickler(file, protocol).dump(obj)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 224, in dump
+    self.save(obj)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 419, in save_reduce
+    save(state)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 649, in save_dict
+    self._batch_setitems(obj.iteritems())
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 663, in _batch_setitems
+    save(v)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 600, in save_list
+    self._batch_appends(iter(obj))
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 615, in _batch_appends
+    save(x)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 331, in save
+    self.save_reduce(obj=obj, *rv)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 401, in save_reduce
+    save(args)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 562, in save_tuple
+    save(element)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 286, in save
+    f(self, obj) # Call unbound method with explicit self
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/pickle.py", line 748, in save_global
+    (obj, module, name))
+PicklingError: Can't pickle <class 'menus.models.Day'>: it's not found as menus.models.Day

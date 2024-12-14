@@ -1,0 +1,111 @@
+ak04nv commented on 3 Apr 2018
+HI there!
+I'm trying to get session data from table in my custom session interface in Flask and I'm getting the error Connection already open. This exception appears because connection opens automatically when I get a session data from open_session method in session interface. And after that Flask runs hooks before_request where the method to connect to database was registered.
+import peewee as pw
+
+from flask import Flask, jsonify
+from flask.sessions import SessionInterface, SessionMixin
+from werkzeug.datastructures import CallbackDict
+
+from playhouse.flask_utils import FlaskDB
+from playhouse.sqlite_ext import JSONField
+
+from datetime import datetime
+
+
+app = Flask(__name__)
+db = FlaskDB(app, 'sqlite:///test_db.sqlite')
+
+
+class Session(CallbackDict, SessionMixin):
+
+    def __init__(self, store={}):
+        def on_update(self):
+            self.modified = True
+
+        self._store = store
+        self.modified = False
+
+        CallbackDict.__init__(self, store.get('data', {}), on_update)
+
+    @classmethod
+    def find(cls, sid):
+        try:
+            store = SessionStore.get(sid=sid)
+        except SessionStore.DoesNotExist:
+            store = {}
+        return cls(store)
+
+    def save(self):
+        if hasattr(self._store, 'data') and self.modified:
+            self._store.data = self
+        self._store.save()
+
+
+class MySI(SessionInterface):
+    null_session_class = Session
+
+    def open_session(self, app, request):
+        sid = request.cookies.get('sid')
+        # This is a point where request object already exists
+        # but hooks before_request are not called
+        return Session.find(sid) if sid else None
+
+    def save_session(self, app, session, response):
+        if session.modified:
+            session.save()
+
+
+class SessionStore(db.Model):
+    sid = pw.CharField(primary_key=True)
+    data = JSONField()
+    expired = pw.DateTimeField(default=datetime.now)
+
+    class Meta:
+        table_name = 'sessions'
+
+
+app.session_interface = MySI()
+
+@app.route('/')
+def main():
+    return jsonify(ok=1)
+
+if __name__ == '__main__':
+    if not SessionStore.table_exists():
+        SessionStore.create_table()
+    app.run(debug=True)
+Traceback:
+127.0.0.1 - - [03/Apr/2018 11:42:35] "GET / HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1997, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1985, in wsgi_app
+    response = self.handle_exception(e)
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1540, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1982, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1614, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1517, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1610, in full_dispatch_request
+    rv = self.preprocess_request()
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/flask/app.py", line 1831, in preprocess_request
+    rv = func()
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/playhouse/flask_utils.py", line 174, in connect_db
+    self.database.connect()
+  File "/home/ak04nv/.virtualenvs/web-app-boilerplate/lib/python3.6/site-packages/peewee.py", line 2463, in connect
+    raise OperationalError('Connection already opened.')
+peewee.OperationalError: Connection already opened.
+$ pip install flask peewee
+$ python test.py &
+$ curl -b sid=123 localhost:5000
+Python: 3.6.4
+Flask: 0.12.2
+Werkzeug: 0.14.1

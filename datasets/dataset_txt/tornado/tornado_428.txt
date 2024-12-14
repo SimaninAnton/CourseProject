@@ -1,0 +1,20 @@
+bennettaur commented on 28 Oct 2016
+I commented on #438 but since it's closed I'm not sure it's getting visibility. I also think some of the issues related to the original issue have been fixed, but this might be an edge case.
+The issue is that occasionally when writing to an SSL socket (using an SSLIOStream) I hit this error:
+Write error on <ssl.SSLSocket object at 0x00007ff88c0462f8>: [Errno 14] Bad address
+Based on some research it may potentially be related to a buffer being moved when writing to the SSL socket. Tornado handles it by closing the down the stream and reporting an error but based on some digging, I don't think the connection is dead, just that the write should be attempted again.
+I'm running into this issue quite a bit. We use tornado on pypy but have seen the error on both pypy and python. I believe pypy triggers it more because it has a tendency to move objects around in memory more.
+Based on my digging, these all appear to be related:
+http://stackoverflow.com/questions/9260937/unix-socket-error-14-efault-bad-address
+http://bugs.python.org/issue8240
+https://bitbucket.org/pypy/pypy/issues/1238/bad-write-retry-from-ssl-sockets
+(I realize that @bdarnell opened and fixed the PyPy issue)
+and it's documented in the tornado code itself:
+https://github.com/tornadoweb/tornado/blob/master/tornado/iostream.py/#L839
+However I don't think tornado handles the error appropriately here:
+https://github.com/tornadoweb/tornado/blob/master/tornado/iostream.py/#L857
+The think the right approach for the error should be catching it and then setting write_buffer_frozen =True, like it does for other cases and the write retried. I'll likely be experimenting with a fix soon, but reproducing can be somewhat random.
+Digging into it some more, this appears to be a bug in OpenSSL 1.0.2 on Mac OSX. This ruby thread appears to be related: excon/excon#467
+They're solution was to simply warn about the issue and downgrade OpenSSL to 1.0.1
+I can confirm I still see this issue in "OpenSSL 1.0.1f 6 Jan 2014" running with "PyPy 5.3.1 with GCC 4.8.2" using the PyPy Docker image pypy:2
+As well as 'OpenSSL 1.0.2j 26 Sep 2016' on Mac OS X Version 10.11.6 (15G1004)

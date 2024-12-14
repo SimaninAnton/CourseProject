@@ -1,0 +1,54 @@
+slapshin commented on 9 Oct 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I have ModelSerializer for User objects. This serializer used by list endpoint (not for modifying data).
+class ColleagueUserSerializer(BaseModelSerializer):
+    ...
+    city = serializers.IntegerField(source='profile.contact.address.city')
+    ...
+But if profile's contact has no address error occurs
+Expected behavior
+return None
+Actual behavior
+AttributeError: Got AttributeError when attempting to get a value for field `city` on serializer `ColleagueUserSerializer`.
+The serializer field might be named incorrectly and not match any attribute or key on the `User` instance.
+Original exception text was: 'NoneType' object has no attribute 'address'.
+Notes
+Problem with version 3.7.0
+Prior to version 3.7.0, no error occurred. The problem in changing the behavior of the module 'fields.py'
+def get_attribute(instance, attrs):
+    """
+    Similar to Python's built in `getattr(instance, attr)`,
+    but takes a list of nested attributes, instead of a single attribute.
+
+    Also accepts either attribute lookup on objects or dictionary lookups.
+    """
+    for attr in attrs:
+        # this code was removed in v3.7.0
+ if instance is None:
+            # Break out early if we get `None` at any point in a nested lookup.
+            return None
+ # ---
+        try:  
+            if isinstance(instance, collections.Mapping):
+                instance = instance[attr]
+            else:
+                instance = getattr(instance, attr)
+        except ObjectDoesNotExist:
+            return None
+        if is_simple_callable(instance):
+            try:
+                instance = instance()
+            except (AttributeError, KeyError) as exc:
+                # If we raised an Attribute or KeyError here it'd get treated
+                # as an omitted field in `Field.get_attribute()`. Instead we
+                # raise a ValueError to ensure the exception is not masked.
+                raise ValueError('Exception raised in callable attribute "{0}"; original exception was: {1}'.format(attr, exc))
+
+    return instance

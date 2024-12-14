@@ -1,0 +1,26 @@
+tgran commented on 8 Jul 2015
+I'm currently working on implementing a simple API and I want to log/track the users actions. To do this I made a custom viewclass inheriting the standard APIView and override the finalize_response(...) method.
+class TrackingView(APIView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        if not request.user.is_anonymous():
+            APIAction.objects.create(
+                performer=request.user.apikey_set.first(),
+                request_path=request.path,
+                http_method=request.method
+            )
+        return super(TrackingView, self).finalize_response(request,response, *args, **kwargs)
+This works well when I'm testing manually on the dev-server with curl but not in unittests
+def test_get_person(self):
+    url = reverse('api:which-fm', kwargs={'who': self.fm.ssn}) + '?format=json'
+    response = self.client.get(url)
+    response_data = response.data
+    self.assertEqual(response_data['ssn'], self.fm.ssn)
+    self.assertEqual(response_data['first_name'], self.fm.first_name)
+    self.assertEqual(response_data['last_name'], self.fm.last_name)
+    self.assertEqual(response_data['gender'], self.fm.gender)
+    print APIAction.objects.all()
+    action = self.user.key.apiaction_set.last()
+    self.assertEqual(action.performer, self.user)
+    self.assertEqual(action.request_path, url)
+    self.assertEqual(action.http_method, 'GET')
+The response gives the correct data but doesn't create any tracking log. Why is this? Is this the intended behaviour with the APIClient or am I missing something?

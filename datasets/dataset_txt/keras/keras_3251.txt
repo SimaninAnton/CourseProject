@@ -1,0 +1,39 @@
+dc-ai commented on 10 Feb 2017 •
+edited
+With some help, I was able to setup a NN within a NN.
+Basically the architecture is as follows:
+There is a main neural network that uses pretrained weights that are frozen
+There is a sub neural network that you are training
+However because the sub neural network is incorporated in the main network as a "model", when you do model.summary(), you do not see the layers of the sub network. Consequently, when the main network is saved, the weights of the sub neural network is not saved as individual layers.
+When I need to do transfer learning and use part of the sub neural network, I can't do it, because the weights are saved to the entire sub network, and not each layer in the sub network.
+Has anyone encountered these type of situations before?
+In code:
+Step 1: Setup sub NN within main NN and train
+# Main NN: Simple convolutional autoencoder
+input_img = Input(shape=(1, 80, 80), name="input_layer")
+intermediate = Convolution2D(32, 3, 3, name="conv1")(input_img)
+decoded = Convolution2D(10, 3, 3, name="conv2")(intermediate)
+
+fc_flatten = Flatten()(intermediate)
+
+# Sub NN: Uses output from encoding part to do supervised learning on FC layers
+input_NN2 = Input( (None,80*80*32))
+y = Dense(64, name="dense3")(input_NN2)
+fc_output = Dense(1)(y)
+model2 = Model([input_NN2], [fc_output], name="submodel")
+
+fc_output = model2([fc_flatten])
+model = Model(input=[input_img], output=[decoded, fc_output])
+model.compile(loss=["mse","mse"],optimizer="adam")
+Step 2: Setup modified NN that has parts of the main NN and sub NN and load weights
+The major difficulty is that the weights of the layer "dense3" is not stored as a layer in the previous step. Instead all the weights are saved in the model, "submodel". I can't figure out how to "separate out" the weights of all layers inside "submodel".
+input_img = Input(shape=(1, 80, 80), name="input_layer")
+intermediate = Convolution2D(32, 3, 3, name="conv1")(input_img)
+fc_flatten = Flatten()(intermediate)
+y = Dense(64, name="dense3")(fc_flatten)
+new_output = Dense(4)(y)
+
+newmodel = Model(input=[input_img], output=[new_output])
+newmodel.compile(loss=["mse"],optimizer="adam")
+I tried opening the .hdf5 file, but that format is not readable in text. Any suggestions? Thanks!
+1

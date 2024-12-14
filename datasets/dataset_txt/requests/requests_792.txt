@@ -1,0 +1,31 @@
+Contributor
+jvanasco commented on Jan 28, 2017
+I've ran into an issue that runs tangent to issue #441.
+We have a content indexer that is powered by requests. Some of the larger URL shorteners exhibit some weird behaviors depending on the user agent string.
+(variant of #441) depending on the user-agent header, a particular shortener will either send a proper 301 response OR a HTTP 200 containing a meta-refresh value of 0.
+   <head><meta name="referrer" content="always"><noscript><META http-equiv="refresh" content="0;URL={URL}"></noscript><title>{URL}</title></head><script>window.opener = null; location.replace("{URL}")</script>
+(new?) a handful of url shorteners may send a HTTP-200 response with a location header to the redirect. (yes I know, it breaks spec and makes no sense.
+To handle both of these (and several other scenarios) I have a novel suggestion. The callback hooks could be used to allow developers to catch and follow these types of redirect oddities within a single configured request.
+A developer would be able to handle edge cases like the above by with a hook:
+  def bad_shortener_callback(r):
+      r_location = r.headers.get('location')
+      if r.status_code == 200 and r_location!= r.url:
+            r.is_redirect = True
+            r.redirect_location_override = r_location
+      return r
+In order to make this work, a slight change would be needed:
+The redirect url is pulled via this line:
+https://github.com/kennethreitz/requests/blob/f72684e13c5074a671506d29c1b5638156680ea7/requests/sessions.py#L116
+url = resp.headers['location']
+I propose this change to sessions.py
+-url = resp.headers['location']
++url = resp.redirect_location
+and then extending models.py accordingly
++ redirect_location_override = None
+
+@property
+def redirect_location(self):
+      if self.redirect_location_override is not None:
+         return self.redirect_location_override
+     return self.headers['location']
+if this is acceptable, I would be happy to issue a PR that includes tests.

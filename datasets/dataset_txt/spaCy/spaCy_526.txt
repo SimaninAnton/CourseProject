@@ -1,0 +1,46 @@
+Member
+ines commented on 16 Jul 2019
+This topic came up while talking to @polm at spaCy IRL about how to best incorporate the Unidic dictionary for Japanese. Since the licensing allows it, we ideally want to be shipping it within a model package – and we realised that we'd probably be able to provide an efficient API for this within the core library that could also be useful for many other tasks.
+Problem
+Some languages and use cases may need to depend on large dictionaries or lookup tables for tokenization, lemmatization or other custom features. Including the linguistic resources with the spaCy core library itself is problematic because it creates a lot of bloat (see #3258). It's also not an option for very custom resources. For instance, a user may want to build a biomedical model and include a large dictionary to use in a custom pipeline component.
+Importing large dictionaries and serializing them with the model is currently possible out-of-the-box using the EntityRuler, or a custom pipeline component with custom serialization methods. However, this is something a user would have to implement themselves – including how to make the lookup as fast and as efficient as possible.
+Proposed solution
+spaCy should provide an API for adding, accessing and serializing large dictionaries and lookup tables.
+The lookup methods and data should live within the Vocab object to make it all accessible beyond pipeline components (e.g. in a custom tokenizer). It also seems like a much better fit conceptually: the vocab already holds the string store and vectors, so it makes sense for it to also hold the lookup tables. When the nlp object is serialized, the data will be written to the /vocab directory saved to disk.
+Advantages
+User lookups and dictionaries can take advantage of spaCy's built-in hashing.
+Serialization out-of-the-box to make it easy to ship dictionaries and lookups with custom models.
+Since the API isn't tied to any specific internal use case, the lookups can be implemented anywhere – in a custom component, the tokenizer, the lemmatizer etc.
+We can finally consider moving the lemmatizer lookup tables and extensive tokenizer exception lists out of the library and provide them as separate files that can be loaded in, or as part of the statistical models we ship.
+Implementation details: set membership with Bloom filters
+Some of the large language data lists are used for simple set-membership checks. For instance, the lemmatizer needs to know whether some word-form is a valid lemma. Certain segmenters (e.g. for Japanese) also need to make frequent set-membership tests. It would be good to move these lookups into Bloom filters, to save space and improve efficiency. It's likely we can find a good library with a Bloom filter implementation, however we'd prefer to avoid introducing another dependency for this sort of thing. It would be best to have an implementation ourselves in the preshed library, even if it means forking someone else's code and pasting it in.
+User-facing API
+This is just a rough sketch and all subject to change.
+Some of the basic principles are:
+Lookups can only be performed using integer IDs, not strings.
+Lookups can be nested, i.e. one lookup can return another lookup table.
+# Add a new table
+nlp.vocab.lookups.add_table("my_lookup")
+# Get a table
+lookup_table = nlp.vocab.lookups.get_table("my_lookup")
+# Look up an ID in a table
+value = lookup_table.get(nlp.vocab.strings["cat"])
+# Set an value in a table
+lookup_table.set(nlp.vocab.strings["cat"], nlp.vocab.strings["meow"])
+Usage example: in a custom pipeline component
+def custom_lemmatizer(doc):
+    # Set the lemmas for each token in a doc given its POS tag and text
+    lookup_table = doc.vocab.lookups.get_table("custom_lemmatizer")
+    for token in doc:
+        lemmas = lookup_table.get_table(token.pos)
+        token.lemma = lemmas.get(token.orth)
+    return doc
+Usage example: in an extension attribute getter
+def resolve_abbreviation(token):
+    # Look up a token in an abbreviation dictionary
+    lookup_table = token.doc.vocab.lookups.get_table("abbreviations")
+    return lookup_table.get(token.orth)
+
+Token.set_extension("abbrev", getter=resolve_abbreviation)
+2
+1

@@ -1,0 +1,125 @@
+vkessler commented on 18 Dec 2017
+Hi,
+i´m wondering about the correct input_shape and/or target_size when using fit_generator and flow_from_directory. I´m running keras 2.0.8-tf and tensorflow 1.4 as the backend. My images have the following dimensions:
+width: 725 Pixel
+height: 180 Pixel
+channels: 3
+I define the Input_shape as: (width, height, channels) --> (725,180,3), as it is suggested when using tensorflow as the backend.
+I use the ImageDataGenerator with the flow_from_directory method to get the training data. Here the target_size may be specified. The target_size can be either (width, height) or (height, width). The API is defining it as (height, width).
+And now the Problem occurs. If the Input_shape is (width, height, channels) and the target_size is (heigth, width) - as it should be - a ValueError is raised, saying the shapes don´t match (Error when checking input: expected conv2d_1_input to have shape (None, 725, 180, 3) but got array with shape (50, 180, 725, 3)).
+If i set the target_size to (width, height), the training is starting, but if i then plot an Image using the Generator, i see that width and height are exchanged and hence the Image is massively transformed.
+How to solve this issue? In fchollets great example the target_size is also set the other way around as in the API.
+Any help is appreciated! Thank you.
+Here is my code example:
+# Set the dimension of the images 
+img_width = 725 
+img_height = 180
+
+# Define epochs and batch size
+epochs = 1
+batch_size = 50
+
+# TensorFlow is the backend, so ordering of input_shape is as below
+input_shape = (img_width, img_height, 3)
+
+# Helper function to compile model
+def compile_model(model):
+    optimizer = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+    model.compile(loss='categorical_crossentropy',
+                  optimizer=optimizer,
+                  #metrics=['accuracy'])
+                  metrics=['accuracy',metrics.categorical_accuracy])
+
+# Define the model
+def generate_model(model_path):
+    
+    # check if model exists, if exists then load model from saved state
+    if Path(model_path).is_file():
+        sys.stdout.write('Loading existing model\n\n')
+        sys.stdout.flush() #Warum?
+        model = load_model(model_path)
+        compile_model(model)
+        return model
+
+    sys.stdout.write('Loading new model\n\n')
+    sys.stdout.flush() #Warum?
+
+    # Define new model
+    model = Sequential()
+    model.add(Conv2D(32, (4, 4), input_shape=input_shape))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(32, (4, 4)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(32, (4, 4), input_shape=input_shape))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(64, (4, 4)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Flatten())
+    model.add(Dense(64))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes, activation='softmax'))
+
+    compile_model(model)
+
+    # Save model
+    with open(model_path, 'w') as outfile:
+        json.dump(model.to_json(), outfile)
+        outfile.close()
+
+    return model
+
+
+model = generate_model(model_path)
+
+# this is the augmentation configuration we will use for training
+train_datagen = ImageDataGenerator(
+    rescale=1. / 255,
+    rotation_range=180.,
+    #shear_range=0.2,
+    #zoom_range=0.2,
+    horizontal_flip=True)
+
+# this is the augmentation configuration we will use for testing:
+# only rescaling
+test_datagen = ImageDataGenerator(rescale=1. / 255)
+
+train_generator = train_datagen.flow_from_directory(
+    train_data_dir,
+    target_size=(img_height, img_width), # not running this way
+    batch_size=batch_size,
+    class_mode='categorical')
+
+validation_generator = test_datagen.flow_from_directory(
+    validation_data_dir,
+    target_size=(img_height, img_width), # not running this way
+    batch_size=batch_size,
+    class_mode='categorical')
+
+hist = model.fit_generator(
+    train_generator,
+    steps_per_epoch=nb_train_samples // batch_size,
+    epochs=epochs,
+    validation_data=validation_generator,
+    validation_steps=nb_validation_samples // batch_size)
+
+model.save(model_path)
+print('Saved trained model at %s ' % model_path)
+
+
+x, y = train_generator.next()
+classes_val = validation_generator.class_indices
+print(classes_val)
+for i in range(0,12):
+    img = x[i]
+    print(y[i])
+    plt.imshow(img)
+    plt.show()

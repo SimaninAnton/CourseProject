@@ -1,0 +1,36 @@
+Contributor
+ajdavis commented on 24 Jan 2017
+The docs say, "The first call to data_received may occur at any point after the call to prepare has returned or yielded."
+http://www.tornadoweb.org/en/stable/web.html#tornado.web.stream_request_body
+But a test proves this false, the first call to data_received may occur only after prepare has returned:
+from tornado import gen, ioloop, web
+
+@web.stream_request_body
+class Handler(web.RequestHandler):
+    @gen.coroutine
+    def prepare(self):
+        print('start')
+        yield gen.sleep(5)
+        print('finish')
+
+    @gen.coroutine
+    def data_received(self, chunk):
+        print('received')
+
+    def post(self):
+        print('post')
+
+application = web.Application([(r'/', Handler)])
+application.listen(8888)
+ioloop.IOLoop.current().start()
+Run this and curl --data "foo" localhost:8888, it prints:
+start
+finish
+received
+post
+We'd expect this instead:
+start
+received
+finish
+post
+This appears to be by design, see _read_message. I propose changing the documentation, "Tornado begins calling data_received with chunks of data after prepare has returned."

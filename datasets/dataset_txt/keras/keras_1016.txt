@@ -1,0 +1,111 @@
+Contributor
+AmirAlavi commented on 23 May 2018 •
+edited
+Intro
+Pulled from master at abd0294
+Using Theano backend, version 1.0.1+100.g2c19431b1, with a GPU device
+Repro gist: https://gist.github.com/AmirAlavi/cfac18bb1ac00c500e8bdeb879db3d5e
+part1.py (saves weights from a model)
+part2.py (creates a very similar architecture, last layer has different size, loads weights from part1 and trains (like fine tuning))
+When loading weights from a weights file that may have slightly different architecture, we typically use load_weights with an argument of by_name=True (common if you are using pretrained weights from strategies such as stacked DAEs). However, layers with the same name can still differ in size (example: in some pretraining strategies (unsupervised), a final classification layer is ignored, so its size is arbitrary, and if saved, can disagree with the final supervised model).
+Expected behavior:
+If I try to load weights with load_weights(by_name=True, skip_mismatch=False), and a saved layer weight has different shape than the model's corresponding weight, this function should call should result in a ValueError, similar to when the number of weights don't match.
+Observed behavior:
+Aforementioned load_weights call succeeds, user encounters an input dimension mismatch downstream during training.
+part1.py output:
+Using Theano backend.
+WARNING (theano.configdefaults): install mkl with `conda install mkl-service`: No module named 'mkl'
+WARNING (theano.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+ERROR (theano.gpuarray): pygpu was configured but could not be imported or is too old (version 0.7 or higher required)
+NoneType: None
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 20)                0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 15)                315       
+_________________________________________________________________
+dense_2 (Dense)              (None, 10)                160       
+_________________________________________________________________
+dense_3 (Dense)              (None, 30)                330       
+=================================================================
+Total params: 805
+Trainable params: 805
+Non-trainable params: 0
+_________________________________________________________________
+None
+part2.py output (Note how the number of parameters in dense_3 changed after the call to load_weights):
+Using Theano backend.
+WARNING (theano.configdefaults): install mkl with `conda install mkl-service`: No module named 'mkl'
+WARNING (theano.tensor.blas): Using NumPy C-API based implementation for BLAS functions.
+ERROR (theano.gpuarray): pygpu was configured but could not be imported or is too old (version 0.7 or higher required)
+NoneType: None
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 20)                0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 15)                315       
+_________________________________________________________________
+dense_2 (Dense)              (None, 10)                160       
+_________________________________________________________________
+dense_3 (Dense)              (None, 7)                 77        
+=================================================================
+Total params: 552
+Trainable params: 552
+Non-trainable params: 0
+_________________________________________________________________
+None
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 20)                0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 15)                315       
+_________________________________________________________________
+dense_2 (Dense)              (None, 10)                160       
+_________________________________________________________________
+dense_3 (Dense)              (None, 7)                 330       
+=================================================================
+Total params: 805
+Trainable params: 805
+Non-trainable params: 0
+_________________________________________________________________
+None
+Epoch 1/1
+Traceback (most recent call last):
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/theano/compile/function_module.py", line 903, in __call__
+    self.fn() if output_subset is None else\
+ValueError: Input dimension mis-match. (input[0].shape[1] = 30, input[3].shape[1] = 7)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "part2.py", line 32, in <module>
+    main()
+  File "part2.py", line 29, in main
+    model2.fit(X, y)
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/Keras-2.1.6-py3.6.egg/keras/engine/training.py", line 1037, in fit
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/Keras-2.1.6-py3.6.egg/keras/engine/training_arrays.py", line 199, in fit_loop
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/Keras-2.1.6-py3.6.egg/keras/backend/theano_backend.py", line 1254, in __call__
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/theano/compile/function_module.py", line 917, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/theano/gof/link.py", line 325, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/six.py", line 692, in reraise
+    raise value.with_traceback(tb)
+  File "/home/aalavi/anaconda2/envs/keras_pr/lib/python3.6/site-packages/theano/compile/function_module.py", line 903, in __call__
+    self.fn() if output_subset is None else\
+ValueError: Input dimension mis-match. (input[0].shape[1] = 30, input[3].shape[1] = 7)
+Apply node that caused the error: Elemwise{Composite{((i0 * i1 * i2 * i3 * i4) / (i5 * i6 * i6))}}(Elemwise{Composite{AND(GE(i0, i1), LE(i0, i2))}}.0, Elemwise{Composite{(i0 / (i1 * i2))}}.0, InplaceDimShuffle{0,x}.0, /dense_3_target, SoftmaxWithBias.0, Elemwise{Clip}[(0, 0)].0, InplaceDimShuffle{0,x}.0)
+Toposort index: 33
+Inputs types: [TensorType(bool, matrix), TensorType(float32, (True, True)), TensorType(float32, col), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, col)]
+Inputs shapes: [(32, 30), (1, 1), (32, 1), (32, 7), (32, 30), (32, 30), (32, 1)]
+Inputs strides: [(30, 1), (4, 4), (4, 4), (28, 4), (120, 4), (120, 4), (4, 4)]
+Inputs values: ['not shown', array([[0.03125]], dtype=float32), 'not shown', 'not shown', 'not shown', 'not shown', 'not shown']
+Outputs clients: [[Sum{axis=[1], acc_dtype=float64}(Elemwise{Composite{((i0 * i1 * i2 * i3 * i4) / (i5 * i6 * i6))}}.0)]]
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Proposed solution:
+Check shapes, and unless user specifies skip_mismatch=True, fail with a message.

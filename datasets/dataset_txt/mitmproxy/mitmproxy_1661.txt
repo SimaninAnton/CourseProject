@@ -1,0 +1,30 @@
+jschwalbe commented on 27 Jun 2014
+Greetings. I'm playing around with mitmproxy and trying to set up Transparent mode. Having some troubles, unfortunately. My setup is this: dd-wrt router, Mac OS X Mavericks (running mitmproxy 0.9.2), iPhone (target machine).
+On my router I've forwarded traffic from iPhone to mitmproxy, and it's making it there correctly as shown below with nc:
+    [ob1@pax :: /tmp]$ nc -l 8080
+    GET / HTTP/1.1
+    Host: yahoo.com
+    Connection: keep-alive
+    <etc, snip>
+However, it isn't requesting the entire URL because, well, I'm unable (unwilling?) to input the proxy into proxy settings because I don't want the app I'm testing to "know" it's being proxied.
+This causes the following error in mitmproxy event log:
+192.168.15.1:58507: connect
+192.168.15.1:58507: 502: Transparent mode failure: could not resolve original destination.
+192.168.15.1:58507: disconnect
+  -> handled 0 requests
+Which causes the connection to get dropped. I've read about the sudo issue with OS X and made sure to use sudo within 5 minutes of starting up mitmproxy, no dice. I don't think it's an issue with my iptables configuration on the router, but in case that's the problem, here's what I'm using there:
+#!/bin/sh
+PROXY_IP=192.168.15.25
+PROXY_PORT=8080
+LAN_IP=`nvram get lan_ipaddr`
+LAN_NET=$LAN_IP/`nvram get lan_netmask`
+
+iptables -t nat -A PREROUTING -i br0 -s 192.168.15.148 -d $LAN_NET -p tcp --dport 80 -j ACCEPT
+iptables -t nat -A PREROUTING -i br0 -s 192.168.15.148 -p tcp --dport 80 -j DNAT --to $PROXY_IP:$PROXY_PORT
+iptables -t nat -A PREROUTING -i br0 -s 192.168.15.148 -p tcp --dport 443 -j DNAT --to $PROXY_IP:$PROXY_PORT
+iptables -t nat -I POSTROUTING -o br0 -s $LAN_NET -d $PROXY_IP -p tcp -j SNAT --to $LAN_IP
+iptables -I FORWARD -i br0 -o br0 -s $LAN_NET -d $PROXY_IP -p tcp --dport $PROXY_PORT -j ACCEPT
+The command I'm using to start mitmproxy is:
+mitmproxy -T --host
+And lastly, because I wanted to make sure I followed all the available directions, I did what http://mitmproxy.org/doc/transparent/osx.html told me to in regards to enabling ip forwarding and the pf configuration.
+Is this a bug or am I doing something incorrectly? Many thanks!

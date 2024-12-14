@@ -1,0 +1,28 @@
+kylefox commented on 12 Aug 2015
+It appears that accessing serializer.data has side effects. Merely accessing the property inside perform_create() will cause the response data to change. I created a simple Django project with a test case that illustrates the bug: django-rest-bug.
+The expected behavior is for response.data to contain the serialized version of the created object:
+class AlbumViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
+
+    # ... snip ...
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+# >>> post_data = {'title': 'The Wall', 'artist': 'Pink Floyd'}
+# >>> response = self.client.post(reverse('album-list'), post_data)
+# >>> print response.data
+# {'id': 1, 'artist': u'Pink Floyd', 'title': u'The Wall'}
+But when serializer.data is present it will cause response.data to be equal to the initially posted data (ex: the id is missing from response):
+class AlbumViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
+
+    # ... snip ...
+
+    def perform_create(self, serializer):
+        serializer.data  # This line being present changes the value of `response.data`
+        serializer.save()
+
+# >>> post_data = {'title': 'The Wall', 'artist': 'Pink Floyd'}
+# >>> response = self.client.post(reverse('album-list'), post_data)
+# >>> print response.data
+# {'artist': u'Pink Floyd', 'title': u'The Wall'}
+Even if serializer.data is not "safe", I think it's incorrect for property access to result in side effects. I think the culprit is somewhere in BaseSerializer.data but am not certain.

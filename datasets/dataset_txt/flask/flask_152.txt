@@ -1,0 +1,41 @@
+goodmami commented on 25 Apr 2019
+In Python 3, mode='rt' is synonymous with mode='r' but Flask disallows it thinking it is not a valid mode for reading. While this is true in Python 2, Flask could (at least) provide a more meaningful error message, if not just allow it.
+A simple solution might change these lines in flask/helpers.py:
+    def open_resource(self, resource, mode='rb'):
+        """..."""  # truncated for example
+        if mode not in ('r', 'rb'):
+            raise ValueError('Resources can only be opened for reading')
+        return open(os.path.join(self.root_path, resource), mode)
+...to...
+    def open_resource(self, resource, mode='rb'):
+        """..."""
+        if mode == 'rt':
+            mode = 'r'
+        if mode not in ('r', 'rb'):
+            raise ValueError('Resources can only be opened for reading')
+        return open(os.path.join(self.root_path, resource), mode)
+A heavier solution might use io.open() (and also allow encoding, but see #1740):
+    def open_resource(self, resource, mode='rb', encoding=None):
+        """..."""
+        if mode not in ('r', 'rb', 'rt'):
+            raise ValueError('Resources can only be opened for reading')
+        return io.open(os.path.join(self.root_path, resource), mode=mode, encoding=encoding)
+Expected Behavior
+Calling open_resource() with mode='rt' should open a file in text mode (at least in Python 3).
+from flask import Flask
+
+app = Flask(__name__)
+with app.open_resource('README.md', mode='rt') as f:
+    print(f.read())
+Actual Behavior
+A misleading exception is raised.
+Traceback (most recent call last):
+  File "mwe.py", line 5, in <module>
+    with app.open_resource('README.md', mode='rt') as f:
+  File "/home/goodmami/repos/OMW/py3env/lib/python3.6/site-packages/flask/helpers.py", line 1002, in open_resource
+    raise ValueError('Resources can only be opened for reading')
+ValueError: Resources can only be opened for reading
+Environment
+Python version: 3.6.7
+Flask version: 1.0.2
+Werkzeug version: 0.14.1

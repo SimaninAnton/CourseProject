@@ -1,0 +1,81 @@
+kevin1 commented on 2 Mar 2017 •
+edited
+My operating system is (include version):
+Ubuntu 16.04.2 LTS
+4.4.0-64-generic
+I installed Certbot with:
+OS package manager (python-letsencrypt-apache package)
+letsencrypt 0.4.1
+I ran this command and it produced this output:
+(some domains have been replaced with a.kevinchen.co, b.kevinchen.co, etc
+sudo letsencrypt --apache -d kevinchen.co,www.kevinchen.co,ipv6.kevinchen.co,a.kevinchen.co,b.kevinchen.co,c.kevinchen.co,d.kevinchen.co 
+The following message is displayed. I select "Expand" ...
+             │ You have an existing certificate that contains a portion of the      │               
+             │ domains you requested (ref:                                          │               
+             │ /etc/letsencrypt/renewal/kevinchen.co.conf)                          │               
+             │                                                                      │               
+             │ It contains these names: a.kevinchen.co, b.kevinchen.co,             │               
+             │ c.kevinchen.co, kevinchen.co, www.kevinchen.co                       │               
+             │                                                                      │               
+             │ You requested these names for the new certificate: kevinchen.co,     │               
+             │ www.kevinchen.co, ipv6.kevinchen.co, a.kevinchen.co,                 │               
+             │ b.kevinchen.co, c.kevinchen.co, d.kevinchen.co.                      │               
+             │                                                                      │               
+             │ Do you want to expand and replace this existing certificate with the │               
+             │ new certificate?                                                     │               
+             │                                                                      │               
+... and the program has a KeyError exception. Here is the relevant part of the stack trace:
+  File "/usr/lib/python2.7/dist-packages/letsencrypt/cli.py", line 453, in _auth_from_domains
+    original_server = lineage.configuration["renewalparams"]["server"]
+  File "/usr/lib/python2.7/dist-packages/configobj.py", line 554, in __getitem__
+    val = dict.__getitem__(self, key)
+KeyError: 'server'
+I noticed the renewalparams key and thought it might be related to this config file from /etc/letsencrypt/renewal/. I think there should be an entry called server in the last section.
+# renew_before_expiry = 30 days
+cert = /etc/letsencrypt/live/kevinchen.co/cert.pem
+privkey = /etc/letsencrypt/live/kevinchen.co/privkey.pem
+chain = /etc/letsencrypt/live/kevinchen.co/chain.pem
+fullchain = /etc/letsencrypt/live/kevinchen.co/fullchain.pem
+version = 0.9.3
+
+# Options and defaults used in the renewal process
+[renewalparams]
+installer = apache
+authenticator = apache
+account = abcdefg...
+Certbot's behavior differed from what I expected because:
+I have only used certbot and letsencrypt-auto to renew certificates, so I'm not sure why the configuration file is missing some information. Maybe the server key was recently added and there is no migration code for config files from older versions of the program?
+Here is a Certbot log showing the issue (if available):
+kevin@mercury:~$ sudo cat /var/log/letsencrypt/letsencrypt.log
+2017-03-02 00:46:23,181:DEBUG:letsencrypt.cli:Root logging level set at 30
+2017-03-02 00:46:23,184:INFO:letsencrypt.cli:Saving debug log to /var/log/letsencrypt/letsencrypt.log
+2017-03-02 00:46:23,185:DEBUG:letsencrypt.cli:letsencrypt version: 0.4.1
+2017-03-02 00:46:23,185:DEBUG:letsencrypt.cli:Arguments: ['--apache', '-d', 'kevinchen.co,www.kevinchen.co,ipv6.kevinchen.co,a.kevinchen.co,b.kevinchen.co,c.kevinchen.co,d.kevinchen.co']
+2017-03-02 00:46:23,188:DEBUG:letsencrypt.cli:Discovered plugins: PluginsRegistry(PluginEntryPoint#apache,PluginEntryPoint#webroot,PluginEntryPoint#null,PluginEntryPoint#manual,PluginEntryPoint#standalone)
+2017-03-02 00:46:23,195:DEBUG:letsencrypt.cli:Requested authenticator apache and installer apache
+2017-03-02 00:46:23,871:DEBUG:letsencrypt.display.ops:Single candidate plugin: * apache
+Description: Apache Web Server - Alpha
+Interfaces: IAuthenticator, IInstaller, IPlugin
+Entry point: apache = letsencrypt_apache.configurator:ApacheConfigurator
+Initialized: <letsencrypt_apache.configurator.ApacheConfigurator object at 0x7f00099c2810>
+Prep: True
+2017-03-02 00:46:23,873:DEBUG:letsencrypt.cli:Selected authenticator <letsencrypt_apache.configurator.ApacheConfigurator object at 0x7f00099c2810> and installer <letsencrypt_apache.configurator.ApacheConfigurator object at 0x7f00099c2810>
+2017-03-02 00:46:23,891:DEBUG:letsencrypt.cli:Picked account: <Account(abcdefg...)>
+2017-03-02 00:46:23,892:DEBUG:root:Sending GET request to https://acme-v01.api.letsencrypt.org/directory. args: (), kwargs: {}
+2017-03-02 00:46:23,896:INFO:requests.packages.urllib3.connectionpool:Starting new HTTPS connection (1): acme-v01.api.letsencrypt.org
+2017-03-02 00:46:24,229:DEBUG:requests.packages.urllib3.connectionpool:"GET /directory HTTP/1.1" 200 280
+2017-03-02 00:46:24,233:DEBUG:root:Received <Response [200]>. Headers: {'Content-Length': '280', 'Expires': 'Thu, 02 Mar 2017 00:46:24 GMT', 'Boulder-Request-Id': 'clPCXLFT0YujdsKxao_n5FFH2lu48n4dmZXjS_PRL3g', 'Strict-Transport-Security': 'max-age=604800', 'Server': 'nginx', 'Connection': 'keep-alive', 'Pragma': 'no-cache', 'Cache-Control': 'max-age=0, no-cache, no-store', 'Date': 'Thu, 02 Mar 2017 00:46:24 GMT', 'X-Frame-Options': 'DENY', 'Content-Type': 'application/json', 'Replay-Nonce': 'qdcoqf6_d8Mf5cGmYvwugrp3iVeM5EFqsOBgOVpdbhI'}. Content: '{\n  "new-authz": "https://acme-v01.api.letsencrypt.org/acme/new-authz",\n  "new-cert": "https://acme-v01.api.letsencrypt.org/acme/new-cert",\n  "new-reg": "https://acme-v01.api.letsencrypt.org/acme/new-reg",\n  "revoke-cert": "https://acme-v01.api.letsencrypt.org/acme/revoke-cert"\n}'
+2017-03-02 00:46:24,233:DEBUG:acme.client:Received response <Response [200]> (headers: {'Content-Length': '280', 'Expires': 'Thu, 02 Mar 2017 00:46:24 GMT', 'Boulder-Request-Id': 'clPCXLFT0YujdsKxao_n5FFH2lu48n4dmZXjS_PRL3g', 'Strict-Transport-Security': 'max-age=604800', 'Server': 'nginx', 'Connection': 'keep-alive', 'Pragma': 'no-cache', 'Cache-Control': 'max-age=0, no-cache, no-store', 'Date': 'Thu, 02 Mar 2017 00:46:24 GMT', 'X-Frame-Options': 'DENY', 'Content-Type': 'application/json', 'Replay-Nonce': 'qdcoqf6_d8Mf5cGmYvwugrp3iVeM5EFqsOBgOVpdbhI'}): '{\n  "new-authz": "https://acme-v01.api.letsencrypt.org/acme/new-authz",\n  "new-cert": "https://acme-v01.api.letsencrypt.org/acme/new-cert",\n  "new-reg": "https://acme-v01.api.letsencrypt.org/acme/new-reg",\n  "revoke-cert": "https://acme-v01.api.letsencrypt.org/acme/revoke-cert"\n}'
+2017-03-02 00:46:25,612:DEBUG:letsencrypt.cli:Exiting abnormally:
+Traceback (most recent call last):
+  File "/usr/bin/letsencrypt", line 9, in <module>
+    load_entry_point('letsencrypt==0.4.1', 'console_scripts', 'letsencrypt')()
+  File "/usr/lib/python2.7/dist-packages/letsencrypt/cli.py", line 1986, in main
+    return config.func(config, plugins)
+  File "/usr/lib/python2.7/dist-packages/letsencrypt/cli.py", line 662, in run
+    lineage, action = _auth_from_domains(le_client, config, domains)
+  File "/usr/lib/python2.7/dist-packages/letsencrypt/cli.py", line 453, in _auth_from_domains
+    original_server = lineage.configuration["renewalparams"]["server"]
+  File "/usr/lib/python2.7/dist-packages/configobj.py", line 554, in __getitem__
+    val = dict.__getitem__(self, key)
+KeyError: 'server'

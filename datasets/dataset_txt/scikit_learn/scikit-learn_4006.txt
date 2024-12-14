@@ -1,0 +1,13 @@
+Contributor
+eamartin commented on Feb 23, 2015
+If we have a data matrix with shape (n_examples, n_original_features) and we wish to perform add polynomial features and have a new data matrix of shape (n_examples, n_polynomial_features), the PolynomialFeatures class uses n_examples * n_polynomial_features * n_original_features memory rather than just n_examples * n_polynomial_features.
+This comes from https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/preprocessing/data.py#L504, which does (X[:, None, :] ** self.powers_).prod(-1). (X[:, None, :] ** self.powers_) has shape (n_examples, n_polynomial_features, n_original_features).
+I haven't had time to come up with a nice vectorized solution that uses the minimum possible memory, but my fix for the moment is
+        result = np.ones((n_samples, self.powers_.shape[0]), dtype=X.dtype)
+        for j in xrange(n_features):
+            result *= X[:, None, j] ** self.powers_[:, j]
+
+        return result
+in the transform method of PolynomialFeatures.
+This is very slow due to the loop over all features and not suitable for merging.
+For reference, I'm trying to run this code with n_examples=20 and n_features=500. This will produce about 125000 output features. I run out of memory with the current implementation when I try to handle more than 2 examples at once. My implementation does not run out of memory but does take 81s to produce the output (because it needs to do 500 Hadamard products on matrices of size (20, 125000)).

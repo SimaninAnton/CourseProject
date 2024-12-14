@@ -1,0 +1,27 @@
+ianclegg commented on Sep 17, 2015
+Background
+I'm working with a server which uses SPNEGO/GSS authentication, to keep it simple lets say the GSS mechanism is NTLM. As usual, the client and server exchange tokens to establish the context. What's different here is that once the context is established I want wrap (encrypt) the request body using the negotiated GSS context (in this case it would use NTLMv2 Session Security) and send it.
+The authentication and encryption is not a problem. I'm using AuthBase and a response hook to exchange the tokens in the authenticate header.
+Problem
+My AuthBase derived class is sending the plaintext request body every time during the token exchange. I only want to send it in its encrypted form on the final exchange.
+Looking at the PizzaAuth example on the Requests page:
+from requests.auth import AuthBase
+
+class PizzaAuth(AuthBase):
+    """Attaches HTTP Pizza Authentication to the given Request object."""
+    def __init__(self, username):
+        # setup any auth-related data here
+        self.username = username
+
+    def __call__(self, r):
+        # !! = !! = !! = !! = !! = !! = !! = !! = !! = !! = !! = !! = 
+        # I want to manipulate the request body here and ensure the request
+        # that is returned is empty, or is otherwise encrypted
+        # !! = !! = !! = !! = !! = !! = !! = !! = !! = !! = !! = !! = 
+        r.headers['X-Pizza'] = self.username
+        return r
+If I change the request body to an empty string
+r.body = ""
+I find that the remote server does not respond. This is because I have changed the body, but the Content-Length header is not re-calculated, and so my empty request is sent with a non-zero content-length - leaving the server waiting for more bytes. Now, I can also set the Body and the Content-Length header to zero - and that seems to work.
+Question
+Is is safe to manipulate the request body in AuthBase, will this cause a memory leak or any quality problems? Is it safe to simply set the body to an empty string and set the Content-Length to 0 until my final response, and then simply set the body and set the right content length?

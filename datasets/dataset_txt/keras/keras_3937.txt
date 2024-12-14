@@ -1,0 +1,35 @@
+khui commented on 14 Nov 2016 •
+edited
+The code and the errors are as follow. It seems to me that the Embedding layer does not allow input with variable length, which is determined per data.
+embedding_layer = Embedding(output_dim=EMBEDDING_DIM, input_dim=WORD_NUM+1, input_length=(None,SEQ_LENGTH), trainable=False)
+convlayer = Convolution2D(FILTER_NUM, SEQ_LENGTH, EMBEDDING_DIM)
+input_txt = Input(shape = (None, SEQ_LENGTH))
+em_txt = embedding_layer(input_txt)
+conv_txt = convlayer(em_txt)
+     21 
+     22 
+---> 23 conv_query = convlayer(em_query)
+
+../keras/engine/topology.py in __call__(self, x, mask)
+    491                                      '`layer.build(batch_input_shape)`')
+    492             if len(input_shapes) == 1:
+--> 493                 self.build(input_shapes[0])
+    494             else:
+    495                 self.build(input_shapes)
+
+../keras/layers/convolutional.py in build(self, input_shape)
+    403             self.W_shape = (self.nb_filter, stack_size, self.nb_row, self.nb_col)
+    404         elif self.dim_ordering == 'tf':
+--> 405             stack_size = input_shape[3]
+    406             self.W_shape = (self.nb_row, self.nb_col, stack_size, self.nb_filter)
+    407         else:
+For input_txt, the dimensions are matched with each other
+input_txt._keras_shape=(None, None, SEQ_LENGTH)
+backend.shape(input_txt)=(3,)
+and the input_txt is a Tensor with dimension (?,?, SEQ_LENGTH)
+After going through the embedding_layer, however, the dimension becomes mismatched:
+em_txt._keras_shape=(None, (None,SEQ_LENGTH), EMBEDDING_DIM)
+backend.shape(em_txt)=(4,)
+and the em_txt is a Tensor with dimension (?,?, SEQ_LENGTH, EMBEDDING_DIM), disagreed with em_txt._keras_shape
+Thus, when passing em_txt to a Convolution2D layer, tuple index out of range happened. I suppose this is due to the mentioned dimension mismatched issue, namely, the em_txt is a 3-dimensional tensor according to em_txt._keras_shape, which is 4-dimensional actually.
+Whether a revision of function get_output_shape_for in embedding layer class can fix this.

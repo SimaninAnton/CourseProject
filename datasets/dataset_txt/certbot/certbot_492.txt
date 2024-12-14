@@ -1,0 +1,88 @@
+Contributor
+mgedmin commented on 26 Jun 2018 •
+edited
+My operating system is (include version):
+Ubuntu 14.04 LTS
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+pip
+I ran this command and it produced this output:
+certbot certonly -t -n -a apache -d mail.gedmin.as
+Certbot's behavior differed from what I expected because:
+certbot failed to authorize the domain
+Here is a Certbot log showing the issue (if available):
+It is rather inconvenient for me at the moment to retrieve the log, but I can do so if necessary. Some relevant excerpts:
+2018-06-26 16:34:22,351:INFO:certbot.auth_handler:Performing the following challenges:
+2018-06-26 16:34:22,357:INFO:certbot.auth_handler:http-01 challenge for mail.gedmin.as
+2018-06-26 16:34:23,452:DEBUG:certbot_apache.http_01:Adding a temporary challenge validation Include for name: musmire.gedmin.as in: /etc/apache2/sites-enabled/musmire.gedmin.as.conf
+2018-06-26 16:34:23,458:DEBUG:certbot_apache.http_01:writing a pre config file with text:
+         RewriteEngine on
+        RewriteRule ^/\.well-known/acme-challenge/([A-Za-z0-9-_=]+)$ /var/lib/letsencrypt/http_challenges/$1 [END]
+
+2018-06-26 16:34:23,459:DEBUG:certbot_apache.http_01:writing a post config file with text:
+         <Directory /var/lib/letsencrypt/http_challenges>
+            Require all granted
+        </Directory>
+        <Location /.well-known/acme-challenge>
+            Require all granted
+        </Location>
+
+2018-06-26 16:34:23,852:DEBUG:certbot.reverter:Creating backup of /etc/apache2/sites-enabled/musmire.gedmin.as.conf
+2018-06-26 16:34:28,593:INFO:certbot.auth_handler:Waiting for verification...
+...
+2018-06-26 16:37:27,539:DEBUG:certbot.reporter:Reporting to user: The following errors were reported by the server:
+
+Domain: mail.gedmin.as
+Type:   unauthorized
+Detail: Invalid response from http://mail.gedmin.as/.well-known/acme-challenge/6y3r6aQj5mfwkMXO00U10OfsRDaMZEzO2gR4Ao5aXmc: "<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>401 Unauthorized</title>
+</head><body>
+<h1>Unauthorized</"
+Here is the relevant Apache virtualhost for the domain I am configuring:
+# /etc/apache2/sites-available/musmire.gedmin.as.conf, which is the only enabled site
+<VirtualHost *:80>
+  ServerName musmire.gedmin.as
+  ServerAdmin root@musmire.gedmin.as
+
+  ErrorLog /var/log/apache2/musmire.gedmin.as/error.log
+  CustomLog /var/log/apache2/musmire.gedmin.as/access.log combined
+
+  # Redirect everything to HTTPS
+  <If "%{HTTP_HOST} == 'musmire.gedmin.as'">
+    Redirect permanent / https://musmire.gedmin.as/
+  </If>
+  <Else>
+    Redirect / https://musmire.gedmin.as/
+  </Else>
+</VirtualHost>
+
+<VirtualHost *:443>
+  ServerName musmire.gedmin.as
+  ServerAdmin root@musmire.gedmin.as
+
+  DocumentRoot /var/www/musmire.gedmin.as
+  ErrorLog /var/log/apache2/musmire.gedmin.as/error.log
+  CustomLog /var/log/apache2/musmire.gedmin.as/access.log combined
+
+  SSLEngine on
+  RewriteEngine on
+
+# ...
+  # Access control
+  <Location />
+    AuthType Basic
+    AuthName "musmire.gedmin.as"
+    AuthUserFile /etc/pov/fridge.passwd
+    Require valid-user
+  </Location>
+
+</VirtualHost>
+Additional details
+/var/log/apache2/musmire.gedmin.as/access.log shows
+34.213.106.112 - - [26/Jun/2018:16:37:25 +0300] "GET /.well-known/acme-challenge/6y3r6aQj5mfwkMXO00U10OfsRDaMZEzO2gR4Ao5aXmc HTTP/1.1" 302 6
+42 "-" "Mozilla/5.0 (compatible; Let's Encrypt validation server; +https://www.letsencrypt.org)"
+13.58.30.69 - - [26/Jun/2018:16:37:25 +0300] "GET /.well-known/acme-challenge/6y3r6aQj5mfwkMXO00U10OfsRDaMZEzO2gR4Ao5aXmc HTTP/1.1" 401 4358
+ "http://mail.gedmin.as/.well-known/acme-challenge/6y3r6aQj5mfwkMXO00U10OfsRDaMZEzO2gR4Ao5aXmc" "Mozilla/5.0 (compatible; Let's Encrypt vali
+dation server; +https://www.letsencrypt.org)"
+I've also attempted to reproduce with --debug-challenges (after dropping -n) and verified that the two letsencrypt include files are correctly inserted at the very beginning and end of the <VirtualHost *:80> section.
+It seems that Redirect / directive inside the <Else> block takes precedence over the rewrite rule created by certbot-apache.

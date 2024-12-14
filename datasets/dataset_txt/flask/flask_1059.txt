@@ -1,0 +1,84 @@
+hamiltont commented on 5 Apr 2015
+Sorry for long report, this took a while to debug. I'm not an expert on how reloading works, so hopefully someone can explain what is happening. This only happens when I use Flask's reload while launching flask using supervisord, so if it ends up being a supervisord bug I will refile it on their bug tracker, but the problem only appears when using flask's reloading feature.
+Here's my simple flask app:
+from flask import Flask
+
+app = Flask(__name__, static_url_path='')
+
+@app.route('/start')
+def start_build():
+  print "Running command"
+  return "Starting"
+
+if __name__ == "__main__":
+  app.run(debug=True)
+As you'd expect, this generates the following output
+hamiltont$ python example.py
+ * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+ * Restarting with stat
+Running command
+127.0.0.1 - - [04/Apr/2015 18:58:13] "GET /start HTTP/1.1" 200 -
+Running command
+127.0.0.1 - - [04/Apr/2015 18:58:42] "GET /start HTTP/1.1" 200 -
+Running command
+127.0.0.1 - - [04/Apr/2015 18:58:44] "GET /start HTTP/1.1" 200 -
+This output is generated correctly for all combinations of python vs python -u and use_reloader=True vs use_reloader=False.
+Now I try to run the application (with reloading enabled) using supervisord and this supervisord.conf file
+[supervisord]
+nodaemon=true
+
+[program:flask]
+command=python -u example.py
+
+; Send stdout to console
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+
+; Send stderr to console
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+; Flask does not propagate signals to child processes when using debug
+; mode, so this tells supervisor to send the signal to the entire 
+; process group instead of just the parent
+stopasgroup=true
+; Send interrupt so the server is shutdown gracefully
+stopsignal=INT
+Note that I'm intentionally specifying python -u in my command, just to avoid issues. Here's the output:
+hamiltont$ supervisord -c super.conf
+2015-04-04 19:02:59,762 INFO supervisord started with pid 22439
+2015-04-04 19:03:00,769 INFO spawned: 'flask' with pid 22442
+ * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+ * Restarting with stat
+2015-04-04 19:03:01,939 INFO success: flask entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+127.0.0.1 - - [04/Apr/2015 19:04:07] "GET /start HTTP/1.1" 200 -
+127.0.0.1 - - [04/Apr/2015 19:04:11] "GET /start HTTP/1.1" 200 -
+127.0.0.1 - - [04/Apr/2015 19:04:11] "GET /start HTTP/1.1" 200 -
+^C
+2015-04-04 19:04:14,198 WARN received SIGINT indicating exit request
+2015-04-04 19:04:14,198 INFO waiting for flask to die
+Running command
+Running command
+Running command
+2015-04-04 19:04:14,209 INFO stopped: flask (exit status 0)
+So until I hit Ctrl-C to terminate, the stdout was being buffered. If I disable reloading, then everything works as expected:
+hamiltont$ supervisord -c super.conf
+2015-04-04 19:06:49,711 INFO supervisord started with pid 22462
+2015-04-04 19:06:50,715 INFO spawned: 'flask' with pid 22465
+ * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+2015-04-04 19:06:52,268 INFO success: flask entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+Running command
+127.0.0.1 - - [04/Apr/2015 19:06:54] "GET /start HTTP/1.1" 200 -
+Running command
+127.0.0.1 - - [04/Apr/2015 19:06:57] "GET /start HTTP/1.1" 200 -
+Running command
+127.0.0.1 - - [04/Apr/2015 19:06:58] "GET /start HTTP/1.1" 200 -
+^C
+2015-04-04 19:07:03,959 WARN received SIGINT indicating exit request
+2015-04-04 19:07:03,960 INFO waiting for flask to die
+2015-04-04 19:07:03,968 INFO stopped: flask (exit status 0)
+I can also generate the expected output by manually wrapping stdout at the top of my example.py file
+import sys
+import os
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+1

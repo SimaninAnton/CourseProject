@@ -1,0 +1,77 @@
+zyuchuan commented on Dec 12, 2019
+Description
+I'm using scrapy.pipelines.files.FilesPipeline to download all midi file from midiworld.com, this is a simple task and there millons of sample code on internet, so no doubt my spider works fine, until I check the log:
+2019-12-12 12:48:02 [scrapy.core.scraper] DEBUG: Scraped from <200 https://www.midiworld.com/search/?q=classic>
+{'author': 'Debussy',
+ 'file_urls': ['https://www.midiworld.com/download/4248'],
+ 'files': [{'checksum': 'fee5b02d07085556bfc78a074096f188',
+            'path': 'full/f92f7ce78a843b01c0dc6410eef55e07b76dfa30',
+            'url': 'https://www.midiworld.com/download/4240'}],
+ 'title': 'Project'}
+2019-12-12 12:48:02 [scrapy.core.scraper] DEBUG: Scraped from <200 https://www.midiworld.com/search/?q=classic>
+{'author': 'Debussy',
+ 'file_urls': ['https://www.midiworld.com/download/4248'],
+ 'files': [{'checksum': 'ff8216574c20acde7f68f00723aea619',
+            'path': 'full/c84495f99f0c9a4b9fb111187db807e551919609',
+            'url': 'https://www.midiworld.com/download/4237'}],
+ 'title': 'Project'}
+Check the files_urls and files::url, they are different, which is not correct!
+The problem cames from scrapy.piplelines.MediaPipeline:
+class MediaPipeline(object):
+    ...
+    def process_item(self, item, spider):
+        info = self.spiderinfo
+        requests = arg_to_iter(self.get_media_requests(item, info))
+        dlist = [self._process_request(r, info) for r in requests]
+        dfd = DeferredList(dlist, consumeErrors=1)
+        return dfd.addCallback(self.item_completed, item, info)
+when item_completed get called, the item passed to it is always the item that the pipe line is currently processing, not the item registered for this callback.
+I fixed this issue by copying the item before passing it to callback, like this:
+def process_item(self, item, spider):
+    info = self.spiderinfo
+    requests = arg_to_iter(self.get_media_requests(item, info))
+    dlist = [self._process_request(r, info) for r in requests]
+    dfd = DeferredList(dlist, consumeErrors=1)
+    item_copied = copy.deepcopy(item)
+    return dfd.addCallback(self.item_completed, item_copied, info)
+But this looks like a workaround, I don't really like it. Actually I think this is more a Twisted bug than a scrapy bug. Unfortunately my scheduel is tight, I don't have time doing further investigation, so I report the issue here. I'll try to fix it as soon as I have time.
+Steps to Reproduce
+It's easy to reproduce, just run this spider:
+class MidiWorldSpider(scrapy.Spider):
+    ...
+    def start_requests(self):
+        yield scrapy.Request(url="https://www.midiworld.com", callback=self.parse)
+
+    def parse(self, response):
+        midis_cloud = response.css('.midis-cloud').xpath('./ul/li')
+        midi = midis_cloud[0]
+        style_page = midi.css('li a::attr(href)').get()
+        style_page = response.urljoin(style_page)
+        yield scrapy.Request(style_page, callback=self.parse_style_page)
+
+    def parse_style_page(self, response):
+        item = MidiItem()
+        uls = response.css("#page ul")
+        midi_li = uls[0].css('li')
+        for li in midi_li:
+            download_link = li.css('a::attr(href)').get()
+            item['file_urls'] = [download_link]
+            yield item
+
+class MidiItem(scrapy.Item):
+    file_urls = scrapy.Field()
+    files = scrapy.Field()
+Reproduces how often:
+It happens every time you run the spider, unless you set CONCURRENT_ITEMS = 1
+Versions
+Scrapy       : 1.8.0
+lxml         : 4.4.2.0
+libxml2      : 2.9.5
+cssselect    : 1.1.0
+parsel       : 1.5.2
+w3lib        : 1.21.0
+Twisted      : 19.7.0
+Python       : 3.7.3 | packaged by conda-forge | (default, Jul  1 2019, 22:01:29) [MSC v.1900 64 bit (AMD64)]
+pyOpenSSL    : 19.0.0 (OpenSSL 1.1.1c  28 May 2019)
+cryptography : 2.7
+Platform     : Windows-10-10.0.16299-SP0

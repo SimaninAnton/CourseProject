@@ -1,0 +1,15 @@
+Contributor
+airalcorn2 commented on 16 Dec 2016 •
+edited
+The binary_crossentropy function in the Theano backend clips the output values before passing them to Theano's binary_crossentropy function, which results in negative model predictions (which shouldn't be occurring) producing a positive number for the cost instead of a nan. In theory, the model should not be generating negative predictions if the binary_crossentropy loss function is being used appropriately, but there is currently no check in place (on the model side) to ensure the output lies between zero and one. I learned this the hard way by forgetting to add a sigmoid activation function to my final Dense layer and then training a model for several days without error, only to then discover that the model generates negative predictions. The Keras implementation of binary_crossentropy behaves differently from the Theano binary_crossentropy function, which does not clip the predictions, so even though I was checking for nans while training, the model never produced them. I would prefer Keras either not enable output clipping by default, or implement a check such that if the model is using a binary_crossentropy loss function, it will make sure the output is being passed through an activation function that produces predictions that should lie between zero and one.
+import numpy as np
+import theano.tensor as T
+
+_EPSILON = 10e-8
+
+preds = np.array([-0.012, -0.002, -0.007])
+target = np.array([0, 0, 1])
+output = preds
+output = T.clip(output, _EPSILON, 1.0 - _EPSILON)
+clipped = sum(T.nnet.binary_crossentropy(output, target).eval()) # The Keras loss.
+not_clipped = sum(T.nnet.binary_crossentropy(preds, target).eval()) # The Theano loss.

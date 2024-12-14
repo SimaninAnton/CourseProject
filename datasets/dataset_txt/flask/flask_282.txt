@@ -1,0 +1,63 @@
+Contributor
+dchevell commented on 6 Oct 2018 •
+edited
+Expected Behavior
+When using copy_current_request_context in the middle of a request, I'm expecting it to copy the current state of flask.request and flask.session at the time it's called.
+Actual Behavior
+The current state of flask.request is copied, but flask.session is from before the current request and doesn't contain changes made during the current request, before copy_current_request_context was called. To me this seems like unexpected behaviour. If it's not I'd like to understand a bit more about why, and also to find out whether there's any workaround or alternative approach I can take.
+Example
+Here's a fully functional example you can save and run. It adds a test value to flask.request and flask.session during the request, then uses copy_current_request_context to decorate a method that will retrieve those same values in another thread. Two requests are made; on the first request the copied context can find the new value added to flask.request but cannot find the value added to flask.session. On the second request, the copied context can find the value added to flask.request, and now finds the value that was previously added to flask.session in the first request.
+import concurrent.futures
+import random
+
+from flask import Flask, copy_current_request_context, request, session
+
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'test'
+executor = concurrent.futures.ThreadPoolExecutor()
+
+
+@app.route('/')
+def session_context():
+    test_value = random.randint(1, 1001)
+    request.test_value = test_value
+    session['TEST_VALUE'] = test_value
+
+    original_context = (
+        ('request', request.test_value),
+        ('session', session.get('TEST_VALUE'))
+    )
+
+    @copy_current_request_context
+    def debug_session():
+        return (
+            ('request', request.test_value),
+            ('session', session.get('TEST_VALUE'))
+        )
+
+    future = executor.submit(debug_session)
+    print('original_context:', original_context)
+    print('copied_context:', future.result())
+    return 'ok'
+
+
+if __name__ == '__main__':
+    client = app.test_client()
+    print('### First request ###')
+    client.get('/')
+    print('### Second request ###')
+    client.get('/')
+Example output:
+$ python session_context.py
+### First request ###
+original_context: (('request', 27), ('session', 27))
+copied_context: (('request', 27), ('session', None))
+### Second request ###
+original_context: (('request', 63), ('session', 63))
+copied_context: (('request', 63), ('session', 27))
+Environment
+Python version: 3.7.0
+Flask version: Flask==1.0.2
+Werkzeug version: Werkzeug==0.14.1
+Also, for whatever it's worth: I'm investigating this as part of improving this project: https://github.com/dchevell/flask-executor

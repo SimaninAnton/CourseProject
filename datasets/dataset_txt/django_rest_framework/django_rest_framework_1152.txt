@@ -1,0 +1,24 @@
+lsowen commented on 11 Jul 2016 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Problem description
+The default request header 'Accept' on many browsers is something like Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8. This means that currently, if the response is not text/html, then the response Content-Type incorrectly contains the q= parameter. (According to this, the q parameter specifies which content-types the browser prefers).
+It looks like it is occurring because:
+DefaultContentNegotiation.select_renderer returns the full_media_type (which includes the extra Accept "parameters" like q)
+ApiView.perform_content_negotiation returns the renderer, full_media_type tuple
+ApiView.initial sets request.accepted_media_type equal to that full_media_type
+ApiView.finalize_response sets response.accepted_media_type equal to request.accepted_media_type
+Response.rendered_content is setting the response Content-Type to the value of response.accepted_media_type.
+This only came to light because I'm running nginx in front of django, and it was not recognizing the content-type (as application/json is different from application/json;q=0.9). As far as I can tell, this is actually an invalid Content-Type (https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.17).
+Steps to reproduce
+curl --verbose http://example.com/api/model?format=json --H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,/;q=0.8' > /dev/null
+Expected behavior
+Content-Type: application/json; charset=utf-8
+Actual behavior
+Content-Type: application/json;q=0.9; charset=utf-8

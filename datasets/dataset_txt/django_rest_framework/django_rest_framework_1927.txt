@@ -1,0 +1,37 @@
+Brobin commented on 19 Mar 2015
+I am working with the new Pagination API for 3.1 and am finding it difficult to replicate the behavior of the old paginated serializer. In the old version I was able to tell it to just include the query parameters in next and previous links like so:
+{
+    "previous": null,
+    "next": "?page=2",
+    "count": 384,
+    "courses": []
+}
+Currently in 3.1, it would give me "http://127.0.0.1/api/courses?page=2" instead of just "?page=2" like I want.
+To replicate this behaviour, I had to build my own custom pagination class to exclude the url from the result.
+class CoursePaginator(PageNumberPagination):
+    def get_paginated_response(self, data):
+        return Response({'count': self.page.paginator.count,
+                         'next': self.get_next_link(),
+                         'previous': self.get_previous_link(),
+                         'courses': data})
+
+    def get_next_link(self):
+        if not self.page.has_next():
+            return None
+        page_number = self.page.next_page_number()
+        return self.custom_url(page_number)
+
+    def get_previous_link(self):
+        if not self.page.has_previous():
+            return None
+        page_number = self.page.previous_page_number()
+        return self.custom_url(page_number)
+
+    def custom_url(self, page_number):
+        url = self.request.build_absolute_uri()
+        url = replace_query_param(url, self.page_query_param, page_number)
+        if url is not None:
+            url = '?' + url.split('?')[1]
+        return url
+Am I completely missing a way to do this easier, or is this the correct way? If this is the only way, I think it might be useful to include an option in the get_previous_link() and get_next_link() functions to only include the query paramters.
+I can work on implementing this if you think this might be a good feature. I know I would definitely use it. It would be a pretty simple fix and would make my custom paginator much less messy.

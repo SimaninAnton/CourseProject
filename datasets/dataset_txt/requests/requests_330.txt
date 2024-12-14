@@ -1,0 +1,125 @@
+vandernath commented on Mar 27, 2018
+I have started using the logging library to catch potential performance issues, and my logs are flooded with urlllib3 warnings using requests, like those:
+WARNING:urllib3.connectionpool:Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLError("bad handsha
+ke: SysCallError(-1, 'Unexpected EOF')",),)': /store/search?q=in+one+editor&c=apps&hl=en
+This doesn't break the code or exit the program, but floods my logs with warnings and potentially affects performance. The warning appears when sending requests to https:/.play.google.com/store/search?q=query&c=apps&hl=en. I'm not too good with SSL and the like, so I'm unsure of what's happening.
+After reading about similar issues on this git, I have tried using the adapter below, which uses extra ciphers:
+Reproduction Steps
+"""
+requests_toolbelt.source_adapter
+================================
+
+This file contains an implementation of the SourceAddressAdapter originally
+demonstrated on the Requests GitHub page.
+"""
+from requests.adapters import HTTPAdapter
+
+from .._compat import poolmanager, basestring
+
+import ssl
+from requests.packages.urllib3.util.ssl_ import create_urllib3_context
+
+# This is the 2.11 Requests cipher string, containing 3DES.
+CIPHERS = (
+    'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+HIGH:'
+    'DH+HIGH:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+HIGH:RSA+3DES:!aNULL:'
+    '!eNULL:!MD5'
+)
+
+class SourceAddressAdapter(HTTPAdapter):
+    """
+    A Source Address Adapter for Python Requests that enables you to choose the
+    local address to bind to. This allows you to send your HTTP requests from a
+    specific interface and IP address.
+
+    Two address formats are accepted. The first is a string: this will set the
+    local IP address to the address given in the string, and will also choose a
+    semi-random high port for the local port number.
+
+    The second is a two-tuple of the form (ip address, port): for example,
+    ``('10.10.10.10', 8999)``. This will set the local IP address to the first
+    element, and the local port to the second element. If ``0`` is used as the
+    port number, a semi-random high port will be selected.
+
+    .. warning:: Setting an explicit local port can have negative interactions
+                 with connection-pooling in Requests: in particular, it risks
+                 the possibility of getting "Address in use" errors. The
+                 string-only argument is generally preferred to the tuple-form.
+
+    Example usage:
+
+    .. code-block:: python
+
+        import requests
+        from requests_toolbelt.adapters.source import SourceAddressAdapter
+
+        s = requests.Session()
+        s.mount('http://', SourceAddressAdapter('10.10.10.10'))
+        s.mount('https://', SourceAddressAdapter(('10.10.10.10', 8999))
+    """
+    def __init__(self, source_address, **kwargs):
+        if isinstance(source_address, basestring):
+            self.source_address = (source_address, 0)
+        elif isinstance(source_address, tuple):
+            self.source_address = source_address
+        else:
+            raise TypeError(
+                "source_address must be IP address string or (ip, port) tuple"
+            )
+
+        super(SourceAddressAdapter, self).__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
+        context = create_urllib3_context(ciphers=CIPHERS)
+        kwargs['ssl_context'] = context
+        self.poolmanager = poolmanager.PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            source_address=self.source_address,
+            **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        context = create_urllib3_context(ciphers=CIPHERS)
+        kwargs['ssl_context'] = context
+        kwargs['source_address'] = self.source_address
+        return super(SourceAddressAdapter, self).proxy_manager_for(
+            *args, **kwargs)
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.2.1"
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.5.2"
+  },
+  "platform": {
+    "release": "4.4.0-112-generic",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "1010007f",
+    "version": "17.5.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "1000207f"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}
+This command is only available on Requests v2.16.4 and greater. Otherwise,
+please provide some basic information about your system (Python version,
+operating system, &c).

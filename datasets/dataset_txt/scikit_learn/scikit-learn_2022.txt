@@ -1,0 +1,49 @@
+Contributor
+dallascard commented on Jul 21, 2017
+Description
+Isotonic regression returns an incorrect solution in the presence of repeated X values.
+The problem seems to be that fit() begins by taking the weighted average of points with the same x value. However, rather than associating the resulting average point with the sum of the weights, it is using the average of the weights (in _make_unique(), in _isotonic.pyx, lines 103 and 116). When the fitting the isotonic regression, the combined points will then count for less than they should (according to the objective), and incorrect fitted values are returned.
+It is conceivable that this is the intended behaviour (i.e. if the objective in the documentation refers to the output of _make_unique, rather than the original data), but it seems to conflict with the documentation, which explicitly refers to the possibility of equality among X values. The docs also mention that ties are broken using the "secondary method from Leeuw, 1977", but that too seems to sum the weights rather than averaging them (page 2, 6th line from the bottom).
+If I have missed something, and this is the intended behaviour, I think we should clarify the documentation, and possibly add an option to not average in this way. However, I would advocate for summing rather than averaging as the default.
+Steps/Code to Reproduce
+This code presents a simple example that returns an incorrect result (according to the stated objective). It then uses the sample_weight option to artificially up-weight the points which get combined (at x=1). This, results in a lower squared error on the original data, demonstrating that the default behaviour does not achieve the minimum.
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.isotonic import IsotonicRegression
+
+x = np.array([0, 1, 1, 2, 3])
+y = np.array([0, 0, 1, 0, 1])
+
+ir = IsotonicRegression()
+ir.fit(x, y)
+y_pred = ir.predict(x)
+
+squared_error = np.sum((y - y_pred)**2)
+print("Default SE = %0.3f" % squared_error)
+
+fig, ax = plt.subplots()
+ax.scatter(x, y)
+ax.plot(x, y_pred, label="default")
+
+# force IR to do the right thing by artificially up-weighting the data
+sample_weight = np.array([1.0, 2.0, 2.0, 1.0, 1.0])
+ir.fit(x, y, sample_weight=sample_weight)
+y_pred = ir.predict(x)
+
+squared_error = np.sum((y - y_pred)**2)
+print("Reweighted SE = %0.3f" % squared_error)
+
+ax.plot(x, y_pred, label="reweighted")
+ax.legend()
+plt.show()
+Expected Results
+I believe the output of isotonic regression should predict [0, 0.33, 0.33, 0.33, 1] at the original input points, with squared error 0.667. _make_unique should produce x = (0, 1, 2, 3), y = (0, 0.5, 0, 1), sample_weight = (1, 2, 1, 1).
+Actual Results
+The actual predicted values at these points are [0, 0.25, 0.25, 0.25, 1], with squared error 0.688. _make_unique is producing x = (0, 1, 2, 3), y = (0, 0.5, 0, 1), sample_weight = (1, 1, 1, 1).
+Versions
+Darwin-16.6.0-x86_64-i386-64bit
+Python 3.6.1 |Continuum Analytics, Inc.| (default, Mar 22 2017, 19:25:17)
+[GCC 4.2.1 Compatible Apple LLVM 6.0 (clang-600.0.57)]
+NumPy 1.12.1
+SciPy 0.19.0
+Scikit-Learn 0.18.2

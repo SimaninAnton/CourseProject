@@ -1,0 +1,41 @@
+lhk commented on 13 Feb 2017
+I would like to use this pretrained model: https://gist.github.com/baraldilorenzo/07d7802847aaad0a35d3
+It is in theano layout, my code depends on tensorflow image dimension ordering.
+There is a guide on converting weights between the formats: https://github.com/fchollet/keras/wiki/Converting-convolution-kernels-from-Theano-to-TensorFlow-and-vice-versa
+But this seems broken. In the section to convert theano to tensorflow, the first instruction is to load the weights into the tensorflow model.
+Keras backend should be TensorFlow in this case.
+First, load the Theano-trained weights into your TensorFlow model:
+model.load_weights('my_weights_theano.h5')
+This raises an exception, the weight layouts would be incompatible.
+And if the load_weights function would take theano weights for a tensorflow model, there wouldn't be any need to convert them.
+I took a look at the convert_kernel function. To see, wether I could do the necessary steps myself: https://github.com/fchollet/keras/blob/master/keras/utils/np_utils.py
+The code is rather simple - I don't understand why the guide makes use of a tensorflow session. That seems unnecessary.
+I've copied the code from the pretrained model to create a model with tensorflow layer. This just meant changing the input shape and the backend.image_dim_ordering before adding any Convolutions.
+Then I used this loop:
+model is the original model, created from the code I linked at the beginning.
+model_tensorflow is the exact same model, but with tensorflow layout.
+for i in range(len(model.layers)):
+    layer_theano=model.layers[i]
+    layer_tensorflow=model_tensorflow.layers[i]
+    
+    if layer_theano.__class__.__name__ in ['Convolution1D', 'Convolution2D', 'Convolution3D', 'AtrousConvolution2D']:
+        weights_theano=layer_theano.get_weights()
+        
+        kernel=weights_theano[0]
+        bias=weights_theano[1]
+        
+        converted_kernel=convert_kernel(kernel, "th")
+        converted_kernel=converted_kernel.transpose((3,2,1,0))
+        
+        weights_tensorflow=[converted_kernel, bias]
+
+        layer_tensorflow.set_weights(weights_tensorflow)
+        
+    else:
+        layer_tensorflow.set_weights(layer_theano.get_weights())
+In the original code, there is a testcase: Prediction ran on the image of a cat.
+I've downloaded a cat image and tried the testcase with the original model: 285.
+The converted model predicts 585.
+I don't know whether 285 is the correct label for a cat, but even if it isn't, the two models should be broken in the same way, I would expect the same prediction.
+What is the correct way of converting weights between models ?
+2

@@ -1,0 +1,64 @@
+noahmotion commented on Mar 4, 2017
+Description
+LinearDiscriminantAnalysis is producing strange results and seems to be inconsistent with its documentation. I found this closed issue from 2013, which is related, but the problems discussed there seem to persist, and I think I've noticed some additional, related issues.
+Specifically, as far as I can tell, no matter what you provide as the n_components input argument, the fit_transform() and transform() methods only return a 1D array of transformed variables. According to the documentation, they should return arrays of with shape (n_samples, n_features). I'm assuming, perhaps incorrectly, that the second dimension here should correspond to the n_components specified when the original LDA object is created.
+In addition, the documentation says that the scalings_ attribute should have shape (rank, n_classes-1) and the coef_ attribute should have shape (n_features,) or (n_classes, n_features). With data of nd dimension, I get shape (nd,nd) for scalings_ (with solver ='eigen'; I get shape (nd,1) with the default svd solver) and (1,nd) for coef_.
+By way of contrast, if I manually transform the original variables using matrix multiplication with scalings_, I get a sensible-looking array of shape (n_features, nd), where the first column has maximal class separation, the second has less, the third even less, etc.
+Steps/Code to Reproduce
+import matplotlib.pyplot as pl
+import numpy as np
+from scipy.stats import wishart
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+
+np.random.seed(seed=5) # for reproducibility
+nsmp = 150
+nd = 5
+mu_a = np.zeros(nd)
+mu_b = 2*np.ones(nd)
+S_a = np.linalg.inv(wishart.rvs(scale=np.eye(nd)/10,df=nd+1,size=1))
+S_b = np.linalg.inv(wishart.rvs(scale=np.eye(nd)/10,df=nd+1,size=1))
+X_a = np.random.multivariate_normal(mean=mu_a, cov=S_a, size=nsmp)
+X_b = np.random.multivariate_normal(mean=mu_b, cov=S_b, size=nsmp)
+X = np.concatenate((X_a,X_b),axis=0)
+
+# group labels
+a_lab = ['A' for i in range(nsmp)]; b_lab = ['B' for i in range(nsmp)];
+Y = np.concatenate((a_lab,b_lab))
+
+lda = LDA(n_components=5, solver='eigen')
+
+lda_ft = lda.fit_transform(X,Y)
+
+lda_f = lda.fit(X,Y)
+lda_sc = X @ lda_f.scalings_
+lda_tt = lda_f.transform(X)
+
+print(lda_f.scalings_.shape,lda_f.coef_.shape)
+print(lda_ft.shape,lda_tt.shape,lda_sc.shape)
+
+# visualize the first three transformed variable dimensions
+fig, axes = pl.subplots(1,3,figsize=(16,4))
+axes[0].hist(lda_sc[:nsmp,0],histtype='step',lw=3)
+axes[0].hist(lda_sc[nsmp:,0],histtype='step',lw=3, ls='-.')
+axes[1].hist(lda_sc[:nsmp,1],histtype='step',lw=3)
+axes[1].hist(lda_sc[nsmp:,1],histtype='step',lw=3, ls='-.')
+axes[2].hist(lda_sc[:nsmp,2],histtype='step',lw=3)
+axes[2].hist(lda_sc[nsmp:,2],histtype='step',lw=3, ls='-.');
+Expected Results
+Based on the documentation, I expect the first print command to return
+(5,1) (5,)
+or
+(5,1) (2,5)
+I would then expect the second print command to return
+(300,5) (300,5) (300,5)
+Actual Results
+Instead, I get
+(5, 5) (1, 5)
+(300, 1) (300, 1) (300, 5)
+Versions
+Darwin-16.4.0-x86_64-i386-64bit
+Python 3.5.2 |Anaconda custom (x86_64)| (default, Jul 2 2016, 17:52:12)
+[GCC 4.2.1 Compatible Apple LLVM 4.2 (clang-425.0.28)]
+NumPy 1.11.3
+SciPy 0.18.1
+Scikit-Learn 0.18.1

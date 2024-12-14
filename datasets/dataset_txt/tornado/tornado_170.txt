@@ -1,0 +1,60 @@
+BrianTsengZyxel commented on 18 Jun 2018 •
+edited
+Hi, I build a simple hello world tornado application.
+And then I send 20,000 POST requests which contain 1MB data on its body to the application.
+After the requests are done, I find the server's used memory doesn't been released.
+I trace the source code, and I find the chunks doesn't be cleared after generating the request.body
+tornado/tornado/web.py
+Lines 2189 to 2201 in 0b2b055
+ def finish(self): 
+     if self.stream_request_body: 
+         future_set_result_unless_cancelled(self.request.body, None) 
+     else: 
+         self.request.body = b''.join(self.chunks) 
+         self.request._parse_body() 
+         self.execute() 
+    def on_connection_close(self): 
+     if self.stream_request_body: 
+         self.handler.on_connection_close() 
+     else: 
+         self.chunks = None 
+The value of need_delegate_close is False, it doesn't trigger the on_connection_close method of web.py
+tornado/tornado/http1connection.py
+Lines 259 to 263 in 0b2b055
+ if need_delegate_close: 
+     with _ExceptionLoggingContext(app_log): 
+         delegate.on_connection_close() 
+ header_future = None 
+ self._clear_callbacks() 
+hello-world server
+import tornado.ioloop
+import tornado.web
+
+class MainHandler(tornado.web.RequestHandler):
+    def data_received(self, chunk):
+        pass
+
+    def post(self):
+        self.write("Hello, world")
+
+    def on_finish(self):
+        self.request.body = None
+
+
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+    ])
+
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8000)
+    tornado.ioloop.IOLoop.current().start()
+memory usage
+top status
+VIRT RES SHR %MEM
+Initial usage 76184 23032 8508 1.2
+After serving all requests 276984 224248 8564 11.3
+Thanks!
+6

@@ -1,0 +1,110 @@
+wwmmqq commented on 13 May 2018 •
+edited
+import numpy as np
+import tensorflow as tf
+tf.set_random_seed(49999)
+
+maxlen = 2
+word_dim = 2
+n_rnn = 3
+
+x = np.array(range(4), dtype=np.float32).reshape([1, 2, 2])
+x_r = np.flip(x, axis=1)
+
+inputs_r = tf.constant(x_r, dtype=tf.float32)
+seq_len = tf.constant([2], dtype=tf.int32)
+
+cell_fw = tf.nn.rnn_cell.LSTMCell(n_rnn, name="fw")
+cell_bw = tf.nn.rnn_cell.LSTMCell(n_rnn, name="bw")
+
+# tf forward
+tf_hs_fw, (tf_c_fw, tf_h_fw) = tf.nn.dynamic_rnn(
+    cell_fw, inputs_r, seq_len, dtype=tf.float32)
+
+# tf backward
+tf_hs_bw, (tf_c_bw, tf_h_bw) = tf.nn.dynamic_rnn(
+    cell_bw, inputs_r, seq_len, dtype=tf.float32)
+
+sess = tf.InteractiveSession()
+init = tf.global_variables_initializer()
+sess.run(init)
+
+print(tf.trainable_variables())
+
+tf_w = [v.eval() for v in tf.trainable_variables()]
+
+v_tf_h_fw = tf_h_fw.eval()[0]
+v_tf_h_bw = tf_h_bw.eval()[0]
+
+
+def tf2keras(params, reshape_dim=(0, 2, 1, 3), in_dim=2, rnn_dim=3):
+    # params: [(5, 12), (12,), (5, 12), (12,)]
+    assert in_dim+rnn_dim == params[0].shape[0]
+    if len(params) == 2:
+        tf_lstm = [params[0][:in_dim, :], params[0][in_dim:, :], params[1]]
+    else:  # == 4
+        tf_lstm = [params[0][:in_dim, :], params[0][in_dim:, :], params[1],
+                   params[2][:in_dim, :], params[2][in_dim:, :], params[3]]
+
+    # tf_lstm: [(2, 12), (3, 12), (12,),
+    #          (2, 12), (3, 12), (12,)]
+
+    def dim_recombination(x, reshape_dim):
+        # [i, j, f, o]  => [i, f, c, o]  where j is c
+        rst = None
+        if len(x.shape) == 1:
+            # [i, j, f, o]
+            tmp = [x[0:rnn_dim * 1],
+                   x[rnn_dim * 1:rnn_dim * 2],
+                   x[rnn_dim * 2:rnn_dim * 3],
+                   x[rnn_dim * 3: rnn_dim * 4]]
+            rst = np.hstack([tmp[i] for i in reshape_dim])
+        elif len(x.shape) == 2:
+            tmp = [x[:, 0:rnn_dim*1],
+                   x[:, rnn_dim*1:rnn_dim*2],
+                   x[:, rnn_dim*2:rnn_dim*3],
+                   x[:, rnn_dim*3:rnn_dim*4]]
+            rst = np.hstack([tmp[i] for i in reshape_dim])
+        else:
+            print("xxxxx")
+
+        return rst
+
+    keras_w = [dim_recombination(v, reshape_dim) for v in tf_lstm]
+    return keras_w
+
+
+k_params = tf2keras(tf_w, (0, 2, 1, 3))
+
+
+#  keras
+from keras.layers import Input
+from keras.layers import LSTM
+from keras.models import Model
+
+keras_input = Input(shape=[maxlen, word_dim], dtype='float32', name='input_layer')
+
+
+k_lstm1 = LSTM(n_rnn, recurrent_activation='sigmoid', return_sequences=True, return_state=True,
+               name="lstm1")(keras_input, training=False)
+k_lstm2 = LSTM(n_rnn, recurrent_activation='sigmoid', return_sequences=True, return_state=True,
+               name="lstm2")(keras_input, training=False)
+
+m1 = Model(inputs=keras_input, outputs=k_lstm1)
+m1.set_weights(k_params[:3])
+k_hs_fw, k_h_fw, k_c_fw = m1.predict(x_r)
+v_k_h_fw = k_h_fw[0]
+
+m2 = Model(inputs=keras_input, outputs=k_lstm2)
+m2.set_weights(k_params[3:])
+
+k_hs_bw, k_h_bw, k_c_bw = m2.predict(x_r)
+v_k_h_bw = k_h_bw[0]
+
+print(v_k_h_fw - v_tf_h_fw)
+# expect: [0, 0, 0]
+# but get [-0.0370398  -0.02871804  0.00494046]
+
+print(v_k_h_bw - v_tf_h_bw)
+# expect: [0, 0, 0]
+# but get [-0.03148754 -0.0340828   0.05445436]

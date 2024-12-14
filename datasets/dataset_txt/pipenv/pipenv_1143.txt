@@ -1,0 +1,57 @@
+caspervdw commented on 26 Apr 2018 •
+edited
+First of all, thanks for all the work on this great package!
+I am working on a project updating some old packages that are not distributed via PyPI but via our own package index. Using pipenv with our own package index works great. However, in my dev environment, I'd like to install them editable from github, checking out the correct branch. I can do so by calling the pipenv install -e git+git@github.com:<>/<>.git@<>, which works fine.
+The dependency graph of the relevant packages is as follows:
+lizard-blockbox==1.1
+  - lizard-ui [required: Any, installed: 4.50]
+  - lizard-management-command-runner [required: Any, installed: 0.2]
+    - lizard-ui [required: Any, installed: 4.50]
+Pipenv version: `'11.10.1.dev4'
+Expected result
+Correct installation of three packages from github.
+Actual result
+Pipenv starts installing lizard-blockbox, which has a dependency on lizard-management-command-runner. This is not on Pypi and installation fails.
+Steps to replicate
+Generate the Pipfile as follows (the order is important -- see dependency graph):
+pipenv --two
+pipenv install -e git+git@github.com:lizardsystem/lizard-ui.git@4.50#egg=lizard-ui
+pipenv install -e git+git@github.com:lizardsystem/lizard-management-command-runner.git@0.2#egg=lizard-management-command-runner
+pipenv install -e git+git@github.com:lizardsystem/lizard-blockbox.git@1.1#egg=lizard-blockbox
+Resulting Pipfile
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+lizard-ui = {git = "git@github.com:lizardsystem/lizard-ui.git", editable = true, ref = "4.50"}
+lizard-management-command-runner = {git = "git@github.com:lizardsystem/lizard-management-command-runner.git", editable = true, ref = "0.2"}
+lizard-blockbox = {git = "git@github.com:lizardsystem/lizard-blockbox.git", editable = true, ref = "1.1"}
+
+[dev-packages]
+
+[requires]
+python_version = "2.7"
+Then remove the environment and install again: pipenv --rm; pipenv --two; pipenv install --deploy.
+The following error is logged:
+pipenv install --deploy
+Installing dependencies from Pipfile.lock (17d58e)…
+An error occurred while installing -e git+git@github.com:lizardsystem/lizard-blockbox.git@1.1#egg=lizard-blockbox! Will try again.
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 18/18 — 00:00:16
+An error occurred while installing -e git+git@github.com:lizardsystem/lizard-management-command-runner.git@0.2#egg=lizard-management-command-runner! Will try again.
+Installing initially–failed dependencies…
+Obtaining lizard-blockbox from git+git@github.com:lizardsystem/lizard-blockbox.git@1.1#egg=lizard-blockbox
+  Updating ./.venv/src/lizard-blockbox clone (to revision 1.1)
+Requirement already satisfied: Django<2,>=1.9 in ./.venv/lib/python2.7/site-packages (from lizard-blockbox) (1.11.13)
+Collecting lizard-management-command-runner>=0.2 (from lizard-blockbox)
+
+  Could not find a version that satisfies the requirement lizard-management-command-runner>=0.2 (from lizard-blockbox) (from versions: )
+No matching distribution found for lizard-management-command-runner>=0.2 (from lizard-blockbox)
+
+  ☤  ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 0/2 — 00:00:
+Proposed fix
+Best solution would be to “blacklist” other specified VCS packages when installing a VCS package. But pip does not provide this option.
+It seems to be a use case for the sequential install option; but how would I determine the installation order then?
+Other solution might be (bit hacky) convincing pip that VCS dependencies already exist before installing and then force-reinstall at the actual pip install.
+Now I just retry deployment until it does not fail. Mostly it works on the second try.

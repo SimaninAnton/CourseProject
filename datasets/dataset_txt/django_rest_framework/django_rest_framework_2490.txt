@@ -1,0 +1,24 @@
+pySilver commented on 27 Jun 2014
+It seems to be related to a #1570
+consider the model
+class Example(models.Model):
+    optional_decimal = models.DecimalField(
+        blank=True,
+        default=Decimal(0),
+        validators=[MinValueValidator(0)],
+        max_digits=8,
+        decimal_places=2,
+    )
+
+class ExampleSerializer(ModelSerializer):
+    class Meta:
+        model = Example
+PUT/POST/PATCH with a payload:
+{'optional_decimal': null}
+will pass all validators and model.clean() check and at the db layer will fail with something like
+DatabaseError: Field `optional_decimal` cannot be null
+Well it is partially correct behaviour, assigning invalid value to a model field results in exception. However as an API Client I'd expect some field error instead of 500 server error in response.
+Main question – does anyone have any idea what would be the proper behaviour for this issue? Maybe ModelSerializer should check field.null value and throw an error if model won't allow None value?
+if not field.null and value is None:
+    raise ValidationError('Field cannot be null')
+I belive we cannot refer to django.forms behaviour here, since it is not natively possible to pass NoneType via form submit without using special fields.

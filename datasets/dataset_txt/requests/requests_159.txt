@@ -1,0 +1,99 @@
+stratosgear commented on Nov 9, 2018
+I have some legacy code that calls requests like this:
+response = requests.get(file_resource['url'], stream=True)
+Through debug statements right before that statement I see that the passed url is like:
+http://xxxxxx.xxxx.xxx.int/xxx-sl-int/data-action?ProductType=MAP&MAP.MAP_OID=12655
+That url, btw, correctly resolves into a 200MB file, in the browser or through a curl/wget download.
+Expected Result
+I'd expect my file to be downloaded (when I later try to:
+for block in response.iter_content(100 * 1024):
+                            handle.write(block)
+Actual Result
+I get the following stack trace:
+Failed with: Traceback (most recent call last):
+
+  File "/usr/local/lib/python2.7/dist-packages/rq/worker.py", line 710, in perform_job
+    rv = job.perform()
+
+  File "/usr/local/lib/python2.7/dist-packages/rq/job.py", line 560, in perform
+    self._result = self._execute()
+
+  File "/usr/local/lib/python2.7/dist-packages/rq/job.py", line 566, in _execute
+    return self.func(*self.args, **self.kwargs)
+
+  File "/plaavi/components/file_cache/worker.py", line 1131, in download
+    return worker.download(fileResource)
+
+  File "/plaavi/components/file_cache/worker.py", line 112, in download
+    response = requests.get(file_resource['url'], stream=True)
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/api.py", line 75, in get
+    return request('get', url, params=params, **kwargs)
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/api.py", line 60, in request
+    return session.request(method=method, url=url, **kwargs)
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/sessions.py", line 533, in request
+    resp = self.send(prep, **send_kwargs)
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/sessions.py", line 668, in send
+    history = [resp for resp in gen] if allow_redirects else []
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/sessions.py", line 247, in resolve_redirects
+    **adapter_kwargs
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/sessions.py", line 646, in send
+    r = adapter.send(request, **kwargs)
+
+  File "/usr/local/lib/python2.7/dist-packages/requests/adapters.py", line 414, in send
+    raise InvalidURL(e, request=request)
+
+InvalidURL: No host specified.
+Reproduction Steps
+>>> import requests
+>>> response = requests.get("http://xxxxxx.xxxx.xxx.int/xxx-sl-int/data-action?ProductType=MAP&MAP.MAP_OID=12655", stream=True)
+>>> response
+<Response [200]>
+Apparently trying the request from the same-ish machine that cause the exception, is working.
+What is different in the actual exception case, is that the request to download happens inside an RQ (http://python-rq.org/) worker running inside a docker container, that I do not know how to further debug. Mind you that kind of download infrastructure, was working correctly the last two years and only now it starts to have these downloading issues.
+System Information
+The docker container is setup like this:
+$ python -m requests.help
+root@9dd4bc57a320:/tmp# python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.2.1"
+  },
+  "idna": {
+    "version": ""
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "2.7.6"
+  },
+  "platform": {
+    "release": "3.10.0-862.11.6.el7.x86_64",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "1010007f",
+    "version": "18.0.0"
+  },
+  "requests": {
+    "version": "2.20.1"
+  },
+  "system_ssl": {
+    "version": "1000106f"
+  },
+  "urllib3": {
+    "version": "1.24.1"
+  },
+  "using_pyopenssl": true
+}
+This command is only available on Requests v2.16.4 and greater. Otherwise,
+please provide some basic information about your system (Python version,
+operating system, &c).
+Thanks!

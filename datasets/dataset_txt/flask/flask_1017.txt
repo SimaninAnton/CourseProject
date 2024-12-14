@@ -1,0 +1,77 @@
+ael-code commented on 13 Jun 2015
+Reproduce the bug:
+make a blueprint with an errorhandler for 404
+register the blueprint on the main app under url_prefix="/blue"
+Now, if you visit some not existent page under blueprint url prefix, like /blue/notExist you will recive response from the main app 404 error handler.
+The only way to trigger the blueprint 404 error handler is by calling abort(404) from within the blueprint.
+The correct behaviour would be to choose which error handler to activate also on the basis of the url_prefix parameter.
+import unittest
+from flask import Flask, Blueprint, abort, request
+
+
+app = Flask(__name__)
+myblueprint = Blueprint('myblueprint', __name__)
+
+@myblueprint.route('/hello', methods=['GET'])
+def hello():
+    return 'hello world!'
+
+@myblueprint.route('/forced_404', methods=['GET'])
+def forced_404():
+    abort(404)
+
+myblueprint.errorhandler(404)(lambda e: ('myblueprint 404', 404))
+
+app.register_blueprint(myblueprint, url_prefix="/blue")
+
+app.errorhandler(404)(lambda e: ('app 404', 404))
+
+
+class BlueprintOrAppTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.client = app.test_client()
+
+    def test_200(self):
+        resp = self.client.get('/blue/hello')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_data(True), 'hello world!')
+
+    def test_404_main(self):
+        with app.test_client() as client:
+            resp = client.get('/notExist')
+            self.assertEqual(resp.status_code, 404)
+            self.assertEqual(resp.get_data(True), 'app 404')
+
+    def test_404_blueprint(self):
+        with app.test_client() as client:
+            resp = client.get('/blue/notExist')
+            self.assertEqual(resp.status_code, 404)
+            self.assertEqual(resp.get_data(True), 'myblueprint 404')
+            self.assertEqual(request.blueprint, 'myblueprint')
+
+    def test_404_forced_blueprint(self):
+        with app.test_client() as client:
+            resp = client.get('/blue/forced_404')
+            self.assertEqual(resp.status_code, 404)
+            self.assertEqual(resp.get_data(True), 'myblueprint 404')
+            self.assertEqual(request.blueprint, 'myblueprint')
+
+if __name__ == '__main__':
+    # app.run(host="0.0.0.0", use_reloader=True)
+    unittest.main()
+Response:
+.F..
+======================================================================
+FAIL: test_404_blueprint (__main__.BlueprintOrAppTestCase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "asd.py", line 43, in test_404_blueprint
+    self.assertEqual(resp.get_data(True), 'myblueprint 404')
+AssertionError: u'app 404' != 'myblueprint 404'
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.013s
+
+FAILED (failures=1)
+1

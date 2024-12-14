@@ -1,0 +1,40 @@
+lfiaschi commented on Feb 2, 2016 •
+edited by amueller
+According to the definition of precision and recall:
+http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html
+when when the Tp=0 and Fp=0 Recall is zero while Precision is undefined (limit 0/0)
+In such cases the function precision_recall_curve returns precision equals to 1 that is inconsistent with other functions within sklearn and lead could lead to misleading interpretations. The following code demonstrate the problem:
+import numpy as np
+from sklearn.metrics import precision_recall_curve, precision_recall_fscore_support,\
+average_precision_score,auc
+from matplotlib import pyplot as plt
+
+#create some example labels
+y=np.hstack([np.ones((100,)),np.zeros((900,))])
+
+#create fake uniform probabilities of a dummy classifier
+prob_random=np.ones_like(y)*.5
+
+#Note that when recall is 0 (all samples assigned to class 0) precision returned is 1.
+#However, this case is mathematically undefined (0/0 limit) and could make sense to set returned #precision to 0 rather than one as it is done in other function within sklearn
+precision,recall,_ = precision_recall_curve(y,prob_random)
+
+print('precision at 0 recall = {}'.format(precision[1]))
+
+#For example, this function returns precision 0 and recall 0
+P,R,_,_ =precision_recall_fscore_support(y,np.zeros_like(y))
+print('precision at 0 recall = {}'.format(P[1]))
+
+#A problem with the first definition is that 
+# the AUC under the precision recall curve of a random classifier appears  artificially very good
+plt.plot(recall,precision)
+recall_def2=[1,0]
+precision_def2=[.1,0]
+plt.plot(recall_def2,precision_def2)
+print('AUC current definition {}'.format(auc(recall,precision)))
+print('AUC second definition {}'.format(auc(recall_def2,precision_def2)))
+precision at 0 recall = 1.0
+precision at 0 recall = 0.0
+AUC current definition 0.55
+AUC second definition 0.05
+Also this definition may create problem when using PR-AUC as CV scorer because classifier with crisp probabilities (such as the random one) will get high scores.

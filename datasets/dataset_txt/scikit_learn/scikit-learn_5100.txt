@@ -1,0 +1,63 @@
+abhirk commented on Nov 27, 2012
+Memory usage by joblib.dump jumps to more than 3 times the size of the object.
+While training the classifier takes about 11g of memory, but when dumping the classifier
+object using joblib.dump(compress=9), the usage jumps up to 38.4g
+[Causing issues with limited RAM]. [I tried values compress=3, 5, 7, 9, always get memory
+error]. If "compress" is not used for joblib.dump, the classifier object is about 11g.
+Following is the minimalistic script that demonstrates the steps in my classifier script.
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.externals import joblib
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.linear_model import SGDClassifier
+import time
+
+# Here "data" is the list of plaintext paragraphs and target array has the 
+# category . Each paragraph belongs to one of the n categories. 
+
+def train(data, target):
+    vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1,2),
+                    smooth_idf=True, sublinear_tf=True, max_df=0.5,
+                    token_pattern=ur'\b(?!\d)\w\w+\b', use_idf=False)
+
+    # Vectorize the input data
+    print "Extracting features from dataset using %s." % (self.vectorizer)
+    start_time=time()
+    data_vectors = vectorizer.fit_transform(data)
+    extract_features_time = time() - start_time
+    print "Feature extraction of training data done in %s seconds" % extract_features_time
+    print "Number of samples in training data: %d\n Number of features: %d" % data_vectors.shape
+    print ""
+
+    # Dump the vectorizer, dataset and target array objects for later use. This seems to work correctly
+    # with any value of compress.
+    print "Dumping vectorizer...",
+    joblib.dump(self.vectorizer, "vectorizer.joblib", compress=9)
+    print  "done"
+
+    print "Dumping data vectors...",
+    joblib.dump(data_vectors,  "datavectors.joblib",compress=9)
+    print "done." 
+
+    print "Dumping target array...",
+     joblib.dump(target, "targetarray.joblib", compress=9)
+     print "done." 
+
+
+    # Train the classifer with OvR. The maximum memory used during training is
+    # 11g for a dataset of size 655M.
+    clf = OneVsRestClassifier(SGDClassifier(loss='log', n_iter=35,
+                                        alpha=0.00001, n_jobs=-1))
+    start_time=time()
+    print "Training %s" % clf
+    clf.fit(data_vectors, target)
+    print "done [%.3fs]" % (start_time-time())
+
+    # Dump the classifier for later use. Joblib dumps the classifier correctly
+    # without any compression. However the size of the vector dumped is about 10-11g.
+    # This seems to be too large for our purpose, and hence trying to compress
+    # the dumped object.  For compress=3,5,7,9 the  memory usage jumps to 38.4g
+    # Since the available memory is only 32g, the process ends up using swap space
+    # where the process is stalled for a long time and eventually killed.
+    print "Dumping classifier.....",
+    joblib.dump(clf, "classifier.joblib", compress=9)
+    print "done"

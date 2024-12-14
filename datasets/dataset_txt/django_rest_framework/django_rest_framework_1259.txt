@@ -1,0 +1,29 @@
+aldarund commented on 17 Mar 2016
+I have following code.
+class UserSerializer(serializers.ModelSerializer):
+   fax = serializers.CharField(source='primary_address.fax')
+   mobile = serializers.CharField(source='primary_address.mobile')
+class User(models.Model):
+    primary_address = models.OneToOneField(ProfileAddress, verbose_name=_('Primary address'), null=True, related_name='+')
+
+class ProfileAddress(models.Model):
+   fax = models.CharField(max_length=255, verbose_name=_('Fax number'), null=True)
+   mobile = models.CharField(max_length=255, verbose_name=_('Mobile phone number'), null=True)
+When im trying to issue an patch request for this resource im getting error:
+Cannot assign "{u'fax': u'0555400123457',u'mobile': u'12345',}": "User.primary_address" must be a "ProfileAddress" instance.
+And im expecting this field to be set normally. Im not sure, maybe there similar error with creating such resources, but didnt checked.
+For update i see that https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/serializers.py#L878 here drf just tries to set attributes to models. But in validated_data in such case will be a field primary_address and its value will be another dictionary. So DRF tries to set primary_address model attribute to a dictionary value, and ofc it will fail.
+Locally i solved this problem by overriding update method to something like this:
+    def update_recursive(self, instance, data):
+        for attr, value in data.items():
+            if isinstance(value, dict):
+                self.update_recursive(getattr(instance,attr),value)
+            else:
+                setattr(instance, attr, value)
+        instance.save()
+
+    def update(self, instance, validated_data):
+        raise_errors_on_nested_writes('update', self, validated_data)
+        self.update_recursive(instance, validated_data)
+
+        return instance

@@ -1,0 +1,97 @@
+deontaepharr commented on 1 Apr 2019
+Im having an issue with creating my Keras CNN+LSTM model:
+ValueError: Error when checking target: expected dense_2 to have 2 dimensions, but got array with shape ()
+I've removed some of the layers to test out the issue. But nothing changed.
+Background:
+Im trying to analyze 4D data: 3D image + 1D time series.
+The way I'm working it is by adding 1 image at a time to be analyzed by my CNN+LSTM model. I've managed to get the dimensions correct and flow through the model. But then I'm hit with the error noted above.
+# define CNN model
+model = Sequential()
+
+#Layer 1
+model.add(TimeDistributed(Conv3D(32, kernel_size=(5, 5, 5), strides=(1, 1, 1),
+                 activation='relu'), 
+                input_shape=input_shape))
+                        
+model.add(TimeDistributed(MaxPooling3D(pool_size=(2, 2, 2), strides=(2, 2, 2))))
+
+#Layer 2
+model.add(TimeDistributed(Conv3D(64, (5, 5, 5), activation='relu')))
+model.add(TimeDistributed(MaxPooling3D(pool_size=(2, 2, 2))))
+
+#Layer 3
+model.add(TimeDistributed(Conv3D(128, (5, 5, 5), activation='relu')))
+model.add(TimeDistributed(MaxPooling3D(pool_size=(2, 2, 2))))
+
+#Flatten
+model.add(TimeDistributed(Flatten()))
+
+# LSTM
+model.add(LSTM(512, return_sequences=True))
+model.add(LSTM(512))
+model.add(Dense(1201))
+
+#Dense
+model.add(Dense(num_classes, activation='sigmoid'))
+
+#Compile
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
+model.summary()
+
+train_gen = generate_images(train_dataset)
+model.fit_generator(train_gen, samples_per_epoch=5, nb_epoch=10)
+
+###################################################################
+
+#Data Generator
+def generate_images(dataframe):
+    
+    while True:
+        sub_dataframe = dataframe.sample(n=1)
+        batch_input = []
+#         batch_output = []
+        
+#         for index, row in sub_dataframe.iterrows(): # iterate through each row
+            
+        input_path = os.path.join(base_directory, sub_dataframe['Image'].values[0])
+        img = get_fmri_sequence(input_path)
+        img = np.expand_dims(img, axis=-1)
+        batch_input.append(img)
+        
+        batch_input = np.array(batch_input)
+        yield (batch_input, sub_dataframe["DX"].values[0])
+
+###################################################################
+Here is the model summary:
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+time_distributed_1 (TimeDist (None, None, 43, 54, 45,  4032      
+_________________________________________________________________
+time_distributed_2 (TimeDist (None, None, 21, 27, 22,  0         
+_________________________________________________________________
+time_distributed_3 (TimeDist (None, None, 17, 23, 18,  256064    
+_________________________________________________________________
+time_distributed_4 (TimeDist (None, None, 8, 11, 9, 64 0         
+_________________________________________________________________
+time_distributed_5 (TimeDist (None, None, 4, 7, 5, 128 1024128   
+_________________________________________________________________
+time_distributed_6 (TimeDist (None, None, 2, 3, 2, 128 0         
+_________________________________________________________________
+time_distributed_7 (TimeDist (None, None, 1536)        0         
+_________________________________________________________________
+lstm_1 (LSTM)                (None, None, 512)         4196352   
+_________________________________________________________________
+lstm_2 (LSTM)                (None, 512)               2099200   
+_________________________________________________________________
+dense_1 (Dense)              (None, 1201)              616113    
+_________________________________________________________________
+dense_2 (Dense)              (None, 2)                 2404      
+=================================================================
+Total params: 8,198,293
+Trainable params: 8,198,293
+Non-trainable params: 0
+_________________________________________________________________

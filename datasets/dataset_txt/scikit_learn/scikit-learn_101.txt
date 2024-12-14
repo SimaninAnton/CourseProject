@@ -1,0 +1,199 @@
+hmaarrfk commented on Dec 8, 2019
+=================================== FAILURES ===================================
+_________ test_missing_values_resilience[0.1-0.97-0.89-classification] _________
+[gw1] linux -- Python 3.8.0 $PREFIX/bin/python
+
+problem = 'classification', missing_proportion = 0.1
+expected_min_score_classification = 0.97, expected_min_score_regression = 0.89
+
+    @pytest.mark.parametrize('problem', ('classification', 'regression'))
+    @pytest.mark.parametrize(
+        'missing_proportion, expected_min_score_classification, '
+        'expected_min_score_regression', [
+            (.1, .97, .89),
+            (.2, .93, .81),
+            (.5, .79, .52)])
+    def test_missing_values_resilience(problem, missing_proportion,
+                                       expected_min_score_classification,
+                                       expected_min_score_regression):
+        # Make sure the estimators can deal with missing values and still yield
+        # decent predictions
+    
+        rng = np.random.RandomState(0)
+        n_samples = 1000
+        n_features = 2
+        if problem == 'regression':
+            X, y = make_regression(n_samples=n_samples, n_features=n_features,
+                                   n_informative=n_features, random_state=rng)
+            gb = HistGradientBoostingRegressor()
+            expected_min_score = expected_min_score_regression
+        else:
+            X, y = make_classification(n_samples=n_samples, n_features=n_features,
+                                       n_informative=n_features, n_redundant=0,
+                                       n_repeated=0, random_state=rng)
+            gb = HistGradientBoostingClassifier()
+            expected_min_score = expected_min_score_classification
+    
+        mask = rng.binomial(1, missing_proportion, size=X.shape).astype(np.bool)
+        X[mask] = np.nan
+    
+>       gb.fit(X, y)
+
+../_test_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold/lib/python3.8/site-packages/sklearn/ensemble/_hist_gradient_boosting/tests/test_gradient_boosting.py:243: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../_test_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold/lib/python3.8/site-packages/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py:319: in fit
+    grower.grow()
+../_test_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold/lib/python3.8/site-packages/sklearn/ensemble/_hist_gradient_boosting/grower.py:252: in grow
+    self.split_next()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sklearn.ensemble._hist_gradient_boosting.grower.TreeGrower object at 0xffffac1db160>
+
+    def split_next(self):
+        """Split the node with highest potential gain.
+    
+        Returns
+        -------
+        left : TreeNode
+            The resulting left child.
+        right : TreeNode
+            The resulting right child.
+        """
+        # Consider the node with the highest loss reduction (a.k.a. gain)
+        node = heappop(self.splittable_nodes)
+    
+        tic = time()
+        (sample_indices_left,
+         sample_indices_right,
+         right_child_pos) = self.splitter.split_indices(node.split_info,
+                                                        node.sample_indices)
+        self.total_apply_split_time += time() - tic
+    
+        depth = node.depth + 1
+        n_leaf_nodes = len(self.finalized_leaves) + len(self.splittable_nodes)
+        n_leaf_nodes += 2
+    
+        left_child_node = TreeNode(depth,
+                                   sample_indices_left,
+                                   node.split_info.sum_gradient_left,
+                                   node.split_info.sum_hessian_left,
+                                   parent=node)
+        right_child_node = TreeNode(depth,
+                                    sample_indices_right,
+                                    node.split_info.sum_gradient_right,
+                                    node.split_info.sum_hessian_right,
+                                    parent=node)
+        left_child_node.sibling = right_child_node
+        right_child_node.sibling = left_child_node
+        node.right_child = right_child_node
+        node.left_child = left_child_node
+    
+        # set start and stop indices
+        left_child_node.partition_start = node.partition_start
+        left_child_node.partition_stop = node.partition_start + right_child_pos
+        right_child_node.partition_start = left_child_node.partition_stop
+        right_child_node.partition_stop = node.partition_stop
+    
+        if not self.has_missing_values[node.split_info.feature_idx]:
+            # If no missing values are encountered at fit time, then samples
+            # with missing values during predict() will go to whichever child
+            # has the most samples.
+            node.split_info.missing_go_to_left = (
+                left_child_node.n_samples > right_child_node.n_samples)
+    
+        self.n_nodes += 2
+    
+        if self.max_depth is not None and depth == self.max_depth:
+            self._finalize_leaf(left_child_node)
+            self._finalize_leaf(right_child_node)
+            return left_child_node, right_child_node
+    
+        if (self.max_leaf_nodes is not None
+                and n_leaf_nodes == self.max_leaf_nodes):
+            self._finalize_leaf(left_child_node)
+            self._finalize_leaf(right_child_node)
+            self._finalize_splittable_nodes()
+            return left_child_node, right_child_node
+    
+        if left_child_node.n_samples < self.min_samples_leaf * 2:
+            self._finalize_leaf(left_child_node)
+        if right_child_node.n_samples < self.min_samples_leaf * 2:
+            self._finalize_leaf(right_child_node)
+    
+        # Compute histograms of childs, and compute their best possible split
+        # (if needed)
+        should_split_left = left_child_node.value is None  # node isn't a leaf
+        should_split_right = right_child_node.value is None
+        if should_split_left or should_split_right:
+    
+            # We will compute the histograms of both nodes even if one of them
+            # is a leaf, since computing the second histogram is very cheap
+            # (using histogram subtraction).
+            n_samples_left = left_child_node.sample_indices.shape[0]
+            n_samples_right = right_child_node.sample_indices.shape[0]
+            if n_samples_left < n_samples_right:
+                smallest_child = left_child_node
+                largest_child = right_child_node
+            else:
+                smallest_child = right_child_node
+                largest_child = left_child_node
+    
+            # We use the brute O(n_samples) method on the child that has the
+            # smallest number of samples, and the subtraction trick O(n_bins)
+            # on the other one.
+            tic = time()
+            smallest_child.histograms = \
+                self.histogram_builder.compute_histograms_brute(
+                    smallest_child.sample_indices)
+            largest_child.histograms = \
+>               self.histogram_builder.compute_histograms_subtraction(
+                    node.histograms, smallest_child.histograms)
+E           Failed: Timeout >300.0s
+
+../_test_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold/lib/python3.8/site-packages/sklearn/ensemble/_hist_gradient_boosting/grower.py:400: Failed
+The following NEW packages will be INSTALLED:
+
+    apipkg:                      1.5-py_0               conda-forge
+    attrs:                       19.3.0-py_0            conda-forge
+    binutils_impl_linux-aarch64: 2.29.1-hc862510_0      c4aarch64  
+    ca-certificates:             2019.11.28-hecc5488_0  conda-forge
+    certifi:                     2019.11.28-py38_0      conda-forge
+    cython:                      0.29.14-py38he1b5a44_0 conda-forge
+    execnet:                     1.7.1-py_0             conda-forge
+    importlib_metadata:          1.2.0-py38_0           conda-forge
+    joblib:                      0.14.0-py_0            conda-forge
+    libblas:                     3.8.0-14_openblas      conda-forge
+    libcblas:                    3.8.0-14_openblas      conda-forge
+    libffi:                      3.2.1-h4c5d2ac_1006    conda-forge
+    libgcc-ng:                   7.3.0-h5c90dd9_0       c4aarch64  
+    libgfortran-ng:              7.3.0-h6bc79d0_0       c4aarch64  
+    liblapack:                   3.8.0-14_openblas      conda-forge
+    libopenblas:                 0.3.7-h5ec1e0e_4       conda-forge
+    libstdcxx-ng:                7.3.0-h5c90dd9_0       c4aarch64  
+    more-itertools:              8.0.2-py_0             conda-forge
+    ncurses:                     6.1-hf484d3e_1002      conda-forge
+    numpy:                       1.17.3-py38h91f3968_0  conda-forge
+    openssl:                     1.1.1d-h516909a_0      conda-forge
+    packaging:                   19.2-py_0              conda-forge
+    pluggy:                      0.13.1-py38_0          conda-forge
+    py:                          1.8.0-py_0             conda-forge
+    pyparsing:                   2.4.5-py_0             conda-forge
+    pytest:                      5.3.1-py38_0           conda-forge
+    pytest-forked:               1.1.2-py_0             conda-forge
+    pytest-timeout:              1.3.3-py_0             conda-forge
+    pytest-xdist:                1.30.0-py_0            conda-forge
+    python:                      3.8.0-heaf0f07_5       conda-forge
+    readline:                    8.0-h75b48e3_0         conda-forge
+    scikit-learn:                0.22-py38h1971d64_0    local      
+    scipy:                       1.3.2-py38hb5cb654_0   conda-forge
+    setuptools:                  42.0.2-py38_0          conda-forge
+    six:                         1.13.0-py38_0          conda-forge
+    sqlite:                      3.30.1-h283c62a_0      conda-forge
+    tk:                          8.6.10-hed695b0_0      conda-forge
+    wcwidth:                     0.1.7-py_1             conda-forge
+    xz:                          5.2.4-hda93590_1001    conda-forge
+    zipp:                        0.6.0-py_0             conda-forge
+    zlib:                        1.2.11-h516909a_1006   conda-forge
+
+Preparing transaction: ...working... done
+https://cloud.drone.io/conda-forge/scikit-learn-feedstock/37/3/2

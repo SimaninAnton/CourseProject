@@ -1,0 +1,45 @@
+mvilenius commented on 1 Mar 2017
+I'm having a problem with the following network (idea is to do NER with CNN-BLSTM using word and character embeddings).
+input1 = Input(shape=(__max_seq_len,))
+input2 = Input(shape=(__max_seq_len, __max_token_len))
+word_embedding = Embedding(input_dim=__vocab_size, output_dim = __emb_dim, input_length=__max_seq_len)(input1)
+char_embedding = Embedding(input_dim=__char_set_size, output_dim = __char_emb_dim,
+         input_length=__max_seq_len*__max_token_len)(input2)
+char_reshape = Reshape((__max_seq_len, __max_token_len, __char_emb_dim))(char_embedding)
+char_cnn1 = Convolution2D(n_filters, 2, 1, activation='relu', border_mode='same')(permute_char)
+permute_char_2 = Permute((1, 2, 3))(char_cnn1)
+char_max_pool = MaxPooling2D((2, 1))(permute_char_2)
+permute_char_back = Permute((2, 3, 1))(char_max_pool)
+char_reshape2 = Reshape((__max_seq_len, __max_token_len/2*n_filters))(permute_char_back)
+concat = merge([char_reshape2, word_embedding], mode='concat')
+left = LSTM(output_dim=state_size, init='uniform', inner_init='uniform',
+   forget_bias_init='one', input_shape=(__max_seq_len, __max_token_len/2*n_filters), return_sequences=True,
+   activation='tanh', inner_activation='sigmoid')(concat)
+right = LSTM(output_dim=state_size, init='uniform', inner_init='uniform', forget_bias_init='one',
+    input_shape=(__max_seq_len, __max_token_len/2*n_filters), return_sequences=True, activation='tanh',
+    inner_activation='sigmoid', go_backwards=True)(concat)
+lr_merge = merge([left, right], mode='sum')
+dropper = Dropout(dropout)(lr_merge)
+dense = TimeDistributed(Dense(__n_labels, input_shape=(151,200), activation='softmax'))(dropper)
+The dimensions come out (when I print them) as:
+('In1', (None, 151))
+('In2', (None, 151, 83))
+('CharEmb1', (None, 12533, 26))
+('WdEmb1', (None, 151, 50))
+('CharReshape', (None, 151, 83, 26))
+('Permute1', (None, 83, 151, 26))
+('CNN1', (None, 83, 151, 30))
+('Permute2', (None, 83, 151, 30))
+('Pool', (None, 41, 151, 30))
+('Permute2', (None, 151, 30, 41))
+('CharReshape2', (None, 151, 1230))
+('Concat', (None, 151, 1280))
+('Merge', (None, 151, 200))
+('Dropout', (None, 151, 200))
+And then the compiling fails at the TimeDistributed(Dense(...)) layer with:
+lib/python2.7/site-packages/keras/initializations.py", line 65, in glorot_uniform
+    s = np.sqrt(6. / (fan_in + fan_out))
+TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'
+Any ideas what I am doing wrong, or is this an issue with Keras / Tensorflow?
+Cheers,
+MV

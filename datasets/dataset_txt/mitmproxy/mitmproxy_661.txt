@@ -1,0 +1,54 @@
+felixgr commented on 11 May 2017
+I'm trying to use an upstream proxy that expects plain HTTP bytes instead of TLS-encapsulated HTTP for HTTPS URLs. I've tried to modify the scheme and other things but mitmproxy still continues to send a TLS client hello after the initial upstream CONNECT.
+It appears that this is currently unsupported in mitmproxy?
+Steps to reproduce the problem:
+uplink.py:
+from mitmproxy import ctx
+
+def http_connect(flow):
+        flow.request.scheme = 'http'
+        flow.request.port = 80
+        ctx.log.info('script: connect '+repr(flow))
+
+def request(flow):
+        flow.request.scheme = 'http'
+        flow.request.port = 80
+        ctx.log.info('script: request '+repr(flow))
+socat -v tcp-listen:8082,reuseaddr,fork TCP:upstreamproxy:999
+mitmproxy -p 8081 -s uplink.py -U http://localhost:8082 --insecure --no-upstream-cert
+curl -v -k -x http://127.0.0.1:8081 https://www.google.com
+The output of socat is:
+> 2017/05/11 10:11:56.527763  length=119 from=0 to=118
+CONNECT www.google.com:80 HTTP/1.1\r
+Host: www.google.com:443\r
+User-Agent: curl/7.51.0\r
+Proxy-Connection: Keep-Alive\r
+\r
+< 2017/05/11 10:11:56.720058  length=116 from=0 to=115
+HTTP/1.1 200 OK\r
+Content-Length: 0\r
+Date: Thu, 11 May 2017 08:11:56 GMT\r
+Content-Type: text/plain; charset=utf-8\r
+\r
+> 2017/05/11 10:11:56.753419  length=164 from=119 to=282
+............i..RF+,Q..2.=.......
+oA5T].Lt....2.,.+.$.#.
+.       .0./.(.'.........k.g.9.3.....=.<.5./.....@.\v.......
+.......#...\r. ........................................< 2017/05/11 10:11:56.753987  length=82 from=116 to=197
+HTTP/1.1 502 Uplink Bad Gateway\r
+Content-Length: 131\r
+Content-Type: text/plain\r
+\r
+< 2017/05/11 10:11:56.754159  length=131 from=198 to=328
+malformed HTTP request "\\x16\\x03\\x01\\x00\\x9f\\x01\\x00\\x00\\x9b\\x03\\x03\\xd2i\\xe3\\xacRF+,Q\\xa4\\xec2\\xfe=\\x11\\x11\\xf1\\xfe\\xcf\\x0e\\u007f"^C⏎
+As you can see above, the TLS client hello \\x16\\x03\\x01\\x00 is sent. The upstream proxy doesn't like it and replies with error 502.
+Expected behavior
+If configured/scripted, mitmproxy should send upstream HTTP bytes for a HTTPS URL.
+Any other comments? What have you tried so far?
+I also tried some variants of uplink.py, also the script from issue #1731 for example. I also tried switching off --insecure or --no-upstream-cert. I'm currently using those flags because Burp (which I actually intend to use instead of curl) apparently doesn't send SNI properly.
+System information
+Mitmproxy version: 2.0.2 (1.2.0dev0000-0x8cba0352e)
+Python version: 3.6.1
+Platform: Darwin-16.5.0-x86_64-i386-64bit
+SSL version: OpenSSL 1.1.0e  16 Feb 2017
+Mac version: 10.12.4 ('', '', '') x86_64

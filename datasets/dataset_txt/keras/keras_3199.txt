@@ -1,0 +1,37 @@
+laxatives commented on 16 Feb 2017 •
+edited
+I've defined an F0.5 score:
+def fhalf(ypred, ytrue):
+    return fbeta_score(ypred, ytrue, beta=0.5)
+which I supply in model.compile and train before saving as an h5:
+    model.compile(optimizer=SGD(lr=0.01, momentum=0.95, nesterov=True),
+                  loss='categorical_crossentropy',
+                  # TODO: f_beta_score broken during deserialization?
+                  metrics=[fhalf, 'precision', 'recall'])
+
+    print("Training model...")
+    early_stopping = EarlyStopping(monitor='val_fhalf', patience=32)
+    reduce_lr = ReduceLROnPlateau(monitor='val_fhalf', factor=0.25, patience=4, min_lr=1e-7)
+    tensor_board = TensorBoard(log_dir=thoth_home + '/logs', histogram_freq=1)
+    model.fit([org_as, org_bs, xs], labels, class_weight={1: 4, 0: 1, 2: 2, 3: 2},
+              batch_size=128, nb_epoch=1000,
+              validation_split=0.03, callbacks=[early_stopping, reduce_lr, tensor_board])
+
+    print("Saving model...")
+    model.save(thoth_home + "/models/org_comparator_keras.h5")
+and the trained model successfully evalutes and computes F0.5 on a validation data set.
+However, when I attempt to load the model with model = load_model(thoth_home + "models/org_comparator_keras.h5"), I get the following error:
+  File "/Users/ben/workspace/diffbot/Thoth2/bin/keras/server.py", line 11, in <module>
+    class KerasServer(BaseHTTPRequestHandler):
+  File "/Users/ben/workspace/diffbot/Thoth2/bin/keras/server.py", line 21, in KerasServer
+    model = load_model(thoth_home + "models/org_comparator_keras.h5")
+  File "/usr/local/lib/python2.7/site-packages/keras/models.py", line 170, in load_model
+    sample_weight_mode=sample_weight_mode)
+  File "/usr/local/lib/python2.7/site-packages/keras/engine/training.py", line 715, in compile
+    metric_fn = metrics_module.get(metric)
+  File "/usr/local/lib/python2.7/site-packages/keras/metrics.py", line 184, in get
+    return get_from_module(identifier, globals(), 'metric')
+  File "/usr/local/lib/python2.7/site-packages/keras/utils/generic_utils.py", line 125, in get_from_module
+    str(identifier))
+ValueError: Invalid metric: fhalf
+The error sounds as if it is trying to invoke the custom metric instance by its string name to some mapping provided in metric.py, but complains when it doesn't exist. Is there a way for me to make use of the custom metric without modifying metric.py to include it?

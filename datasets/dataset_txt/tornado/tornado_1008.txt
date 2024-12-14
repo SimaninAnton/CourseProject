@@ -1,0 +1,96 @@
+ghost commented on 4 Mar 2013
+I ran into this issue while developing a library on top of tornado. The documentation clearly states that it's unsafe to call most methods from a different thread, but the handler doesn't call to any tornado methods. (and python's print not being thread-safe is irrelavent here).
+Versions affected
+2.4.1, git master dbff2b5, probably earlier version as well.
+The scenario:
+Multiple HTTPServer, each listening to a different port
+Shared global IOLoop shared, via tornado.ioloop.IOLoop().instance().
+All server have a handler with an identical URLSpec , "/a" in the example below
+When invoked, the request handler merely prints the ident of the current thread
+to stdout.
+Symptoms:
+When issuing a request to a server at a specific port, the reported thread ident
+is not constant, and cycles randomly through the all the threads of the other
+servers who have a matching URLSpec.
+I'm relying on per-server, thread-local data to be available to handlers and this
+behaviour breaks that.
+Expected behaviour
+requsts made to a server on a given port would always be handled
+from within the thread of that server, and none other.
+Mitigation
+Using multple IOLoops , rather then the global singleton loop, one per
+server has so far eliminated these issues.
+Steps to reproduce
+The following script reproduces the problem, the number of servers
+running only needs to be >=2, but more servers make the problem
+more apparent.
+After running the script, open up a browser to http://127.0.0.1:9000,
+and repeatedly hit refresh. The console output will show the ident of
+the thread serving the requiest, which is randomly cycling through threads.
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+import threading
+import errno
+import time
+from tornado.httpserver import HTTPServer
+from tornado.web import  RequestHandler
+
+class H(RequestHandler):
+    def get(self):
+        print( str(threading.current_thread().ident))
+
+class SRV( threading.Thread):
+    def __init__(self, port=None, address='127.0.0.1', **kwds):
+        """
+        If port== None, will pick one automatically
+        """
+        import tornado.web
+        import tornado.ioloop
+
+        super(SRV, self).__init__()
+
+        self.name = "Server Thread"
+        self.daemon = True
+
+        # this is the important bit
+        self.ioloop = tornado.ioloop.IOLoop().instance()
+        self.application = tornado.web.Application(debug=False)
+        self._server = HTTPServer(self.application)
+
+        # vs. this, which behaves as I would accept
+        # self.ioloop = tornado.ioloop.IOLoop()#.instance()
+        # self.application = tornado.web.Application(debug=False)
+        # self._server = HTTPServer(self.application,io_loop=self.ioloop)
+
+        self._address_requested = address
+        self._port_used = None
+        self._address_used = None
+
+
+    def run(self):
+        import socket
+        from tornado.web import URLSpec
+
+        self.application.add_handlers("", [URLSpec('/a',H )]) # re-register everything
+
+        for portnum in range(9000,10000):
+            try:
+                self._server.listen(portnum,'127.0.0.1')
+                print('Server listening on port {0}'.format(portnum))
+                self._port_used = portnum
+                self._address_used = self._address_requested
+                self.ioloop.start()
+
+                return
+            except socket.error as  e:
+                if e.errno != errno.EADDRINUSE:
+                    logger.error(str(e))
+                    break
+
+servers=[]
+for i in range(10):
+    servers.append(SRV())
+    servers[-1].start()
+
+while(True):
+    time.sleep(1)  # block main thread til KBInterrupt

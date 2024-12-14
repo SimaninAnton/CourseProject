@@ -1,0 +1,51 @@
+davidblewett commented on 19 Sep 2018 •
+edited
+We are terminating TLS in Tornado so that we can do client certificate validation. Tornado is then proxied to via an AWS ELB that is doing TCP-level health checks of the service. Because these connections do not complete the handshake, I see a lot of logs like this:
+dragnet-56f746f99b-v9c8n dragnet 2018-09-19 14:13:13,497 1 ERROR   [asyncio:1591] Exception in callback None()                               
+dragnet-56f746f99b-v9c8n dragnet handle: <Handle cancelled>                                                                              
+dragnet-56f746f99b-v9c8n dragnet Traceback (most recent call last):                                                                       
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/asyncio/events.py", line 88, in _run                                                                                                                                                               
+dragnet-56f746f99b-v9c8n dragnet     self._context.run(self._callback, *self._args)                                                  
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/site-packages/tornado/platform/asyncio.py", line 122, in _handle_events
+dragnet-56f746f99b-v9c8n dragnet     handler_func(fileobj, events)                                                                        
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/site-packages/tornado/stack_context.py", line 300, in null_wrapper
+dragnet-56f746f99b-v9c8n dragnet     return fn(*args, **kwargs)                                                                           
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/site-packages/tornado/iostream.py", line 709, in _handle_events    
+dragnet-56f746f99b-v9c8n dragnet     self._handle_read()                                                                                 
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/site-packages/tornado/iostream.py", line 1581, in _handle_read          
+dragnet-56f746f99b-v9c8n dragnet     self._do_ssl_handshake()                                                                        
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/site-packages/tornado/iostream.py", line 1501, in _do_ssl_handshake    
+dragnet-56f746f99b-v9c8n dragnet     self.socket.do_handshake()                                                                        
+dragnet-56f746f99b-v9c8n dragnet   File "/usr/local/lib/python3.7/ssl.py", line 1108, in do_handshake                                    
+dragnet-56f746f99b-v9c8n dragnet     self._sslobj.do_handshake()                                                                     
+dragnet-56f746f99b-v9c8n dragnet OSError: [Errno 0] Error
+I've tested on Python 3.7 and Python 3.6, Tornado 5.1.
+Simple test case:
+import ssl
+import tornado.web
+ssl_ctx = ssl.create_default_context()
+ssl_ctx.check_hostname = False
+app = tornado.web.Application()
+app.listen(8888, ssl_options=ssl_ctx)
+tornado.ioloop.IOLoop.current().start()
+Then sleep 0.1 | telnet 127.0.0.1 8888 or nc -vz 127.0.0.1 8888 (btw, the check_hostname is to prevent this traceback; not sure how to set server_hostname correctly in this context):
+ERROR:asyncio:Exception in callback BaseAsyncIOLoop._handle_events(12, 1)
+handle: <Handle BaseAsyncIOLoop._handle_events(12, 1)>
+Traceback (most recent call last):
+  File "/usr/lib/python3.6/asyncio/events.py", line 145, in _run
+    self._callback(*self._args)
+  File "/home/dblewett/.virtualenvs/dragnet-0UOjSQS6/lib/python3.6/site-packages/tornado/platform/asyncio.py", line 122, in _handle_events
+    handler_func(fileobj, events)
+  File "/home/dblewett/.virtualenvs/dragnet-0UOjSQS6/lib/python3.6/site-packages/tornado/stack_context.py", line 300, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/home/dblewett/.virtualenvs/dragnet-0UOjSQS6/lib/python3.6/site-packages/tornado/netutil.py", line 262, in accept_handler
+    callback(connection, address)
+  File "/home/dblewett/.virtualenvs/dragnet-0UOjSQS6/lib/python3.6/site-packages/tornado/tcpserver.py", line 263, in _handle_connection
+    do_handshake_on_connect=False)
+  File "/home/dblewett/.virtualenvs/dragnet-0UOjSQS6/lib/python3.6/site-packages/tornado/netutil.py", line 573, in ssl_wrap_socket
+    **kwargs)
+  File "/usr/lib/python3.6/ssl.py", line 407, in wrap_socket
+    _context=self, _session=session)
+  File "/usr/lib/python3.6/ssl.py", line 770, in __init__
+    raise ValueError("check_hostname requires server_hostname")
+ValueError: check_hostname requires server_hostname

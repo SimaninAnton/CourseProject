@@ -1,0 +1,47 @@
+gforcada commented on 26 Jun 2019
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+We have the following models with a constraint on the Relation one:
+class User(models.Model):
+    user_id = models.CharField(max_length=255)
+
+class Relation(models.Model):
+    follower = models.ForeignKey(User, on_delete=models.CASCADE, related_name='+')
+    followed = models.ForeignKey(User, on_delete=models.CASCADE, related_name='+')
+
+    class Meta:
+        constraints = [
+            # Check that users can not follow themselves
+            models.CheckConstraint(
+                check=~Q(follower=F('followed')), name='follower_ne_target'
+            )
+        ]
+On the viewset we have:
+class FollowersViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserIdSerializer
+    lookup_field = 'user_id'
+
+    def create(self, request, user_id):
+        followed = get_object_or_404(User, user_id=user_id)
+        follower = get_object_or_404(User, user_id=request.data['user_id'])
+        relation, created = Relation.objects.get_or_create(
+            followed_id=followed.id, follower_id=follower.id
+        )
+        serializer = RelationSerializer(relation, context={'request': request})
+        return Response(
+            serializer.data,
+            status=created and status.HTTP_201_CREATED or status.HTTP_409_CONFLICT,
+        )
+If someone tries to follow herself/himself the Relation.objects.get_or_create fails with an IntegrityError as expected.
+What is not expected is that rather than getting a json response telling that a constraint was not met, or even a generic "something happened", we get a raw error message coming from django.
+Expected behavior
+To get a response like with any other validation errors that return a nicely parseable json response.
+Actual behavior
+You get a plain django error message

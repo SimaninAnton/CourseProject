@@ -1,0 +1,13 @@
+aliowka commented on Mar 16, 2015
+The problem appears when HTTPCACHE_ENABLED is True.
+Suppose I need to collect items while using httpcache with FilesystemCacheStorage.
+In the items pipeline I want to send them out with some twisted based client.
+While having HTTPCACHE_ENABLED I observe that the items are sent very slow and the memory is growing very fast.
+For instance:
+When cache is disabled: I have about 50 items/second being sent and the total process memory is 70M. When it's enabled I have 3 items/second and 4G of memory used (my items are big). Fortunately my task is small (ends after 3 min.)
+When the crawling ends and spider closes, I observe the bulk of items being transfered by the client with 2K items/s speed.
+It's clear for me that when the cache is enabled the reactor is not released for enough time to accomplish it's async tasks (items sending) and that what causes this abnormal behavior, making using of cache very questionable.
+I found that there is a delay 0 in the scrapy/scrapy/utils/defer.py : defer_succeed function:
+reactor.callLater(0, d.callback, result)
+that seems just not enough for the cached responses that does not obey to DOWNLOAD_DELAY and potentially may through big bulks of items very fast (it does)
+I tried to increase the delay to 0.1 and this fixed the issue.

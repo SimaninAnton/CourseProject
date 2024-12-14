@@ -1,0 +1,55 @@
+Agnewee commented on 5 Jul 2018
+demo code:
+import sys
+from functools import partial
+
+from tornado import gen
+from tornado.ioloop import IOLoop
+from tornado.httpclient import AsyncHTTPClient
+
+def stream_callback(file_obj, chunk):
+    file_obj.write(chunk)
+
+@gen.coroutine
+def download(io_loop, url, save_path):
+    client = AsyncHTTPClient()
+    with open(save_path, 'wb') as file_obj:
+        streaming_callback = partial(stream_callback, file_obj)
+        resp = yield client.fetch(url, streaming_callback=streaming_callback)
+        if resp.code != 200:
+            print('download file error')
+        else:
+            print('download file ok')
+        io_loop.stop()
+
+if __name__ == '__main__':
+    url = sys.argv[1]
+    save_path = sys.argv[2]
+    io_loop = IOLoop().current()
+    io_loop.spawn_callback(download, io_loop, url, save_path)
+    io_loop.start()
+But it throw HTTPStreamClosedError when i run the script to download a 127Mb file
+ERROR:tornado.application:Exception in callback <functools.partial object at 0x7f221b58c838>
+Traceback (most recent call last):
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/ioloop.py", line 758, in _run_callback
+    ret = callback()
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/stack_context.py", line 300, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/ioloop.py", line 779, in _discard_future_result
+    future.result()
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/concurrent.py", line 261, in result
+    raise_exc_info(self._exc_info)
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/gen.py", line 1141, in run
+    yielded = self.gen.throw(*exc_info)
+  File "test.py", line 26, in download
+    resp = yield client.fetch(url, streaming_callback=streaming_callback)
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/gen.py", line 1133, in run
+    value = future.result()
+  File "/usr/local/python2.7/lib/python2.7/site-packages/tornado/concurrent.py", line 261, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+HTTPStreamClosedError: Connection closed
+And the access.log of Nginx output
+10.1.10.212 - - [05/Jul/2018:18:09:07 +0800] "GET /api/v2/hub/download?id=e13bc8742cfe4789873d7c1790245ed5&apikey=e10adc3949ba59abbe56e057f2gg88dd HTTP/1.1" 200 105311898 "-" "-"
+python -c "import tornado; print(tornado.version)"
+5.1b1

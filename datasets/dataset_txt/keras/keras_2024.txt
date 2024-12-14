@@ -1,0 +1,151 @@
+SwagPolice commented on 30 Jun 2017 •
+edited
+Hello everyone!
+I have to develop an image classifier and I am using Keras. I am using Tensorflow backend, running on CPU, with Python 3 on Windows 10. I am new to Python.
+I decided to adapt the program I found at https://blog.keras.io/building-powerful-image-classification-models-using-very-little-data.html as I don't have much data. Both training and validation seem to be good but, when I try to load my model and put a new image in, I have ValueError: Error when checking : expected conv2d_1_input to have 4 dimensions, but got array with shape ().
+I have been spending my entire week on it without finding anything that can help me. There have been similar issues posted on GitHub, but I was not able to understand or find an answer in these threads.
+Thank you very much in advance for your help!
+Here is the model generator code:
+import keras
+import tensorflow
+
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Activation, Dropout, Flatten, Dense
+from keras import backend as K
+
+print('keras version:' + keras.__version__)
+print('tensorflow version:' + tensorflow.__version__)
+
+# dimensions of our images.
+
+img_width, img_height = 150, 150
+
+train_data_dir = 'C:/data/train'
+validation_data_dir = 'C:/data/validation'
+nb_train_samples = 1500
+nb_validation_samples = 650
+epochs = 20
+batch_size = 15
+
+if K.image_data_format() == 'channels_first':
+    input_shape = (3, img_width, img_height)
+else:
+    input_shape = (img_width, img_height, 3)
+
+model = Sequential()
+
+model.add(Conv2D(32, (3, 3), input_shape=input_shape))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(32, (3, 3)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(64, (3, 3)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Flatten())
+model.add(Dense(64))
+model.add(Activation('relu'))
+model.add(Dropout(0.5))
+model.add(Dense(1))
+model.add(Activation('sigmoid'))
+
+model.compile(loss='binary_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+# this is the augmentation configuration we will use for training
+
+train_datagen = ImageDataGenerator(
+    rescale=1. / 255,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True)
+
+# this is the augmentation configuration we will use for testing:
+
+# only rescaling
+
+test_datagen = ImageDataGenerator(rescale=1. / 255)
+
+train_generator = train_datagen.flow_from_directory(
+    train_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='binary')
+
+validation_generator = test_datagen.flow_from_directory(
+    validation_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='binary')
+
+model.fit_generator(
+    train_generator,
+    steps_per_epoch=nb_train_samples // batch_size,
+    epochs=epochs,
+    validation_data=validation_generator,
+    validation_steps=nb_validation_samples // batch_size)
+
+model.save('first_try_model.h5')
+model.save_weights('first_try_weights.h5')
+And here is the loading and predicting part (the problem) of the code:
+import keras
+import tensorflow
+import cv2
+import numpy as np
+
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential
+from keras.models import load_model
+from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Activation, Dropout, Flatten, Dense
+from keras import backend as K
+
+print('keras version:' + keras.__version__)
+print('tensorflow version:' + tensorflow.__version__)
+
+model = load_model('first_try_model.h5')
+
+model.compile(loss='binary_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+im = np.array('C:/data/testvalidate.jpg')
+prediction = model.predict(im)
+print(prediction)
+ValueError                                Traceback (most recent call last)
+<ipython-input-36-45b8b72456bb> in <module>()
+     40 #im = np.expand_dims(im, axis=0)
+     41 
+---> 42 predo = model.predict(im)
+     43 
+     44 print(predo)
+
+C:\Users\dev\Anaconda3\lib\site-packages\keras\models.py in predict(self, x, batch_size, verbose)
+    889         if self.model is None:
+    890             self.build()
+--> 891         return self.model.predict(x, batch_size=batch_size, verbose=verbose)
+    892 
+    893     def predict_on_batch(self, x):
+
+C:\Users\dev\Anaconda3\lib\site-packages\keras\engine\training.py in predict(self, x, batch_size, verbose)
+   1552         x = _standardize_input_data(x, self._feed_input_names,
+   1553                                     self._feed_input_shapes,
+-> 1554                                     check_batch_axis=False)
+   1555         if self.stateful:
+   1556             if x[0].shape[0] > batch_size and x[0].shape[0] % batch_size != 0:
+
+C:\Users\dev\Anaconda3\lib\site-packages\keras\engine\training.py in _standardize_input_data(data, names, shapes, check_batch_axis, exception_prefix)
+    119                                  ' to have ' + str(len(shapes[i])) +
+    120                                  ' dimensions, but got array with shape ' +
+--> 121                                  str(array.shape))
+    122             for j, (dim, ref_dim) in enumerate(zip(array.shape, shapes[i])):
+    123                 if not j and not check_batch_axis:
+
+ValueError: Error when checking : expected conv2d_1_input to have 4 dimensions, but got array with shape ()

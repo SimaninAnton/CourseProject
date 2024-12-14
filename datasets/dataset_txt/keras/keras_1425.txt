@@ -1,0 +1,30 @@
+stoney95 commented on 7 Dec 2017 •
+edited
+Hi,
+I've implemented a custom layer with four weigths/bias-variables. Build the layer works fine, but when it comes to training there are no optimizers assigned for the weights. I'm using sgd as optimizer.
+I debugged into keras.training and keras.optimizers and found that there must be some kind of bug.
+In the get_updates method of keras.optimizers module should the optimizers be loaded:
+ def get_updates(self, loss, params):
+        grads = self.get_gradients(loss, params)
+        ...
+This loads the optimizers for every weight from the other layers, but None for the weights of my custom layer.
+So i went a little deeper until i got to tf.gradients (which is located in gradients_impl.py):
+def gradients(loss, variables):
+    ...
+    return tf.gradients(loss, variables, colocate_gradients_with_ops=True)
+There happens a lot of stuff I don't get... but it seems like a grads dict is build which stores a lot of gradients/optimizers and at the end it extracts the gradients for the weigths from this dict:
+return [_GetGrad(grads, x) for x in xs]
+def _GetGrad(grads, t):
+  """Gets gradient for tensor "t"."""
+  op = t.op
+  op_grads = grads.get(op)  #<---- This is allways None for custom-layer weights
+  if not op_grads:
+    return None
+  t_grad = op_grads[t.value_index]
+  assert not isinstance(t_grad, list), (
+      "gradients list should have been aggregated by now.")
+  return t_grad
+Has anyone an idea why this happens?
+In call-method i'm using methods from keras.backend, tensorflow, activation-funtions from keras (softmax, sigmoid), keras-layers (Lambda, TimeDistributed) applied to tensors and standard for loops. Am I just allowed to use keras.backend-methods? If so is there an equivalent for tf.TensorArray? Is it allowed to use other layers on e.g. the input-tensor in the call-method? Is there an keras/tf iterator to handle list elements?
+I would appreciate any help or hints
+Thanks in advance

@@ -1,0 +1,74 @@
+chibisov commented on 9 Aug 2013
+Hello.
+I've found some interface consistency breaking behavior with pagination.
+I'll show you an example:
+Settings.
+REST_FRAMEWORK = {
+    'PAGINATE_BY': 5,
+    'PAGINATE_BY_PARAM': 'page_size'
+}
+When we request some uri we get response, paginated by 5
+curl http://testserver/foobar/
+{
+    "count": 10, 
+    "next": "http://testserver/foobar/?page=2", 
+    "previous": null, 
+    "results": [
+        {"id": 1, "title": "h"},
+        {"id": 2, "title": "e"},
+        {"id": 3, "title": "l"},
+        {"id": 4, "title": "l"},            
+        {"id": 5, "title": "o"},
+    ]
+}
+Request argument page_size works properly
+curl http://testserver/foobar/?page_size=6
+{
+    "count": 10, 
+    "next": "http://testserver/foobar/?page_size=6&page=2", 
+    "previous": null, 
+    "results": [
+        {"id": 1, "title": "h"},
+        {"id": 2, "title": "e"},
+        {"id": 3, "title": "l"},
+        {"id": 4, "title": "l"},            
+        {"id": 5, "title": "o"},
+        {"id": 6, "title": " "},            
+    ]
+}
+But what will page_size==0 return?
+curl http://testserver/foobar/?page_size=0
+[
+    {"id": 1, "title": "h"},
+    {"id": 2, "title": "e"},
+    {"id": 3, "title": "l"},
+    {"id": 4, "title": "l"},            
+    {"id": 5, "title": "o"},
+    {"id": 6, "title": " "},            
+    {"id": 7, "title": "w"},        
+    {"id": 8, "title": "o"},        
+    {"id": 9, "title": "r"},        
+    {"id": 10, "title": "l"},        
+]
+What's wrong:
+Interface breaking. On clients we should use response.results for any request, except requests with page_size=0.
+With page_size=0 we should use response;
+Response returns all data from queryset. And i think it's fine. In Tastypie world it's normal. And when i started using DRF i thought it is feature too.
+What i suggest:
+Stop interface breaking. For paginated response always return pagination data;
+Leave returning all data for such requests;
+Allow users to limit that all data;
+Limiting could be performed from settings with MAX_PAGINATE_BY key:
+REST_FRAMEWORK = {
+    'PAGINATE_BY': 5,
+    'MAX_PAGINATE_BY': 100,
+    'PAGINATE_BY_PARAM': 'page_size'
+}
+And per viewset:
+class PaginatedListView(ListAPIView):
+    queryset = ExampleModel.objects.all()
+    serializer_class = ExampleModelSerializer
+    paginate_by = 10
+    max_paginate_by = 100
+    paginate_by_param = 'page_size'
+I need feedback and would love to make a pull request.

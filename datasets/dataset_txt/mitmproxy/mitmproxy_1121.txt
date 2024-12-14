@@ -1,0 +1,52 @@
+romainfun commented on 29 Apr 2016 •
+edited
+openssl SSLv3 support has been disabled on ubuntu 16.04 (debian/patches/no-sslv3.patch),
+and probably debian unstable + other distros.
+mitmproxy --ssl-version-server SSLv3 -R https://google.fr:443
+results in the following failure :
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/dist-packages/libmproxy/proxy/server.py", line 120, in handle
+    root_layer()
+  File "/usr/lib/python2.7/dist-packages/libmproxy/proxy/modes/reverse_proxy.py", line 14, in __call__
+    layer()
+  File "/usr/lib/python2.7/dist-packages/libmproxy/protocol/tls.py", line 267, in __call__
+    self._establish_tls_with_client_and_server()
+  File "/usr/lib/python2.7/dist-packages/libmproxy/protocol/tls.py", line 392, in _establish_tls_with_client_and_server
+    six.reraise(*sys.exc_info())
+  File "/usr/lib/python2.7/dist-packages/libmproxy/protocol/tls.py", line 386, in _establish_tls_with_client_and_server
+    self._establish_tls_with_server()
+  File "/usr/lib/python2.7/dist-packages/libmproxy/protocol/tls.py", line 458, in _establish_tls_with_server
+    alpn_protos=alpn,
+  File "/usr/lib/python2.7/dist-packages/libmproxy/models/connections.py", line 183, in establish_ssl
+    self.convert_to_ssl(cert=clientcert, sni=sni, **kwargs)
+  File "/usr/lib/python2.7/dist-packages/netlib/tcp.py", line 605, in convert_to_ssl
+    **sslctx_kwargs
+  File "/usr/lib/python2.7/dist-packages/netlib/tcp.py", line 580, in create_ssl_context
+    **sslctx_kwargs)
+  File "/usr/lib/python2.7/dist-packages/netlib/tcp.py", line 488, in _create_ssl_context
+    context = SSL.Context(method)
+  File "/usr/local/lib/python2.7/dist-packages/OpenSSL/SSL.py", line 478, in __init__
+    _raise_current_error()
+  File "/usr/local/lib/python2.7/dist-packages/OpenSSL/_util.py", line 48, in exception_from_error_queue
+    raise exception_type(errors)
+Error: [('SSL routines', 'SSL_CTX_new', 'null ssl method passed')]
+
+mitmproxy has crashed!
+Please lodge a bug report at: https://github.com/mitmproxy/mitmproxy
+It would be great to have a message such as "your libssl does not support SSLv3 (it was removed for security reasons)"
+For those servers wo only support SSLv3 (hello PDUs), you can use TEMPORARILY a recompiled libssl with SSLv3 enabled :
+cd $(mktemp -d)
+sudo apt-get build-dep openssl
+apt-get source openssl
+dpkg-source -x openssl*.dsc
+cd openssl*
+patch -R -p1 < ./debian/patches/no-sslv3.patch
+dpkg-buildpackage -rfakeroot -b
+sudo chown root:root libssl.so.1.0.0
+sudo chmod u=rw,go=r libssl.so.1.0.0
+sudo cp libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.1.0.0
+(obviously you can keep your recomplied libssl.so.1.0.0 somewhere)
+After use, restore the distro and SECURE libssl, launching :
+sudo apt-get install --reinstall libssl1.0.0
+Mitmproxy Version: any
+Operating System: ubuntu 16.04

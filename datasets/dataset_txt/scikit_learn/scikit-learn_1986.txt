@@ -1,0 +1,119 @@
+Contributor
+glemaitre commented on Aug 11, 2017
+Description
+Preamble: Before to start, I am not actually sure that this worth a patch or not. Close the issue if you consider it insignificant.
+Checking the following tests, the estimator trained in a BaggingClassifier and a classifier using the estimators_samples_ should lead to the same trained classifier.
+However, estimators_samples_ mask the output while the training mechanism inside the BaggingClassifier uses unsorted indices. Therefore, even with the same random state, the resulting classifiers are different if a transformer using some randomization is coming before the classifier.
+Anyway, an example will better explain what is happening.
+Steps/Code to Reproduce
+from sklearn.datasets import load_iris
+from sklearn.ensemble import BaggingClassifier
+from sklearn.random_projection import SparseRandomProjection
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+
+iris = load_iris()
+X, y = iris.data, iris.target
+
+base_pipe = make_pipeline(SparseRandomProjection(n_components=2),
+                          LogisticRegression())
+clf = BaggingClassifier(base_estimator=base_pipe,
+                        max_samples=0.5,
+                        random_state=0)
+clf.fit(X, y)
+print(clf.estimators_[0].steps[-1][1].coef_)
+
+estimator = clf.estimators_[0]
+estimator_sample = clf.estimators_samples_[0]
+estimator_feature = clf.estimators_features_[0]
+
+X_train = (X[estimator_sample])[:, estimator_feature]
+y_train = y[estimator_sample]
+
+estimator.fit(X_train, y_train)
+print(estimator.steps[-1][1].coef_)
+
+estimator = clf.estimators_[0]
+estimator.fit(X_train, y_train)
+print(estimator.steps[-1][1].coef_)
+Expected Results
+We would expect that the coefficient of the logistic regression classifier to be the same.
+Actual Results
+[[ 0.06486195  3.27338918]
+ [-0.02153644  0.04796334]
+ [-0.26355129 -2.95032599]]
+
+[[ 0.05095487  2.96538814]
+ [-0.01899681 -0.05306931]
+ [-0.28011861 -2.69360826]]
+
+[[ 0.05095487  2.96538814]
+ [-0.01899681 -0.05306931]
+ [-0.28011861 -2.69360826]]
+Possible Solution
+The following patch shows how this issue could be solved
+import sklearn
+from sklearn.ensemble.bagging import _generate_bagging_indices
+from sklearn.utils import indices_to_mask
+
+print('Monkey patching')
+
+old_generate = _generate_bagging_indices
+
+
+def _masked_bagging_indices(random_state, bootstrap_features,
+                            bootstrap_samples, n_features, n_samples,
+                            max_features, max_samples):
+    """Monkey-patch to always get a mask instead of indices"""
+    feature_indices, sample_indices = old_generate(random_state,
+                                                   bootstrap_features,
+                                                   bootstrap_samples,
+                                                   n_features, n_samples,
+                                                   max_features, max_samples)
+    sample_indices = indices_to_mask(sample_indices, n_samples)
+
+    return feature_indices, sample_indices
+
+
+sklearn.ensemble.bagging._generate_bagging_indices = _masked_bagging_indices
+
+
+base_pipe = make_pipeline(SparseRandomProjection(n_components=2),
+                          LogisticRegression())
+clf = BaggingClassifier(base_estimator=base_pipe,
+                        max_samples=0.5,
+                        random_state=0)
+clf.fit(X, y)
+print(clf.estimators_[0].steps[-1][1].coef_)
+
+estimator = clf.estimators_[0]
+estimator_sample = clf.estimators_samples_[0]
+estimator_feature = clf.estimators_features_[0]
+
+X_train = (X[estimator_sample])[:, estimator_feature]
+y_train = y[estimator_sample]
+
+estimator.fit(X_train, y_train)
+print(estimator.steps[-1][1].coef_)
+
+estimator = clf.estimators_[0]
+estimator.fit(X_train, y_train)
+print(estimator.steps[-1][1].coef_)
+[[ 0.05095487  2.96538814]
+ [-0.01899681 -0.05306931]
+ [-0.28011861 -2.69360826]]
+
+[[ 0.05095487  2.96538814]
+ [-0.01899681 -0.05306931]
+ [-0.28011861 -2.69360826]]
+
+[[ 0.05095487  2.96538814]
+ [-0.01899681 -0.05306931]
+ [-0.28011861 -2.69360826]]
+Versions
+Linux-4.8.17-040817-generic-x86_64-with-debian-stretch-sid
+Python 3.6.1 |Continuum Analytics, Inc.| (default, Mar 22 2017, 19:54:23) 
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+NumPy 1.13.1
+SciPy 0.19.1
+Scikit-Learn 0.18.2

@@ -1,0 +1,53 @@
+tseckin commented on 24 May 2016 •
+edited
+Hi, I am new to Keras and trying to implement this paper. But I am experiencing some difficulties.
+For my data, I have questions and answers. These words in my data is replaced by embedded word vectors coming from word2vec, these are pre-trained vectors, no problem. But, I have variable length matrix for each training sample
+[embedding_vector_size x M] where M is the token count for each question in my data. And answers are similar also.
+Now, I tried
+    model = Graph()
+
+    # Add inputs
+    model.add_input('question', input_shape=(None, embedding_size))
+    model.add_input('positive_answer', input_shape=(None, embedding_size))
+    model.add_input('negative_answer', input_shape=(None, embedding_size))
+
+    model.add_node(Convolution1D(conv_filter_count, context_window_k),
+                          name='answer_conv',
+                          input='positive_answer')
+
+    model.add_node(Convolution1D(conv_filter_count, context_window_k),
+                   name='question_conv',
+                   input='question')
+then I need to implement a layer which learns U matrix, where Q is convolution matrix over questions and A is convolution matrix over its answer. Briefly, what I need to implement as a Layer is,
+tanh(transpose(Q) U A)
+For this purpose, I thought to use merge layer. But it has no build method, thus it doesn't learn a parameter. But I need to make it learn U matrix above. So, I thought to split formula into two and use a Dense layer to learn U. Like,
+partial_product=U*A
+full_product = Q*partial_product
+result = tanh(full_product)
+For this purpose,
+    model.add_node(Dense(conv_filter_count),
+                   name='partial_product',
+                   input='question_conv')
+
+    model.add_node(Lambda(get_attention_layer_right),
+                   name='product',
+                   inputs=['answer_conv', 'partial_product'])
+
+    model.add_node(get_activation(),
+                   name="g_matrix",
+                   input='product')
+and
+def get_attention_layer_right(X):
+    answer_conv, question_mult = X.values()
+    val = K.dot(answer_conv, question_mult)
+    return val
+
+def get_activation():
+    model = Sequential()
+    model.add(Activation('tanh'))
+    return model
+However I am getting error:
+assert len(input_shape) == 2
+AssertionError
+How can I implement this layer and how can I solve the error?
+Thanks

@@ -1,0 +1,88 @@
+Contributor
+shmuelamar commented on Apr 9, 2017 •
+edited
+This issue happend to me on our production servers while requesting URL from the wild using requests.
+When a server returns redirect response that follows rfc1808 (i.e. Location: //URI) and the URI contains non ASCII chars, requests fails with UnicodeDecodeError.
+This issue only happens on python2 (in python3 unicode is the default text string so all headers encoded into unicode, including the Location header).
+test to reproduce:
+def test_redirect_rfc1808_to_non_ascii_location():
+    def redirect_resp_handler(sock):
+        request_content = consume_socket_content(sock, timeout=0.5)
+        sock.send(text_301)
+        return request_content
+
+    close_server = threading.Event()
+    server = Server(redirect_resp_handler, wait_to_close_event=close_server)
+    text_301 = (
+        u'HTTP/1.1 301 Moved Permanently\r\n'
+        u'Location: //{0}:{1}/?Š\r\n'
+        u'\r\n'.format(server.host, server.port)
+    ).encode('utf8')
+
+    with server as (host, port):
+        url = u'http://{0}:{1}/'.format(host, port)
+        r = requests.head(url=url, allow_redirects=True)
+        assert r.status_code == 200
+        assert len(r.history) == 1
+        assert r.history[0].status_code == 301
+        close_server.set()
+AFAIK from here, header fields should be US-ASCII encoded and must not contain non-ASCII chars, but the internet is a wild place so this things happen.
+IMHO its the server response to return the location in urlencoded format but requests shouldn't fail on this error (maybe more informative error) or at least be consistent with python2 and python3 behavior.
+I can create a PR for fixing the issue but I'm not sure what is the best solution, options are (what I can think of):
+raise custom exception when Location field is not ASCII (might be inconsistent with previous versions)
+try encode the Location field to utf8 and raise exception if encoding fails
+on python2 decode all headers into unicode, similar to python3 (might break previous versions compatibility)
+stacktrace (on master branch):
+UnicodeDecodeError                        Traceback (most recent call last)
+<ipython-input-4-24640a4df79e> in <module>()
+----> 1 resp = requests.head('https://www.autobazar.eu/skoda-fabia-19-tdi-pd-rs-id9323271.html', allow_redirects=True)
+
+/home/shmulik/so/requests/requests/api.py in head(url, **kwargs)
+     96 
+     97     kwargs.setdefault('allow_redirects', False)
+---> 98     return request('head', url, **kwargs)
+     99 
+    100 
+
+/home/shmulik/so/requests/requests/api.py in request(method, url, **kwargs)
+     56     # cases, and look like a memory leak in others.
+     57     with sessions.Session() as session:
+---> 58         return session.request(method=method, url=url, **kwargs)
+     59 
+     60 
+
+/home/shmulik/so/requests/requests/sessions.py in request(self, method, url, params, data, headers, cookies, files, auth, timeout, allow_redirects, proxies, hooks, stream, verify, cert, json)
+    496         }
+    497         send_kwargs.update(settings)
+--> 498         resp = self.send(prep, **send_kwargs)
+    499 
+    500         return resp
+
+/home/shmulik/so/requests/requests/sessions.py in send(self, request, **kwargs)
+    638 
+    639         # Resolve redirects if allowed.
+--> 640         history = [resp for resp in gen] if allow_redirects else []
+    641 
+    642         # Shuffle things around if there's history.
+
+/home/shmulik/so/requests/requests/sessions.py in resolve_redirects(self, resp, req, stream, timeout, verify, cert, proxies, **adapter_kwargs)
+    123             if url.startswith('//'):
+    124                 parsed_rurl = urlparse(resp.url)
+--> 125                 url = '%s:%s' % (parsed_rurl.scheme, url)
+    126 
+    127             # The scheme should be lower case...
+
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xc5 in position 120: ordinal not in range(128)
+example response running curl (I removed the real url):
+$ curl -vvv "http://some-url.com"
+....
+< HTTP/1.1 301 Moved Permanently
+< Server: Apache
+< Expires: Thu, 19 Nov 1981 08:52:00 GMT
+< Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+< Pragma: no-cache
+< Location: //some-url.com/Š
+< Transfer-Encoding: chunked
+< Content-Type: text/html; charset=UTF-8
+Thanks,
+Shmulik

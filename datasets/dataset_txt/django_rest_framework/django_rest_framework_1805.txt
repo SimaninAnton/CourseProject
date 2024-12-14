@@ -1,0 +1,40 @@
+rollokb commented on 18 May 2015
+The HyperlinkedRelatedField can't be used outside a serializer as the context property is taken from it's parent serializer. This is inconsistent with the behavior of other fields with don't need a context.
+The error message is also wrong as it asks for a context which can't be set.
+For instance this snippet will throw an error.
+def get_products(self, instance):
+    request = self.context['request']
+
+
+    field = serializers.HyperlinkedRelatedField(
+        view_name='product-detail',
+        many=True,
+        read_only=True,
+    )
+
+    representation = field.to_representation(instance.product_set.all())
+    return representation
+And django-rest-framework will ask for a context={'request': request} to be included as a kwarg, it will fail at this point. https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/relations.py#L244
+def to_representation(self, value):
+    request = self.context.get('request', none)
+    format = self.context.get('format', none)
+
+    assert request is not none, (
+        "`%s` requires the request in the serializer"
+        " context. add `context={'request': request}` when instantiating "
+        "the serializer." % self.__class__.__name__
+    )
+However if I include the request as part of the context
+def get_products(self, instance):
+    request = self.context['request']
+
+    field = serializers.HyperlinkedRelatedField(
+        view_name='product-detail',
+        many=True,
+        read_only=True,
+        context={'request': request}
+    )
+
+    representation = field.to_representation(instance.product_set.all())
+    return representation
+It again crashes with the error, can't set attribute. I suspect this (https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/fields.py#L449) read only method field is the problem.

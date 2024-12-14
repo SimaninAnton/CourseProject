@@ -1,0 +1,66 @@
+Contributor
+frob commented on 29 May 2018
+This was referenced in #544 and was supposedly fixed in 835d935. But I still get the error after installing python36 on a base CentOS7 container.
+After finding https://stackoverflow.com/questions/27815420/bash-centos7-which-command?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa it looks like CentOS7 uses the command whatprovides instead of the which command.
+Expected result
+Pipenv would work.
+Actual result
+Pipenv didn't work.
+Step 15/16 : RUN pipenv install --system
+ ---> Running in bf7ec8a89563
+Installing dependencies from Pipfile.lock (011179)…
+Warning: the which -a system utility is required for Pipenv to find Python installations properly.
+  Please install it.
+Warning: the which -a system utility is required for Pipenv to find Python installations properly.
+  Please install it.
+Warning: the which -a system utility is required for Pipenv to find Python installations properly.
+  Please install it.
+Traceback (most recent call last):
+  File "/usr/bin/pipenv", line 11, in <module>
+    sys.exit(cli())
+  File "/usr/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 722, in __call__
+    return self.main(*args, **kwargs)
+  File "/usr/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 697, in main
+    rv = self.invoke(ctx)
+  File "/usr/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 1066, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/usr/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 895, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/usr/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 535, in invoke
+    return callback(*args, **kwargs)
+  File "/usr/lib/python3.6/site-packages/pipenv/cli.py", line 402, in install
+    selective_upgrade=selective_upgrade,
+  File "/usr/lib/python3.6/site-packages/pipenv/core.py", line 1932, in do_install
+    requirements_dir=requirements_directory,
+  File "/usr/lib/python3.6/site-packages/pipenv/core.py", line 1378, in do_init
+    requirements_dir=requirements_dir.name,
+  File "/usr/lib/python3.6/site-packages/pipenv/core.py", line 816, in do_install_dependencies
+    extra_indexes=extra_indexes,
+  File "/usr/lib/python3.6/site-packages/pipenv/core.py", line 1488, in pip_install
+    quoted_pip = which_pip(allow_global=allow_global)
+  File "/usr/lib/python3.6/site-packages/pipenv/core.py", line 1533, in which_pip
+    return which('pip')
+  File "/usr/lib/python3.6/site-packages/pipenv/core.py", line 128, in which
+    p = os.sep.join([location] + ['bin/{0}'.format(command)])
+TypeError: sequence item 0: expected str instance, NoneType found
+Steps to replicate
+Build this docker container.
+FROM centos:7
+
+RUN yum update -y
+RUN yum install -y yum-utils
+RUN yum -y groupinstall development whatprovides
+RUN yum -y install https://centos7.iuscommunity.org/ius-release.rpm
+RUN yum -y install python36u
+RUN yum -y install python36u-pip
+RUN yum -y install python36u-devel
+RUN echo -e '#!/bin/bash\nwhatprovides "$@"' > /usr/bin/which && \
+    chmod +x /usr/bin/which
+COPY . /app
+WORKDIR /app
+ENV LC_ALL=en_US.utf-8
+ENV LANG=en_US.utf-8
+RUN pip3.6 install pipenv
+RUN pipenv install --system
+CMD ["python", "app.py"]
+As you can see, I am attempting to wrap which in a call to whatprovides but it didn't help.

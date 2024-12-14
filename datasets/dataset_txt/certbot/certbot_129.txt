@@ -1,0 +1,15 @@
+Member
+bmw commented on 13 Jun 2019
+Let's Encrypt doesn't update OCSP for expired certificates. They are not required to do so. When someone runs certbot certificates with expired certificates and they're using our Python support for making OCSP requests rather than shelling out to openssl, they get output like:
+Invalid OCSP response for /etc/letsencrypt/live/example.org/cert.pem: param nextUpdate is in the past…
+There's not actually a problem here so we shouldn't be printing these warnings to users.
+The code that does this is at
+certbot/certbot/cert_manager.py
+Lines 264 to 267 in d75908c
+ if cert.target_expiry <= now: 
+     reasons.append('EXPIRED') 
+ if checker.ocsp_revoked(cert.cert, cert.chain): 
+     reasons.append('REVOKED') 
+Fixing that is simple enough, however, I think one of our tests is relying on this behavior (and if so, the test should be deleted) and we may also want to add code in certbot.ocsp.ocsp_revoked to check if the certificate is still valid before querying OCSP to help prevent this problem in the future.
+This was reported at https://community.letsencrypt.org/t/invalid-ocsp-response-nextupdate-is-in-the-past/95640.
+1

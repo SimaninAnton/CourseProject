@@ -1,0 +1,82 @@
+MengJueM commented on 10 Apr 2015
+Background:
+Tornado installed latest from PyPi
+Win7
+Pycharm
+I open the debug=True flag, once I save the py file, I will get below error:
+Traceback (most recent call last):
+  File "C:/Users/xxx/PycharmProjects/scip/tornado/definition_readonly.py", line 60, in <module>
+    main()
+  File "C:/Users/xxx/PycharmProjects/scip/tornado/definition_readonly.py", line 54, in main
+    http_server.listen(options.port)
+  File "C:\Users\xxx\Miniconda\envs\vispy\lib\site-packages\tornado\tcpserver.py", line 125, in listen
+    sockets = bind_sockets(port, address=address)
+  File "C:\Users\xxx\Miniconda\envs\vispy\lib\site-packages\tornado\netutil.py", line 145, in bind_sockets
+    sock.bind(sockaddr)
+  File "C:\Users\xxx\Miniconda\envs\vispy\lib\socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted
+
+Process finished with exit code 1
+Below is toy code I used:
+import tornado.httpserver
+import tornado.ioloop
+import tornado.options
+import tornado.web
+import pymongo
+
+from bson import json_util
+from tornado.options import define, options
+
+define("port", default=8000, help="run on the given port", type=int)
+
+
+class WordHandler(tornado.web.RequestHandler):
+    def data_received(self, chunk):
+        pass
+
+    def get(self, word):
+        coll = self.application.db.words
+        word_doc = coll.find({"word": word})
+
+        if word_doc:
+            word_doc = json_util.dumps(word_doc)
+            self.write(word_doc)
+        else:
+            self.set_status(404)
+            self.write({"error": "word not found"})
+
+    def post(self, word):
+        definition = self.get_argument("definition")
+        coll = self.application.db.words
+        word_doc = coll.find_one({"word": word})
+        if word_doc:
+            word_doc['definition'] = definition
+            coll.save(word_doc)
+        else:
+            word_doc = {'word': word, 'definition': definition}
+            coll.insert(word_doc)
+        self.write(word_doc)
+
+
+class Application(tornado.web.Application):
+    def __init__(self):
+        handlers = [
+            (r"/(\w+)", WordHandler),
+        ]
+        conn = pymongo.MongoClient(host="go.imf.cc")
+        self.db = conn["test"]
+        tornado.web.Application.__init__(self, handlers, debug=True)
+
+
+def main():
+    tornado.options.parse_command_line()
+    http_server = tornado.httpserver.HTTPServer(Application())
+    http_server.listen(options.port)
+    tornado.ioloop.IOLoop.instance().start()
+
+
+if __name__ == '__main__':
+    # tornado.ioloop.IOLoop.instance().stop()
+    main()
+I have to run tornado.ioloop.IOLoop.instance().stop() to clean the socket binding and then restart tornado server.

@@ -1,0 +1,40 @@
+biomorph commented on 9 Dec 2016 •
+edited
+I am running a 4 fold cross validation using early stopping. I figured I would run the 4 folds in parallel like so.
+def multiprocess_fit(nn_model, x_train, y_train, early_stopping, x_val, y_val):
+    nn_model.fit(x_train, y_train, batch_size=16384, nb_epoch=500, callbacks=[early_stopping],
+                 validation_data=(x_val, y_val), verbose=0)
+    y_pred = nn_model.predict(x_val)
+    comb_score = combined_score(y_val, np.ravel(y_pred))
+    return comb_score
+
+def cb_func(result):
+    comb_scores.append(result)
+
+comb_scores = []
+cv = cross_validation.LabelKFold(groups, 4)
+
+for inner_train, inner_stop in cv:
+    result = pool.apply_async(multiprocess_fit, args=(nn_model, x[inner_train], y[inner_train], early_stopping, x[inner_stop], y[inner_stop]), callback=cb_func)
+    result.get()
+
+pool.close()
+pool.join()
+print np.mean(comb_scores)
+When I try to run this with theano flags lib.cnmem=0.8,optimizer=fast_run,fast_math=True,device=gpu
+I get the following error
+Process PoolWorker-1:
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/multiprocessing/process.py", line 258, in _bootstrap
+    self.run()
+  File "/usr/lib/python2.7/multiprocessing/process.py", line 114, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python2.7/multiprocessing/pool.py", line 102, in worker
+    task = get()
+  File "/usr/lib/python2.7/multiprocessing/queues.py", line 376, in get
+    return recv()
+  File "/usr/local/lib/python2.7/dist-packages/theano/sandbox/cuda/type.py", line 600, in CudaNdarray_unpickler
+    return cuda.CudaNdarray(nap)
+MemoryError: ('Error allocating 3600 bytes of device memory (CNMEM_STATUS_CUDA_ERROR).', <function CudaNdarray_unpickler at 0x7f42e6a3a9b0>
+Can someone help me with this? Isn't it logical to use multiprocessing to fit the same model on 4 different training/validation datasets in the cv.
+Thanks for any help

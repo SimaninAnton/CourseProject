@@ -1,0 +1,83 @@
+XzwHan commented 21 days ago
+I'm implementing a model for multi-class classification task, and the code runs when I call Model.fit() method. However, .fit() requires the entire dataset to be generated at once, which is too big in my case. Therefore, I'm trying .train_on_batch() and .fit_generator(). However, they both would give me the following error:
+AssertionError: Expected all args to be Tensors or Variables; but got CompositeTensor: [<tensorflow.python.framework.indexed_slices.IndexedSlices object at 0x63d16c910>]
+I'm able to identify the part of model that caused this error: at this step I need to aggregate the input data by their labels, and take the mean for the data belonging to each distinct class. Such step requires some tensor indexing, thus I applied multiple ways of coding (including the application of tf.boolean_mask, tf.gather, tf.where). Based on the error message, it seems to me that .train_on_batch() and .fit_generator() wouldn't accept such tensor indexing; however, this is a crucial step suggested by a published research paper that I need to keep.
+Any suggestions on how to make tensor indexing work for .train_on_batch() and/or .fit_generator()? The complete error message is attached as follows:
+---------------------------------------------------------------------------
+AssertionError                            Traceback (most recent call last)
+<ipython-input-32-0ed5374101bd> in <module>
+      5                          # Here number of steps is the number of training tasks.
+      6 vanilla_model.fit_generator(generator=model.single_task_generator(), steps_per_epoch=steps_per_epoch, epochs=1, verbose=1, \
+----> 7                         use_multiprocessing=False, shuffle=False)
+      8 
+      9 elapsed = time.time() - t
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training.py in fit_generator(self, generator, steps_per_epoch, epochs, verbose, callbacks, validation_data, validation_steps, validation_freq, class_weight, max_queue_size, workers, use_multiprocessing, shuffle, initial_epoch)
+   1295         shuffle=shuffle,
+   1296         initial_epoch=initial_epoch,
+-> 1297         steps_name='steps_per_epoch')
+   1298 
+   1299   def evaluate_generator(self,
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_generator.py in model_iteration(model, data, steps_per_epoch, epochs, verbose, callbacks, validation_data, validation_steps, validation_freq, class_weight, max_queue_size, workers, use_multiprocessing, shuffle, initial_epoch, mode, batch_size, steps_name, **kwargs)
+    263 
+    264       is_deferred = not model._is_compiled
+--> 265       batch_outs = batch_function(*batch_data)
+    266       if not isinstance(batch_outs, list):
+    267         batch_outs = [batch_outs]
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training.py in train_on_batch(self, x, y, sample_weight, class_weight, reset_metrics)
+    971       outputs = training_v2_utils.train_on_batch(
+    972           self, x, y=y, sample_weight=sample_weight,
+--> 973           class_weight=class_weight, reset_metrics=reset_metrics)
+    974       outputs = (outputs['total_loss'] + outputs['output_losses'] +
+    975                  outputs['metrics'])
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_v2_utils.py in train_on_batch(model, x, y, sample_weight, class_weight, reset_metrics)
+    262       y,
+    263       sample_weights=sample_weights,
+--> 264       output_loss_metrics=model._output_loss_metrics)
+    265 
+    266   if reset_metrics:
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_eager.py in train_on_batch(model, inputs, targets, sample_weights, output_loss_metrics)
+    309           sample_weights=sample_weights,
+    310           training=True,
+--> 311           output_loss_metrics=output_loss_metrics))
+    312   if not isinstance(outs, list):
+    313     outs = [outs]
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_eager.py in _process_single_batch(model, inputs, targets, output_loss_metrics, sample_weights, training)
+    266           model._backwards(tape, scaled_total_loss)
+    267         else:
+--> 268           grads = tape.gradient(scaled_total_loss, trainable_weights)
+    269           if isinstance(model.optimizer,
+    270                         loss_scale_optimizer.LossScaleOptimizer):
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/eager/backprop.py in gradient(self, target, sources, output_gradients, unconnected_gradients)
+   1012         output_gradients=output_gradients,
+   1013         sources_raw=flat_sources_raw,
+-> 1014         unconnected_gradients=unconnected_gradients)
+   1015 
+   1016     if not self._persistent:
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/eager/imperative_grad.py in imperative_grad(tape, target, sources, output_gradients, sources_raw, unconnected_gradients)
+     74       output_gradients,
+     75       sources_raw,
+---> 76       compat.as_str(unconnected_gradients.value))
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/eager/function.py in _backward_function_wrapper(*args)
+    909           break
+    910       return self._backward._call_flat(  # pylint: disable=protected-access
+--> 911           processed_args, remapped_captures)
+    912 
+    913     return _backward_function_wrapper, recorded_outputs
+
+/opt/anaconda3/lib/python3.7/site-packages/tensorflow_core/python/eager/function.py in _call_flat(self, args, captured_inputs, cancellation_manager)
+   1169     if any(isinstance(a, composite_tensor.CompositeTensor) for a in args):
+   1170       raise AssertionError("Expected all args to be Tensors or Variables; "
+-> 1171                            "but got CompositeTensor: %r" % args)
+   1172 
+   1173     if (tape.could_possibly_record() or
+
+AssertionError: Expected all args to be Tensors or Variables; but got CompositeTensor: [<tensorflow.python.framework.indexed_slices.IndexedSlices object at 0x63d16c910>]

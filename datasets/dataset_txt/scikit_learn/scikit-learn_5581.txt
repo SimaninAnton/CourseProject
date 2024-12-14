@@ -1,0 +1,50 @@
+Member
+mblondel commented on Jul 29, 2011
+I was working on an example to demonstrate the trade-off between sparsity in dual space and accuracy when using svm.SVC and I'm having issues.
+Neither the sparsity nor the accuracy change when varying C with the MNIST dataset. This may just be coincidental as MNIST is a very easy dataset. I checked the C values in Solver::Solve in svm.cpp and they seemed to be fine though. (Edit: I've just checked with LinearSVC and the accuracy doesn't change either so it is probably a false alarm for this one)
+I wanted to check with another dataset so I tried with the 20 newsgroup dataset and svm.SVC seems to fail miserably on it (I get 5% accuracy, knowing that there are 20 classes!). LinearSVC has an accuracy over 80%.
+Here is the code snippet:
+n_train = 1000
+n_test = 5000
+
+import numpy as np
+import pylab as pl
+
+from scikits.learn.datasets import fetch_mldata
+#from scikits.learn import svm
+import scikits.learn.svm.sparse as svm
+
+import scipy.sparse as sp
+
+dataset = fetch_mldata('MNIST original')
+#dataset = fetch_mldata('news20_scale')
+
+X = dataset.data
+y = dataset.target
+
+# Shuffle indices.
+indices = np.arange(X.shape[0])
+np.random.shuffle(indices)
+X = X[indices]
+y = y[indices]
+
+# Make train and test sets.
+X_train = sp.csr_matrix(X[:n_train])
+y_train = y[:n_train]
+X_test = sp.csr_matrix(X[n_train:n_train + n_test])
+y_test = y[n_train:n_train + n_test]
+
+sparsity = []
+accuracy = []
+
+for C in np.linspace(0.001, 1000, 3):
+    clf = svm.SVC(kernel="linear", C=C)
+    #clf = svm.SVC(kernel="linear", C=1.0)
+    #clf = svm.LinearSVC()
+    clf.fit(X_train, y_train)
+    sparsity.append(clf.n_support_.sum() * 1.0 / n_train)
+    y_pred = clf.predict(X_test)
+    accuracy.append(np.mean(y_test == y_pred))
+
+print sparsity
+print accuracy

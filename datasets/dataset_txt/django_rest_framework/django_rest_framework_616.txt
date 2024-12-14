@@ -1,0 +1,82 @@
+oaaoaa commented on 13 Oct 2017 •
+edited by rpkilby
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+#5259
+Steps to reproduce
+This happens on 3.6.4 onwards
+Override to_representation of a ModelSerializer to include an extra field (that does not exist in the ModelSerializer) e.g.
+def to_representation(self, instance):
+    output = ModelSerializer.to_representation(self, instance)
+    output['meta_name'] = self.__class__.Meta.model.__name__
+    return output
+Create a GenericAPI view on this ModelSerilizer and allow GET and PUT method on it
+Make a GET request to this view via Browsable API
+Expected behavior
+We should get serialized data as well as a PUT form. This was the case till 3.6.3 but not after #5259. In this fix a check was added to eliminate HiddenFields in the serializer while serializing for raw data form, but we should ensure that a 'field' is a real field before checking if it is a HiddenField
+Actual behavior
+We get a KeyError on line 560 in rest_framework/renderers.py while building the raw form for PUT as 'meta_name' is actually not a field in the serializer but just added in to-representation
+Stack trace:
+Environment:
+Request Method: GET
+Request URL: /api/nextvisit/217/
+
+Django Version: 1.10.5
+Python Version: 3.5.2
+Installed Applications:
+['django.contrib.admin',
+ 'django.contrib.auth',
+ 'django.contrib.contenttypes',
+ 'django.contrib.sessions',
+ 'django.contrib.messages',
+ 'django.contrib.staticfiles',
+ 'bootstrap4',
+ 'rest_framework',
+ 'clinic']
+Installed Middleware:
+['django.middleware.security.SecurityMiddleware',
+ 'django.contrib.sessions.middleware.SessionMiddleware',
+ 'django.middleware.common.CommonMiddleware',
+ 'django.middleware.csrf.CsrfViewMiddleware',
+ 'django.contrib.auth.middleware.AuthenticationMiddleware',
+ 'django.contrib.messages.middleware.MessageMiddleware',
+ 'django.middleware.clickjacking.XFrameOptionsMiddleware']
+Traceback:
+File "/lib/python3.5/site-packages/django/core/handlers/exception.py" in inner
+  39.             response = get_response(request)
+
+File "/lib/python3.5/site-packages/django/core/handlers/base.py" in _get_response
+  217.                 response = self.process_exception_by_middleware(e, request)
+
+File "/lib/python3.5/site-packages/django/core/handlers/base.py" in _get_response
+  215.                 response = response.render()
+
+File "/lib/python3.5/site-packages/django/template/response.py" in render
+  109.             self.content = self.rendered_content
+
+File "/lib/python3.5/site-packages/rest_framework/response.py" in rendered_content
+  72.         ret = renderer.render(self.data, accepted_media_type, context)
+
+File "/lib/python3.5/site-packages/rest_framework/renderers.py" in render
+  706.         context = self.get_context(data, accepted_media_type, renderer_context)
+
+File "/lib/python3.5/site-packages/rest_framework/renderers.py" in get_context
+  640.         raw_data_put_form = self.get_raw_data_form(data, view, 'PUT', request)
+
+File "/lib/python3.5/site-packages/rest_framework/renderers.py" in get_raw_data_form
+  559.                 data = {k: v for (k, v) in serializer.data.items()
+
+File "/lib/python3.5/site-packages/rest_framework/renderers.py" in <dictcomp>
+  560.                         if not isinstance(serializer.fields[k],
+
+File "/lib/python3.5/site-packages/rest_framework/utils/serializer_helpers.py" in __getitem__
+  148.         return self.fields[key]
+
+Exception Type: KeyError at /api/nextvisit/217/
+Exception Value: 'meta_name'
+Edited for formatting (@rpkilby)

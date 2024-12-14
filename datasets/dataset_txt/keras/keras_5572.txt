@@ -1,0 +1,77 @@
+Contributor
+gw0 commented on 6 Apr 2016
+While debugging huge memory consumption issues, I stumbled that using any RNN with return_sequences=False (eg. SimpleRNN, GRU) results in an upcast to float64. Consequently everything that follows is also float64 and memory consumption is increased. As stated in Theano documentation any operation between float32 or int32/int64 results in float64.
+Solution would probably be to cast all integers to float32 to prevent unnecessary memory usage?
+# Problem example that casts to float64
+#   THEANO_FLAGS='floatX=float32,warn_float64=raise' python foo.py
+
+import numpy as np
+from keras.models import Sequential
+from keras.layers import SimpleRNN, Dense
+
+data_dim = 16
+timesteps = 8
+nb_classes = 10
+batch_size = 32
+
+model = Sequential()
+model.add(SimpleRNN(nb_classes, return_sequences=False, batch_input_shape=(batch_size, timesteps, data_dim)))
+#model.add(Dense(nb_classes, batch_input_shape=(batch_size, data_dim)))
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+# generate dummy training data
+x_train = np.random.random((batch_size * 10, timesteps, data_dim)).astype(np.float32)
+#x_train = np.random.random((batch_size * 10, data_dim)).astype(np.float32)
+y_train = np.random.random((batch_size * 10, nb_classes)).astype(np.float32)
+
+model.fit(x_train, y_train, batch_size=batch_size, nb_epoch=5)
+Triggering the issue by raising Theano warnings for float64 (latest Keras b587aee, Theano 0.8.1):
+$ THEANO_FLAGS='floatX=float32,warn_float64=raise' python foo.py 
+Using Theano backend.
+ERROR (theano.gof.opt): Optimization failure due to: local_opt_alloc
+ERROR (theano.gof.opt): node: Sum{axis=[1], acc_dtype=float64}(Alloc.0)
+ERROR (theano.gof.opt): TRACEBACK:
+ERROR (theano.gof.opt): Traceback (most recent call last):
+  File "/home/venv/local/lib/python2.7/site-packages/theano/gof/opt.py", line 1772, in process_node
+    replacements = lopt.transform(node)
+  File "/home/venv/local/lib/python2.7/site-packages/theano/tensor/opt.py", line 5137, in local_opt_alloc
+    val *= T.mul(*to_prod)
+  File "/home/venv/local/lib/python2.7/site-packages/theano/tensor/var.py", line 240, in __rmul__
+    return theano.tensor.basic.mul(other, self)
+  File "/home/venv/local/lib/python2.7/site-packages/theano/gof/op.py", line 611, in __call__
+    node = self.make_node(*inputs, **kwargs)
+  File "/home/venv/local/lib/python2.7/site-packages/theano/tensor/elemwise.py", line 597, in make_node
+    out_broadcastables)]
+  File "/home/venv/local/lib/python2.7/site-packages/theano/gof/type.py", line 400, in __call__
+    return utils.add_tag_trace(self.make_variable(name))
+  File "/home/venv/local/lib/python2.7/site-packages/theano/tensor/type.py", line 431, in make_variable
+    return self.Variable(self, name=name)
+  File "/home/venv/local/lib/python2.7/site-packages/theano/tensor/var.py", line 762, in __init__
+    raise Exception(msg)
+Exception: You are creating a TensorVariable with float64 dtype. You requested an action via the Theano flag warn_float64={ignore,warn,raise,pdb}.
+
+ERROR (theano.gof.opt): Optimization failure due to: local_opt_alloc
+ERROR (theano.gof.opt): node: Sum{axis=[1], acc_dtype=float64}(Alloc.0)
+...
+Exception: You are creating a TensorVariable with float64 dtype. You requested an action via the Theano flag warn_float64={ignore,warn,raise,pdb}.
+
+Epoch 1/5
+320/320 [==============================] - 0s - loss: 25.0333     
+Epoch 2/5
+320/320 [==============================] - 0s - loss: 23.8539     
+Epoch 3/5
+320/320 [==============================] - 0s - loss: 23.5233     
+Epoch 4/5
+320/320 [==============================] - 0s - loss: 23.4157     
+Epoch 5/5
+320/320 [==============================] - 0s - loss: 23.3869
+$
+It seems there is some multiplication between a constant float32 and int64 happening:
+(Pdb) self
+<theano.tensor.elemwise.Elemwise object at 0x7faefc245a90>
+(Pdb) inputs
+[TensorConstant{0.0}, Elemwise{mul,no_inplace}.0]
+(Pdb) inputs[0].type
+TensorType(float32, scalar)
+(Pdb) inputs[1].type
+TensorType(int64, scalar)

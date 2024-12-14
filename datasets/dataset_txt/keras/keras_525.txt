@@ -1,0 +1,60 @@
+klochkov123 commented on 18 Dec 2018 •
+edited
+I am trying to estimate a standard 2-variate CAViaR model with SimpleRNN. Here is a simple example of such model. Suppose we have a sequence of 'features' x_1, \dots, x_T and a sequence of dependent variables that we observe with some noise
+s[t] = a * x[t] + b * s[t-1] + c + err[t]
+we can even put eps[t] = 0 for simplicity, but the task is to recover a, b, c from x_train = x and y_train= s. Obviously the model can be described by SimpleRNN with kernel parameter a, recurrent parameter b and bias c. When I run the training algorithm the recurrent kernel always remains untouched
+import numpy as np
+
+from keras.layers import SimpleRNN
+from keras.models import Sequential
+from keras.initializers import Constant as ConstInitializer
+import keras.backend as K
+import keras.optimizers as Kopt
+from pandas import read_csv
+
+np.random.seed(1)
+
+def keras_tilted_loss(q, y, f):
+    e = (y-f)
+    return K.mean(K.maximum(q*e, (q-1)*e), axis=-1)
+
+tau = .84
+
+tmax = 100
+x = np.random.rand(tmax)
+a = .1
+b = .9
+c = 1.
+
+s = x * a + c * np.ones(tmax)
+for t in range(1, tmax):
+    s[t] += s[t-1] * b
+
+x_train = np.reshape(x, (tmax, 1, 1))
+y_train = np.reshape(s, (tmax, 1))
+
+model = Sequential()
+ada = Kopt.Adadelta(lr=1., rho=0.95, epsilon=None, decay=0.0)
+model.compile(loss='mean_squared_error', optimizer='sgd')
+
+recurrent_initializer = ConstInitializer(np.array([[0.]]))
+layer = SimpleRNN(1, input_shape=(1, 1), activation=None, recurrent_initializer = recurrent_initializer)
+model.add(layer)
+
+model.fit(x_train, y_train, epochs=100, verbose=0)
+
+weights = layer.get_weights()
+for weight in weights:
+    print(weight)
+Output:
+[[3.224013]]
+[[0.]]
+[7.9119873]
+The resulting prediction is simply bias plus the features part, no recurrent part
+y_predict = model.predict(x_train)[:, 0]
+y_predict2 = x * weights[0][0, 0] + weights[2][0]
+
+np.linalg.norm(y_predict-y_predict2)
+Output:
+3.0725734070512025e-06
+It seems that the RNN initializes the state with zero and then does not do updates

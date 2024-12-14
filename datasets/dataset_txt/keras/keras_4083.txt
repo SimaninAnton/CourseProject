@@ -1,0 +1,53 @@
+monaj07 commented on 25 Oct 2016 •
+edited
+Hi,
+I have been trying to perform end-to-end training on a simple CNN-RNN network, however with no success.
+A single image is provided as input to the CNN which produces a 4096D vector, which is in turn passed to every RNN time-steps (6 steps). In other words, the inputs to all RNN cells are identical vectors. I also need to get per-step outputs.
+I have written the following code:
+input_layer = Input(shape=(6, 3, 224, 224))
+RNN_in = TimeDistributed(CNN_model)(input_layer) # CNN_model is a sequential model defined earlier
+RNN_out = SimpleRNN(1000, return_sequences=True)(RNN_in)
+Dropout_out = Dropout(0.5)(RNN_out)
+Dense_out = TimeDistributed(Dense(num_classes))(Dropout_out)
+Activation_out = Activation('softmax')(Dense_out)
+model = Model(input=[input_layer], output=[Activation_out])
+sgd = SGD(lr=0.001, momentum=0.9, decay=0.005, nesterov=True)
+model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(X_train, train_labels, nb_epoch=50, batch_size=32, validation_data=(X_valid, valid_labels))
+# X_train.shape is (10000, 6, 3, 224, 224)
+I have even tried for just 10 training samples, shape = (10, 6, 3, 224, 224), but I always get the following error:
+Using Theano backend.
+Using gpu device 0: GeForce GTX 1080 (CNMeM is disabled, cuDNN 5005)
+(10, 6, 3, 224, 224)
+(10, 6, 3, 224, 224)
+Train on 10 samples, validate on 10 samples
+Epoch 1/50
+Error allocating 192675840 bytes of device memory (out of memory). Driver report 43319296 bytes free and 8504279040 bytes total
+Traceback (most recent call last):
+File "/home/monaj/Dropbox/codes/RNN/replicateRNN.py", line 104, in
+validation_data=([force_test_data], test_labels))
+File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1108, in fit
+callback_metrics=callback_metrics)
+File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 826, in _fit_loop
+outs = f(ins_batch)
+File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 562, in call
+return self.function(*inputs)
+File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 879, in call
+storage_map=getattr(self.fn, 'storage_map', None))
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 325, in raise_with_op
+reraise(exc_type, exc_value, exc_trace)
+File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 866, in call
+self.fn() if output_subset is None else
+MemoryError: Error allocating 192675840 bytes of device memory (out of memory).
+Apply node that caused the error: GpuElemwise{add,no_inplace}(GpuDnnConv{algo='small', inplace=True}.0, GpuDimShuffle{x,0,x,x}.0)
+Toposort index: 385
+Inputs types: [CudaNdarrayType(float32, 4D), CudaNdarrayType(float32, (True, False, True, True))]
+Inputs shapes: [(60, 256, 56, 56), (1, 256, 1, 1)]
+Inputs strides: [(802816, 3136, 56, 1), (0, 1, 0, 0)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[GpuElemwise{Composite{(i0 * (i1 + Abs(i1)))},no_inplace}(CudaNdarrayConstant{[[[[ 0.5]]]]}, GpuElemwise{add,no_inplace}.0), GpuElemwise{Composite{((i0 * i1) + (i0 * i1 * sgn(i2)))}}[(0, 1)](CudaNdarrayConstant{[[[[ 0.5]]]]}, GpuDnnPoolGrad{mode='max'}.0, GpuElemwise{add,no_inplace}.0)]]
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Note that the CNN model is pre-trained VGG16, whose last layer is removed.
+Since the input to all time-steps of RNN is the same, is there any way to provide input_layer of the shape (10000, 3, 224, 224) to the CNN and then replicate the resulting 4096D vector to all RNN cells?
+I mean do I really have to have an input_layer with 5 dimensions (including repeated images for different times)?

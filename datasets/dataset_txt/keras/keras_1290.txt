@@ -1,0 +1,60 @@
+TillLindemann commented on 25 Jan 2018
+environment:
+latest version of keras,tensorflow
+ubuntu17.10
+python2.7
+code:
+# build house model
+            house_input = Input(shape=(None, self.event_feature_size), dtype='float32')
+            house_middle = LSTM(self.state_size, return_sequences=True, activation=self.activation_f,
+                                kernel_initializer=self.initializer, dropout=self.keep)(house_input)
+            house_output = LSTM(self.state_size, return_sequences=True, activation=self.activation_f,
+                                kernel_initializer=self.initializer, dropout=self.keep)(house_middle)
+
+            # build time model
+            macro_input_days = Input(shape=(None,None, self.timeseries_feature_size), dtype='float32')
+            macro_reshape = Reshape([-1,self.time_series_step,self.timeseries_feature_size])(macro_input_days)
+            macro_middle_days = LSTM(self.state_size, return_sequences=True, activation=self.activation_f,
+                                     kernel_initializer=self.initializer, dropout=self.keep)(macro_reshape)
+            macro_output_days = LSTM(self.state_size, return_sequences=False, activation=self.activation_f,
+                                     kernel_initializer=self.initializer, dropout=self.keep)(macro_middle_days)
+            macro_output_days = Reshape([-1, self.seq_len, self.state_size])(macro_output_days)
+
+
+            # concatenate
+            middle_output = concatenate([house_output, macro_output_days])
+            finale_output = Dense(1, activation=self.activation_f)(middle_output)
+            model = Model(inputs=[house_input, macro_input_days], outputs=finale_output)
+explanations:
+I am trying to achieve a functional model with two parellel RNNs.
+for the first one,the input shape shall be
+(batch_size,time_steps_house,house_feature_size)
+but for the second one,the input shape shall be (batch_size,time_steps_house,time_steps_macro,macro_feature_size)
+and before the macro data comes into the LSTM,it will be reshape to the shape of (batch_size*time_steps_house,time_steps_macro,macro_feature_size)
+then after it comes out of LSTM,with "return_sequences=False",we shall get the shape (batch_size*time_steps_house,units)
+then do the reshape,it will be (batch_size,time_steps_house,units)
+and after all of that,we can concatenate them.
+It seems no problem,but I got the error below:
+error:
+Traceback (most recent call last):
+File "Genetic.py", line 179, in
+best_ind, valid_err, test_error = G.search()
+File "Genetic.py", line 86, in search
+ngen=self.generation, verbose=False)
+File "/home/zyh/.local/lib/python2.7/site-packages/deap/algorithms.py", line 150, in eaSimple
+fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+File "Genetic.py", line 76, in eval
+best_local, best_global, test_error, better_param = net.build()
+File "/home/zyh/桌面/twinrnn/zillow/zillow_time_onelayer/Train_parallel.py", line 75, in build
+model = self.build_model()
+File "/home/zyh/桌面/twinrnn/zillow/zillow_time_onelayer/Train_parallel.py", line 111, in build_model
+kernel_initializer=self.initializer, dropout=self.keep)(macro_reshape)
+File "/home/zyh/.local/lib/python2.7/site-packages/keras/layers/recurrent.py", line 488, in call
+return super(RNN, self).call(inputs, **kwargs)
+File "/home/zyh/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 573, in call
+self.assert_input_compatibility(inputs)
+File "/home/zyh/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 472, in assert_input_compatibility
+str(K.ndim(x)))
+ValueError: Input 0 is incompatible with layer lstm_3: expected ndim=3, found ndim=4
+what is weird:
+weird thing is Input0 is for the house,and lstm_3 is for the macro,they didn't even link to each other,how was that supposed to happen?

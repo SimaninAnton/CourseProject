@@ -1,0 +1,83 @@
+clayheaton commented on 12 Aug 2015
+With two routes that use ViewSets that draw on the same model class, the default self-documenting API root shows both of the routes as pointing to the address of the last one listed in the routes, even though the proper URLs exist and serve the correct data. For example, as shown in this image:
+The proper (and functioning) URL for calls is:
+"calls": "http://localhost:8887/calls/"
+The Call model looks like:
+class Call(models.Model):
+    call_id = models.BigIntegerField(primary_key=True)
+    month_received = models.IntegerField(blank=True, null=True)
+    week_received = models.IntegerField(blank=True, null=True)
+    dow_received = models.IntegerField(blank=True, null=True)
+    hour_received = models.IntegerField(blank=True, null=True)
+    # ... many more fields
+
+    class Meta:
+        managed = False
+        db_table = 'call'
+Routing looks like:
+from django.conf.urls import include, url
+from django.contrib import admin
+from rest_framework import routers
+from cfsbackend.cfsapp import views
+
+
+router = routers.DefaultRouter()
+router.register(r'users', views.UserViewSet)
+router.register(r'groups', views.GroupViewSet)
+router.register(r'incidents', views.IncidentViewSet)
+
+# The following two use the Call model
+router.register(r'calls', views.CallViewSet)
+router.register(r'callsoverview', views.CallOverviewViewSet)
+
+urlpatterns = [
+    url(r'^admin/', include(admin.site.urls)),
+    url(r'^', include(router.urls)),
+    url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework')),
+    url(r'^docs/', include('rest_framework_swagger.urls')),
+]
+Serializers look like:
+class CallSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Call
+        fields = ('call_id', 'month_received', 'week_received', 'dow_received', 'hour_received', ...) # Other fields truncated for legibility
+
+class CallOverviewSerializer(serializers.HyperlinkedModelSerializer):
+    m = serializers.IntegerField(source='month_received')
+    w = serializers.IntegerField(source='week_received')
+    d = serializers.IntegerField(source='dow_received')
+    h = serializers.IntegerField(source='hour_received')
+    n = serializers.IntegerField(source='call_id__count')
+
+    class Meta:
+        model = Call
+        fields = ('m','w','d','h','n')
+The ViewSets look like
+class IncidentViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows incidents to be viewed or edited.
+    """
+    queryset = Incident.objects.all()
+    serializer_class = IncidentSerializer
+
+class CallViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows calls to be viewed or edited.
+    """
+    queryset = Call.objects.all()
+    serializer_class = CallSerializer
+
+class CallOverviewViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for reduced data payload for summary page. Note that it aggregates by count of calls
+    """
+    queryset = Call.objects.values('month_received','week_received','dow_received','hour_received').annotate(Count('call_id'))
+    serializer_class = CallOverviewSerializer
+For testing purposes, I changed CallOverviewViewSet to the following:
+class CallOverviewViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for reduced data payload for summary page. Note that it aggregates by count of calls
+    """
+    queryset = Incident.objects.all() 
+    serializer_class = CallOverviewSerializer
+The result is the following on the root API docs, where Incident now is improperly displayed:

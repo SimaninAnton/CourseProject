@@ -1,0 +1,44 @@
+fuchaoqun commented on 24 Feb 2017
+https proxy (OWTF mitm) throws a ValueError, but response well.
+@gen.coroutine
+def connect(self):
+    host, port = self.request.uri.split(':')
+    client = self.request.connection.stream
+    yield client.write(b'HTTP/1.0 200 Connection established\r\n\r\n')
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.check_hostname = False
+    ctx.load_cert_chain('/path/to/crt', '/path/to/key')
+    socket_ssl = ctx.wrap_socket(client.socket, server_side = True, do_handshake_on_connect = False)
+
+    cs = tornado.iostream.SSLIOStream(socket_ssl)
+    yield cs.wait_for_handshake()
+    raw_headers = yield cs.read_until(b'\r\n\r\n')
+    content = b'HTTP/1.x 200 ok\r\nContent-Type: text/html\r\n\r\nTEST DONE\r\n\r\n'
+    yield cs.write(content)
+    cs.close()
+a ValueError occurs:
+ERROR:tornado.general:Uncaught exception
+Traceback (most recent call last):
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/http1connection.py", line 721, in _server_request_loop
+    ret = yield conn.read_response(request_delegate)
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/gen.py", line 1015, in run
+    value = future.result()
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/concurrent.py", line 237, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/gen.py", line 1024, in run
+    yielded = self.gen.send(value)
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/http1connection.py", line 245, in _read_message
+    self.stream.set_close_callback(self._on_connection_close)
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/iostream.py", line 412, in set_close_callback
+    self._maybe_add_error_listener()
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/iostream.py", line 901, in _maybe_add_error_listener
+    self._add_io_state(ioloop.IOLoop.READ)
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/iostream.py", line 931, in _add_io_state
+    self.fileno(), self._handle_events, self._state)
+  File "/path/to/anaconda3/lib/python3.5/site-packages/tornado/ioloop.py", line 725, in add_handler
+    self._impl.register(fd, events | self.ERROR)
+ValueError: file descriptor cannot be a negative integer (-1)
+2

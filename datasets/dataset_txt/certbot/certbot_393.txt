@@ -1,0 +1,126 @@
+duglin commented on 15 Sep 2018
+My operating system is (include version):
+Debian GNU/Linux 9 (stretch)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+wget https://dl.eff.org/certbot-auto
+I ran this command and it produced this output:
+While trying to run /certbot-auto renew --post-hook "nginx -s reload"
+I get this error:
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Processing /etc/letsencrypt/renewal/XXX.org.conf
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Cert is due for renewal, auto-renewing...
+Plugins selected: Authenticator nginx, Installer nginx
+Renewing an existing certificate
+Performing the following challenges:
+tls-sni-01 challenge for XXX.org
+tls-sni-01 challenge for www.XXX.org
+Cleaning up challenges
+2018/09/14 21:45:38 [notice] 8286#8286: signal process started
+Attempting to renew cert (XXX.org) from /etc/letsencrypt/renewal/XXX.org.conf produced an unexpected error: Could not automatically find a matching server block for XXX.org. Set the `server_name` directive to use the Nginx installer.. Skipping.
+All renewal attempts failed. The following certs could not be renewed:
+  /etc/letsencrypt/live/XXX/fullchain.pem (failure)
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+All renewal attempts failed. The following certs could not be renewed:
+  /etc/letsencrypt/live/XXX/fullchain.pem (failure)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Running post-hook command: nginx -s reload
+Error output from nginx:
+2018/09/14 21:45:39 [notice] 8289#8289: signal process started
+
+1 renew failure(s), 0 parse failure(s)
+I think the real error is shown in the debug log:
+2018-09-14 21:45:37,250:DEBUG:certbot_nginx.parser:Could not parse file: /etc/ng
+inx/conf.d/default.conf due to Expected {Group:({[<SPC><TAB><CR><LF>] "#" rest o
+f line}) | Group:(Forward: ...) | Group:({[<SPC><TAB><CR><LF>] {Combine:({{quote
+d string, starting with " ending with " | quoted string, starting with ' ending 
+with '} ")" [Re:('(\\$\\{)|[^{;\\s]')]...}) | Combine:({Re:('[^{};\\s\'\\"]') [R
+e:('(\\$\\{)|[^{;\\s]')]...}) | quoted string, starting with " ending with " | q
+uoted string, starting with ' ending with '} [{<SPC><TAB><CR><LF> {Combine:({{qu
+oted string, starting with " ending with " | quoted string, starting with ' endi
+ng with '} ")" [Re:('(\\$\\{)|[^{;\\s]')]...}) | Combine:({Re:('[^{};\\s\'\\"]')
+ [Re:('(\\$\\{)|[^{;\\s]')]...}) | quoted string, starting with " ending with " 
+| quoted string, starting with ' ending with '}}]... [<SPC><TAB><CR><LF>] Suppre
+ss:(";")})} (at char 2372), (line:77, col:1)
+The nginx config file is (masked):
+server {
+    listen       80 default_server;
+    listen  [::]:80 default_server;
+
+    server_name  XXX.org www.XXX.org;
+
+    listen       443 ssl http2 default_server;
+    listen  [::]:443 ssl http2 default_server;
+
+ ssl_certificate /etc/letsencrypt/live/XXX.org/fullchain.pem;
+ ssl_certificate_key /etc/letsencrypt/live/XXX.org/privkey.pem;
+
+
+    # from https://cipherli.st/
+    # and https://raymii.org/s/tutorials/Strong_SSL_Security_On_nginx.html
+
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers "XXX";
+    ssl_ecdh_curve secp384r1;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    resolver 8.8.8.8 8.8.4.4 valid=300s;
+    resolver_timeout 5s;
+    # Disable preloading HSTS for now.  You can use the commented out header line that includes
+    # the "preload" directive if you understand the implications.
+    #add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
+    add_header Strict-Transport-Security "max-age=63072000; includeSubdomains";
+    # add_header X-Frame-Options SAMEORIGIN;
+    # add_header X-Content-Type-Options nosniff;
+
+    ssl_dhparam /etc/ssl/certs/dhparam.pem;
+
+    access_log  /var/log/nginx/log/host.access.log  main;
+
+    server_name_in_redirect off;
+
+    location /ddd {
+  return 302 $request_uri/;
+    }
+
+    location /ddd/ {
+  proxy_pass       http://XXX:91/;
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Origin-URI $uri;
+  proxy_set_header Forwarded "for=$remote_addr;proto=$scheme";
+    }
+
+    location /ccc {
+  return 302 $request_uri/;
+    }
+
+    location /bbb/ {
+  proxy_pass       http://XXX:90/;
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Origin-URI $uri;
+  proxy_set_header Forwarded "for=$remote_addr;proto=$scheme";
+    }
+
+    location /aaa/ {
+     proxy_pass       http://XXX:89/;
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Origin-URI $uri;
+  proxy_set_header Forwarded "for=$remote_addr;proto=$scheme";
+    }
+
+    location / {
+     proxy_pass  http://XXX:88/;
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Origin-URI ${scheme}://${http_host}/$request_uri;
+  proxy_set_header Forwarded "for=$remote_addr;proto=$scheme";
+    }
+
+}
+Any ideas what might be going on?

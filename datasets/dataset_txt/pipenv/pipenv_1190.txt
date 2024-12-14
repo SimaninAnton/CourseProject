@@ -1,0 +1,51 @@
+remcohaszing commented on 16 Apr 2018
+Pipenv installations fail if an egg was uploaded for a dependency after Pipenv had already written the sdist hash to the Lockfile.
+$ python3 -m pipenv.help
+$ python -m pipenv.help output
+Steps to replicate
+Given a project which has the following Pipfile:
+[requires]
+python_version = "3.6"
+
+[packages]
+pluggy = "*"
+If this was installed before April 15th, 2018, this would have produced the following lockfile:
+{
+    "_meta": {
+        "hash": {
+            "sha256": "c9c0edfb60fe650018ada97d2fd71a66171e3d74def36de484f6a156802bcc5a"
+        },
+        "pipfile-spec": 6,
+        "requires": {
+            "python_version": "3.6"
+        },
+        "sources": [
+            {
+                "name": "pypi",
+                "url": "https://pypi.python.org/simple",
+                "verify_ssl": true
+            }
+        ]
+    },
+    "default": {
+        "pluggy": {
+            "hashes": [
+                "sha256:7f8ae7f5bdf75671a718d2daf0a64b7885f74510bcd98b1a0bb420eb9a9d0cff"
+            ],
+            "index": "pypi",
+            "version": "==0.6.0"
+        }
+    },
+    "develop": {}
+}
+The pluggy hash matches the sha value from the sdist found on https://pypi.org/project/pluggy/#files.
+Actual result
+If pipenv sync is run from this project now (after pluggy wheels have been published), this outputs the following warning:
+THESE PACKAGES DO NOT MATCH THE HASHES FROM Pipfile.lock!. If you have updated the package versions, please update the hashes. Otherwise, examine the package contents carefully; someone may have tampered with them.
+    pluggy==0.6.0 from https://pypi.python.org/packages/ba/65/ded3bc40bbf8d887f262f150fbe1ae6637765b5c9534bd55690ed2c0b0f7/pluggy-0.6.0-py3-none-any.whl#md5=295745cab038ef139c75aa2cdb79a5b0 (from -r /tmp/pipenv-odt4x3d3-requirements/pipenv-5t_4hr2b-requirement.txt (line 1)):
+        Expected sha256 7f8ae7f5bdf75671a718d2daf0a64b7885f74510bcd98b1a0bb420eb9a9d0cff
+             Got        e160a7fcf25762bb60efc7e171d4497ff1d8d2d75a3d0df7a21b76821ecbf5c5
+It appears that pipenv downloads the newly uploaded wheel, but matches this against the known hash of the sdist.
+Expected result
+I guess pipenv should fall back to the sdist if the wheel doesn’t match any hashes.
+5

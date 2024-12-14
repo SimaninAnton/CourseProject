@@ -1,0 +1,84 @@
+chatrapathik commented on 21 Jun 2018
+I have a bigger dataset which contains up to 5M words. The total words won't fit in RAM, So I started using the generators.
+I trained my model using the fit_generator method.
+While training for the first epoch the loss value starts from 4.7 at the end of the first epoch the loss value reduced to 1.7.
+For the second epoch, the loss has to continue from 1.7 but it is not like that, again it starts from 4.7.
+Can someone help out me to resolve this issue? Thanks in advance.
+The below is my script:
+import os
+import pickle
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers import Dense, LSTM, Dropout
+from keras.utils import to_categorical
+from keras import optimizers
+
+class StringEmbeddingsScript(object):
+    CHAR_NONE = '\x00'
+    CHAR_START = '\x01'
+    CHAR_END = '\x02' 
+    
+    WORDS = ['India', 'keras', 'stackoverflow', 'tensorflow']
+    
+    def create_model(self, num_units, word_len, num_unique_chars):
+        input_shape = (word_len, num_unique_chars)
+        
+        model = Sequential()
+        model.add(LSTM(num_units, input_shape=input_shape, unroll=True))
+        model.add(Dense(num_unique_chars, activation='softmax'))
+
+        model.compile(optimizer=optimizers.Adam(lr=0.003),
+                        loss='categorical_crossentropy',
+                        metrics=['mse'])
+        return model
+
+    def get_char_to_int(self):
+        words = self.WORDS
+        max_len = max(len(w) for w in words) + 2 # adding 2 for start and end chars
+        nwords = len(words)
+        
+        chars = list(sorted(list(set(list(''.join(words))))))
+        chars = [self.CHAR_NONE, self.CHAR_START, self.CHAR_END] + chars
+        charmap = { c: i for i, c in enumerate(chars) }
+        nchars = len(chars)
+
+        return max_len, nchars, nwords, words, charmap
+
+    def generator(self, max_len, nchars, nwords, words, charmap, b_size):
+        while 1:
+            char_none = to_categorical(charmap[self.CHAR_NONE], num_classes=nchars)
+            num_batches = (nwords//b_size) + 1
+            
+            for i in range(num_batches):
+                start = b_size * i
+                end = b_size * (i + 1)
+                
+                split_words = words[start:end]
+                n = len(split_words)
+
+                data = np.zeros(shape=(n, max_len, nchars), dtype=np.float32)
+                 labels = np.zeros(shape=(n, nchars), dtype=np.float32)
+ 
+                 for i in range(n):
+                     w = split_words[i][:-1]
+                     last_char = split_words[i][-1]
+                     w = '%s%s%s' % (self.CHAR_START, w, self.CHAR_END)
+                     w = [to_categorical(charmap[x], num_classes=nchars) for x in w]
+                     w = w + ([char_none] * (max_len - len(w)))
+                     data[i] = w
+                     labels[i] = to_categorical(charmap[last_char], num_classes=nchars)
+ 
+                 yield data, labels
+ 
+     def run(self):
+         neurons = 128
+         max_len, nchars, nwords, words, charmap = self.get_char_to_int()
+ 
+         model = self.create_model(neurons, max_len, nchars)
+ 
+         generator = self.generator(max_len, nchars, nwords, words, charmap, 2)
+         model.fit_generator(generator, steps_per_epoch= nwords/2, epochs=10)
+ 
+ if __name__ == '__main__':
+     StringEmbeddingsScript().run()

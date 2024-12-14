@@ -1,0 +1,44 @@
+andymantell commented on 15 Mar 2018 •
+edited
+Expected Behavior
+Given the barest possible flask app (See this repo for full example: https://github.com/andymantell/flask-test-client-sendfile-lock)
+from flask import Flask
+
+
+app = Flask(__name__)
+
+if __name__ == "__main__":
+    app.run()
+And the following test script:
+import os
+from app import app
+
+
+test_client = app.test_client()
+
+filename = 'static/test.txt'
+with open(filename, 'w+') as file:
+    file.write('Hello')
+
+response = test_client.get('/static/test.txt')
+
+response_data = response.data.decode('utf-8')
+assert response_data == 'Hello'
+
+os.remove(filename)  # This throws an exception on windows, claiming that the file is busy
+I would expect that the file /static/test.txt will be created, requested from the test_client, and then removed again. And indeed this is what happens on Linux.
+Actual Behavior
+On Windows, the os.remove line throws an exception saying that the file is busy. It appears as if something inside the test client is locking the file.
+If I switch to requests.get and fetch /static/test.txt over http instead of through the test client, the error does not occur, the file is not locked, and Windows successfully deletes the file.
+(env) C:\projects\flask-test-client-sendfile-lock-master>python test.py
+Traceback (most recent call last):
+  File "test.py", line 15, in <module>
+    os.remove(filename)  # This throws an exception on windows, claiming
+ that the file is busy
+PermissionError: [WinError 32] The process cannot access the file because it is
+being used by another process: 'static/test.txt'
+Environment
+Windows 7
+Python version: 3.4
+Flask version: 0.12
+Werkzeug version: 0.7

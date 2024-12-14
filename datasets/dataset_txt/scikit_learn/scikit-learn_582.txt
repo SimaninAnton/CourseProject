@@ -1,0 +1,52 @@
+alisandra commented on Oct 18, 2018
+First, thank you, I'm really enjoying learning to use sklearn!
+Description
+I tried to run recursive feature elimination (feature_selection.RFE) with partial least squares regression (cross_decomposition.PLSRegression), and it ran, but not correctly. I appreciate that this is a questionable combination, but I'm also pretty sure the observed behavior is not intended.
+Specifically, regardless of what was set for 'step' RFE took a step of 1, and it always selected the last features, not the most informative.
+I traced this back to the shape of the PLSRegression .coeff_ attribute, (n, 1) compared to e.g. (1, n) that linear_model.LinearRegression would have (with n = X.shape[1]). This causes the subsequent np.argsort at
+scikit-learn/sklearn/feature_selection/rfe.py
+Line 193 in d9b56b6
+ ranks = np.argsort(safe_sqr(coefs).sum(axis=0)) 
+
+to produce [[0], [0], ..., [0], [0]] instead of a useful feature ranking.
+I can also put in a pull request, but I'm not sure about the greater repercussions of changing something here and whether the better fix is reshaping PLSRegression's .coeff_, or doing a local shape check and reshape inside RFE's fit function.
+Steps/Code to Reproduce
+from sklearn.datasets import make_friedman1
+from sklearn.feature_selection import RFE
+from sklearn.cross_decomposition import PLSRegression
+
+X, y = make_friedman1(n_samples=50, n_features=10, random_state=0)
+estimator = PLSRegression()
+selector = RFE(estimator, 5, step=1)
+selector = selector.fit(X, y)
+print(selector.support_ )
+print(selector.score(X,y))
+Expected Results
+Finds the 5 meaningful features, makes a good fit.
+[ True  True  True  True  True False False False False False]
+0.7783970183251572
+Actual Results
+Selects the last features, makes a poor fit.
+[False False False False False  True  True  True  True  True]
+0.11641036162734653
+Versions
+System:
+executable: venv/bin/python
+   machine: Linux-4.4.0-137-generic-x86_64-with-Ubuntu-16.04-xenial
+    python: 3.5.2 (default, Nov 23 2017, 16:37:01)  [GCC 5.4.0 20160609]
+
+BLAS:
+cblas_libs: cblas
+  lib_dirs: /usr/lib
+    macros: NO_ATLAS_INFO=1, HAVE_CBLAS=None
+
+
+Python deps
+-----------
+     scipy: 1.1.0
+    pandas: None
+setuptools: 40.4.3
+       pip: 18.1
+    Cython: None
+   sklearn: 0.20.0
+     numpy: 1.15.2

@@ -1,0 +1,22 @@
+AndTheDaysGoBy commented on Jan 15, 2019 •
+edited
+Summary.
+https://github.com/requests/requests/blob/f37daf25006a4b475b1bea90fecdd035146dbc3b/requests/sessions.py#L340
+Looking at the Session object above, we have verify in the __attr__ field. Let s = Session(). One way to set the parameters of the session is to perform s.<field> = value. This works for some of them, but not all of them.
+In particular, consider the situation where you have a cacert you have to verify with. With a standard curl, you could send this with --cacert, with a standard request, you could pass this in with requests.get(url, verify="/path/to/cacert". In a session however, you could at best set it "per each request" (against the purpose of a session) by performing s.get(url, verify="path/to/cacert").
+To fulfill the purpose of a session, authentication and other fields are usually set via s.<field> = value, and then you at most have to do s.get(url). This is how it's used in docker-py.
+However, this fails to work like a session should due to the implementation of the get method:
+https://github.com/requests/requests/blob/f37daf25006a4b475b1bea90fecdd035146dbc3b/requests/sessions.py#L537
+in conjunction with the request() method:
+https://github.com/requests/requests/blob/f37daf25006a4b475b1bea90fecdd035146dbc3b/requests/sessions.py#L466
+Notice how the get method at most passes in the url down to the request method, and the rest are passed in as kwargs. As a result, the verify field will only be passed on to the request if "verify" is in the kwargs (i.e. you perform s.get(url, verify="path/to/cacert") as you would in a normal request).
+Since it wont be (after all, it's supposed to be a setting of the session, set via s.verify = "path/to/cacert"), the request() method will default it to None.
+This None value will be passed into the merge_environment_settings method:
+https://github.com/requests/requests/blob/f37daf25006a4b475b1bea90fecdd035146dbc3b/requests/sessions.py#L690
+Since the default value for trust_env is True, the first if statement will occur. Then, since verify was improperly passed in as None, the second one will also occur. Therefore, we will have
+verify = (os.environ.get('REQUESTS_CA_BUNDLE') or os.environ.get('CURL_CA_BUNDLE'))
+Now, verify will proceed to go to the merge_setting() method, i.e. verify = merge_setting(verify, self.verify):
+https://github.com/requests/requests/blob/f37daf25006a4b475b1bea90fecdd035146dbc3b/requests/sessions.py#L49
+However, now that verify actually has a value (the value resulting from or'ing the BUNDLEs), the first if in this method will not occur, the second one will not occur (the one we wanted to occur), but the third one (which I guess is error-handling related) will occur (which defaults to returning the request_settings, in this case it'd be the or of the BUNDLEs as opposed to the value set via s.verify = "path/to/cacert").
+The most straightforward solution I can give is in the PR I've created. I.e. pass in a value for verify into the kwargs for the request() method. Consequently, verify wont be None so it wont be overwritten by the BUNDLEs in the merge_environment_settings() method. Then, that error method in merge_settings() (the third if, i.e. the if not) will at least return the correct default thing.
+If there was to be another fix that doesn't hack around how merge_settings functions (i.e. allows us to take the second if), it would be to mess around in the merge_environment_settings() method so that it wont default to setting verify to the BUNDLEs. Otherwise, you'd have to have a special case in the merge_setting() method for "verify" that will allow either request_settings is None or request_settings is "the or of the CURL CA BUNDLE and REQUEST CA BUNDLE" for the second if statement.

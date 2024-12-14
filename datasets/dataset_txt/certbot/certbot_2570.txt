@@ -1,0 +1,42 @@
+dionysius commented on 13 Jan 2016
+I don't know what the latest standpoint is regarding ports for standalone, because there are so many issues googable regarding reverse proxies, I have absolutely no overview.
+The idea was using the apache's Alias directive for e standardized challenge process for all variants of virtualhost configurations. With small tweaks it's also working with proxies.
+root@server2:~# cat /etc/apache2/conf-enabled/letsencrypt.conf
+<IfModule mod_proxy.c>
+        ProxyPass /.well-known/acme-challenge !
+</IfModule>
+Alias /.well-known/acme-challenge /var/www/html/.well-known/acme-challenge
+
+<Directory "/var/www/html/.well-known/acme-challenge">
+    Options None
+    AllowOverride None
+    Require all granted
+    AddDefaultCharset off
+</Directory>
+Alias allows us to use this path globally over all virtualhosts.
+ProxyPass /.well-known/acme-challenge ! will negate any proxy handling on this path
+Directory directive is required with minimal permissions to access this location
+root@server2:~# cat /etc/apache2/sites-enabled/gitlab.denis.mylastname.me.conf
+<VirtualHost *:80>
+        ServerName gitlab.denis.mylastname.me
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+        AllowEncodedSlashes NoDecode
+        #RequestHeader set X-Forwarded-Proto "https"
+        #RequestHeader set X-Forwarded-Ssl "on"
+        ProxyPreserveHost On
+
+        ProxyPass / http://localhost:8079/
+        ProxyPassReverse / http://localhost:8079/
+</VirtualHost>
+As you can see, you can also choose another folder instead of /var/www/html - just use one you don't use anywhere else and adapt accordingly..
+Requesting root privileges to run with virtualenv: /root/.local/share/letsencrypt/bin/letsencrypt certonly --webroot --renew-by-default --email info@mylastname.me --agree-tos --domains=gitlab.denis.mylastname.me -w /var/www/html --text
+
+IMPORTANT NOTES:
+ - Congratulations! Your certificate and chain have been saved at
+   /etc/letsencrypt/live/gitlab.denis.mylastname.me/fullchain.pem. Your
+   cert will expire on 2016-04-12. To obtain a new version of the
+   certificate in the future, simply run Let's Encrypt again.
+[...]
+9

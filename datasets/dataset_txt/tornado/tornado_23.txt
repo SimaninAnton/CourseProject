@@ -1,0 +1,26 @@
+Contributor
+remram44 commented on 4 Oct 2019 •
+edited
+If you have a rule with an escaped regex character coming after a group in parentheses, like:
+URLSpec('/project/([0-9]+)/export/codebook\\.csv', ExportCodebookCsv)
+it will correctly match /project/1/export/codebook.csv, but will reverse to /project/1/export/codebook\.csv.
+Of course, if you remove the backslash:
+URLSpec('/project/([0-9]+)/export/codebook.csv', ExportCodebookCsv)
+it will reverse to the wanted /project/1/export/codebook.csv but then it will also match /project/1/export/codebookXcsv (the dot matches any character).
+This is because re_unescape() is only called for the first fragment, not the following ones; see no unescaping line 630:
+tornado/tornado/routing.py
+Lines 626 to 638 in ff985fe
+ for fragment in pattern.split("("): 
+     if ")" in fragment: 
+         paren_loc = fragment.index(")") 
+         if paren_loc >= 0: 
+             pieces.append("%s" + fragment[paren_loc + 1 :]) 
+     else: 
+         try: 
+             unescaped_fragment = re_unescape(fragment) 
+         except ValueError: 
+             # If we can't unescape part of it, we can't 
+             # reverse this url. 
+             return (None, None) 
+         pieces.append(unescaped_fragment) 
+See also #1619

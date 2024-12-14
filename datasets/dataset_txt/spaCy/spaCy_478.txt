@@ -1,0 +1,124 @@
+Collaborator
+adrianeboyd commented on 29 Jul 2019
+It would be useful for spacy train to support textcat components. Some of the main questions are:
+How to extend the current JSON training format
+How to provide model settings to spacy train
+How to score textcat results
+How to provide textcat results to users (especially for multilabel tasks)
+I think it would make sense to adopt slightly different terminology for mutually exclusive vs. non-mutually exclusive classes (as in https://spacy.io/api/textcategorizer#init) and instead call them:
+mutually exclusive -> multiclass
+non-mutually exclusive -> multilabel
+JSON Training Format
+The format currently looks like this:
+[{
+    "id": int,                      # ID of the document within the corpus
+    "paragraphs": [{                # list of paragraphs in the corpus
+        "raw": string,              # raw text of the paragraph
+        "sentences": [{             # list of sentences in the paragraph
+            "tokens": [{            # list of tokens in the sentence
+                "id": int,          # index of the token in the document
+                "dep": string,      # dependency label
+                "head": int,        # offset of token head relative to token index
+                "tag": string,      # part-of-speech tag
+                "orth": string,     # verbatim text of the token
+                "ner": string       # BILUO label, e.g. "O" or "B-ORG"
+            }],
+            "brackets": [{          # phrase structure (NOT USED by current models)
+                "first": int,       # index of first token
+                "last": int,        # index of last token
+                "label": string     # phrase label
+            }]
+        }]
+    }]
+}]
+cats could be added at the document level like this:
+[{
+    "id": int,                      # ID of the document within the corpus
+    "paragraphs": [{                # list of paragraphs in the corpus
+        "raw": string,              # raw text of the paragraph
+        "sentences": [{             # list of sentences in the paragraph
+            "tokens": [{            # list of tokens in the sentence
+                "id": int,          # index of the token in the document
+                "dep": string,      # dependency label
+                "head": int,        # offset of token head relative to token index
+                "tag": string,      # part-of-speech tag
+                "orth": string,     # verbatim text of the token
+                "ner": string       # BILUO label, e.g. "O" or "B-ORG"
+            }],
+            "brackets": [{          # phrase structure (NOT USED by current models)
+                "first": int,       # index of first token
+                "last": int,        # index of last token
+                "label": string     # phrase label
+            }]
+        }]
+    }],
+    "cats": [{
+        "label": string,
+        "value": number
+    }]
+}]
+With the data spread across paragraphs, I don't think it makes sense to try to support subdocument textcats with character offsets (the (start, end, label) keys supported in GoldParse, see https://spacy.io/api/goldparse#attributes), but if you wanted to, it could easily be extended like this:
+"cats": [{
+    "label": string,
+    "value": number,
+    "start": int,
+    "end": int
+}]
+If you were extremely sure that you did not want to support subdocument textcats, then a slightly simpler version would be with the labels as keys:
+"cats": {
+    string: number,
+    string: number,
+    ...
+}
+This simple version is what is proposed in #2928, but I think it would be better for it to be a list so that it is more like the other types of annotation and so that it is more extensible.
+Joining Paragraphs
+With the current paragraph-based format, you would need to decide how to join paragraphs for training purposes. Something like \n\n? Should this be a language-specific setting?
+Model/Task Information
+The following information is needed in order to initialize the model. It could be included directly as command-line options to spacy train or in a separate JSON file (e.g., --meta meta.json):
+{
+    "labels": [string, ... ]    # list of all labels
+    "type": string,             # multiclass vs. multilabel (default: multiclass)
+    "sparse": boolean,          # true: missing labels are 0.0, false: missing labels are None
+                                #    (default: false)
+}
+I think for most typical use cases with spacy train, this information could be automatically detected. This isn't true for general-purpose textcat training where you might not able to make an initial pass through all your data , but I think it might be okay to simplify this for spacy train and have spacy train autodetect these settings. Users should be able to override the autodetected settings with command-line options if needed.
+Autodetection of Model Settings
+If training a new model, autodetect would examine the training data:
+labels: all labels present in the training data
+type: multiclass if each text has exactly one positive label
+sparse: True if all labels are not present on all texts in the data
+If extending an existing model:
+labels: union of all labels in the model and training data
+type: multiclass vs. multilabel would be detected from the existing model
+sparse: True if all labels are not present on all texts in the training data (?)
+Binary Tasks
+binary can be represented as either one-class multilabel or two-class multiclass. With one-class multilabel the positive label would be the one provided label, but with two-class multiclass you'd need to know the positive label to provide a better evaluation. This could potentially be added to the info in meta.json or as a command-line option.
+GoldParse / GoldCorpus
+GoldParse supports the textcat annotations as .cats.
+gold.json_to_tuple() would need to be updated to read in the cats information for GoldParse/GoldCorpus.
+(Are the jsonl and msg file input options in spacy.gold just a sketch at this point?)
+Scorer
+There are multiple options for scoring. I think some kind of precision/recall/f-scores are probably okay for most use cases, but feedback/suggestions are welcome.
+The main question with f-scores is how to average across labels/instances, especially for multilabel tasks. If I had to pick one option, I might pick the weighted macro average as described here as weighted: https://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_recall_fscore_support.html, but weighted scores get tricky and possibly a macro average would be more straightforward to interpret for a typical user, especially if the per-label scores are also easy to inspect.
+micro and macro averaging would be supported by PRFScore and the only additional functionality would be the weighted average.
+Scorer could be extended with the properties cats_p/r/f and cats_per_cat similar to NER.
+Alternative metrics:
+AUC ROC (also decide how to average across labels)
+a misclassification cost matrix
+accuracy for multiclass tasks
+???
+doc.cats and Multilabel Thresholds
+In order to optimize results for a multilabel classification task given a particular evaluation metric (e.g., f0.5-score), you might want to find/store probability thresholds on a per-label basis. I'm not sure I know enough about where/how to do this sensibly, but my initial suggestion would be to use a supplied evaluation metric along with the dev set in spacy train to find thresholds and store them in the model as a default. (As something like cfg['default_thresholds']?)
+I think an alternative to doc.cats that just provides a set of positive labels could be useful. In the multiclass case, argmax provides the positive label. In the multilabel case, the stored thresholds or provided thresholds could be applied to doc.cats to provide a set of positive labels. I'm not sure whether this should be stored in Doc or provided as a separate utility function like util.get_positive_cats(nlp, doc, thresholds=thresholds), where nlp provides the thresholds unless alternate thresholds are specified. (Preferably with a better name than get_positive_cats, but I can't think of anything better right now.)
+Tasks
+Add cats to JSON training format
+Export cats in JSON training format for Doc (see discussion in: #4013)
+Import cats from JSON training format into GoldParse/GoldCorpus
+Add threshold logic for multilabel tasks (in TextCategorizer? in Scorer?)
+Add textcat scoring to Scorer
+Add positive_cats-type set output?
+Add textcat to the pipeline options in spacy train including autodetection of model settings
+Related/Future Tasks
+Add data debugging / warnings as described in #2928
+2
+2

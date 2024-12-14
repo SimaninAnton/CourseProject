@@ -1,0 +1,98 @@
+sehmaschine commented on 25 Aug 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+[x ] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[x ] This is not a usage question. (Those should be directed to the discussion group instead.)
+[x ] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[x ] I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+class MyModel(models.Model):
+    date = models.DateField(null=True, blank=True)
+    title = models.CharField(max_length=100)
+
+
+class MySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MyModel
+
+
+class TestSerializer(TestCase):
+
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.client = Client()
+        self.view = TestView.as_view()
+
+    def test_post_create(self):
+        self.client.login(username="demo", password="demo")
+        data = {
+            "title": "bar"
+        }
+        res = self.client.post(
+            '/api/v1/posts/',
+            json.dumps(data),
+            format='json',
+            content_type='application/json',
+            HTTP_ACCEPT='application/json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["date"], None)
+
+    def test_date_none(self):
+        self.client.login(username="demo", password="demo")
+        data = {
+            "title": "bar",
+            "date": "2017-01-01"
+        }
+        res = self.client.post(
+            '/api/v1/posts/',
+            json.dumps(data),
+            format='json',
+            content_type='application/json',
+            HTTP_ACCEPT='application/json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["date"], '2017-01-01')
+
+        data = {
+            "title": "bar",
+            "date": None
+        }
+        res = self.client.patch(
+            '/api/v1/posts/%s/' % (res.data["id"]),
+            json.dumps(data),
+            format='json',
+            content_type='application/json',
+            HTTP_ACCEPT='application/json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["date"], None)
+
+    def test_date_empty(self):
+        self.client.login(username="demo", password="demo")
+        data = {
+            "title": "bar",
+            "date": "2017-01-01"
+        }
+        res = self.client.post(
+            '/api/v1/posts/',
+            json.dumps(data),
+            format='json',
+            content_type='application/json',
+            HTTP_ACCEPT='application/json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["date"], '2017-01-01')
+
+        data = {
+            "title": "bar",
+            "date": ""
+        }
+        res = self.client.patch(
+            '/api/v1/posts/%s/' % (res.data["id"]),
+            json.dumps(data),
+            format='json',
+            content_type='application/json',
+            HTTP_ACCEPT='application/json')
+        # this is unexpected behaviour
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["date"], [u'Date has wrong format. Use one of these formats instead: YYYY-MM-DD.'])
+I'm actually not sure if this is a bug, but I expected being able to send an empty string if a DateField is not required. If an empty string is not allowed, at least the error message should (IMHO) refer to something like "blank is not allowed" instead of mentioning the wrong format.
+I've done quite some research on this topic and also found some issues and explanations (but not an answer). Please feel free to close this if I missed something (and/or this is a duplicate).
+See also #2687

@@ -1,0 +1,55 @@
+Moshikol commented on 22 Aug 2019 •
+edited
+Checklist
+[* ] I have verified that that issue exists against the master branch of Django REST framework.
+[* ] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[* ] This is not a usage question. (Those should be directed to the discussion group instead.)
+[* ] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[* ] I have reduced the issue to the simplest possible case.
+[* ] I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+use a model with required fields like:
+class MyModel(django_models.Model):  
+        timestamp = django_models.DateTimeField(unique=True)  
+        name = django_models.CharField(max_length=255)
+2.Add a serializer that supports many instaces like so:
+class MyModelSerializer(ModelSerializer):  
+    def __init__(self, *args, **kwargs):  
+        many = kwargs.pop('many', True)  
+        super(MyModelSerializer, self).__init__(many=many, *args, **kwargs)
+3.Add an API view and url:
+class MyModelViewSet(TimeseriesDataModelViewSet):
+    serializer_class = MDIInjectionSerializer
+    def get_serializer(self, *args, **kwargs):
+        data = None
+        if "data" in kwargs:
+            data = kwargs["data"]
+        if isinstance(data, list):
+            kwargs["many"] = True
+
+        return super(MyModelViewSet, self).get_serializer(*args, **kwargs)
+4.Send to the url you added for the view a HTTP POST request with several models like so:
+{"name": "Test"},
+{"timestamp": "2019-08-09T19:53:00","name": "Test"},
+{"timestamp": "2019-08-09T19:54:00","name": "Test"},
+{"timestamp": "2019-08-09T19:55:00","name": "Test"},
+{"timestamp": "2019-08-09T19:56:00","name": "Test"},
+{"timestamp": "2019-08-09T19:57:00","name": "Test"}
+notice there is no timestamp field in the first object and that would fail the serializer validation.
+Actual behavior
+you would get in the response somthing like:
+[
+    {
+        "timestamp": [
+            "This field is required."
+        ]
+    },
+    {},
+    {},
+    {},
+    {},
+    {}
+]
+None of the objects above (even the valid ones) wont be saved to the DataBase
+Expected behavior
+All valid values would get saved to the DataBase, The invalid values would not.

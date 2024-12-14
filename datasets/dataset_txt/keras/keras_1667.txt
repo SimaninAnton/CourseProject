@@ -1,0 +1,197 @@
+geraltFromRivia commented on 14 Sep 2017
+I am currently trying to optimize a network built in Keras to do binary classification and understand the difference between training it with simply Keras vs Tensorflow.
+The following is pure Keras code:
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+import sys
+import keras
+import numpy as np
+import tensorflow as tf
+
+from keras import optimizers
+from keras.layers import Dropout, Flatten, Dense
+from keras import backend as K
+
+# Try to standardize output
+np.random.seed(1)
+tf.set_random_seed(1)
+
+nb_epoch = 5
+output_layer = "avg_pool"
+
+# Setup the variables that are relevant to the model
+model = keras.applications.resnet50.ResNet50(include_top=True, weights='imagenet', \
+                    input_tensor=None, input_shape=None)
+x = Flatten()( model.get_layer(output_layer).output)
+x = Dropout(0.5, name='avg_pool_dropout')(x)
+predictions = Dense(1, activation='sigmoid', name='fcout')(x)
+
+from keras.models import Model
+finetuned_model = Model(outputs=predictions, inputs=model.input)
+finetuned_model.compile(loss='binary_crossentropy',
+              optimizer=tf.train.MomentumOptimizer(learning_rate=1e-4, momentum=0.9),
+              metrics=['accuracy'])
+
+##################################################################
+from data import train_generator, validation_generator, nb_batch
+nb_train_samples = train_generator.samples
+nb_validation_samples = validation_generator.samples
+##################################################################
+finetuned_model.fit_generator(
+        train_generator,
+        samples_per_epoch=nb_train_samples,
+        nb_epoch=nb_epoch,
+        # nb_epoch=1,
+        validation_data=validation_generator,
+        nb_val_samples=nb_validation_samples)
+
+finetuned_model.save_weights("./resnet50_finetuned_tfOPT.h5")
+And this is the Tensorflow code, that is supposed to be as similar as possible to the previous code:
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+import sys
+import keras
+import numpy as np
+import pickle as pkl
+import tensorflow as tf
+
+from keras import optimizers
+from keras.layers import Dropout, Flatten, Dense
+from keras import backend as K
+from keras import metrics as metrics_module
+
+nb_epoch = 5
+output_layer = "avg_pool"
+
+# Setup the inputs to the model
+X = tf.placeholder(tf.float32, [None, 224, 224, 3])
+
+# Setup the variables that are relevant to the model
+model = keras.applications.resnet50.ResNet50(include_top=True, weights='imagenet', \
+                    input_tensor=X, input_shape=(224, 224, 3))
+x = Flatten()( model.get_layer(output_layer).output)
+x = Dropout(0.5, name='avg_pool_dropout')(x)
+predictions = Dense(1, activation='sigmoid', name='fcout')(x)
+
+# Setup placeholder for labels
+target = K.placeholder(
+                        ndim=len((None, 1)),
+                        name='fcout_target',
+                        sparse=K.is_sparse(predictions),
+                        dtype=K.dtype(predictions))
+
+# Setup the loss and accuracy metric
+loss_function = keras.losses.get('binary_crossentropy')
+
+loss = K.mean(loss_function(target, predictions))
+
+acc_fn = metrics_module.binary_accuracy
+accuracy_metric = K.mean(acc_fn(target, predictions))
+
+# Setup the optimizer
+optimizer = tf.train.MomentumOptimizer(learning_rate=1e-4, momentum=0.9)
+training_op = optimizer.minimize(loss)
+#################################################################################################
+from data import train_generator, validation_generator, nb_batch
+nb_train_samples = train_generator.samples
+nb_validation_samples = validation_generator.samples
+#################################################################################################
+
+from tqdm import tqdm
+def run_epoch_on_generator(generator, batch_size=None, samples=None, epoch=None, training=True):
+    num_iter = int(samples/nb_batch) + 1
+    
+    loss_list = []
+    acc_list = []
+    for i in tqdm(range(num_iter), ncols=90, desc="Epoch {} - {}: ".format(epoch, "Training" if training else "Testing")):
+        image_batch, label_batch = next(generator)
+
+        if training:
+            loss_value, acc, step = sess.run([loss, accuracy_metric, training_op],
+                                    feed_dict={ X:image_batch, 
+                                                target:label_batch.reshape((-1, 1)),  
+                                                K.learning_phase():1})
+        else:
+            loss_value, acc = sess.run([loss, accuracy_metric], 
+                                    feed_dict={ X:image_batch, 
+                                                target:label_batch.reshape((-1, 1)),  
+                                                K.learning_phase():0})
+
+
+        loss_list.append(loss_value)
+        acc_list.append(acc)
+
+    return loss_list, acc_list    
+
+with K.get_session() as sess:
+
+    epoch = 0
+
+    while epoch < nb_epoch:
+        train_loss_list, train_acc_list = run_epoch_on_generator(train_generator, 32, nb_train_samples, epoch, True)
+        valid_loss_list, valid_acc_list = run_epoch_on_generator(validation_generator, 32, nb_validation_samples, epoch, False)
+
+        from sklearn.metrics import accuracy_score
+        train_acc = np.array(train_acc_list).mean()
+        valid_acc = np.array(valid_acc_list).mean()
+        info_str = "Training Loss: {} \nTraining Accuracy {} \nValidation Loss: {} \nValidation accuracy: {}\n\n".format(
+                    np.hstack(train_loss_list).mean(),
+                    train_acc * 100,
+                    np.hstack(valid_loss_list).mean(),
+                    valid_acc * 100)
+        text_file.write(info_str)
+        print info_str
+        epoch += 1
+I understand that when Keras is training, it uses some sort of running average that will make the results a bit different, from what I calculate at the end of a single epoch. I would like to know if somebody might possibly have insight as to why is there such a difference in the accuracy when I train the network with Keras / TensorFlow or point out a mistake I might possibly be making.
+The outputs are as follows:
+Keras:
+Epoch 1/5
+408/408 [==============================] - 470s - loss: 0.7358 - acc: 0.6066 - val_loss: 0.5565 - val_acc: 0.7216
+Epoch 2/5
+408/408 [==============================] - 471s - loss: 0.6177 - acc: 0.6861 - val_loss: 0.5166 - val_acc: 0.7494
+Epoch 3/5
+408/408 [==============================] - 471s - loss: 0.5777 - acc: 0.7082 - val_loss: 0.5007 - val_acc: 0.7667
+Epoch 4/5
+408/408 [==============================] - 472s - loss: 0.5390 - acc: 0.7350 - val_loss: 0.4895 - val_acc: 0.7722
+Epoch 5/5
+408/408 [==============================] - 475s - loss: 0.5372 - acc: 0.7374 - val_loss: 0.4806 - val_acc: 0.7771
+vs
+TensorFlow
+Epoch 0 - Training: : 100%|█████████████████████████████| 409/409 [04:32<00:00,  1.66it/s]
+Epoch 0 - Testing: : 100%|████████████████████████████████| 73/73 [00:19<00:00,  3.72it/s]
+Training Loss: 0.734632968903 
+Training Accuracy 59.5601320267 
+Validation Loss: 0.570371210575 
+Validation accuracy: 70.3339040279
+
+
+Epoch 1 - Training: : 100%|█████████████████████████████| 409/409 [04:33<00:00,  1.77it/s]
+Epoch 1 - Testing: : 100%|████████████████████████████████| 73/73 [00:19<00:00,  3.78it/s]
+Training Loss: 0.614537715912 
+Training Accuracy 68.5254812241 
+Validation Loss: 0.620945870876 
+Validation accuracy: 68.764269352
+
+
+Epoch 2 - Training: : 100%|█████████████████████████████| 409/409 [04:32<00:00,  1.82it/s]
+Epoch 2 - Testing: : 100%|████████████████████████████████| 73/73 [00:19<00:00,  3.79it/s]
+Training Loss: 0.574015021324 
+Training Accuracy 71.3830649853 
+Validation Loss: 0.628288865089 
+Validation accuracy: 68.7928080559
+
+
+Epoch 3 - Training: : 100%|█████████████████████████████| 409/409 [04:31<00:00,  1.81it/s]
+Epoch 3 - Testing: : 100%|████████████████████████████████| 73/73 [00:19<00:00,  3.81it/s]
+Training Loss: 0.545572340488 
+Training Accuracy 73.3161330223 
+Validation Loss: 0.755358755589 
+Validation accuracy: 63.1563961506
+
+
+Epoch 4 - Training: : 100%|█████████████████████████████| 409/409 [04:31<00:00,  1.81it/s]
+Epoch 4 - Testing: : 100%|████████████████████████████████| 73/73 [00:19<00:00,  3.75it/s]
+Training Loss: 0.533675372601 
+Training Accuracy 73.7481236458 
+Validation Loss: 0.765102744102 
+Validation accuracy: 63.1135880947

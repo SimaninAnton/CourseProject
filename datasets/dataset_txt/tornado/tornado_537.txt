@@ -1,0 +1,96 @@
+bensooraj commented on 13 Mar 2016
+I am trying to run a simple benchmark test for the async requests. Following is the code:
+import tornado.web
+import tornado.httpserver
+import tornado.ioloop
+import tornado.httpclient
+from tornado.options import define, options
+import urllib, urllib.parse
+import json
+import datetime
+import time
+import oauth2
+
+define("port", default=8888, help="run on the given port", type=int)
+
+def authorize(url):
+    // Returns the OAuth GET request string
+
+class IndexHandler(tornado.web.RequestHandler):
+    @tornado.web.asynchronous
+    def get(self):
+        query = self.get_argument('q')
+        client = tornado.httpclient.AsyncHTTPClient()
+
+        url = "https://api.twitter.com/1.1/search/tweets.json?" + \
+              urllib.parse.urlencode(
+                  {
+                      "q": query.encode('utf8'),
+                      "result_type": "recent",
+                      "count": 100
+                  }
+              )
+        client.fetch(url,
+                     headers={'Authorization': authorize(url=url)},
+                     callback=self.on_response)
+
+    def on_response(self, response):
+        print(response.body.decode("utf-8")[:600])
+        body = json.loads(response.body.decode("utf-8"))
+        result_count = len(body['statuses'])
+        now = datetime.datetime.now()
+        raw_oldest_tweet_at = body['statuses'][-1]['created_at']
+        oldest_tweet_at = datetime.datetime.strptime(raw_oldest_tweet_at,
+                                                     "%a %b %d %H:%M:%S +0000 %Y")
+        seconds_diff = time.mktime(now.timetuple()) - time.mktime(oldest_tweet_at.timetuple())
+        tweets_per_second = float(result_count) / seconds_diff
+
+        self.write("""
+        <div style="text-align: center">
+        <div style="font-size: 72px">%s</div>
+        <div style="font-size: 144px">%.03f</div>
+        <div style="font-size: 24px">tweets per second</div>
+        </div>""" % (self.get_argument('q'), tweets_per_second))
+
+        self.finish()
+
+
+if __name__ == "__main__":
+    tornado.options.parse_command_line()
+
+    app = tornado.web.Application(handlers=[
+        (r"/", IndexHandler)
+    ], debug=True)
+    http_server = tornado.httpserver.HTTPServer(app)
+    http_server.listen(options.port)
+    tornado.ioloop.IOLoop.instance().start()
+I run the following command at the CLI:
+ab -c5 -t20s http://localhost:8888/?q=pants
+where,
+-c => concurrency (Number of multiple requests to make at a time)
+-t => timelimit (Seconds to max. to spend on benchmarking)
+The stack trace:
+[E 160313 21:12:13 web:1496] Uncaught exception GET /?q=pants (::1)
+    HTTPServerRequest(protocol='http', host='localhost:8888', method='GET', uri='/?q=pants', version='HTTP/1.0', remote_ip='::1', headers={'Host': 'localhost:8888', 'User-Agent': 'ApacheBench/2.3', 'Accept': '*/*'})
+    Traceback (most recent call last):
+      File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tornado/web.py", line 1369, in _stack_context_handle_exception
+        raise_exc_info((type, value, traceback))
+      File "<string>", line 3, in raise_exc_info
+      File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tornado/stack_context.py", line 314, in wrapped
+        ret = fn(*args, **kwargs)
+      File "/Users/Bensooraj/Desktop/tornado_sandbox/playground/tornado_TweetPerSecondSync/tweet_rate_async.py", line 60, in on_response
+        print(response.body.decode("utf-8")[:600])
+    AttributeError: 'NoneType' object has no attribute 'decode'
+[E 160313 21:12:13 web:1908] 500 GET /?q=pants (::1) 22288.87ms
+
+
+// First 600 characters of the second response
+[I 160313 21:12:14 web:1908] 200 GET /?q=pants (::1) 14016.38ms
+// First 600 characters of the third response
+[I 160313 21:12:14 web:1908] 200 GET /?q=pants (::1) 8999.25ms
+// First 600 characters of the fourth response
+[I 160313 21:12:14 web:1908] 200 GET /?q=pants (::1) 19054.25ms
+// First 600 characters of the fifth response
+[I 160313 21:12:15 web:1908] 200 GET /?q=pants (::1) 4325.70ms
+This works perfect for single requests. As you can see, 1 out of the 5 requests has resulted in the AttributeError. But as I increase the concurrency levels, the problem aggravates (that is, more number of requests fail even though some succeed). Could this be a timeout issue?
+Any help will be highly appreciated.

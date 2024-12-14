@@ -1,0 +1,49 @@
+gittar commented on Dec 8, 2019 •
+edited
+Description
+In KMeans the "elkan" algorithm is the default implementation for running the fit() method of KMeans. Apart from being slightly faster by exploiting the triangle inequality it should return the same result as the "full" algorithm.
+However it doesn't as this example shows
+Steps/Code to Reproduce
+from sklearn.cluster import KMeans
+import numpy as np
+data=np.array(range(1000)).reshape(-1,1)/1000.
+k=10
+kwargs = {
+    "n_clusters": k,
+    "init":data[:k],
+    "n_init":1,
+    "tol":1e-4
+}
+km1=KMeans(algorithm="elkan", **kwargs); km1.fit(data)
+km2=KMeans(algorithm="full",  **kwargs); km2.fit(data)
+print(f"elkan: inertia= {km1.inertia_:10.7f} n_iter= {km1.n_iter_}")
+print(f"full:  inertia= {km2.inertia_:10.7f} n_iter= {km2.n_iter_}")
+Expected Results
+elkan: inertia=  0.8740440 n_iter= 98
+full:  inertia=  0.8740440 n_iter= 98
+Actual Results
+elkan: inertia=  0.8391108 n_iter= 147
+full:  inertia=  0.8740440 n_iter= 98
+Preliminary Analysis
+It looks like in the elkan algorithm the tol-Parameter (which indicates the desired accuracy, default value tol=1.e-4) is interpreted differently which may lead to more or less iterations depending on the data beeing small (e.g. <1.0 in every dimension) or large. For the same "tol"-value however, both algorithms should give the same result. If you lower the tol value, e.g. to tol=1e-8, the results get more similar in the example:
+elkan: inertia=  0.8383590 n_iter= 153
+full:  inertia=  0.8377500 n_iter= 147
+For larger values of tol the discrepancy increases, e.g. tol=1.e-2
+elkan: inertia=  1.2635388 n_iter= 50
+full:  inertia=  3.7158932 n_iter= 16
+This also leads to inconsistent log messages as discussed in
+https://stackoverflow.com/questions/58940890/message-does-not-fit-sklearn-k-means-convergence-implementation
+There is a related (closed) issue: #9795
+Versions
+System:
+python: 3.7.4 (default, Aug 13 2019, 20:35:49) [GCC 7.3.0]
+executable: /home/fritzke/miniconda2/envs/tf20b/bin/python
+machine: Linux-4.15.0-70-generic-x86_64-with-debian-buster-sid
+Python deps:
+pip: 19.2.3
+setuptools: 41.2.0
+sklearn: 0.21.3
+numpy: 1.17.2
+scipy: 1.3.1
+Cython: None
+pandas: 0.25.1

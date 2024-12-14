@@ -1,0 +1,89 @@
+lllo5t commented on 14 Oct 2015
+I add a mode = 'cos' to Merge Layer and update its' get_output function. But when compile the model, errors occurs,
+The code snippet like below:
+model = Sequential()
+54
+55 left= Sequential()
+56 left.add(LSTM(100, 100, activation='tanh', return_sequences=True))
+57 left.add(Dropout(0.5))
+58 left.add(GlobalPooling())
+59
+60 right = Sequential()
+61 right.add(LSTM(100, 100, activation='tanh', return_sequences=True))
+62 right.add(Dropout(0.5))
+63 right.add(GlobalPooling())
+64
+65 model = Sequential()
+66 model.add(MergeExtend([left,right], mode='cos'))
+67 model.compile(loss='binary_crossentropy', optimizer='adam', class_mode='binary')
+class MergeExtend(Merge):
+26 def init(self, layers, mode='sum', concat_axis = -1):
+27 super(MergeExtend, self).init(layers, mode)
+28
+29 @Property
+30 def output_shape(self):
+31 input_shapes = [layer.output_shape for layer in self.layers]
+32 if self.mode in ['sum', 'mul', 'ave', 'cos']:
+33 return input_shapes[0]
+34 elif self.mode == 'concat':
+35 output_shape = list(input_shapes[0])
+36 for shape in input_shapes[1:]:
+37 output_shape[self.concat_axis] += shape[self.concat_axis]
+38 return tuple(output_shape)
+39
+ def get_output(self, train=False):
+44 if self.mode == 'sum' or self.mode == 'ave':
+45 s = self.layers[0].get_output(train)
+46 for i in range(1, len(self.layers)):
+47 s += self.layers[i].get_output(train)
+48 if self.mode == 'ave':
+49 s /= len(self.layers)
+50 return s
+51 elif self.mode == 'cos':
+52 if len(self.layers) != 2:
+53 raise Exception("the input should be only 2 under cos mode")
+54 r1 = self.layers[0].get_output(train)
+55 r2 = self.layers[1].get_output(train)
+56 output, _ = theano.scan(lambda v1,v2 : T.dot(v1,v2)/T.sqrt(T.dot(v1,v1) * T.dot(v2,v2)) , sequences= [r1, r2], outputs_info = None)
+57
+58 return output
+59 elif self.mode == 'concat':
+60 inputs = [self.layers[i].get_output(train) for i in range(len(self.layers))]
+61 return T.concatenate(inputs, axis=self.concat_axis)
+62 elif self.mode == 'join':
+...
+The error info is:
+File "main.py", line 67, in main
+model.compile(loss='binary_crossentropy', optimizer='adam', class_mode='binary')
+File "build/bdist.linux-x86_64/egg/keras/models.py", line 404, in compile
+File "/usr/local/lib/python2.7/dist-packages/theano/compile/function.py", line 266, in function
+profile=profile)
+File "/usr/local/lib/python2.7/dist-packages/theano/compile/pfunc.py", line 511, in pfunc
+on_unused_input=on_unused_input)
+File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 1466, in orig_function
+defaults)
+File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 1324, in create
+input_storage=input_storage_lists)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 519, in make_thunk
+output_storage=output_storage)[:3]
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/vm.py", line 897, in make_all
+no_recycling))
+File "/usr/local/lib/python2.7/dist-packages/theano/sandbox/cuda/init.py", line 259, in make_thunk
+compute_map, no_recycling)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/op.py", line 739, in make_thunk
+output_storage=node_output_storage)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/cc.py", line 1073, in make_thunk
+keep_lock=keep_lock)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/cc.py", line 1015, in compile
+keep_lock=keep_lock)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/cc.py", line 1442, in cthunk_factory
+key=key, lnk=self, keep_lock=keep_lock)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/cmodule.py", line 1076, in module_from_key
+module = lnk.compile_cmodule(location)
+File "/usr/local/lib/python2.7/dist-packages/theano/gof/cc.py", line 1354, in compile_cmodule
+preargs=preargs)
+File "/usr/local/lib/python2.7/dist-packages/theano/sandbox/cuda/nvcc_compiler.py", line 423, in compile_str
+'for cmd', ' '.join(cmd))
+Exception: ('The following error happened while compiling the node', GpuIncSubtensor{InplaceInc;}(GpuAlloc{memset_0=True}.0, GpuElemwise{Composite{(i0 * (((i1 * i2 * i3) / i4) + ((i5 * i6) / (i7 * i8))))},no_inplace}.0), '\n', 'nvcc return status', 2, 'for cmd', 'nvcc -shared -O3 -arch=sm_30 -m64 -Xcompiler -fno-math-errno,-Wno-unused-label,-Wno-unused-variable,-Wno-write-strings,-DCUDA_NDARRAY_CUH=11b90075e2397c684f9dc0f7276eab8f,-D NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION,-fPIC -Xlinker -rpath,/home/sawyerz/.theano/compiledir_Linux-3.16--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.6-64/cuda_ndarray -I/home/*/.theano/compiledir_Linux-3.16--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.6-64/cuda_ndarray -I/usr/local/cuda-7.0/include -I/usr/local/lib/python2.7/dist-packages/numpy/core/include -I/usr/include/python2.7 -I/usr/local/lib/python2.7/dist-packages/theano/sandbox/cuda -o /home/sawyerz/.theano/compiledir_Linux-3.16--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.6-64/tmpRGTSNG/81f29eac5e034fe9a21cc3170b19c449.so mod.cu -L/home/sawyerz/.theano/compiledir_Linux-3.16--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.6-64/cuda_ndarray -L/usr/lib -lpython2.7 -lcudart -lcublas -lcuda_ndarray', '[GpuIncSubtensor{InplaceInc;}(, )]')
+But if i use other mode like 'sum', it's ok.
+Anyone know what's wrong here?

@@ -1,0 +1,83 @@
+sx5640 commented on 8 Jul 2018 •
+edited
+I'm running into a similar error message to issue 9828, that when calling Tensorboard callback, at epoch end I got an AttributeError: 'float' object has no attribute 'item'
+However in that issue the problem was caused by keras-lr which I did not use. The error did not appear when I preload validation images into ndarrays, but once I switched to use generator for validation_data, I start getting this error.
+Traceback (most recent call last)
+D:\Code\mura\vggnet.py in train(resize, load_param, grayscale, bpart, num_pick, batch_size, epochs, learning_rate, decay, l1, l2, **kwargs)
+    293         validation_data=input_generator(valid_df, batch_size, img_size, grayscale),
+    294         validation_steps=math.ceil(valid_df.shape[0]/batch_size),
+--> 295         callbacks=[tfboard]
+    296     )
+    297     print('****** Training time: %s' % (datetime.datetime.now() - start_time))
+
+d:\code\mura\env\lib\site-packages\keras\legacy\interfaces.py in wrapper(*args, **kwargs)
+     89                 warnings.warn('Update your `' + object_name +
+     90                               '` call to the Keras 2 API: ' + signature, stacklevel=2)
+---> 91             return func(*args, **kwargs)
+     92         wrapper._original_function = func
+     93         return wrapper
+
+d:\code\mura\env\lib\site-packages\keras\engine\training.py in fit_generator(self, generator, steps_per_epoch, epochs, verbose, callbacks, validation_data, validation_steps, class_weight, max_queue_size, workers, use_multiprocessing, shuffle, initial_epoch)
+   2266                         break
+   2267 
+-> 2268                 callbacks.on_epoch_end(epoch, epoch_logs)
+   2269                 epoch += 1
+   2270                 if callback_model.stop_training:
+
+d:\code\mura\env\lib\site-packages\keras\callbacks.py in on_epoch_end(self, epoch, logs)
+     75         logs = logs or {}
+     76         for callback in self.callbacks:
+---> 77             callback.on_epoch_end(epoch, logs)
+     78 
+     79     def on_batch_begin(self, batch, logs=None):
+
+d:\code\mura\env\lib\site-packages\keras\callbacks.py in on_epoch_end(self, epoch, logs)
+    869             summary = tf.Summary()
+    870             summary_value = summary.value.add()
+--> 871             summary_value.simple_value = value.item()
+    872             summary_value.tag = name
+    873             self.writer.add_summary(summary, epoch)
+
+AttributeError: 'float' object has no attribute 'item'
+I was using model.fit_generator and this is how I implemented:
+    tfboard = keras.callbacks.TensorBoard(log_dir=log_path, write_grads=True)
+    history = model.fit_generator(
+        input_generator(train_df, batch_size, img_size, grayscale, imggen),
+        steps_per_epoch=math.ceil(train_df.shape[0]/batch_size),
+        epochs=epochs,
+        verbose=2,
+        validation_data=input_generator(valid_df, batch_size, img_size, grayscale),
+        validation_steps=math.ceil(valid_df.shape[0]/batch_size),
+        callbacks=[tfboard]
+    )
+and this is what the generator looks like:
+def input_generator(df, batch_size, img_size, grayscale, imggen=None):
+    """
+    Generator that yields a batch of training images with their labels
+    Args:
+        df: Dataframe that contains all the images need to be loaded
+        batch_size: Maximum number of images in each batch
+        grayscale: Import image as grayscale or RGB
+        img_size: Image size to resize the image to if not equals IMG_SIZE
+        imggen: ImageDataGenerator used to apply perturbation. If None,
+            then no perturbation is applied.
+
+    Yields: List of training images and labels in a batch
+
+    """
+    while True:
+        # loop once per epoch
+        df = df.sample(frac=1).reset_index(drop=True)
+        for g, batch in df.groupby(np.arange(len(df)) // batch_size):
+            imgs = []
+            labels = []
+            for index, row in batch.iterrows():
+                img = dataset.load_image(row["path"], grayscale)
+                if img_size != IMG_SIZE and img_size > 0:
+                    img = dataset.resize_img(img, img_size)
+                if imggen:
+                    img = imggen.random_transform(img)
+                imgs.append(img)
+                labels.append(row["label"])
+
+            yield np.asarray(imgs), np.asarray(labels)

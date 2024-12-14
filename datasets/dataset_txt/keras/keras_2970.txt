@@ -1,0 +1,210 @@
+Contributor
+adamcavendish commented on 16 Mar 2017
+I'm writing EBGAN via custom loss function way showed in example image_ocr.
+However, it is very error-prone, and I'm at a loss. I get very interesting error when defining the model with multiple input, last layer as loss and dummy loss.
+Environment:
+Ubuntu 16.04
+Keras 2.0
+Tensorflow-gpu 1.0.1 as backend
+Interesting error:
+Traceback (most recent call last):
+  File "./main1.py", line 159, in <module>
+    DTrain   = km.Model(inputs=[Di, GANi], outputs=[D_loss])
+  File "/usr/local/lib/python3.5/dist-packages/keras/legacy/interfaces.py", line 87, in wrapper
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 1635, in __init__
+    build_map_of_graph(x, seen_nodes, depth=0)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 1626, in build_map_of_graph
+    next_node = layer.inbound_nodes[node_index]
+AttributeError: 'NoneType' object has no attribute 'inbound_nodes'
+Full list of code:
+import numpy as np
+import keras.backend as K
+import keras.layers as kl
+import keras.models as km
+import keras.optimizers as ko
+import keras.datasets.mnist as mnist
+import keras.losses as kls
+
+import sys
+import math
+from PIL import Image
+
+margin = 12
+z_dim  = 100
+i_rows = 28
+i_cols = 28
+i_cnls = 1
+batch_size = 128
+lr = 0.0001
+
+
+def combine_images(generated_images):
+    generated_images = generated_images * 127.5 + 127.5
+    batch_size = generated_images.shape[0]
+    ret_icols = int(math.sqrt(batch_size))
+    ret_irows = int(math.ceil(batch_size / ret_icols))
+    img_nrows, img_ncols = generated_images.shape[1:3]
+    ret_img = np.zeros((ret_irows * img_nrows, ret_icols * img_ncols))
+    for index, img in enumerate(generated_images):
+        i = index // ret_icols
+        j = index % ret_icols
+        ret_img[i*img_nrows:(i+1)*img_nrows, j*img_ncols:(j+1)*img_ncols] = img[:, :, 0]
+    return ret_img
+
+
+def noise_gen(batch_size, z_dim):
+    noise = np.zeros((batch_size, z_dim), dtype=np.float32)
+    for i in range(batch_size):
+        noise[i, :] = np.random.uniform(-1, 1, z_dim)
+    return noise
+
+# Changes the traiable argument for all the layers of model
+# to the boolean argument "trainable"
+def make_trainable(model, trainable):
+    model.trainable = trainable
+    for l in model.layers:
+        l.trainable = trainable
+
+# --------------------Generator Model--------------------
+Gi = kl.Input(shape=(z_dim,))
+
+Go = kl.Dense(units=1024)(Gi)
+Go = kl.BatchNormalization()(Go)
+Go = kl.Activation('relu')(Go)
+
+Go = kl.Dense(units=i_rows//4 * i_cols//4 * (64 * 2))(Go)
+Go = kl.BatchNormalization()(Go)
+Go = kl.Activation('relu')(Go)
+Go = kl.Reshape((i_rows//4, i_cols//4, 64 * 2))(Go)
+ 
+Go = kl.Conv2DTranspose(filters=64 * 1, kernel_size=5, strides=(2, 2), padding='same')(Go)
+Go = kl.BatchNormalization()(Go)
+Go = kl.Activation('relu')(Go)
+
+Go = kl.Conv2DTranspose(filters=i_cnls, kernel_size=5, strides=(2, 2), padding='same')(Go)
+Go = kl.Activation('tanh')(Go)
+
+G = km.Model(inputs=Gi, outputs=Go, name='G')
+print('Generator Model')
+G.summary()
+print()
+
+
+# --------------------Discriminator Encoder Model--------------------
+DEi = kl.Input(shape=(i_rows, i_cols, i_cnls))
+
+DEo = kl.Conv2D(filters=32*1, kernel_size=4, strides=(2, 2))(DEi)
+DEo = kl.BatchNormalization()(DEo)
+DEo = kl.LeakyReLU(alpha=0.2)(DEo)
+
+DEo = kl.Conv2D(filters=32*2, kernel_size=4, strides=(2, 2))(DEo)
+DEo = kl.BatchNormalization()(DEo)
+DEo = kl.LeakyReLU(alpha=0.2)(DEo)
+
+DE = km.Model(inputs=DEi, outputs=DEo, name='DEncoder')
+print('Discriminator Encoder Model')
+DE.summary()
+print()
+
+# --------------------Discriminator Decoder Model--------------------
+DDi = kl.Input(shape=(i_rows//4, i_cols//4, 32*2))
+
+DDo = kl.Conv2DTranspose(filters=32*1, kernel_size=4, strides=(2, 2), padding='same')(DDi)
+DDo = kl.BatchNormalization()(DDo)
+DDo = kl.LeakyReLU(alpha=0.2)(DDo)
+
+DDo = kl.Conv2DTranspose(filters=i_cnls, kernel_size=4, strides=(2, 2), padding='same')(DDo)
+DDo = kl.Activation('tanh')(DDo)
+
+DD = km.Model(inputs=DDi, outputs=DDo, name='DDecoder')
+print('Discriminator Decoder Model')
+DD.summary()
+print()
+
+# --------------------Discriminator Combined Model--------------------
+Di = kl.Input(shape=(i_rows, i_cols, i_cnls))
+Do = DE(Di)
+Do = DD(Do)
+
+D = km.Model(inputs=Di, outputs=Do, name='D')
+print('Discriminator Combined Model')
+D.summary()
+print()
+
+
+# --------------------GAN Model--------------------
+make_trainable(D, False)
+
+GANi = kl.Input(shape=(100,))
+GANo = G(GANi)
+GANo = DE(GANo)
+GANo = DD(GANo)
+
+GAN = km.Model(inputs=GANi, outputs=GANo, name='GAN')
+print('GAN Model')
+GAN.summary()
+print()
+
+
+# --------------------Loss & Model Compile--------------------
+
+def D_loss_func(args):
+    D_loss_real, D_loss_fake = args
+    return K.maximum(margin - D_loss_fake, 0) + D_loss_real
+
+def GAN_loss_func(args):
+    if not isinstance(args, list):
+        args = [args]
+    D_loss_fake, = args
+    return D_loss_fake
+
+def mse(y_true, y_pred):
+    return K.mean(K.square(y_pred - y_true), axis=[1,2,3])
+
+D_loss_real = mse(Di, Do)
+D_loss_fake = mse(GANi, GANo)
+
+D_loss   = kl.Lambda(D_loss_func  , output_shape=(1,), name='D_loss'  )([D_loss_real, D_loss_fake])
+GAN_loss = kl.Lambda(GAN_loss_func, output_shape=(1,), name='GAN_loss')([D_loss_fake])
+
+DTrain   = km.Model(inputs=[Di, GANi], outputs=[D_loss])
+GANTrain = km.Model(inputs=[GANi]    , outputs=[GAN_loss])
+
+DTrain.compile  (loss={'D_loss'  : lambda y_true, y_pred: y_pred}, optimizer=ko.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0))
+GANTrain.compile(loss={'GAN_loss': lambda y_true, y_pred: y_pred}, optimizer=ko.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0))
+
+
+# --------------------Main Code--------------------
+(X, _), _ = mnist.load_data()
+X = (X - 127.5) / 127.5
+X = X[:, :, :, np.newaxis]
+
+batch_num = X.shape[0] // batch_size
+
+for epoch in range(100):
+    for batch in range(batch_num):
+        X_batch = X[batch*batch_size:(batch+1)*batch_size, :]
+        Z1_batch = noise_gen(batch_size, 100)
+        Z2_batch = noise_gen(batch_size, 100)
+
+        fake_batch = G.predict(Z1_batch)
+        real_batch = X_batch
+
+        if batch % 100 == 0:
+            image = combine_images(fake_batch)
+            Image.fromarray(image.astype(np.uint8)).save(
+                    'GenImg/{epoch:04d}_{batch:04d}.jpg'.format(**locals()))
+
+        combined_X_batch = np.concatenate((real_batch, fake_batch))
+        # combined_y_batch = np.concatenate((np.ones((batch_size, 1)), np.zeros((batch_size, 1))))
+        make_trainable(G, False)
+        make_trainable(D, True)
+        d_loss = DTrain.train_on_batch([combined_X_batch, Z1_batch])
+
+        make_trainable(G, True)
+        make_trainable(D, False)
+        g_loss = GANTrain.train_on_batch(Z2_batch)
+
+        if batch % 100 == 0:
+            print('epoch={:4d}, batch={:4d}, d_loss={:8f}, g_loss={:8f}'.format(epoch, batch, d_loss, g_loss))

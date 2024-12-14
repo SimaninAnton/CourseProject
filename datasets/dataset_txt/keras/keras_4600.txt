@@ -1,0 +1,45 @@
+ShunyuanZ commented on 14 Aug 2016 •
+edited
+So the problem is that, my validation set is too large and can't fit in memory. Then Following issue #2702, I tried to do batch on validation set with ImageDataGenerator and datagen.flow(X,y). However here comes the tricky part:
+My model is a merged model, combining two sequential models. With left branch dealing with 3 channel RGB images and right branch a vector representing some text information. So the input in my CNN is {image, text}, and the output is {label}. I guess ImageDataGenerator only deals with images, so it will be problematic if multiple sources (and different types) of X (inputs) are passed. The following is what I did:
+# merge two branches
+from keras.layers import Merge
+left_branch=model_image
+right_branch=model_text
+model=Sequential()
+model.add(Merge([left_branch, right_branch], mode='concat'))
+model.compile(loss='mean_squared_error', optimizer='adadelta',metrics=['accuracy'])
+# define data generators
+from keras.preprocessing.image import ImageDataGenerator
+datagen_train= ImageDataGenerator(rescale=1./255, shear_range=0.2, zoom_range=0.2)
+datagen_validation= ImageDataGenerator(rescale=1./255)
+# model fit use fit_generator
+model.fit_generator(
+datagen_train.flow([image_train,text_train],label_train, batch_size=20),
+validation_data = datagen_validation.flow([image_validation,text_validation],label_validation, batch_size=20),
+                callbacks=[TensorBoard(log_dir=mylogpath,histogram_freq=1,write_graph=False)],
+                nb_epoch=60,
+                shuffle=True,
+                verbose=1)
+Then I got the following error:
+Traceback (most recent call last):
+  File "mycnn.py", line 187, in <module>
+    model.fit_generator(datagen.flow([image_train,text_train], label_train,batch_size=20),
+  File "/usr/local/lib/python2.7/site-packages/keras/preprocessing/image.py", line 261, in flow
+    save_to_dir=save_to_dir, save_prefix=save_prefix, save_format=save_format)
+  File "/usr/local/lib/python2.7/site-packages/keras/preprocessing/image.py", line 454, in __init__
+    'Found: X.shape = %s, y.shape = %s' % (np.asarray(X).shape, np.asarray(y).shape))
+  File "/usr/local/lib/python2.7/site-packages/numpy/core/numeric.py", line 482, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: could not broadcast input array from shape (40000,3,224,224) into shape (40000)
+Where 40000 is the training-set size, (3,224,224) represent my RGB 224x224 images.
+If I just ignored validation set, and do the following (disable validation in model.fit), then it worked:
+model.fit([image_train,text_train],label_train,
+                callbacks=[TensorBoard(log_dir=mylogpath,histogram_freq=1,write_graph=False)],
+                batch_size=20,
+                nb_epoch=60,
+                shuffle=True,
+                verbose=1)
+This way, the images and texts are successfully passed through the two branches, however, I wound't be able to record and monitor validation loss in the training process....
+Could someone give a suggestion? I'd like to know how to batch on validate set, or a way of making ImageDataGenerator working with Merged model. Thank you!!!
+4

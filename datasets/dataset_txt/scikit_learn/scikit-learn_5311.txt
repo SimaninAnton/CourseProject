@@ -1,0 +1,23 @@
+Member
+glouppe commented on Jul 18, 2012
+This is a follow-up of #946. We came to the conclusion that the algorithm behind find_split should be redesigned in order to decrease one step further the training time in decision trees.
+Below is a summary of the strategies we discussed.
+N = total number of training samples
+N_i = number of training samples at node i
+d = n_features.
+Let's assume for now that max_features = d.
+Building X_argsort is O(N log(N) * d)
+On master, at each node, find_split is O(N * d). To build a fully developed tree, find_split has to be called O(N) times, which results in a cumulative complexity for find_split of O(N^2 * d).
+In total, the complexity of building a single tree is then O(N log(N) * d + N^2 * d)
+If T trees are built, the complexity is O(N log(N) * d + T * N^2 * d) since X_argsort is shared for all trees.
+[Strategy A] Assume that we remove sample_mask and that, at each node, we rather reorder X_argsorted in a divide and conquer fashion.
+In that case, at each node, find_split is O(N_i *d). To build a fully developped tree, find_split has to be called O(N) times, which results, if we further assume that the tree is balanced, in a cumulative complexity for find_split of O(N log(N) * d).
+In total, the complexity of building a single tree is then O(N log(N) * d + * N log(N) * d).
+If T trees are built, the complexity is O(N log(N) * d + T * N log(N) * d) but requires extra-memory of O(N*d * n_jobs).
+[Strategy B] Assume that we remove X_argsort and sample_mask and that, each node, we sort the node samples
+along the considered features.
+In that case, at each node, find_split is O(N_i log(N_i) * d). I don't exactly know the cumulative complexity in that case but my intuition is that it sould be should something like O(N log(N)^2 * d). Anyway, far less that O(N^2 * d).
+In total, the complexity of building a single tree should be around O(N log(N)^2 * d).
+If T trees are built, then complexity should be O(T * N log(N)^2 * d).
+Overall, I think Strategy A is the best of all but the extra-memory required is a significant disadvatange.
+Regarding Strategy B, theory says that asymptotically it is better than master, even for building ensemble of trees. However I agree that we should account for the constant factors behind this analysis. I remain convinced however that we should at least try and see! (I can work on that.)

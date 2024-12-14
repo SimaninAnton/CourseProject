@@ -1,0 +1,57 @@
+melvyn-sopacua commented on Oct 2, 2017 •
+edited
+When building an Api client, I abstract the authentication to be able to passed through via headers, params, post data or json. As a result I created a "context dict" that is passed to Session().method() consisting of headers, params, data and json. These dict keys were intialized with empty dicts to allow simple context['headers'].update() by consumers.
+Expected Result
+I expected this to be able to send requests and get responses.
+Actual Result
+However, when testing a GET request for an API behind Cloudfront (not sure that's related, as they use the 403 code for a number of issues) I was presented with an error. After removing headers one by one via curl the Content-Length header was fingered as the culprit.
+Reproduction Steps
+import requests
+
+context = { 'headers': {}, 'params': {}, 'data': {}, 'json': {} }
+s = requests.Session()
+r = s.get('http://someserver.choking.on.content-length.example.com')
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.2+"
+  },
+  "platform": {
+    "release": "4.10.0-35-generic",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "1000207f"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}
+This command is only available on Requests v2.16.4 and greater. Otherwise,
+please provide some basic information about your system (Python version,
+operating system, &c).
+Analysis
+The culprit was the intialization of the json keyword argument as an empty dict. This causes the prepared request to inject a body being an "empty object", without taking the request method into account.
+Since I'm unsure this is a feature, I would appreciate a setting that disables this behavior and does not send a body if the request method does not support one.
+I can see two approaches:
+A bool strict_request_body or something similarly named, that does not send request bodies for GET, HEAD and possibly others. This requires maintenance for new request methods and for "custom request methods" it requires extra code to check this value.
+An iterable listing which requests shall never have a body, like no_request_body=['get', 'head']. This has the drawback that one can disable bodies for requests that require them, aka footshooting.

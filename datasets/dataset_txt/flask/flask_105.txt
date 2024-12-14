@@ -1,0 +1,52 @@
+jaos commented on 8 Jul 2019
+Since #3214 I am no longer able to use a custom Response class to catch and format internal objects.
+Is there a more appropriate way to accomplish the same thing now that 1.1.0 is being picked up in my CI env?
+Expected Behavior
+from flask import Flask, Response, Blueprint                                    
+import json                                                                     
+                                                                                
+class BizModel():                                                               
+    def __init__(self, name):                                                   
+        self.name = name                                                        
+    def to_jsonable(self):                                                      
+        return {"name": self.name}                                              
+                                                                                
+class BizResponse(Response):                                                    
+    @classmethod                                                                
+    def force_type(cls, rv, environ=None):                                      
+        if isinstance(rv, BizModel):                                            
+            return Response(json.dumps(rv.to_jsonable(), indent=4), mimetype='application/json', status=200)
+        return super(BizResponse, cls).force_type(rv, environ)                  
+                                                                                
+app = Flask(__name__)                                                           
+app.response_class = BizResponse                                                
+                                                                                
+@app.route('/biz')                                                              
+def showbiz():                                                                  
+    return BizModel('showbiz')                                                  
+                                                                                
+if __name__ == "__main__":                                                      
+    test = app.test_client()                                                    
+    r = test.get('/biz')                                                        
+    assert r.is_json                                                            
+    assert r.json['name'] == 'showbiz'
+Actual Behavior
+[2019-07-08 12:24:58,237] ERROR in app: Exception on /biz [GET]
+Traceback (most recent call last):
+  File "/private/tmp/py3venv/lib/python3.7/site-packages/Flask-1.1.0-py3.7.egg/flask/app.py", line 2446, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/private/tmp/py3venv/lib/python3.7/site-packages/Flask-1.1.0-py3.7.egg/flask/app.py", line 1952, in full_dispatch_request
+    return self.finalize_request(rv)
+  File "/private/tmp/py3venv/lib/python3.7/site-packages/Flask-1.1.0-py3.7.egg/flask/app.py", line 1967, in finalize_request
+    response = self.make_response(rv)
+  File "/private/tmp/py3venv/lib/python3.7/site-packages/Flask-1.1.0-py3.7.egg/flask/app.py", line 2130, in make_response
+    " {rv.__class__.__name__}.".format(rv=rv)
+TypeError: The view function did not return a valid response. The return type must be a string, dict, tuple, Response instance, or WSGI callable, but it was a BizModel.                                                                                                                     
+Traceback (most recent call last):
+  File "./flask3214.py", line 28, in <module>
+    assert r.is_json
+AssertionError
+Environment
+Python version: 3.7.2
+Flask version: 1.1.0
+Werkzeug version: 0.15.4

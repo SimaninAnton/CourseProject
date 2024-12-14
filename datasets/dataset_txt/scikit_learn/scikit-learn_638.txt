@@ -1,0 +1,46 @@
+ValdarT commented on Mar 19, 2019
+Description
+I have a nested dataset where one row contains multiple instances needing multiple predictions. To handle this I created some custom preprocessing functions which 'unnest' the cases and form a feature matrix. I combined these in a Pipeline ending with a regressor which worked fine. However, I am unable to use grid search functionality on the pipeline due to input checking which doesn't happen during regular fitting.
+Steps/Code to Reproduce
+Example:
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import make_scorer, mean_absolute_error
+
+# some nested data
+Xarr = [["a","b","c"], ["c"], ["b","a"], ["b"]]
+yarr = [[1,2,3], [3], [2,1], [2]]
+
+class CustomPreprocess(BaseEstimator, TransformerMixin):
+    """Process the input into a feature matrix."""
+    def __init__(self, logic='v1'):
+        self.logic = logic
+    def fit(self, X, y=None):
+        return self
+    def transform(self, X):
+        return np.array([ord(x) for arr in X for x in arr]).reshape(-1,1)
+
+
+pl = Pipeline([
+    ('preprocess', CustomPreprocess()),
+    ('predict', LinearRegression())
+])
+
+pl.fit(Xarr, [x for arr in yarr for x in arr]) # works fine
+pl.predict(Xarr) # also works
+
+param_grid = [
+    {'preprocess__logic': ['v1', 'v2']}
+]
+
+grid = GridSearchCV(pl, param_grid = param_grid, scoring = make_scorer(mean_absolute_error, greater_is_better=False), cv=2) 
+grid.fit(Xarr, [x for arr in yarr for x in arr]) # <- does not work and throws "ValueError: Found input variables with inconsistent numbers of samples: [4, 7]"
+grid.fit(Xarr, yarr) # <- this, of course, cannot work
+I didn't find a way to disable or work around the input checking and a custom scorer that would 'unnest' the predictions internally (so I could use yarr as is) also didn't work.
+I think this kind of inconsistency (fitting the Pipeline works but not fitting the GridSearchCV) is quite unexpected; ideally there would be a way to disable the input checking in the Pipelines (as can be done with FunctionTransformer).
+Thank you for Your work on this library and suggestions for a workaround would be highly appreciated!
+Versions
+I tested this on scikit-learn v0.20.3.

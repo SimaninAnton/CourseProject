@@ -1,0 +1,47 @@
+prashanthdumpuri commented on 2 Jan 2018
+All,
+I've about 200,000 images (each image of size 115x115x3) that 'am trying to classify into 10 classes. All 10 classes are not part of the ImageNet dataset and I think 200k images is a fairly large dataset. Therefore, I've been trying to use ResNet or Inception v4 and train the models from scratch (i did make a few modifications to account for the fact that my images are just 115x115).
+Using the suggestions in issue #68 and #2708 I set up my image generator to accept 20,000 images at a time. I made sure that each of the 20,000 images contained all 10 classes and is a representative sample of my entire dataset. To make my life easier I saved the 20,000 images as .npy files. Below is pseudo-code
+datagen = ImageDataGenerator(
+    featurewise_center=False, 
+    samplewise_center=False, 
+    featurewise_std_normalization=False, 
+    samplewise_std_normalization=False, 
+    zca_whitening=False, 
+    rotation_range=45, # randomly rotate images in the range (degrees, 0 to 45)
+    width_shift_range=0.1, # randomly shift images horizontally 
+    height_shift_range=0.1, # randomly shift images vertically 
+    horizontal_flip=True, # randomly flip images
+    vertical_flip=True) # randomly flip images
+
+# read the first 20,000 images
+X_firstSet = np.load("0_images.npy")
+datagen.fit(X_firstSet) 
+
+for e in range(200): # total of 200 iterations
+    for ithsample in range(10):
+        X = np.load(str(ithsample)+'_images.npy') # reads images that are stored as 0.npy, 1.npy, etc.
+        y = np.load(str(ithsample)+'_labels.npy') # reads labels that are stored as 0.npy, 1.npy, etc
+        # split into train and validation
+        X_train, X_validation, y_train, y_validation = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+        model.fit_generator(X_train, y_train,
+                           validation_data=[X_validation, y_validation],
+                           batch_size = 32, nb_epoch = 1, 
+                           verbose=2, show_accuracy=True)
+I tried running the above on a Quadro P6000 (24 GB of GPU memory) but I get a Memory Error message and code stops running usually after the first epoch. Below is the detailed error message:
+Traceback (most recent call last):
+File "/home/paperspace/myScripts/12partdiff/train_using_resnet.py", line 118, in <module>
+model.fit_generator(train_datagen.flow(X_train,y_train, batch_size=batch_size),
+File "/home/paperspace/anaconda3/lib/python3.5/site-packages/keras/preprocessing/image.py", 
+line 493, in flow
+save_format=save_format)
+File "/home/paperspace/anaconda3/lib/python3.5/site-packages/keras/preprocessing/image.py", 
+line 842, in __init__
+self.x = np.asarray(x, dtype=K.floatx())
+File "/home/paperspace/anaconda3/lib/python3.5/site-packages/numpy/core/numeric.py", line 
+531, in asarray
+return array(a, dtype, copy=False, order=order)
+MemoryError
+I installed Keras from master and just to be sure I also followed the suggestion in #8249 and set up my code to use GPU before using any keras import functions.
+Do I have to upgrade my machine or is something wrong in my code? Odds are that I will end up with a much larger dataset (around 500k images). Any suggestions will be appreciated.
+Thanks

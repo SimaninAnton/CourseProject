@@ -1,0 +1,62 @@
+auriga1 commented on 31 Jul 2015
+I have a many-to-many relation between categories and wallets.
+Starting from a category I retrieve all wallets its linked to, and from the shell everything works fine
+Models:
+class Wallet(models.Model):
+    nome = models.CharField(max_length=255)
+    creato = models.DateTimeField(auto_now=False)
+    utente = models.ForeignKey(User)
+    wallettype = models.ForeignKey(Wallettype)
+    payway = models.ManyToManyField(Payway, through = 'Wpw', blank = True)
+    defaultpayway = models.ForeignKey('Wpw', related_name = 'def_pw', null = True)
+
+    def __unicode__(self):
+        return self.nome
+
+class Category(models.Model):
+    nome = models.CharField(max_length=255)
+    creato = models.DateTimeField(auto_now=False)
+    enus = models.ForeignKey(Enus)
+    wallet = models.ManyToManyField(Wallet)
+    utente = models.ForeignKey(User)
+    owner = models.ManyToManyField(User, related_name='owner_cat')
+Urls:
+urlpatterns = patterns(
+    '',
+    url(r'^$', views.cat_list.as_view()),
+    url(r'^/(?P<pk>[0-9]+)/*$', views.cat_detail.as_view()),
+    url(r'^/(?P<cat_id>[0-9]+)/wallets/*$', views.cwallet_list.as_view()),
+    url(r'^/(?P<cat_id>[0-9]+)/wallets/(?P<pk>[0-9]+)/*$', views.cwallet_detail.as_view(), name='cwallet-detail'),
+)
+Serializer:
+class cat_serializer(serializers.ModelSerializer):
+    wallet = serializers.HyperlinkedRelatedField(
+        many=True,
+        read_only=True,
+        view_name='cwallet-detail',
+        # lookup_field = 'pk',
+        # lookup_url_kwarg = 'pk'
+    )
+    subcat_count = serializers.IntegerField(
+        source='subcategory_set.count',
+        read_only=True
+    )
+
+    class Meta:
+        model = Category
+        fields = ('id', 'nome','wallet','subcat_count')
+When I call:
+GET http://localhost:8000/categories/77/wallets
+I would like to retrieve:
+{
+    'nome': 'Dinner',
+    'subcat_count': 12,
+    'wallet': {
+        'http://localhost:8000/77/wallet/1',
+        'http://localhost:8000/77/wallet/2',
+        'http://localhost:8000/77/wallet/3',
+    }
+}
+But it doesn't work and I get this error: "Could not resolve URL for hyperlinked relationship using view name "cwallet-detail". You may have failed to include the related model in your API, or incorrectly configured the lookup_field attribute on this field."
+I think that the problem is linked to the additional param: in fact in my urls.py I have pk for the wallet id and cat_id for the category id.
+I can't figure how to pass the category id to the 'cwallet-detail'.

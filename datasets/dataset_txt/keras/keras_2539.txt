@@ -1,0 +1,38 @@
+Contributor
+angeloskath commented on 27 Apr 2017
+Hi, this is a proposal/discussion for a feature for core Keras.
+The problem I aim to solve is that train_on_batch() and test_on_batch() only return the losses and metrics so if we want to inspect the internal state of the neural network (for instance the activations of some layers) we need to run a second forward pass (and it won't be in training phase).
+The solution that I am using at my fork may not be ideal and before I polish it and submit a pull request I thought I would create an issue to discuss our options. The rest of the issue will describe my solution.
+I have added an extra optional parameter to the constructor of the Container class named extra_outputs that receives a list of tensors and adds them to the outputs of the train and test functions. Thus making possible the following code:
+from keras.layers import Dense, Input, Lambda
+from keras.models import Model
+
+x_in = Input(shape=(10,))
+x1 = Dense(20, activation="relu")(x_in)
+x2 = Dense(20, activation="relu")(x1)
+y = Dense(1, activation="sigmoid")(x2)
+
+m = Model(inputs=x_in, outputs=y, extra_outputs=[x1, x2, y])
+m.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+
+loss, acc, x1_out, x2_out, y_out = m.test_on_batch(
+    np.random.rand(128, 10), 
+    np.round(np.random.rand(128, 1))
+)
+And here follows a more involved example in which we copy a model adding all the dropout outputs to the extra outputs for inspection during training.
+# Suppose we have a model m
+optimizer_class = m.optimizer.__class__
+m2 = Model(
+    inputs=m.input,
+    outputs=m.output,
+    extra_outputs=[l.output for l in m.layers if isinstance(l, Dropout)]
+)
+m2.compile(
+    optimizer=optimizer_class(**m.optimizer.get_config()),
+    loss=m.loss,
+    metrics=m.metrics
+)
+
+# And we get the outputs that were actually used to compute the loss in training phase
+m2.train_on_batch(...)
+Sorry if it is a huge wall of text. Looking forward to hearing your thoughts.

@@ -1,0 +1,73 @@
+jthiem commented on Oct 29, 2015
+Hello, I am not sure if this should be considered a change request, a feature request, or (most likely) "educate the noob" request.
+I wanted to create a classifier where the samples in each class can be described by a GMM. The documentation is not clear on how to do this; there is no supervised training in mixture.GMM.fit(), and the "classes" in that context are simply single gaussians?
+So I created a simple quick and dirty (or call it a "minimal") GMMcl object that behaves similar to the SVM classifier. The code is mostly copied and pasted from http://scikit-learn.org/stable/auto_examples/svm/plot_iris.html
+Am I doing this right or is there a fundamental misunderstanding I need to have cleared up?
+Thanks.
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn import svm, datasets
+from sklearn.mixture import GMM
+
+iris = datasets.load_iris()
+X = iris.data[:, :2]  # we only take the first two features.
+y = iris.target
+
+class GMMcl:
+    n_components = None
+    covariance_type = None
+    nClasses = None
+    mixtures = None
+
+    def __init__(self, n_components=None, covariance_type='diag'):
+        self.n_components = n_components
+        self.covariance_type = covariance_type
+
+    def fit(self, X, y):
+        self.nClasses = np.max(y)+1
+        self.mixtures = [GMM(n_components=self.n_components, covariance_type=self.covariance_type) 
+                         for k in range(self.nClasses)]
+        for k, mix in enumerate(self.mixtures):
+            mix.fit(X[y==k])
+        return self
+
+    def predict(self, X):
+        ll = [ mix.score(X)for k, mix in enumerate(self.mixtures) ]
+        return np.vstack(ll).argmax(axis=0)
+
+
+svc = svm.SVC(kernel='linear', C=1.0).fit(X, y)
+gmmcl = GMMcl(n_components=3).fit(X, y)
+
+h = .02
+x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                     np.arange(y_min, y_max, h))
+
+titles = ['SVC with linear kernel',
+          'GMM classifier']
+
+plt.figure(figsize=(16, 5))
+
+for i, clf in enumerate((svc, gmmcl)):
+    plt.subplot(1, 2, i + 1)
+    plt.subplots_adjust(wspace=0.4, hspace=0.4)
+
+    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
+
+    # Put the result into a color plot
+    Z = Z.reshape(xx.shape)
+    plt.contourf(xx, yy, Z, cmap=plt.cm.Paired, alpha=0.8)
+
+    # Plot also the training points
+    plt.scatter(X[:, 0], X[:, 1], c=y, cmap=plt.cm.Paired)
+    plt.xlabel('Sepal length')
+    plt.ylabel('Sepal width')
+    plt.xlim(xx.min(), xx.max())
+    plt.ylim(yy.min(), yy.max())
+    plt.xticks(())
+    plt.yticks(())
+    plt.title(titles[i])
+
+plt.show()

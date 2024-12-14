@@ -1,0 +1,83 @@
+allenling commented on 19 Jul 2017 •
+edited
+#django rest framework version 3.6.3
+in project urls.py, include a app urls:
+poll.views
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+
+class PollF(APIView):
+
+    def get(self, request):
+        return Response({'data': {'PollF get'}})
+
+    def post(self, request):
+        return Response({'data': {'PollF post'}})
+
+
+class PollT(APIView):
+
+    def get(self, request):
+        return Response({'data': {'PollT get'}})
+
+    def post(self, request):
+        return Response({'data': {'PollT post'}})
+poll.urls.py
+from django.conf.urls import url
+
+from . import views
+
+urlpatterns = [
+    url(r'^poll_first', views.PollF.as_view()),
+    url(r'^poll_two', views.PollT.as_view()),
+]
+project urls.py
+url(r'^poll/', include('poll.urls')),
+and, SchemaGenerator.get_links do not group all urls in poll.
+here is what SchemaGenerator.get_links return
+OrderedDict([
+
+('poll_first', {'list': Link(url='/poll/poll_first', action='get'), 'create': Link(url='/poll/poll_first', action='post')}), 
+
+('poll_two', {'list': Link(url='/poll/poll_two', action='get'), 'create': Link(url='/poll/poll_two', action='post')}),
+
+])
+urls in app not be included in their app, they just like two app.
+i think the struct what SchemaGenerator.get_links return should be:
+{'poll' : {
+             'poll_first':'',
+              'poll_two':'',
+            } 
+}
+the key is that in SchemaGenerator.get_links, it got prefix, and create dict with subpath, we lost app in here.
+#  SchemaGenerator.get_links
+
+       # got prefix, it is app name
+       prefix = self.determine_path_prefix(paths)
+
+        for path, method, view in view_endpoints:
+            # path = /poll/poll_first
+            if not self.has_view_permissions(path, method, view):
+                continue
+            link = self.get_link(path, method, view)
+            # we cut the app name, subpath = /poll_first
+            subpath = path[len(prefix):]
+           # lost app name, keys =  ['poll_first', 'list']
+            keys = self.get_keys(subpath, method, view)
+           '''
+           not insert into with app name, here call
+           insert_into(OrderedDict(), ['poll_first', 'list'], ink()]),
+           it should call
+           insert_into(OrderedDict(),['app', 'poll_first', 'list'], ink()]),
+           '''
+            insert_into(links, keys, link)
+so, we should insert_into with path, not the subpath, i think.
+remove
+prefix = self.determine_path_prefix(paths)
+subpath = path[len(prefix):]
+and replace
+keys = self.get_keys(subpath, method, view)
+with
+keys = self.get_keys(path, method, view) will fix that.
+what you guys think?

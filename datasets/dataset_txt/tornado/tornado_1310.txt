@@ -1,0 +1,47 @@
+stevvooe commented on 26 Jan 2010
+When I fetch a url with a space, tornado crashes or hangs:
+curl -vv -i  -D - -s 'http://localhost:8080/url with space'
+* About to connect() to localhost port 8080 (#0)
+*   Trying ::1... Unknown error 111
+*   Trying 127.0.0.1... connected
+* Connected to localhost (127.0.0.1) port 8080 (#0)
+> GET /url with space HTTP/1.1
+> User-Agent: curl/7.18.2 (i486-pc-linux-gnu) libcurl/7.18.2 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.10
+> Host: localhost:8080
+> Accept: */*
+> 
+After this, the curl call will hang. The following error is printed to the console:
+Exception in I/O handler for fd 7
+Traceback (most recent call last):
+  File "<>tornado/ioloop.py", line 197, in start
+    self._handlers[fd](fd, events)
+  File "<>tornado/iostream.py", line 144, in _handle_events
+    self._handle_read()
+  File "<>tornado/iostream.py", line 196, in _handle_read
+    callback(self._consume(loc + delimiter_len))
+  File "<>tornado/httpserver.py", line 263, in _on_headers
+    method, uri, version = start_line.split(" ")
+ValueError: too many values to unpack
+This happens whether they are defined by the application handlers or not. I
+attempted the following patch:
+$ git diff
+diff --git a/tornado/httpserver.py b/tornado/httpserver.py
+index 894f059..933d910 100644
+--- a/tornado/httpserver.py
++++ b/tornado/httpserver.py
+@@ -260,7 +260,10 @@ class HTTPConnection(object):
+     def _on_headers(self, data):
+         eol = data.find("\r\n")
+         start_line = data[:eol]
+-        method, uri, version = start_line.split(" ")
++        try:
++            method, uri, version = start_line.split(" ")
++        except ValueError, e:
++            raise Exception("Error parsing request: %s", e)
+         if not version.startswith("HTTP/"):
+             raise Exception("Malformed HTTP version in HTTP Request-Line")
+         headers = HTTPHeaders.parse(data[eol:])
+However, it seems that any exception in this particular context will hang the
+client. It should finish the request and throw a "400 Bad Request" error so
+the client can detect that the request is malformed.
+I am testing against the current trunk.

@@ -1,0 +1,63 @@
+andreacimino commented on 24 May 2017 •
+edited
+I am trying to avoid to specify all the dimensions of my network in order to reduce the computational
+costs. What I have noticed is that network implemented in model_not_learning_due_to_dropout()
+raises an exception.
+Raises:
+raise MissingInputError(error_msg, variable=r)
+theano.gof.fg.MissingInputError: Input 0 of the graph (indices start from 0), used to compute if{}(keras_learning_phase, Elemwise{mul,no_inplace}.0, Reshape{3}.0), was not provided and not given a value. Use the Theano flag exception_verbosity='high', for more information on this error.
+If I specify the complete Input shape or I omit the dropout value, i am able to fit the network.
+Is it a bug in Keras? I am using the Theano backend.
+Here attached is the testcase.
+from keras.layers import Input, LSTM, Dense
+from keras.layers.wrappers import TimeDistributed
+from keras.models import Model
+from keras.utils import to_categorical
+import numpy
+
+
+data = numpy.random.random((32, 10, 10, 10))
+labels = numpy.array([0 for x in range(0, 32)])
+one_hot_labels = to_categorical(labels, num_classes=10)
+
+
+def model_not_learning_due_to_dropout():
+  doc_input = Input(shape=(None, 10,  10)) # This input does not work if dropout is enabled in LSTM
+  doc_output = TimeDistributed(LSTM(64, dropout=0.3))(doc_input)
+  lstm_aux = LSTM(32)(doc_output)
+  out_dense = Dense(10, activation='softmax')(lstm_aux)
+  doc_model = Model(inputs=doc_input, outputs=out_dense)
+  doc_model.compile(loss='categorical_crossentropy', optimizer="rmsprop",
+                    metrics=['accuracy'])
+  doc_model.fit(data, one_hot_labels)
+ # Raises 
+ # raise MissingInputError(error_msg, variable=r)
+ # theano.gof.fg.MissingInputError: Input 0 of the graph (indices start from 0), used to compute if{}
+ # (keras_learning_phase, Elemwise{mul,no_inplace}.0, Reshape{3}.0), was not provided and not given 
+ # a value. Use the Theano flag exception_verbosity='high', for more information on this error. 
+ #Backtrace when that variable is created:
+
+def model_learning_with_dropout_added_dimension():
+  doc_input = Input(shape=(10, 10,  10))  # This input works (extra dimension None -> 10) added
+  doc_output = TimeDistributed(LSTM(64, dropout=0.3))(doc_input)
+  lstm_aux = LSTM(32)(doc_output)
+  out_dense = Dense(10, activation='softmax')(lstm_aux)
+  doc_model = Model(inputs=doc_input, outputs=out_dense)
+  doc_model.compile(loss='categorical_crossentropy', optimizer="rmsprop",
+                    metrics=['accuracy'])
+  doc_model.fit(data, one_hot_labels)
+
+
+def model_learning_without_dropout():
+  doc_input = Input(shape=(None, 10,  10))
+  doc_output = TimeDistributed(LSTM(64))(doc_input)# This input works (no dropout in LSTM)
+  lstm_aux = LSTM(32)(doc_output)
+  out_dense = Dense(10, activation='softmax')(lstm_aux)
+  doc_model = Model(inputs=doc_input, outputs=out_dense)
+  doc_model.compile(loss='categorical_crossentropy', optimizer="rmsprop",
+                    metrics=['accuracy'])
+  doc_model.fit(data, one_hot_labels)
+
+model_learning_without_dropout()
+model_learning_with_dropout_added_dimension()
+model_not_learning_due_to_dropout()

@@ -1,0 +1,65 @@
+Member
+elacuesta commented on Jul 23, 2019 •
+edited
+Before I start, I know item loaders have been a big source of discussion for a long time; I'm only opening this issue because the latest release breaks some of our spiders.
+In one of our projects, our Autounit tests fail under 1.7.1 due to some item loaders which are created from partially populated items. I suspect the relevant change is #3819 (which BTW I think inadvertently closes #3046).
+Personally I think a better approach here would be something closer to the solution proposed in #3149, although not exactly the same.
+Consider the following:
+In [1]: import scrapy
+
+In [2]: scrapy.__version__
+Out[2]: '1.6.0'
+
+In [3]: from scrapy.loader import ItemLoader
+   ...: lo = ItemLoader(item={'key': 'value'})
+   ...: lo.add_value('key', 'other value')
+   ...: print(lo.load_item())
+{'key': ['other value']}
+In [1]: import scrapy
+
+In [2]: scrapy.__version__
+Out[2]: '1.7.1'
+
+In [3]: from scrapy.loader import ItemLoader
+   ...: lo = ItemLoader(item={'key': 'value'})
+   ...: lo.add_value('key', 'other value')
+   ...: print(lo.load_item())
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-3-6aa64a41edb1> in <module>
+      1 from scrapy.loader import ItemLoader
+      2 lo = ItemLoader(item={'key': 'value'})
+----> 3 lo.add_value('key', 'other value')
+      4 print(lo.load_item())
+
+~/venv-temporal/lib/python3.6/site-packages/scrapy/loader/__init__.py in add_value(self, field_name, value, *processors, **kw)
+     77                 self._add_value(k, v)
+     78         else:
+---> 79             self._add_value(field_name, value)
+     80
+     81     def replace_value(self, field_name, value, *processors, **kw):
+
+~/venv-temporal/lib/python3.6/site-packages/scrapy/loader/__init__.py in _add_value(self, field_name, value)
+     93         processed_value = self._process_input_value(field_name, value)
+     94         if processed_value:
+---> 95             self._values[field_name] += arg_to_iter(processed_value)
+     96
+     97     def _replace_value(self, field_name, value):
+
+TypeError: must be str, not list
+I'm not directly opening a PR because I think this needs discussion. What if we changed
+for field_name, value in item.items():
+    self._values[field_name] = self._process_input_value(field_name, value)
+to
+for field_name, value in item.items():
+    self._add_value(field_name, value)
+which calls arg_to_iter internally?
+With that change, the following happens which is more reasonable IMHO:
+In [3]: from scrapy.loader import ItemLoader 
+   ...: lo = ItemLoader(item={'key': 'value'}) 
+   ...: lo.add_value('key', 'other value') 
+   ...: print(lo.load_item())                                                                                                                                                                                                                 
+{'key': ['value', 'other value']}
+Looking forward to reading your thoughts on the matter
+/cc @Gallaecio @kmike @andrewbaxter @fcanobrash @sortafreel
+👍 3

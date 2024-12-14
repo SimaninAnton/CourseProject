@@ -1,0 +1,198 @@
+quoidautre commented on 28 Feb 2019 •
+edited
+Hi,
+I've post this issue #3090, past days but, for now, I've some news :).
+So, I've the same error Truncated or oversized response headers received from daemon process 'my_app': /var/www/python/flask/first_app/my_app/my_app.wsgi when I access the database !.
+It's works when I comment the 2 lines of routes.py, and it's work when I use the flask run --host=0.0.0.0 --port=5000 command.
+def index():
+    #d = Departement()
+    #query =  d.query.all()
+Here the tree of my application :
+$ tree ..
+..
+└── first_app
+    ├── my_app
+    │   ├── config.py
+    │   ├── __init__.py
+    │   ├── models.py
+    │   ├── my_app.wsgi
+    │   ├── routes.py
+    │   └── templates
+    │       ├── base.html
+    │       └── index.html
+    └── my_app.py
+init.py :
+from flask import Flask
+from config import Config
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+
+my_app = Flask(__name__)
+my_app.config.from_object(Config)
+
+db = SQLAlchemy(my_app)
+migrate = Migrate(my_app, db)
+
+from my_app import routes,models
+routes.py :
+from flask import render_template, flash, redirect, url_for
+from my_app import my_app
+from my_app.models import Departement
+
+@my_app.route('/')
+@my_app.route('/index')
+def index():
+    d = Departement()
+    query =  d.query.all()
+    
+    return render_template('index.html', title='Home', departements=query)
+my_app.py :
+from my_app import my_app
+models.py :
+from my_app import db
+
+class Departement(db.Model):
+    __tablename__ = "departements"
+    code_dept = db.Column(db.Integer, primary_key=True)
+    nom_dept = db.Column(db.String(50), index=True)
+    passwd  = db.Column(db.String(50))
+    
+    def __repr__(self):
+        return '<Departement(s) : {0}, {1}, {2}>'.format(self.code_dept, self.nom_dept,self.passwd)    
+config.py :
+import os
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+class Config(object):
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'you-will-never-guess'
+    
+    DATABASE_CONFIG = {
+        'username':'***',
+        'password':'***',
+        'host':'localhost',
+        'database':'***'
+        }
+
+    SQLALCHEMY_DATABASE_URI = 'postgresql+psycopg2://' + DATABASE_CONFIG['username'] + ':' + DATABASE_CONFIG['password'] + '@' + DATABASE_CONFIG['host'] + '/' + DATABASE_CONFIG['database']
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+my_app.wsgi :
+from my_app import my_app as application
+The templates (for testing)
+base.html :
+<html>
+    <head>
+      {% if title %}
+      <title>{{ title }} - My App</title>
+      {% else %}
+      <title>Welcome to My App!</title>
+      {% endif %}
+    </head>
+    <body>
+        <div>App :: 
+            <a href="{{ url_for('index') }}">Home</a>
+        </div>
+        <hr>
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <ul>
+            {% for message in messages %}
+            <li>{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </body>
+</html>
+index.html :
+{% extends "base.html" %}
+
+{% block content %}
+    {% for d in departements %}
+    <div><p>{{ d.code_dept }} => <b>{{ d.nom_dept }}</b></p></div>
+    {% endfor %}
+{% endblock %}
+the vhost :
+<VirtualHost *:80>
+      ServerName vm.basicflaskapp
+      DocumentRoot /var/www/python/flask/first_app
+      LogLevel info
+
+       WSGIDaemonProcess my_app user=www-data group=www-data python-path=/var/www/python/flask/first_app:/home/vagrant/.virtualenvs/first_app_flask/lib/python2.7/site-packages
+       WSGIScriptAlias / /var/www/python/flask/first_app/my_app/my_app.wsgi
+
+        <Directory /var/www/python/flask/first_app>
+            Require all granted
+        </Directory>
+
+        <Directory /var/www/python/flask/first_app/my_app>
+            WSGIProcessGroup my_app
+            WSGIApplicationGroup %{GLOBAL}
+            Require all granted
+        </Directory>
+
+        ErrorLog ${APACHE_LOG_DIR}/first_app_flask-error.log
+        CustomLog ${APACHE_LOG_DIR}/first_app_flask-access.log combined
+</VirtualHost>
+Actual Behavior
+[Thu Feb 28 14:34:43.850678 2019] [mpm_worker:notice] [pid 4932:tid 140038462543744] AH00297: SIGUSR1 received.  Doing graceful restart
+[Thu Feb 28 14:34:43.908680 2019] [wsgi:warn] [pid 4932:tid 140038462543744] mod_wsgi: Compiled for Python/2.7.11+.
+[Thu Feb 28 14:34:43.908700 2019] [wsgi:warn] [pid 4932:tid 140038462543744] mod_wsgi: Runtime using Python/2.7.12.
+[Thu Feb 28 14:34:43.909245 2019] [mpm_worker:notice] [pid 4932:tid 140038462543744] AH00292: Apache/2.4.38 (Ubuntu) OpenSSL/1.1.1a mod_wsgi/4.5.2 Python/2.7.12 configured -- resuming normal operations
+[Thu Feb 28 14:34:43.909293 2019] [core:notice] [pid 4932:tid 140038462543744] AH00094: Command line: '/usr/sbin/apache2'
+
+==> /var/log/apache2/first_app_flask-error.log <==
+[Thu Feb 28 14:34:43.924834 2019] [wsgi:info] [pid 20347:tid 140038462543744] mod_wsgi (pid=20347): Attach interpreter ''.
+[Thu Feb 28 14:34:43.925160 2019] [wsgi:info] [pid 20347:tid 140038462543744] mod_wsgi (pid=20347): Adding '/var/www/python/flask/first_app' to path.
+[Thu Feb 28 14:34:43.929157 2019] [wsgi:info] [pid 20347:tid 140038462543744] mod_wsgi (pid=20347): Adding '/home/vagrant/.virtualenvs/first_app_flask/lib/python2.7/site-packages' to path.
+[Thu Feb 28 14:34:45.846737 2019] [wsgi:info] [pid 20347:tid 140038331447040] [remote 192.168.56.1:0] mod_wsgi (pid=20347, process='my_app', application=''): Loading WSGI script '/var/www/python/flask/first_app/my_app/my_app.wsgi'.
+[Thu Feb 28 14:34:46.273215 2019] [wsgi:error] [pid 20347:tid 140038331447040] /home/vagrant/.virtualenvs/first_app_flask/lib/python2.7/site-packages/psycopg2/__init__.py:144: UserWarning: The psycopg2 wheel package will be renamed from release 2.8; in order to keep installing from binary please use "pip install psycopg2-binary" instead. For details see: <http://initd.org/psycopg/docs/install.html#binary-install-from-pypi>.
+[Thu Feb 28 14:34:46.273426 2019] [wsgi:error] [pid 20347:tid 140038331447040]   """)
+[Thu Feb 28 14:34:46.390437 2019] [wsgi:error] [pid 20350:tid 140038213990144] [client 192.168.56.1:29516] Truncated or oversized response headers received from daemon process 'my_app': /var/www/python/flask/first_app/my_app/my_app.wsgi
+
+==> /var/log/apache2/first_app_flask-access.log <==
+192.168.56.1 - - [28/Feb/2019:14:34:45 +0100] "GET / HTTP/1.1" 500 613 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:65.0) Gecko/20100101 Firefox/65.0"
+
+==> /var/log/apache2/error.log <==
+[Thu Feb 28 14:34:46.912778 2019] [core:notice] [pid 4932:tid 140038462543744] AH00051: child pid 20347 exit signal Segmentation fault (11), possible coredump in /etc/apache2
+
+==> /var/log/apache2/first_app_flask-error.log <==
+[Thu Feb 28 14:34:46.919359 2019] [wsgi:info] [pid 20442:tid 140038462543744] mod_wsgi (pid=20442): Attach interpreter ''.
+[Thu Feb 28 14:34:46.919460 2019] [wsgi:info] [pid 20442:tid 140038462543744] mod_wsgi (pid=20442): Adding '/var/www/python/flask/first_app' to path.
+[Thu Feb 28 14:34:46.920621 2019] [wsgi:info] [pid 20442:tid 140038462543744] mod_wsgi (pid=20442): Adding '/home/vagrant/.virtualenvs/first_app_flask/lib/python2.7/site-packages' to path
+Environment
+$ pip freeze
+alembic==1.0.7
+Click==7.0
+Flask==1.0.2
+Flask-Migrate==2.4.0
+Flask-SQLAlchemy==2.3.2
+Flask-WTF==0.14.2
+itsdangerous==1.1.0
+Jinja2==2.10
+Mako==1.0.7
+MarkupSafe==1.1.1
+psycopg2==2.7.7
+python-dateutil==2.8.0
+python-dotenv==0.10.1
+python-editor==1.0.4
+six==1.12.0
+SQLAlchemy==1.2.18
+Werkzeug==0.14.1
+WTForms==2.2.1
+
+$ apachectl -v
+Server version: Apache/2.4.38 (Ubuntu)
+Server built:   2019-02-11T07:27:00
+
+$ uname -a
+Linux vm 4.4.0-45-generic #66-Ubuntu SMP Wed Oct 19 14:12:37 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
+
+$ cat /etc/lsb-release
+DISTRIB_ID=Ubuntu
+DISTRIB_RELEASE=16.04
+DISTRIB_CODENAME=xenial
+DISTRIB_DESCRIPTION="Ubuntu 16.04.6 LTS"
+Have you an idea please ? :)
+Thanks
+F.

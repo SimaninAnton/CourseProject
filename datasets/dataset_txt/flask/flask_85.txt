@@ -1,0 +1,123 @@
+deji-bacct04 commented on 8 Aug 2019
+Description
+Uploaded image is not saved and when redirected to my template.html, broken image is shown for my html.
+I am uploading image in flask. If Flask is used individually, upload is okay. But when integrating with Connexion[Swagger-UI], I did not have the expected results. The flow of my upload is in 1 python file. And I have 2 html files for the upload and display of image. I am sure that my configurations in swagger.yml is incorrect that is why I am not getting the results I'm expecting.
+Expected behaviour
+Expectation: when /api/read is accessed, upload.html will be shown. select image to upload. after pressing 'Upload' button, will be redirected to template.html where will I see the image I uploaded.
+Actual behaviour
+Actual: when accessing /api/read, redirected to upload.html and after pressing Upload button, I'll be redirected to template.html but the image is broken and image is not saved to my UPLOAD_FOLDER. This is shown in flask console:
+172.28.59.117 - - [07/Aug/2019 16:51:08] "GET /api/read HTTP/1.1" 200 -
+172.28.59.117 - - [07/Aug/2019 16:51:13] "POST /api/read HTTP/1.1" 200 -
+172.28.59.117 - - [07/Aug/2019 16:51:13] "GET /api/read?filename= HTTP/1.1" 200 -
+172.28.59.117 - - [07/Aug/2019 16:51:17] "GET /api/read?filename= HTTP/1.1" 200 -
+Sometimes, error is like this:
+TypeError: uploaded_file() missing 1 required positional argument: 'filename'
+Additional info:
+upload.py
+import os
+from flask import Flask, request, redirect, url_for, send_from_directory, render_template
+from werkzeug.utils import secure_filename
+from app import application
+import connexion
+import logging
+
+UPLOAD_FOLDER = '/root/trial/server/uploads/'
+ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
+
+def allowed_file(filename):
+    return '.' in filename and \
+       filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
+
+#@application.route('/', methods=['GET', 'POST'])
+
+def landing_page():
+  return render_template('upload.html')
+
+def upload_file():
+    if request.method == 'POST':
+        global filename
+        global file
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(application.config['UPLOAD_FOLDER'], filename))
+            return redirect(url_for('uploaded_file', filename=filename))
+    return render_template('upload.html')
+
+#@application.route('/show/<filename>')
+def uploaded_file():
+    #filename = 'http://127.0.0.1:5000/uploads/' + filename
+    return render_template('template.html')
+
+#@application.route('/uploads/<filename>')
+def send_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+#@application.route('/')
+def api_root():
+    return 'Welcome'
+
+if __name__ == '__main__':
+    app.run()
+swagger.yml
+info:
+  description: This is the swagger file that goes with our server code
+  version: "1.0.0"
+  title: Swagger REST Article
+consumes:
+  - "application/json"
+produces:
+  - "application/json"
+
+basePath: "/api"
+
+# Paths supported by the server application
+paths:
+  /read:
+     get:
+       operationId: "views.upload.upload_file"
+       consumes: ["multipart/form-data"]
+       produces: ["text/html"]
+       tags:
+         - "Upload"
+       summary: "Uploads a file"
+       parameters: [{
+            name: file,
+            required: false,
+            in: formData,
+            type: file
+        }]
+       description: "Uploads a file"
+       responses:
+         200:
+           description: "Info Success!"
+     post:
+       operationId: "views.upload.uploaded_file"
+       consumes: ["application/octet-stream"]
+       produces: ["text/html"]
+       tags:
+         - "Upload"
+       summary: "Uploads a file"
+       description: "Uploads a file"
+       responses:
+         201:
+           description: "OK"
+           schema:
+             type: string
+             format: binary
+     put:
+       operationId: "views.upload.send_file"
+       consumes: ["application/octet-stream"]
+       produces: ["text/html"]
+       tags:
+         - "Upload"
+       summary: "Save file"
+       description: "Save file"
+       responses:
+         202:
+           description: "Success upload"
+           schema:
+             type: string
+             format: binary
+template.html (snippet)
+<img class="annotatable" id="ptolemy" src="{{url_for('/api.views_upload_send_file',filename=filename)}}" class="annotatable">

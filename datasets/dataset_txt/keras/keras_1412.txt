@@ -1,0 +1,103 @@
+robbiebarrat commented on 13 Dec 2017
+So I'm working with this architecture for a facial point network:
+n_kpts = 68 # number of keypoints
+
+input_shape = (1,100,100)
+
+input_1 = Input(shape=input_shape)
+
+conv_1 = Conv2D(34, kernel_size=(9,9),
+    activation='tanh',
+    input_shape=input_shape,
+    padding='same',
+    data_format='channels_first')(input_1)
+
+conv_2 = Conv2D(34, kernel_size=(9,9),
+    activation='tanh',
+    padding='same',
+    data_format='channels_first')(conv_1)
+
+conv_3 = Conv2D(34, kernel_size=(9,9),
+    activation='tanh',
+    padding='same',
+    data_format='channels_first')(conv_2)
+
+conv_4 = Conv2D(34, kernel_size=(9,9),
+    activation='tanh',
+    padding='same',
+    data_format='channels_first')(conv_3)
+
+conv_5 = Conv2D(34, kernel_size=(9,9),
+    activation='tanh',
+    padding='same',
+    data_format='channels_first')(conv_4)
+
+softargmax = spatial_softArgmax(68)(conv_4)
+
+reshape = Reshape((68,2))(softargmax)
+
+model = Model(inputs=input_1, outputs=reshape)
+I need to get rid of the reshape and softargmax (it's a custom layer) - and just save the model as the input and conv_1 - conv_5; I want the output to just be the output of that last convolutional layer. I have a model that's trained as an h5 with all of these layers, but i run into some trouble when trying to pop and resave - here's the script I wrote for that:
+def get_weights_without_softargmax(fname):
+ model = load_model(fname, custom_objects={'spatial_softArgmax':spatial_softArgmax})
+ 
+ model.summary()
+ model.layers.pop() # reshape layer
+ model.layers.pop() # spatial softargmax
+
+ model.summary()
+ 
+ model.save("no_softargmax_" + str(fname))
+The first model.summary returns a summary of the whole network;
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 1, 100, 100)       0         
+_________________________________________________________________
+conv2d_1 (Conv2D)            (None, 34, 100, 100)      2788      
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 34, 100, 100)      93670     
+_________________________________________________________________
+conv2d_3 (Conv2D)            (None, 34, 100, 100)      93670     
+_________________________________________________________________
+conv2d_4 (Conv2D)            (None, 34, 100, 100)      93670     
+_________________________________________________________________
+spatial_soft_argmax_1 (spati (None, 68)                0         
+_________________________________________________________________
+reshape_1 (Reshape)          (None, 34, 2)             0         
+=================================================================
+Total params: 283,798
+Trainable params: 283,798
+Non-trainable params: 0
+and the second one returns the now popped network
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 1, 100, 100)       0         
+_________________________________________________________________
+conv2d_1 (Conv2D)            (None, 34, 100, 100)      2788      
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 34, 100, 100)      93670     
+_________________________________________________________________
+conv2d_3 (Conv2D)            (None, 34, 100, 100)      93670     
+_________________________________________________________________
+conv2d_4 (Conv2D)            (None, 34, 100, 100)      93670     
+=================================================================
+Total params: 283,798
+Trainable params: 283,798
+Non-trainable params: 0
+but when I try to do model.save() - i get this error:
+Traceback (most recent call last):
+  File "weight_chopper.py", line 18, in <module>
+    get_weights_without_softargmax("34pts_94percent.h5")
+  File "weight_chopper.py", line 16, in get_weights_without_softargmax
+    model.save("no_softargmax_" + str(fname))
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2553, in save
+    save_model(self, filepath, overwrite, include_optimizer)
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 107, in save_model
+    'config': model.get_config()
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2390, in get_config
+    new_node_index = node_conversion_map[node_key]
+KeyError: u'reshape_1_ib-0'
+Note how it's referencing the old reshape layer? When I defined the model; I said model = Model(inputs=input_1, outputs=reshape) - so does it still think that the model has that reshape output? How can I convince it otherwise? I've tried doing another Model(inputs=..., outputs=...) type command; but there aren't any appropriate values to plug in for the inputs and outputs!
+How can I get the model to save (preferably as a compiled model) with just the convolutional layers?

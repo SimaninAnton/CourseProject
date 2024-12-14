@@ -1,0 +1,25 @@
+RobbBienert commented on 9 Dec 2016
+Hi folks,
+I upgraded my local mitmproxy using pip from 0.17 to 0.18.2 and now my script does not work anymore. The mitmproxy is used to connect a local machine with a corporate proxy and measure the traffic in between. The mitmproxy (to be exact, the mitmdump program) is called like this:
+/usr/local/bin/mitmdump -p 9090 -U 'http://proxy:8080' -s 'tracer.py argument'
+The tracer.py has three functions implemented as described in the Events Documentation:
+def start():
+    # should be called once on startup
+    # so do some initialization here
+
+def response(flow):
+    # track the response information
+
+def done():
+    # called at script shutdown
+In the stdout I see a lot of lines telling me Reloading script: tracer.py and if I add a print('hello from start()') to the start() function I also see this message in stdout, which means that start() gets executed more than once. My search for Reloading script pointed me to the function tick in addons/script.py, which seems to be running in a certain interval. The problem I can address so far here is that what happens when self.should_reload.is_set() returns True while the proxy is running.
+should_reloads internal state is set to False by clear() in line 187, but it could be set to True again by reload() in line 175. reload is passed as callback to a ReloadHandler in line 204, which is connected to a file system watchdog. This sounds similar to the Scripting Overview,
+Mitmprxoy monitors scripts for modifications, and reloads them on change. When this happens, the script is shut down (the done event is called), and the new instance is started up as if the script had just been loaded (the start and configure events are called).
+with the exception, that the ReloadHandler reloads the script if anything in the observed directory is changed. So I propose not only to filter directories and files starting with a ., but to watch only for files ending with .py.
+System information
+The output of "mitmdump --sysinfo":
+Mitmproxy version: 0.18.2
+Python version: 2.7.12
+Platform: Linux-4.4.0-42-generic-x86_64-with-LinuxMint-18-sarah
+SSL version: OpenSSL 1.0.2g 1 Mar 2016
+Linux distro: LinuxMint 18 sarah

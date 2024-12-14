@@ -1,0 +1,83 @@
+wjackson commented on 19 Aug 2015
+I'm able to successfully use a tornado.locks.Event to signal a long running coroutine to finish on demand. However, the done coroutines continue to execute. Am I doing something wrong? Is this a bug?
+Example code:
+from __future__ import print_function
+from tornado.ioloop import IOLoop
+import tornado.locks as locks
+from functools import partial
+import tornado.gen as gen
+from tornado.concurrent import chain_future
+
+def stoppable(func):
+
+    @gen.coroutine
+    def new_func(*args, **kwargs):
+        stop_event = kwargs.pop('stop_event')
+
+        wrapped_f = func(*args, **kwargs)
+        event_f = stop_event.wait()
+
+        chain_future(event_f , wrapped_f)
+
+        yield [wrapped_f, event_f]
+
+    return new_func
+
+@stoppable
+@gen.coroutine
+def ping_emu(coro_index):
+
+    count = 0
+    while True:
+        print('ping [coro_index=%d] [count=%d]' % (coro_index, count) )
+        yield gen.sleep(1)
+        count += 1
+
+@gen.coroutine
+def main_coro():
+
+    coro_index = 0
+    while True:
+        stop_ev = locks.Event()
+        IOLoop.current().call_later(2, stop_ev.set)
+
+        ping_emu_f = ping_emu(coro_index, stop_event=stop_ev)
+
+        # so we can see when the ping emulator future is done
+        ping_emu_f.add_done_callback(
+            lambda _: print('coro done [coro_index=%d]' % coro_index)
+        )
+
+        # run the ping future
+        yield ping_emu_f
+
+        coro_index += 1
+
+IOLoop.instance().run_sync(main_coro)
+Example output:
+ping [coro_index=0] [count=0]
+ping [coro_index=0] [count=1]
+coro done [coro_index=0]
+ping [coro_index=1] [count=0]
+ping [coro_index=0] [count=2]
+ping [coro_index=1] [count=1]
+ping [coro_index=0] [count=3]
+coro done [coro_index=1]
+ping [coro_index=2] [count=0]
+ping [coro_index=1] [count=2]
+ping [coro_index=0] [count=4]
+ping [coro_index=2] [count=1]
+ping [coro_index=1] [count=3]
+ping [coro_index=0] [count=5]
+coro done [coro_index=2]
+ping [coro_index=3] [count=0]
+ping [coro_index=2] [count=2]
+ping [coro_index=1] [count=4]
+ping [coro_index=0] [count=6]
+ping [coro_index=3] [count=1]
+ping [coro_index=2] [count=3]
+ping [coro_index=1] [count=5]
+ping [coro_index=0] [count=7]
+coro done [coro_index=3]
+I'd like for the coroutines who's futures are done to stop running but as you can see they don't. Any information or help would be appreciated.
+Thanks!

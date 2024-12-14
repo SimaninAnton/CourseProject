@@ -1,0 +1,76 @@
+psgl commented on 1 Jun 2017
+When creating a new Keras model by concatenating two existing models, the layers member collapses the layers of the second model, making the structure somewhat obfuscated. It doesn't affect the model's behavior during training/inference, but it makes it harder to work with. Is this by design?
+For example, consider the summaries below. model_3 is comprised of model_1 and model_2. The last (softmax) layer of model_1 is removed, and model_2 receives the output of the "headless" model_1 (the code can be found here). The last entry in the summary of model_3 has all the layers of model_2 collapsed into a single line:
+model 1: summary
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+net_1_input (InputLayer)     (None, 28, 28, 1)         0         
+_________________________________________________________________
+net_1_conv1 (Conv2D)         (None, 24, 24, 16)        416       
+_________________________________________________________________
+net_1_pool1 (MaxPooling2D)   (None, 12, 12, 16)        0         
+_________________________________________________________________
+flatten_1 (Flatten)          (None, 2304)              0         
+_________________________________________________________________
+net_1_dense (Dense)          (None, 1024)              2360320   
+_________________________________________________________________
+net_1_softmax (Dense)        (None, 10)                10250     
+=================================================================
+Total params: 2,370,986
+Trainable params: 2,370,986
+Non-trainable params: 0
+_________________________________________________________________
+
+
+model 2: summary
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+net_2_input (InputLayer)     (None, 1024)              0         
+_________________________________________________________________
+net_2_dense1 (Dense)         (None, 40)                41000     
+_________________________________________________________________
+net_2_dropout (Dropout)      (None, 40)                0         
+_________________________________________________________________
+net_2_softmax (Dense)        (None, 10)                410       
+=================================================================
+Total params: 41,410
+Trainable params: 41,410
+Non-trainable params: 0
+_________________________________________________________________
+
+
+model 3: summary
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+net_1_input (InputLayer)     (None, 28, 28, 1)         0         
+_________________________________________________________________
+net_1_conv1 (Conv2D)         (None, 24, 24, 16)        416       
+_________________________________________________________________
+net_1_pool1 (MaxPooling2D)   (None, 12, 12, 16)        0         
+_________________________________________________________________
+flatten_1 (Flatten)          (None, 2304)              0         
+_________________________________________________________________
+net_1_dense (Dense)          (None, 1024)              2360320   
+_________________________________________________________________
+net_2_model (Model)          (None, 10)                41410     
+=================================================================
+Total params: 2,402,146
+Trainable params: 2,402,146
+Non-trainable params: 0
+_________________________________________________________________
+Here is the view of model_3.layers during debugging. Notice the last entry being of type {model}:
+layers = {list} <type 'list'>: [<keras.engine.topology.InputLayer object at 0x7f472d258250>, <keras.layers.convolutional.Conv2D object at 0x7f472d258290>, <keras.layers.pooling.MaxPooling2D object at 0x7f472d258550>, <keras.layers.core.Flatten object at 0x7f472d2582d0>, <
+ __len__ = {int} 6
+ 0 = {InputLayer} <keras.engine.topology.InputLayer object at 0x7f472d258250>
+ 1 = {Conv2D} <keras.layers.convolutional.Conv2D object at 0x7f472d258290>
+ 2 = {MaxPooling2D} <keras.layers.pooling.MaxPooling2D object at 0x7f472d258550>
+ 3 = {Flatten} <keras.layers.core.Flatten object at 0x7f472d2582d0>
+ 4 = {Dense} <keras.layers.core.Dense object at 0x7f472d258b90>
+ 5 = {Model} <keras.engine.training.Model object at 0x7f46d24efad0>
+The {model} item can be further investigated, and indeed contains a layers member with all the layers of model_2.
+I used:
+Keras 2.0.4
+TF 1.0.1

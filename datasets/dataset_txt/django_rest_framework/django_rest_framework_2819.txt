@@ -1,0 +1,50 @@
+ccortezia commented on 6 Jun 2013
+I have the given common scenario:
+models.py
+class Terminal(models.Model):
+    serial = models.CharField(max_length=10, unique=True)
+    tenant = models.ForeignKey(Tenant)
+    is_available = models.BooleanField(default=True)
+
+    def __unicode__(self):
+        return unicode(self.serial)
+views.py
+class TerminalDetail(generics.RetrieveUpdateDestroyAPIView):
+    model = Terminal
+    serializer_class = TerminalSerializer
+    slug_field = 'serial'
+    slug_url_kwarg = 'serial'
+    permission_classes = [
+        IsAdmin,
+    ]
+serializers.py
+class TerminalSerializer(serializers.ModelSerializer):
+    tenant = serializers.SlugRelatedField(
+            slug_field='name', read_only=True)
+
+    class Meta:
+        model = Terminal
+        fields = ('serial', 'tenant', 'is_available')
+urls.py
+urlpatterns = format_suffix_patterns(
+    patterns('admin.views',
+   # <...>
+    url(r'^admin/terminals/(?P<serial>[\w.@+-]+)$', 
+        views.TerminalDetail.as_view(), name='terminal-detail'),
+   # <...>
+))
+When I try to perform a PATCH or PUT operation on the field "serial" of a terminal instance, the field's value simply won't change.
+But, if I define an empty pre_save() method on the view class, the field updates as expected:
+updated views.py
+class TerminalDetail(generics.RetrieveUpdateDestroyAPIView):
+    model = Terminal
+    serializer_class = TerminalSerializer
+    slug_field = 'serial'
+    slug_url_kwarg = 'serial'
+    permission_classes = [
+        IsAdmin,
+    ]
+
+    def pre_save(self, obj):
+        pass
+I really can't tell whether this is a bug or a misunderstanding of mine.

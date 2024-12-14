@@ -1,0 +1,42 @@
+thomasMerkling commented on 5 Apr 2019
+I created an LSTM using Keras with TensorFlow as backend. Before a minibatch with a num_step of 96 is given to the training, the hidden state of the LSTM is set to true values of a previous time step.
+First the parameters and data:
+batch_size = 10
+num_steps = 96
+num_input = num_output = 2
+hidden_size = 8
+X_train = np.array(X_train).reshape(-1, num_steps, num_input)
+Y_train = np.array(Y_train).reshape(-1, num_steps, num_output)
+X_test = np.array(X_test).reshape(-1, num_steps, num_input)
+Y_test = np.array(Y_test).reshape(-1, num_steps, num_output)
+The Keras model consists of two LSTM layers and one layer to trim the output to num_output which is 2:
+model = Sequential()
+model.add(LSTM(hidden_size, batch_input_shape=((batch_size, num_steps, num_input)),
+               return_sequences=True, stateful = True)))
+model.add(LSTM(hidden_size, return_sequences=True)))
+model.add(Dropout(0.2))
+model.add(TimeDistributed(Dense(num_output, activation='softmax')))
+
+model.compile(loss='mean_squared_error', optimizer='adam', metrics=['accuracy'])
+The generator, as well as the training:
+    def gen_data():
+            x = np.zeros((batch_size, num_steps, num_input))
+            y = np.zeros((batch_size, num_steps, num_output))
+            while True:
+                for i in range(batch_size):
+                    model.layers[0].states[0] = K.variable(value=hidden_states[gen_data.current_idx]) # hidden_states[x] has shape (2,)
+                    x[i, :, :] = X_train[gen_data.current_idx]
+                    y[i, :, :] = Y_train[gen_data.current_idx]
+                    gen_data.current_idx += 1
+                yield x, y
+    gen_data.current_idx = 0
+
+
+    for epoch in range(100):
+        model.fit_generator(generate_data(), len(X_train)//batch_size, 1,
+                            validation_data=None, max_queue_size=1, shuffle=False)
+        gen_data.current_idx = 0
+This code does not give me an error, but I have two questions about it:
+Inside the generator I set the hidden state of the LSTM model.layers[0].states[0] to a variable on hidden_states[gen_data.current_idx] with the shape (2,).
+Why is this possible for an LSTM with a hidden size greater than 2?
+The values in hidden_states[gen_data.current_idx] could also be an output from the Keras model. Does it make sense for a two-layer LSTM to set the hidden state in this way?

@@ -1,0 +1,81 @@
+jessamynsmith commented on 2 Mar 2015
+I have a ChoiceField defined using an enum, as follows:
+from django_enumfield import enum
+class ClotSize(enum.Enum):
+    SMALL = 0
+    MEDIUM = 1
+    LARGE = 2
+clots = enum.EnumField(ClotSize, default=None, null=True, blank=True)
+In general, when rendered into HTML, this results in an html select with empty string as the value for the empty option, plus options for each value in the enum.
+In the Django admin, if I select the empty choice and save, it correctly saves the record with clots=null.
+When I try to save the same data via the API, I get an error because empty string cannot be saved to an integer field:
+InvalidStatusOperationError at /api/v2/periods/
+["'' cannot be converted to int"]
+
+Traceback:
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/django/core/handlers/base.py" in get_response
+  111.                     response = wrapped_callback(request, *callback_args, **callback_kwargs)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/django/views/decorators/csrf.py" in wrapped_view
+  57.         return view_func(*args, **kwargs)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/rest_framework/viewsets.py" in view
+  85.             return self.dispatch(request, *args, **kwargs)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/rest_framework/views.py" in dispatch
+  407.             response = self.handle_exception(exc)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/rest_framework/views.py" in dispatch
+  404.             response = handler(request, *args, **kwargs)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/rest_framework/mixins.py" in create
+  21.         self.perform_create(serializer)
+File "/Users/jessamyn/Development/eggtimer/periods/views.py" in perform_create
+  29.         serializer.save(user=self.request.user)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/rest_framework/serializers.py" in save
+  164.             self.instance = self.create(validated_data)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/rest_framework/serializers.py" in create
+  768.             instance = ModelClass.objects.create(**validated_data)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/django/db/models/manager.py" in manager_method
+  92.                 return getattr(self.get_queryset(), name)(*args, **kwargs)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/django/db/models/query.py" in create
+  370.         obj = self.model(**kwargs)
+File "/Users/jessamyn/.virtualenvs/eggtimer/lib/python3.4/site-packages/django/db/models/base.py" in __init__
+  442.                 setattr(self, field.attname, val)
+File "/Users/jessamyn/.virtualenvs/eggtimer/src/django-enumfield/django_enumfield/db/fields.py" in set_enum
+  44.             validators.validate_valid_transition(enum, old_value, new_value)
+File "/Users/jessamyn/.virtualenvs/eggtimer/src/django-enumfield/django_enumfield/validators.py" in validate_valid_transition
+  11.     validate_available_choice(enum, to_value)
+File "/Users/jessamyn/.virtualenvs/eggtimer/src/django-enumfield/django_enumfield/validators.py" in validate_available_choice
+  34.             raise InvalidStatusOperationError(message.format(value=to_value))
+For the time being I have worked around this with a custom validate_clots method but I don't really want to do that for every nullable choice field, if there is a better way.
+Upon delving into the Django source code, I see that it coerces the empty string to empty_value, which in this case is null. Perhaps something similar could work for DRF.
+class TypedMultipleChoiceField(MultipleChoiceField):
+    def __init__(self, *args, **kwargs):
+        self.coerce = kwargs.pop('coerce', lambda val: val)
+        self.empty_value = kwargs.pop('empty_value', [])
+        super(TypedMultipleChoiceField, self).__init__(*args, **kwargs)
+
+    def _coerce(self, value):
+        """
+        Validates that the values are in self.choices and can be coerced to the
+        right type.
+        """
+        if value == self.empty_value or value in self.empty_values:
+            return self.empty_value
+        new_value = []
+        for choice in value:
+            try:
+                new_value.append(self.coerce(choice))
+            except (ValueError, TypeError, ValidationError):
+                raise ValidationError(
+                    self.error_messages['invalid_choice'],
+                    code='invalid_choice',
+                    params={'value': choice},
+                )
+        return new_value
+
+    def clean(self, value):
+        value = super(TypedMultipleChoiceField, self).clean(value)
+        return self._coerce(value)
+
+    def validate(self, value):
+        if value != self.empty_value:
+            super(TypedMultipleChoiceField, self).validate(value)
+        elif self.required:
+            raise ValidationError(self.error_messages['required'], code='required')

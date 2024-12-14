@@ -1,0 +1,69 @@
+Member
+cpu commented on 12 Apr 2018 •
+edited
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+Cloned from git:
+$> git rev-parse HEAD
+6b29d159a2f221c3437770bdb43924ee6f953c4b
+I ran this command and it produced this output:
+certbot_test --server http://localhost:4001/directory certonly --standalone -d one.wtf --preferred-challenges http-01
+Note: This is against a Boulder instance configured with the OrderReadyStatus feature flag enabled (See letsencrypt/boulder#3644).
+Certbot's behavior differed from what I expected because:
+Certbot POSTed newOrder. In response an order object with "status": "ready" was returned. This caused a DeserializationError indicating "Could not decode 'status' (u'ready'): Deserialization error: Status not recognized".
+The "ready" status was added to the ACME specification in draft-10 before Let's Encrypt launched its production ACMEv2 endpoint. Boulder does not use this new status in staging/production yet but we will in the near future (~next month).
+Draft-10 says:
+Once all of the authorizations listed in the order object are in the "valid" state, the order transitions to the "ready" state.
+This state is used to indicate that an order is ready for finalization. Previously the order would remain in "processing" when all of its authorizations were in the "valid" state.
+Here is a Certbot log showing the issue (if available):
+http://localhost:4001 "POST /acme/new-order HTTP/1.1" 201 323
+Received response:
+HTTP 201
+Boulder-Requester: 2141
+Cache-Control: public, max-age=0, no-cache
+Content-Type: application/json
+Location: http://localhost:4001/acme/order/2141/932
+Replay-Nonce: Aeop9czyFGXSMBH0TfD4MwI5klCloEnml8AFsRzBPDU
+Date: Thu, 12 Apr 2018 17:06:51 GMT
+Content-Length: 323
+
+{
+  "status": "ready",
+  "expires": "2018-04-19T17:06:51.98458014Z",
+  "identifiers": [
+    {
+      "type": "dns",
+      "value": "one.wtf"
+    }
+  ],
+  "authorizations": [
+    "http://localhost:4001/acme/authz/qklYRnxxHtf8PAaR8IpgK2ex7uPqWYzWgPEQrPiqEKc"
+  ],
+  "finalize": "http://localhost:4001/acme/finalize/2141/932"
+}
+Storing nonce: Aeop9czyFGXSMBH0TfD4MwI5klCloEnml8AFsRzBPDU
+Exiting abnormally:
+Traceback (most recent call last):
+  File "/home/daniel/Code/certbot/venv/bin/certbot", line 11, in <module>
+    load_entry_point('certbot', 'console_scripts', 'certbot')()
+  File "/home/daniel/Code/certbot/certbot/main.py", line 1266, in main
+    return config.func(config, plugins)
+  File "/home/daniel/Code/certbot/certbot/main.py", line 1157, in certonly
+    lineage = _get_and_save_cert(le_client, config, domains, certname, lineage)
+  File "/home/daniel/Code/certbot/certbot/main.py", line 113, in _get_and_save_cert
+    renewal.renew_cert(config, domains, le_client, lineage)
+  File "/home/daniel/Code/certbot/certbot/renewal.py", line 297, in renew_cert
+    new_cert, new_chain, new_key, _ = le_client.obtain_certificate(domains)
+  File "/home/daniel/Code/certbot/certbot/client.py", line 294, in obtain_certificate
+    orderr = self._get_order_and_authorizations(csr.data, self.config.allow_subset_of_names)
+  File "/home/daniel/Code/certbot/certbot/client.py", line 326, in _get_order_and_authorizations
+    orderr = self.acme.new_order(csr_pem)
+  File "/home/daniel/Code/certbot/acme/acme/client.py", line 779, in new_order
+    return self.client.new_order(csr_pem)
+  File "/home/daniel/Code/certbot/acme/acme/client.py", line 606, in new_order
+    body = messages.Order.from_json(response.json())
+  File "/home/daniel/Code/certbot/venv/local/lib/python2.7/site-packages/josepy/json_util.py", line 289, in from_json
+    return cls(**cls.fields_from_json(jobj))
+  File "/home/daniel/Code/certbot/venv/local/lib/python2.7/site-packages/josepy/json_util.py", line 284, in fields_from_json
+    slot, value, error))
+DeserializationError: Deserialization error: Could not decode 'status' (u'ready'): Deserialization error: Status not recognized
+Please see the logfiles in /tmp/leitSN33/logs for more details.

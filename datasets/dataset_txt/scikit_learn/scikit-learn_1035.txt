@@ -1,0 +1,174 @@
+TheZeken commented on Oct 3, 2018 •
+edited by ogrisel
+Description
+I got an error when I run the fit function from TFIDFVectorizer. I didn't get this issue before 0.20 and when I uninstall 0.20 and re-install 0.19.1 the bug disappear.
+Steps/Code to Reproduce
+Example:
+from scipy.sparse import hstack, csr_matrix
+print("\n[TF-IDF] Term Frequency Inverse Document Frequency Stage")
+english_stop = set(stopwords.words("english"))
+
+tfidf_para = {
+    "stop_words": english_stop,
+    "analyzer": "word",
+    "token_pattern": r'\w{1,}',
+    "sublinear_tf": True,
+    "dtype": np.float32,
+    "norm": "l2",
+    #"min_df":5,
+    #"max_df":.9,
+    #"use_idf ":False,
+    "smooth_idf":False
+}
+def get_col(col_name): return lambda x: x[col_name]
+vectorizer = FeatureUnion([
+        ("description",TfidfVectorizer(
+            ngram_range=(1, 2),
+            max_features=16000,
+            **tfidf_para,
+            use_idf =False,
+            preprocessor=get_col("description"))),
+        ("title",TfidfVectorizer(
+            ngram_range=(1, 2),
+            **tfidf_para,
+            use_idf =False,
+            #max_features=7000,
+            preprocessor=get_col("title")))
+    ])
+
+start_vect=time.time()
+vectorizer.fit(df.loc[df.index,:].to_dict("records"))
+ready_df = vectorizer.transform(df.to_dict("records"))
+tfvocab = vectorizer.get_feature_names()
+print("Vectorization Runtime: %0.2f Minutes"%((time.time() - start_vect)/60))
+Expected Results
+No error is thrown and I got the following results.
+[TF-IDF] Term Frequency Inverse Document Frequency Stage
+Vectorization Runtime: 0.04 Minutes
+Actual Results
+ TypeError: string indices must be integers
+The full traceback :
+[TF-IDF] Term Frequency Inverse Document Frequency Stage
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-12-c0ecb26c55a8> in <module>()
+     33 
+     34 start_vect=time.time()
+---> 35 vectorizer.fit(df.loc[df.index,:].to_dict("records"))
+     36 ready_df = vectorizer.transform(df.to_dict("records"))
+     37 tfvocab = vectorizer.get_feature_names()
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\pipeline.py in fit(self, X, y)
+    766         transformers = Parallel(n_jobs=self.n_jobs)(
+    767             delayed(_fit_one_transformer)(trans, X, y)
+--> 768             for _, trans, _ in self._iter())
+    769         self._update_transformer_list(transformers)
+    770         return self
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self, iterable)
+    981             # remaining jobs.
+    982             self._iterating = False
+--> 983             if self.dispatch_one_batch(iterator):
+    984                 self._iterating = self._original_iterator is not None
+    985 
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in dispatch_one_batch(self, iterator)
+    823                 return False
+    824             else:
+--> 825                 self._dispatch(tasks)
+    826                 return True
+    827 
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in _dispatch(self, batch)
+    780         with self._lock:
+    781             job_idx = len(self._jobs)
+--> 782             job = self._backend.apply_async(batch, callback=cb)
+    783             # A job can complete so quickly than its callback is
+    784             # called before we get here, causing self._jobs to
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in apply_async(self, func, callback)
+    180     def apply_async(self, func, callback=None):
+    181         """Schedule a func to be run"""
+--> 182         result = ImmediateResult(func)
+    183         if callback:
+    184             callback(result)
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in __init__(self, batch)
+    543         # Don't delay the application, to avoid keeping the input
+    544         # arguments in memory
+--> 545         self.results = batch()
+    546 
+    547     def get(self):
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self)
+    259         with parallel_backend(self._backend):
+    260             return [func(*args, **kwargs)
+--> 261                     for func, args, kwargs in self.items]
+    262 
+    263     def __len__(self):
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in <listcomp>(.0)
+    259         with parallel_backend(self._backend):
+    260             return [func(*args, **kwargs)
+--> 261                     for func, args, kwargs in self.items]
+    262 
+    263     def __len__(self):
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\pipeline.py in _fit_one_transformer(transformer, X, y, weight, **fit_params)
+    599 #  factorize the code in ColumnTransformer
+    600 def _fit_one_transformer(transformer, X, y, weight=None, **fit_params):
+--> 601     return transformer.fit(X, y)
+    602 
+    603 
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\feature_extraction\text.py in fit(self, raw_documents, y)
+   1560         """
+   1561         self._check_params()
+-> 1562         X = super(TfidfVectorizer, self).fit_transform(raw_documents)
+   1563         self._tfidf.fit(X)
+   1564         return self
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\feature_extraction\text.py in fit_transform(self, raw_documents, y)
+   1010 
+   1011         vocabulary, X = self._count_vocab(raw_documents,
+-> 1012                                           self.fixed_vocabulary_)
+   1013 
+   1014         if self.binary:
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\feature_extraction\text.py in _count_vocab(self, raw_documents, fixed_vocab)
+    912             vocabulary.default_factory = vocabulary.__len__
+    913 
+--> 914         analyze = self.build_analyzer()
+    915         j_indices = []
+    916         indptr = []
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\feature_extraction\text.py in build_analyzer(self)
+    304             tokenize = self.build_tokenizer()
+    305             self._check_stop_words_consistency(stop_words, preprocess,
+--> 306                                                tokenize)
+    307             return lambda doc: self._word_ngrams(
+    308                 tokenize(preprocess(self.decode(doc))), stop_words)
+
+~\AppData\Local\Continuum\anaconda3\lib\site-packages\sklearn\feature_extraction\text.py in _check_stop_words_consistency(self, stop_words, preprocess, tokenize)
+    274             inconsistent = set()
+    275             for w in stop_words or ():
+--> 276                 tokens = list(tokenize(preprocess(w)))
+    277                 for token in tokens:
+    278                     if token not in stop_words:
+
+<ipython-input-12-c0ecb26c55a8> in <lambda>(x)
+     16     "smooth_idf":False
+     17 }
+---> 18 def get_col(col_name): return lambda x: x[col_name]
+     19 vectorizer = FeatureUnion([
+     20         ("description",TfidfVectorizer(
+
+TypeError: string indices must be integers
+Versions
+Windows-10-10.0.14393-SP0
+Python 3.6.5 |Anaconda, Inc.| (default, Mar 29 2018, 13:32:41) [MSC v.1900 64 bit (AMD64)]
+NumPy 1.15.2
+SciPy 1.1.0
+Scikit-Learn 0.19.1
+Is there something that I'm missing ? Or could it come from scikit-learn update ?
+Thank you ! :)

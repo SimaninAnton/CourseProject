@@ -1,0 +1,86 @@
+jjwt commented on 25 Jan 2016
+There is a similar question at http://stackoverflow.com/questions/25504149/why-does-running-the-flask-dev-server-run-itself-twice.
+But i do not think it is my case. I just save all
+codes before run the server, but it still goes twice !
+I do not want to use Flask.before_first_request, for i want it run
+on startup , not wailt util a request comes in.
+I write a small app with flask and celery.
+I add some periodic tasks and they work well.
+And I want a task run when the app starts,
+but I find celery receives it and run it twice,
+why?
+my config.py is
+BROKER_URL = 'redis://localhost:6379/0'
+BROKER_TRANSPORT_OPTIONS = {'visibility_timeout': 3600}  \# 1 hour.
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+BROKER_TRANSPORT_OPTIONS = {'fanout_prefix': True}
+CELERY_ACCEPT_CONTENT = ['pickle', 'json', 'msgpack', 'yaml']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Shanghai'
+CELERY_ENABLE_UTC = True
+
+CELERYBEAT_SCHEDULE = {
+    'delcookiefiles-every-1-hour': {
+        'task': 'TiebaTools.tasks.del_cookiefile',
+        'schedule': timedelta(hours=1),
+    },
+    'daily_sign': {
+        'task': 'TiebaTools.tasks.daily_sign',
+        'schedule': crontab(minute=30, hour=0),
+    },
+}
+...
+my proj/TiebaTools/__init__.py is
+...
+app = Flask(__name__, instance_relative_config=True)
+app.config.from_object('config')
+app.config.from_pyfile('config.py')
+
+\# integrae sqlalchemy
+db.init_app(app)
+
+\# integrae Celery
+cel.conf.update(app.config)
+TaskBase = cel.Task
+
+
+class ContextTask(TaskBase):
+    abstract = True
+
+    def __call__(self, *args, **kwargs):
+        with app.app_context():
+            return TaskBase.__call__(self, *args, **kwargs)
+
+cel.Task = ContextTask
+...
+my proj/run.py is
+from TiebaTools import app, db
+from TiebaTools.tasks import daily_sign
+with app.app_context():
+    db.create_all()
+
+daily_sign.delay()
+app.run()
+I run the app as below
+redis-server (in one terminal)
+venv/bin/celery worker -B -A TiebaTools.cel --loglevel=info (in second terminal)
+venv/bin/python run.py (in third terminal)
+after first two commands execute, all go well, no task received.
+But after the third command executes, message as below comes out in the second terminal.
+[2016-01-24 21:03:43,989: INFO/MainProcess] Received task: TiebaTools.tasks.daily_sign[7f229395-b403-4d4b-9d6f-a009b603f9f6]
+[2016-01-24 21:03:43,991: WARNING/Worker-6] 
+DEBUG in tasks [/home/dyh/svn/Tieba-Tools/TiebaTools/tasks.py:99]:
+update_all_tblist task starts !
+
+[2016-01-24 21:03:43,991: DEBUG/Worker-6] update_all_tblist task starts !
+[2016-01-24 21:03:44,013: INFO/MainProcess] Task TiebaTools.tasks.daily_sign[7f229395-b403-4d4b-9d6f-a009b603f9f6] succeeded in 0.0229967209888855s: '{"result": "none TiebaList to sign !"}'
+[2016-01-24 21:03:44,346: INFO/MainProcess] Received task: TiebaTools.tasks.daily_sign[fca044d1-29d8-4910-b71b-a7fc44d8a9a1]
+[2016-01-24 21:03:44,347: WARNING/Worker-3] 
+DEBUG in tasks [/home/dyh/svn/Tieba-Tools/TiebaTools/tasks.py:99]:
+update_all_tblist task starts !
+
+[2016-01-24 21:03:44,347: DEBUG/Worker-3] update_all_tblist task starts !
+[2016-01-24 21:03:44,368: INFO/MainProcess] Task TiebaTools.tasks.daily_sign[fca044d1-29d8-4910-b71b-a7fc44d8a9a1] succeeded in 0.02192131800984498s: '{"result": "none TiebaList to sign !"}'
+So, what's wrong? Finally I set DEBUG=False to resolve it . But how can I debug
+or is it a bug , or is it needed to add a decorator like Flask.on_app_start ?

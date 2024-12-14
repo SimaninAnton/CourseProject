@@ -1,0 +1,325 @@
+jmakeig commented on Apr 23, 2013
+I’ll try to put together a proper test case, but in the meantime, I’m getting recursion depth errors when authentication fails using digest auth.
+I’m using v1.1.0 (from pip) with Python 2.7.2 on Mac OS X 10.8.3.
+My code doesn’t do anything fancy (though I’m an admitted Python noob):
+class ModulesClient(object):
+    def __init__(self, config):
+        …
+        if self.auth_type == "digest":
+            self.auth = HTTPDigestAuth(self.user, self.password)
+        else: 
+            raise Exception("Unsupported auth_type " + self.auth_type)
+
+    def put(self, uri, body, transaction=None):
+        "Send a file to the remote modules database. URIs are prepended with the root."
+        params = {"uri": self.root + uri, "perm:app-user": "execute"} 
+        if transaction is not None:
+            params['txid'] = transaction
+        headers = {}
+        r = requests.put(
+            self.url + "/v1/documents", 
+            params=params, 
+            headers=headers, 
+            auth=self.auth,
+            data=body
+        )
+        if r.status_code > 299 or r.status_code < 200:
+            raise Exception(r.status_code, r.text)
+        return ("PUT", r.status_code, params['uri'])
+Everything works fine if authentication succeeds. However, if I give it invalid credentials I get:
+Traceback (most recent call last):
+  File "/Users/jmakeig/Workspaces/modulesdb/src/local-watcher.py", line 216, in <module>
+    walk(BASEDIR)
+  File "/Users/jmakeig/Workspaces/modulesdb/src/local-watcher.py", line 61, in walk
+    file_path=asb
+  File "/Users/jmakeig/Workspaces/modulesdb/src/modulesclient.py", line 62, in put_file
+    msg = self.put(uri=uri, body=f.read(), transaction=transaction)
+  File "/Users/jmakeig/Workspaces/modulesdb/src/modulesclient.py", line 51, in put
+    data=body
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/api.py", line 98, in put
+    return request('put', url, data=data, **kwargs)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/api.py", line 44, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/sessions.py", line 279, in request
+    resp = self.send(prep, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/sessions.py", line 374, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+
+
+  …
+
+
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 113, in build_response
+    response = dispatch_hook('response', req.hooks, response)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/hooks.py", line 39, in dispatch_hook
+    _hook_data = hook(hook_data)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/auth.py", line 156, in handle_401
+    _r = r.connection.send(r.request)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 219, in send
+    r = self.build_response(request, resp)
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 87, in build_response
+    response = Response()
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/models.py", line 457, in __init__
+    self.cookies = cookiejar_from_dict({})
+  File "/Users/jmakeig/Library/Python/2.7/lib/python/site-packages/requests/cookies.py", line 368, in cookiejar_from_dict
+    cookiejar = RequestsCookieJar()
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/cookielib.py", line 1222, in __init__
+    self._cookies_lock = _threading.RLock()
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/threading.py", line 102, in RLock
+    return _RLock(*args, **kwargs)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/threading.py", line 107, in __init__
+    _Verbose.__init__(self, verbose)
+RuntimeError: maximum recursion depth exceeded in __instancecheck__

@@ -1,0 +1,102 @@
+limapedro commented on 15 May 2019
+Please make sure that this is a Bug or a Feature Request and provide all applicable information asked by the template.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+System information
+Have I written custom code (as opposed to using example directory):
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04):
+TensorFlow backend (yes / no): Yes
+TensorFlow version: 1.13.1
+Keras version: 2.2.4
+Python version: 3.6.8
+CUDA/cuDNN version: No CUDA
+GPU model and memory: No GPU
+You can obtain the TensorFlow version with:
+python -c "import tensorflow as tf; print(tf.GIT_VERSION, tf.VERSION)"
+You can obtain the Keras version with:
+python -c 'import keras as k; print(k.version)'
+Describe the current behavior
+I'm prototyping as Seq2Seq Model as described in the https://blog.keras.io/a-ten-minute-introduction-to-sequence-to-sequence-learning-in-keras.html blog post. It works fine with a LSTM layer for inference, using GRU for training works OK, but the code for inference doesn't work at all, I suspect that my code must have some error or something like like.
+Describe the expected behavior
+I haven't code for inference in the blog post for GRUs, does anyone have used before?
+Code to reproduce the issue
+Provide a reproducible test case that is the bare minimum necessary to generate the problem.
+Here's the code:
+from keras.models import Model
+from keras.layers import Input, Dense, GRU, Bidirectional
+import numpy as np
+input_texts = []
+target_texts = []
+chars = set()
+num_sentences = 1024
+for i, line in enumerate(open('fra.txt', 'r', encoding='utf-8')):
+line = line.lower()
+line = line.replace('\n', '')
+inp, out = line.split('\t')
+input_texts.append(inp)
+out = '\t' + out + '\n'
+target_texts.append(out)
+for ch in inp:
+ if ch not in chars:
+  chars.add(ch)
+  
+for ch in out:
+ if ch not in chars:
+  chars.add(ch)
+
+if i > num_sentences:
+ break
+chr2idx = {}
+idx2chr = {}
+for i, ch in enumerate(chars):
+idx2chr[i] = ch
+chr2idx[ch] = i
+print(chr2idx)
+max_seq = 64
+num_tokens = len(chars)
+num_samples = len(input_texts)
+encoder_input_data = np.zeros((num_samples, max_seq, num_tokens), dtype='float32')
+decoder_input_data = np.zeros((num_samples, max_seq, num_tokens), dtype='float32')
+decoder_target_data = np.zeros((num_samples, max_seq, num_tokens), dtype='float32')
+for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
+for t, char in enumerate(input_text):
+encoder_input_data[i, t, chr2idx[char]] = 1.0
+for t, char in enumerate(target_text):
+decoder_input_data[i, t, chr2idx[char]] = 1.0
+if t > 0:
+decoder_target_data[i, t - 1, chr2idx[char]] = 1.0
+def Encoder(latent_dim, num_tokens):
+_input = Input(shape=(None, num_tokens))
+encoder = Bidirectional(GRU(latent_dim, return_state=True))
+outputs, hf, hb = encoder(_input)
+return {'input' : _input, 'encoder' : encoder, 'states' : [hf, hb]}
+def Decoder(latent_dim, num_tokens, states):
+_input = Input(shape=(None, num_tokens))
+decoder = Bidirectional(GRU(latent_dim, return_sequences=True))
+outputs = decoder(_input, initial_state=states)
+fc = Dense(num_tokens, activation='softmax')
+output = fc(outputs)
+return {'input' : _input, 'decoder' : decoder, 'output' : output}
+latent_dim = 128
+encoder = Encoder(latent_dim, num_tokens)
+decoder = Decoder(latent_dim, num_tokens, encoder['states'])
+model = Model([encoder['input'], decoder['input']], decoder['output'])
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])
+model.summary()
+encoder_infer = Model(encoder['input'], encoder['states'])
+h = Input(shape=(None, num_tokens))
+outputs, hf, hb = decoder'decoder'
+output = decoder'output'
+decoder_infer = Model([decoder['input']], [decoder['output']] + [hf, hb])
+cont = encoder_infer.predict(encoder_input_data[0])
+out = decoder_infer.predict(cont)
+print(out)
+#model.fit([encoder_input_data, decoder_input_data], decoder_target_data, batch_size=128, epochs=1000)
+Other info / logs
+Include any logs or source code that would be helpful to diagnose the problem. If including tracebacks, please include the full traceback. Large logs and files should be attached.
+This is the error message that I getting: Traceback (most recent call last):
+File "bi_gru.py", line 84, in
+outputs, hf, hb = decoder'decoder'
+File "C:\Program Files\Python36\lib\site-packages\tensorflow\python\framework\ops.py", line 442, in iter
+"Tensor objects are only iterable when eager execution is "
+TypeError: Tensor objects are only iterable when eager execution is enabled. To iterate over this tensor use tf.map_fn.
+Cheers.

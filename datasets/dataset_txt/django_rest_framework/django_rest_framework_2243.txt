@@ -1,0 +1,15 @@
+skrivanos commented on 21 Nov 2014
+When there are multiple upload handlers defined and one of them raises StopFutureHandlers (in my case, MemoryFileUploadHandler and TemporaryFileUploadHandler) the self.file property is never set on the remaining handlers (since this is usually done in the new_file method).
+This causes issues when iterating over the handlers later trying to complete the file:
+class FileUploadParser():
+        for i, handler in enumerate(upload_handlers):
+            file_obj = handler.file_complete(counters[i])
+            if file_obj:
+                return DataAndFiles(None, {'file': file_obj})
+        raise ParseError("FileUpload parse error - "
+                         "none of upload handlers can handle the stream")
+class File():
+    def __bool__(self):
+        return bool(self.name)
+With an empty filename, since bool(file_obj) == False, it'll continue the iteration even the handler that issued StopFutureHandlers earlier. Since the file property wasn't set on the remaining handlers handler.file_complete will raise an AttributeError:
+AttributeError:'TemporaryFileUploadHandler' object has no attribute 'file'

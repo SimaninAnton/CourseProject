@@ -1,0 +1,95 @@
+nicolamarinello commented on 22 Jan 2019
+I'm developing a project to train a CNN classifier with images that are distributed across multiple .h5 files. The training dataset is quite big then I'm using a generator in order to read data from disk and feed the network. However as soon as the training starts, the used memory (RAM) starts increasing very fast until it gets completely filled and the training process gets stuck without any error.
+At the beginning I thought the problem was related to h5py or the callbacks but then I removed all the unnecessary things to make things simpler and this phenomena still happens.
+My configuration is Ubuntu 18.04, Keras from branch master 8c9de83, TensorFlow 1.12, CUDA 10.0 and cuDNN 7.
+However this seems not to happen on CentOS with CPU training.
+In the following I will post the code to reproduce the issue. It is a simplified version of the original one but it easily reproduce the problem (the network should achieve 0.5 of accuracy as all the data is randomly generated)
+training_generator = DataGeneratorC(dataset_len=100000, batch_size=batch_size, shuffle=shuffle)
+
+model = Sequential()
+
+# simple network
+model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(1, img_rows, img_cols), data_format='channels_first'))
+model.add(Conv2D(64, (3, 3), data_format='channels_first', activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2), data_format='channels_first'))
+model.add(Dropout(0.25))
+model.add(Flatten())
+model.add(Dense(4, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(units=1, activation='sigmoid'))
+
+model.summary()
+
+sgd = optimizers.SGD(lr=0.1, decay=1e-4, momentum=0.9, nesterov=True)
+
+model.compile(optimizer=sgd, loss='binary_crossentropy', metrics=['accuracy'])
+    
+model.fit_generator(generator=training_generator, epochs=epochs, verbose=1, use_multiprocessing=True, workers=workers, shuffle=False)
+Just a generator that feeds the network with random data
+import keras
+import numpy as np
+import h5py
+import multiprocessing
+
+
+class DataGeneratorC(keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, dataset_len, batch_size=32, shuffle=True):
+        self.batch_size = batch_size
+        # self.h5files = h5files
+        self.indexes = np.array([], dtype=np.int64).reshape(0, 1)
+        self.shuffle = shuffle
+        self.n_images = dataset_len
+        self.generate_indexes()
+        self.on_epoch_end()
+
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor(self.n_images/self.batch_size))
+
+    def __getitem__(self, index):
+
+        indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
+
+        # Generate data
+        x, y = self.__data_generation(indexes)
+
+        return x, y
+
+    def get_indexes(self):
+        return self.indexes
+
+    def generate_indexes(self):
+         # indexing of the dataset in some way
+         # self.indexes in some way
+         self.indexes = np.arange(self.n_images)
+
+    def on_epoch_end(self):
+        'Updates indexes after each epoch'
+        if self.shuffle:
+            np.random.shuffle(self.indexes)
+
+    def __data_generation(self, indexes):
+        'Generates data containing batch_size samples'
+        # Initialization
+        x = np.empty([self.batch_size, 100, 100])
+        y = np.empty([self.batch_size], dtype=int)
+
+        # Generate data
+        for i, row in enumerate(indexes):
+            # project code
+            # filename = self.h5files[row[0]]
+            # h5f = h5py.File(filename, 'r')
+            # Store image
+            # x[i, ] = h5f['path/path_images'][row[1]]
+            # h5f.close()
+            # Store class
+            # y[i] = row[2]
+
+            # test code
+            y[i] = np.random.randint(2, size=1) # this returns 0 or 1
+            x[i, ] = np.random.rand(100, 100)
+
+        x = x.reshape(x.shape[0], 1, 100, 100)
+
+        return x, y

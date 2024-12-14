@@ -1,0 +1,134 @@
+shksa commented on 9 Mar 2017 •
+edited
+``
+In[1]:
+from six.moves import cPickle as pickle
+from six.moves import range
+import numpy as np
+from PIL import Image
+import os
+import sys
+import matplotlib.pyplot as plt
+In[ ]:
+pickle_file = 'SVHN_multi_normal.pickle'
+with open(pickle_file, 'rb') as f:
+save = pickle.load(f)
+train_dataset = save['train_dataset_n']
+train_labels = save['train_labels_n']
+test_dataset = save['test_dataset_n']
+test_labels = save['test_labels_n']
+del save # hint to help gc free up memory
+print('Training set', train_dataset.shape, train_labels.shape)
+print('Test set', test_dataset.shape, test_labels.shape)
+train_dataset = train_dataset.astype('float32')
+test_dataset = test_dataset.astype('float32')
+train_dataset = train_dataset / 255.0
+test_dataset = test_dataset / 255.0
+In[ ]:
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import Convolution2D, MaxPooling2D, Flatten, Dense, Activation, Dropout, BatchNormalization
+from keras.optimizers import Adam
+In[ ]:
+def accuracy(predictions, labels):
+return (100.0 * np.sum(np.argmax(predictions, 2).T == labels) / predictions.shape[1] / predictions.shape[0])
+batch_size = 64
+In[ ]:
+my_f_session = tf.Session()
+from keras import backend as K
+K.set_session(my_f_session)
+tf_train_data = tf.placeholder(tf.float32, shape=(None, 54, 54, 3))
+tf_train_labels = tf.placeholder(tf.int32, shape=(None, 6))
+tf_test_dataset = tf.constant(test_dataset)
+def my_model(input_batch):
+# Block 1
+x = Convolution2D(32, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block1_conv1')(input_batch)
+x = BatchNormalization(name="block1_bn1")(x)
+x = Convolution2D(32, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block1_conv2')(x)
+x = BatchNormalization(name="block1_bn2")(x)
+x = MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool')(x)
+x = Dropout(0.3)(x)
+
+# Block 2
+x = Convolution2D(64, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block2_conv1')(x)
+x = BatchNormalization(name="block2_bn1")(x)
+x = Convolution2D(64, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block2_conv2')(x)
+x = BatchNormalization(name="block2_bn2")(x)
+x = MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool')(x)
+x = Dropout(0.3)(x)
+
+# Block 3
+x = Convolution2D(128, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block3_conv1')(x)
+x = BatchNormalization(name="block3_bn1")(x)
+x = MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool')(x)
+x = Dropout(0.3)(x)
+
+# Block 4
+x = Convolution2D(256, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block4_conv1')(x)
+x = BatchNormalization(name="block4_bn1")(x)
+x = MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool')(x)
+x = Dropout(0.3)(x)
+
+# Block 5
+x = Convolution2D(512, 3, 3, activation='relu', init='he_normal', border_mode='same', name='block5_conv1')(x)
+x = BatchNormalization(name="block5_bn1")(x)
+x = MaxPooling2D((2, 2), strides=(2, 2), name='block5_pool')(x)
+
+f = Flatten(name='flatten')(x)
+h = Dense(4096, activation='relu', init='he_normal')(f)
+
+logits1 = Dense(11, init='he_normal')(h)
+logits2 = Dense(11, init='he_normal')(h)
+logits3 = Dense(11, init='he_normal')(h)
+logits4 = Dense(11, init='he_normal')(h)
+logits5 = Dense(11, init='he_normal')(h)
+
+return [logits1, logits2, logits3, logits4, logits5]
+[logits1, logits2, logits3, logits4, logits5] = my_model(tf_train_data)
+In[ ]:
+loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits1, tf_train_labels[:,1])) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits2, tf_train_labels[:,2])) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits3, tf_train_labels[:,3])) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits4, tf_train_labels[:,4])) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits5, tf_train_labels[:,5]))
+In[ ]:
+train_step = tf.train.AdamOptimizer().minimize(loss)
+In[ ]:
+train_prediction = tf.pack([tf.nn.softmax(my_model(tf_train_data)[0]),
+tf.nn.softmax(my_model(tf_train_data)[1]),
+tf.nn.softmax(my_model(tf_train_data)[2]),
+tf.nn.softmax(my_model(tf_train_data)[3]),
+tf.nn.softmax(my_model(tf_train_data)[4])])
+test_prediction = tf.pack([tf.nn.softmax(my_model(tf_test_dataset)[0]),
+tf.nn.softmax(my_model(tf_test_dataset)[1]),
+tf.nn.softmax(my_model(tf_test_dataset)[2]),
+tf.nn.softmax(my_model(tf_test_dataset)[3]),
+tf.nn.softmax(my_model(tf_test_dataset)[4])])
+In[ ]:
+num_steps = 100001
+with my_f_session.as_default():
+K.get_session().run(tf.global_variables_initializer())
+print('Initialized')
+for step in range(num_steps):
+    offset = (step * batch_size) % (train_labels.shape[0] - batch_size)
+    batch_data = train_dataset[offset:(offset + batch_size), :, :, :]
+    batch_labels = train_labels[offset:(offset + batch_size),:]
+    feed_dict = {tf_train_data : batch_data, tf_train_labels : batch_labels, K.learning_phase(): 1, K.learning_phase(): 1}
+    _, l = my_f_session.run([train_step, loss], feed_dict=feed_dict)
+    if (step % 500 == 0): 
+        print('Minibatch loss at step %d: %f' % (step, l))
+        feed_dict = {tf_train_data : batch_data, K.learning_phase(): 0, K.learning_phase(): 0}
+        predictions = my_f_session.run([train_prediction], feed_dict=feed_dict)
+        print('Minibatch accuracy: %.1f%%' % accuracy(predictions, batch_labels[:,1:6]))
+feed_dict = {K.learning_phase(): 0, K.learning_phase(): 0}
+predictions = my_f_session.run([test_prediction], feed_dict=feed_dict)
+print('Test accuracy: %.1f%%' % accuracy(predictions, test_labels[:,1:6]))
+File "C:\Users\sreekar\Desktop\UdacityProject\hangyao\5_CNN_multi_my_version.py", line 106, in
+[logits1, logits2, logits3, logits4, logits5] = my_model(tf_train_data)
+File "C:\Users\sreekar\Desktop\UdacityProject\hangyao\5_CNN_multi_my_version.py", line 96, in my_model
+h = Dense(4096, activation='relu', init='he_normal')(f)
+File "C:\Program Files\Python35\lib\site-packages\keras\engine\topology.py", line 546, in call
+self.build(input_shapes[0])
+File "C:\Program Files\Python35\lib\site-packages\keras\layers\core.py", line 798, in build
+constraint=self.W_constraint)
+File "C:\Program Files\Python35\lib\site-packages\keras\engine\topology.py", line 418, in add_weight
+weight = initializer(shape, name=name)
+File "C:\Program Files\Python35\lib\site-packages\keras\initializations.py", line 76, in he_normal
+s = np.sqrt(2. / fan_in)
+TypeError: unsupported operand type(s) for /: 'float' and 'NoneType'

@@ -1,0 +1,118 @@
+liondancer commented on Jun 4, 2016 •
+edited
+I'm pretty new to scrapy and I am trying to scrape some craigslist pages using some proxies but I am getting some errors as shown below. I tried the command scrapy shell "https://craigslist.org" and it seemed to work fine.
+From my understanding, if I want to use proxies, I have to build custom Downloader Middleware. I have done so here:
+class ProxyConnect(object):
+    def __init__(self):
+        self.proxies = None
+        with open(os.path.join(os.getcwd(), "chisel", "downloaders", "resources", "config.json")) as config:
+            proxies = json.load(config)
+            self.proxies = proxies["proxies"]
+
+    def process_request(self, request, spider):
+        if "proxy" in request.meta:
+            return
+        proxy = random.choice(self.proxies)
+        ip, port, username, password = proxy["ip"], proxy["port"], proxy["username"], proxy["password"]
+        request.meta["proxy"] = "http://" + ip + ":" + port
+        user_pass = username + ":" + password
+        if user_pass:
+            basic_auth = 'Basic ' + base64.encodestring(user_pass)
+            request.headers['Proxy-Authorization'] = basic_auth
+This is my project structure:
+/chisel
+    __init__.py
+    pipelines.py
+    items.py
+    settings.py
+    /downloaders
+        __init__.py
+        /downloader_middlewares
+            __init__.py
+        proxy_connect.py
+        /resources
+          config.json
+    /spiders
+        __init__.py
+        craiglist_spider.py
+        /spider_middlewares
+            __init__.py
+        /resources
+          craigslist.json
+scrapy.cfg
+settings.py:
+DOWNLOADER_MIDDLEWARES = {
+    'chisel.downloaders.downloader_middlewares.proxy_connect.ProxyConnect': 100,
+    'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': 110
+}
+I was able to test to see if my proxy is working with this command it and it worked and got a source page back
+curl -x 'http://{USERNAME}:{PASSWORD}@{IP}:{PORT}' -v "http://www.google.com/"
+Scrapy version
+$ scrapy version -v
+Scrapy    : 1.1.0
+lxml      : 3.6.0.0
+libxml2   : 2.9.2
+Twisted   : 16.2.0
+Python    : 2.7.10 (default, Oct 23 2015, 19:19:21) - [GCC 4.2.1 Compatible Apple LLVM 7.0.0 (clang-700.0.59.5)]
+pyOpenSSL : 16.0.0 (OpenSSL 1.0.2h  3 May 2016)
+Platform  : Darwin-15.5.0-x86_64-i386-64bit
+Error:
+$ scrapy crawl craigslist
+2016-06-04 01:44:14 [scrapy] INFO: Scrapy 1.1.0 started (bot: chisel)
+2016-06-04 01:44:14 [scrapy] INFO: Overridden settings: {'NEWSPIDER_MODULE': 'chisel.spiders', 'SPIDER_MODULES': ['chisel.spiders'], 'ROBOTSTXT_OBEY': True, 'BOT_NAME': 'chisel'}
+2016-06-04 01:44:14 [scrapy] INFO: Enabled extensions:
+['scrapy.extensions.logstats.LogStats',
+ 'scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.corestats.CoreStats']
+2016-06-04 01:44:14 [scrapy] INFO: Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.robotstxt.RobotsTxtMiddleware',
+ 'chisel.downloaders.downloader_middlewares.proxy_connect.ProxyConnect',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.chunked.ChunkedTransferMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2016-06-04 01:44:14 [scrapy] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2016-06-04 01:44:14 [scrapy] INFO: Enabled item pipelines:
+[]
+2016-06-04 01:44:14 [scrapy] INFO: Spider opened
+2016-06-04 01:44:14 [scrapy] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2016-06-04 01:44:14 [scrapy] DEBUG: Telnet console listening on 127.0.0.1:6023
+2016-06-04 01:44:16 [scrapy] DEBUG: Retrying <GET https://geo.craigslist.org/robots.txt> (failed 1 times): [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:17 [scrapy] DEBUG: Retrying <GET https://geo.craigslist.org/robots.txt> (failed 2 times): [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:18 [scrapy] DEBUG: Gave up retrying <GET https://geo.craigslist.org/robots.txt> (failed 3 times): [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:18 [scrapy] ERROR: Error downloading <GET https://geo.craigslist.org/robots.txt>: [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+ResponseNeverReceived: [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:20 [scrapy] DEBUG: Retrying <GET https://geo.craigslist.org/iso/MD> (failed 1 times): [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:21 [scrapy] DEBUG: Retrying <GET https://geo.craigslist.org/iso/MD> (failed 2 times): [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:24 [scrapy] DEBUG: Gave up retrying <GET https://geo.craigslist.org/iso/MD> (failed 3 times): [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:24 [scrapy] ERROR: Error downloading <GET https://geo.craigslist.org/iso/MD>: [<twisted.python.failure.Failure OpenSSL.SSL.Error: [('SSL routines', 'ssl23_read', 'ssl handshake failure')]>]
+2016-06-04 01:44:24 [scrapy] INFO: Closing spider (finished)
+2016-06-04 01:44:24 [scrapy] INFO: Dumping Scrapy stats:
+{'downloader/exception_count': 6,
+ 'downloader/exception_type_count/twisted.web._newclient.ResponseNeverReceived': 6,
+ 'downloader/request_bytes': 1668,
+ 'downloader/request_count': 6,
+ 'downloader/request_method_count/GET': 6,
+ 'finish_reason': 'finished',
+ 'finish_time': datetime.datetime(2016, 6, 4, 8, 44, 24, 329662),
+ 'log_count/DEBUG': 7,
+ 'log_count/ERROR': 2,
+ 'log_count/INFO': 7,
+ 'scheduler/dequeued': 3,
+ 'scheduler/dequeued/memory': 3,
+ 'scheduler/enqueued': 3,
+ 'scheduler/enqueued/memory': 3,
+ 'start_time': datetime.datetime(2016, 6, 4, 8, 44, 14, 963452)}
+2016-06-04 01:44:24 [scrapy] INFO: Spider closed (finished)

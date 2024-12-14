@@ -1,0 +1,24 @@
+Member
+stummjr commented on Dec 21, 2017
+ItemLoaders behave oddly when they get a pre-populated item as an argument and get_output_value() gets called for one of the pre-populated fields before calling load_item().
+Check this out:
+>>> from scrapy.loader import ItemLoader
+>>> item = {'url': 'http://example.com', 'summary': 'foo bar'}
+>>> loader = ItemLoader(item)
+>>> loader.load_item()
+{'summary': 'foo bar', 'url': 'http://example.com'}
+
+# so far, so good... what about now?
+>>> item = {'url': 'http://example.com', 'summary': 'foo bar'}
+>>> loader = ItemLoader(item)
+>>> loader.get_output_value('url')
+[]
+>>> loader.load_item()
+{'summary': 'foo bar', 'url': []}
+There are 2 unexpected behaviors in this snippet (at least from my point of view):
+1) loader.get_output_value() doesn't return the pre-populated values, even though they end up in the final item.
+It seems to be like this on purpose, though. The get_output_value() method only queries the _local_values defaultdict (here).
+2) once we call loader.get_output_value('url'), that field is not included in the load_item() result anymore.
+This one doesn't look right, IMHO.
+It happens because when we call loader.get_output_value('url') for the first time, such value is not available on _local_values, and so a new entry in the _local_values defaultdict will be created with an empty list on it (here). Then, when loader.load_item() gets called, these lines overwrite the current value from the internal item because the value returned by get_output_value() is [] and not None.
+Any thoughts on this?

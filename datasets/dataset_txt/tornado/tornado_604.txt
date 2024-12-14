@@ -1,0 +1,20 @@
+terminalmage commented on 14 Sep 2015
+Assume the following example of using the HTTPClient to retrieve a file:
+>>> tornado.version
+'4.2.1'
+>>> try:
+...     fh = open('/tmp/foo.msi', 'wb')
+...     def handle_chunk(chunk):
+...         fh.write(chunk)
+...     tornado.httpclient.HTTPClient(max_body_size=107374182400).fetch('http://download.macromedia.com/get/flashplayer/current/licensing/win/install_flash_player_18_plugin.msi', method='GET', streaming_callback=handle_chunk)
+... finally:
+...     fh.close()
+...
+HTTPResponse(_body=None,buffer=<_io.BytesIO object at 0x7f933e4a7470>,code=200,effective_url='http://fpdownload.macromedia.com/get/flashplayer/current/licensing/win/install_flash_player_18_plugin.msi',error=None,headers={'Content-Length': '19924480', 'Accept-Ranges': 'bytes', 'Server': 'Apache', 'Last-Modified': 'Fri, 07 Aug 2015 12:22:31 GMT', 'Connection': 'close', 'Etag': '"1300600-51cb7b0998fc0"', 'Date': 'Mon, 14 Sep 2015 17:24:22 GMT', 'Content-Type': 'application/x-msi'},reason='OK',request=<tornado.httpclient.HTTPRequest object at 0x7f933e196250>,request_time=4.273449897766113,time_info={})
+>>> with open('/tmp/foo.msi', 'rb') as fh:
+...     first_288_bytes = fh.read(288)
+...
+>>> first_288_bytes
+'<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html><head>\n<title>302 Found</title>\n</head><body>\n<h1>Found</h1>\n<p>The document has moved <a href="http://fpdownload.macromedia.com/get/flashplayer/current/licensing/win/install_flash_player_18_plugin.msi">here</a>.</p>\n</body></html>'
+This results in a corrupted file, as the HTTP response from the 302 redirect is written to the destination file via the callback.
+It's entirely possible that I am doing something wrong, but this looks like a bug. I can conceive of no way to reliably determine that the callback is being executed on a 302 redirect response, since the raw data from the chunk of the file is what is passed to the callback function, leaving nothing from the HTTPResponse object to be examined in order to determine whether or not to write the chunk to the destination file.

@@ -1,0 +1,39 @@
+jcushman commented on 24 May 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Real-world case:
+I have a cache middleware that checks whether authentication has been performed, by checking whether request.user has been populated. So I want to prevent DRF's BrowsableAPIRenderer from evaluating request.user unless it is actually used for authentication. The following steps should work:
+Set def perform_authentication(self, request): pass on an unauthenticated DRF view so authentication is not performed in advance.
+Override {% block userlinks %} in the template so request.user is not accessed.
+Simple failing test case:
+@api_view()
+def hello_world(request):
+    response = Response({'unused_variable': request.user}, template_name='foo.html'))
+    assert not hasattr(request, '_user')
+    return response
+Expected behavior
+Providing request.user to a template should not perform authentication unless it is used.
+Actual behavior
+Authentication is performed immediately on assigning request.user to another variable.
+This does not happen with Django templates, and happens here because DRF's request.user is implemented differently from Django's request.user. Django wraps its get_user() function in SimpleLazyObject, so simple assignment doesn't cause it to be evaluated.
+I think it would be good in general for DRF's request.user to work the same as Django's. The simplest way I can see to do that is something like this:
+    def _get_user(self):
+        if not hasattr(self, '_user'):
+            with wrap_attributeerrors():
+                self._authenticate()
+        return self._user
+
+    @property
+    def user(self):
+        """
+        Returns the user associated with the current request, as authenticated
+        by the authentication classes provided to the request.
+        """
+        return SimpleLazyObject(lambda: self._get_user())
+But that may have side effects I'm not thinking of. Does something like that seem like a good idea?

@@ -1,0 +1,30 @@
+dangusev commented on 29 Sep 2016
+Hello. I'm faced with case when I want to raise a custom ValidationError with specified status code (not a 400). But it turned out that I'm not able to because rest_framework catches all exceptions derived from ValidationError and re-raises them as plain ValidationError with status code 400. I think that would be great if re-raised exception would have the same type.
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+For instance, I want to validate the size of input file and raise custom error with status code 413:
+class EntityTooLargeError(serializers.ValidationError):
+    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    default_detail = 'Request entity too large.'
+
+
+class Serializer(serializers.Serializer):
+    input_file = serializers.FileField()
+
+    def validate_input_file(self, value):
+        if value.size > FILE_MAX_SIZE:
+            raise EntityTooLargeError('Input file is too big.')
+Expected behavior
+Want to receive a response with status code 413 which looks like this:
+{"input_file": "Input file is too big."}
+Actual behavior
+Right now I receive response of desirable look but with status code 400 and I'm not able to customize this behaviour without creating my own workaround outside of Serializer.is_valid().
+I think it's all because of this code (https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/serializers.py#L221-L222):
+    if self._errors and raise_exception:
+        raise ValidationError(self.errors)

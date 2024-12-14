@@ -1,0 +1,43 @@
+orzilca commented on Nov 19, 2017
+When using Retry(), if max retries is reached an error is thrown "max retries".
+Is it possible to see the real API error? the real HTTP response instead?
+Expected Result
+The real error/http response. (ResponseError in the example below)
+Actual Result
+max retries error, not logging correctly on Sentry.
+MaxRetryError(\"HTTPSConnectionPool(host='***', port=443): Max retries exceeded with url: *** (Caused by ResponseError('too many 401 error responses',))\",) is not JSON serializable
+Reproduction Steps
+import requests
+import urllib
+import logging
+import json
+from requests.packages.urllib3.util.retry import Retry
+
+session = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=0.5,
+            method_whitelist=frozenset(['HEAD', 'TRACE', 'GET', 'PUT', 'OPTIONS', 'DELETE', 'POST']),
+            status_forcelist=[401, 403, 404, 500, 502, 503, 504]
+        )
+        session.mount("http://", requests.adapters.HTTPAdapter(max_retries=retries))
+        session.mount("https://", requests.adapters.HTTPAdapter(max_retries=retries))
+
+        if method == 'GET':
+            if params:
+                endpoint = '%s?%s' % (endpoint, urllib.urlencode(params))
+            response = session.get(endpoint, headers=headers)
+        elif method == 'POST':
+            response = session.post(endpoint, data=params, headers=headers)
+        elif method == 'POST/JSON':
+            response = session.post(endpoint, json=params, headers=headers)
+        elif method == 'PUT/JSON':
+            response = session.put(endpoint, json=params, headers=headers)
+        else:
+            raise Exception("Invalid method.")
+System Information
+$ python -m requests.help
+Python 2.7.5 (default, Nov  6 2016, 00:28:07) 
+[GCC 4.8.5 20150623 (Red Hat 4.8.5-11)] on linux2
+Requests version 2.13
+urllib3 version 1.20

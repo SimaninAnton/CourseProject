@@ -1,0 +1,74 @@
+markslwong commented on 16 Nov 2014
+Lets say I have some data where the maximum recusion is 2:
+{
+    "choices": [
+        {
+            "tree": {
+                "children": [
+                    {
+                        "children": [
+                            {
+                                "children": null, 
+                                "id": 6
+                            }, 
+                            {
+                                "children": null, 
+                                "id": 7
+                            }
+                        ], 
+                        "id": 2
+                    }, 
+                    {
+                        "children": [
+                            {
+                                "children": null, 
+                                "id": 8
+                            }
+                        ], 
+                        "id": 3
+                    }, 
+                    {
+                        "children": null, 
+                        "id": 4
+                    }, 
+                    {
+                        "children": null, 
+                        "id": 5
+                    }
+                ], 
+                "id": 1
+            }, 
+            "id": 1
+        }
+    ], 
+    "id": 1
+}
+Despite the fact recursion depth is only two, serializing this data with this serializer:
+class ChoiceSerializer(serializers.ModelSerializer):
+    tree = serializers.SerializerMethodField('get_tree')
+
+    class Meta:
+        model = Choice
+        depth = 99
+
+    def get_tree(self, obj):
+        if obj.tree is None:
+            return None
+        serializer = TreeNodeSerializer(obj.tree)
+        return serializer.data
+
+class TreeNodeSerializer(serializers.ModelSerializer):
+    children = serializers.SerializerMethodField('get_children')
+
+    class Meta:
+        model = TreeNode
+        depth = 99
+
+    def get_children(self, obj):
+        children = obj.children.all()
+        if children.count() == 0:
+            return None
+        serializer = TreeNodeSerializer(children, many=True)
+        return serializer.data
+Will cause Django to have extremely long serialization times: 146 seconds on an Amazon Web Services Micro instance. Modifying the maximum depth on the TreeNodeSerializer to the expected data depth (in this case 2) will cause the serializer to run almost instantly.
+If the serialized data output is the same, I would not expect that changing this number 'depth', would drastically affect the execution time of the serializer. (146 seconds is a long time)

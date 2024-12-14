@@ -1,0 +1,122 @@
+Tryptich commented on 4 Nov 2018 •
+edited by ThiefMaster
+Hi, I have two classes with one-to-many relation type between them. when I want to retrieve one element on the parent objet, I get the error:
+relationship 'recipes' expects a class or a mapper argument (received: <class 'sqlalchemy.sql.schema.Table'>)
+this is my classes ;
+parent :
+class UserJsonSerializer(JsonSerializer):
+    __json_public__ = ['id', 'email']
+
+
+class User(UserJsonSerializer, db.Model):
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    public_id = db.Column(db.String(36),  primary_key=True,
+                          default=str(uuid.uuid4()))
+    username = db.Column(db.String(255))
+    email = db.Column(db.String(255), unique=True)
+    password_hash = db.Column(db.String(128))
+    _avatar_url = db.Column(db.String(260), nullable=True)
+    reputation = db.Column(db.Integer, default=0)
+    email_confirmation_sent_on = db.Column(
+        db.DateTime,  default=datetime.datetime.utcnow)
+    email_confirmed = db.Column(db.Boolean, nullable=True, default=False)
+    email_confirmed_on = db.Column(
+        db.DateTime, default=datetime.datetime.utcnow)
+    registered_on = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    last_login_at = db.Column(db.DateTime())
+    current_login_at = db.Column(db.DateTime())
+    last_login_ip = db.Column(db.String(100))
+    current_login_ip = db.Column(db.String(100))
+    login_count = db.Column(db.Integer)
+    roles = db.relationship('Role', secondary=roles_users,
+                            backref=db.backref('users', lazy='dynamic'))
+    recipes = db.relationship('Recipe', backref='user', lazy='dynamic')
+
+    @property
+    def password(self):
+        raise AttributeError('password: write-only field')
+
+    @password.setter
+    def password(self, password):
+        self.password_hash = bcrypt.generate_password_hash(
+            password).decode('utf-8')
+
+    def check_password(self, password):
+        return bcrypt.check_password_hash(self.password_hash, password)
+
+    @property
+    def avatar_url(self):
+        if not self._avatar_url:
+            return None
+        if self._avatar_url.startswith('http'):
+            return self._avatar_url
+        base = current_app.config['ZERQU_AVATAR_BASE']
+        return '%s%s' % (base, self._avatar_url)
+child : 
+class Recipe(db.Model):
+    """Recipe fields to add:
+        date last modified
+    """
+    __tablename__ = "Recipes"
+
+    id = db.Column(db.Integer, autoincrement=True, primary_key=True)
+    public_id = db.Column(db.String(100), unique=True,
+                          default=str(uuid.uuid4()))
+    recipe_title = db.Column(db.String, nullable=True)
+    recipe_description = db.Column(db.String, nullable=True)
+    is_public = db.Column(db.Boolean, nullable=True)
+    image_filename = db.Column(db.String, default=None, nullable=True)
+    image_url = db.Column(db.String, default=None, nullable=True)
+    recipe_type = db.Column(db.String, default=None,
+                            nullable=True)  # TODO:recipe type update
+    rating = db.Column(db.Integer, default=None, nullable=True)
+    ingredients = db.Column(db.Text, default=None, nullable=True)
+    ingredients_html = db.Column(db.Text, default=None, nullable=True)
+    recipe_steps = db.Column(db.Text, default=None, nullable=True)
+    recipe_steps_html = db.Column(db.Text, default=None, nullable=True)
+    inspiration = db.Column(db.String, default=None, nullable=True)
+    dairy_free_recipe = db.Column(db.Boolean, nullable=True)
+    soy_free_recipe = db.Column(db.Boolean, nullable=True)
+    cholesterol_free_recipe = db.Column(db.Boolean, nullable=True)
+    created_on = db.Column(db.DateTime, nullable=False,
+                           default=datetime.datetime.utcnow)
+    updated_on = db.Column(db.DateTime, onupdate=datetime.datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    category_id = db.Column(
+        db.Integer, db.ForeignKey('categories.id'))
+
+and this is the query: 
+@staticmethod
+    def login_user(data):
+        try:
+            # fetch the user data
+            user = User.query.filter_by(email=data.get('email')).first() <-- this is the query
+            if user and user.check_password(data.get('password')):
+                auth_token = user.encode_auth_token(user.id)
+                if auth_token:
+                    response_object = {
+                        'status': 'success',
+                        'message': 'Successfully logged in.',
+                        'Authorization': auth_token.decode()
+                    }
+                    return response_object, 200
+            else:
+                response_object = {
+                    'status': 'fail',
+                    'message': 'email or password does not match.'
+                }
+                return response_object, 401
+
+        except Exception as e:
+            print(e)
+            response_object = {
+                'status': 'fail',
+                'message': 'Try again'
+            }
+            return response_object, 500
+Environment
+Python version: 3.7.0
+Flask version: 0.12.2
+Werkzeug version:

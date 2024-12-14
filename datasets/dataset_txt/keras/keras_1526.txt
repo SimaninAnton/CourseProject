@@ -1,0 +1,70 @@
+virilo commented on 4 Nov 2017
+Hi,
+I am fine tuning mobilenet 192x192.
+I can do the training on a K80 using batch size 384
+The classification script loads the checkpoint .hdf5 and calls predict_generator using ImageDataGenerator / DirectoryIterator. It has to classify more than 2M images.
+val_datagen = ImageDataGenerator(rescale=1./255)
+
+validation_generator = val_datagen.flow_from_directory(
+        val_data_dir,
+        target_size=(192,192),
+        batch_size=384,
+        shuffle = False,
+        class_mode = 'categorical')
+
+def classify_images(model, generator, ...):
+    
+    preds=model.predict_generator(generator=generator, steps=np.ceil(generator.samples/ 384))
+After two hours the call to predict_generator aborts.
+Found 2457162 images belonging to 4001 classes.
+Classifying validation set ...
+^P2017-11-03 19:27:29.674156: E tensorflow/stream_executor/cuda/cuda_dr
+iver.cc:955] failed to alloc 34358689792 bytes on host: CUDA_ERROR_OUT_
+OF_MEMORY
+2017-11-03 19:27:29.676148: W ./tensorflow/core/common_runtime/gpu/pool
+_allocator.h:195] could not allocate pinned host memory of size: 343586
+89792
+2017-11-03 19:27:29.676235: E tensorflow/stream_executor/cuda/cuda_driv
+er.cc:955] failed to alloc 30922819584 bytes on host: CUDA_ERROR_OUT_OF
+_MEMORY
+2017-11-03 19:27:29.676248: W ./tensorflow/core/common_runtime/gpu/pool
+_allocator.h:195] could not allocate pinned host memory of size: 309228
+19584
+2017-11-03 19:27:29.676308: E tensorflow/stream_executor/cuda/cuda_driv
+er.cc:955] failed to alloc 27830536192 bytes on host: CUDA_ERROR_OUT_OF
+_MEMORY
+2017-11-03 19:27:29.676317: W ./tensorflow/core/common_runtime/gpu/pool
+_allocator.h:195] could not allocate pinned host memory of size: 278305
+36192
+2017-11-03 19:27:29.676349: E tensorflow/stream_executor/cuda/cuda_driv
+er.cc:955] failed to alloc 25047482368 bytes on host: CUDA_ERROR_OUT_OF
+_MEMORY
+2017-11-03 19:27:29.676363: W ./tensorflow/core/common_runtime/gpu/pool
+_allocator.h:195] could not allocate pinned host memory of size: 250474
+82368
+2017-11-03 19:27:29.676393: E tensorflow/stream_executor/cuda/cuda_driv
+er.cc:955] failed to alloc 22542733312 bytes on host: CUDA_ERROR_OUT_OF
+_MEMORY
+2017-11-03 19:27:29.676400: W ./tensorflow/core/common_runtime/gpu/pool
+_allocator.h:195] could not allocate pinned host memory of size: 225427
+33312
+Traceback (most recent call last):
+  File "mobilenet-exhausted-error.py", line 377, in <module>
+    classify_images(validation_generator, OUTPUT_VALIDATION_DETAIL_PRED
+S, OUTPUT_VALIDATION_ITEM_PREDS, product_category_df)
+  File "mobilenet-exhausted-error.py", line 352, in classify_images
+    preds=model.predict_generator(generator=generator, steps=np.ceil(ge
+nerator.samples/ d['BATCH_SIZE']))
+  File "/usr/lib/python3.4/dist-packages/Keras-2.0.8-py3.4.egg/keras/le
+gacy/interfaces.py", line 87, in wrapper
+  File "/usr/lib/python3.4/dist-packages/Keras-2.0.8-py3.4.egg/keras/en
+gine/training.py", line 2312, in predict_generator
+MemoryError
+[ec2-user@ip-172-31-35-12 mobilenet]$ python3 mobilenet-exhausted-error
+.py
+I am using Keras 2.0.8 with TensorFlow 1.3 backend.
+I think I can solve this problem by splitting the execution of fit_generator in some blocks of data, and instead of classifying a single block of 2M images, do it in 10 executions of 200K images.
+I understand that an amount of memory proportional to the number of neurons in all the layers is needed, to save intermediate results for the forward backward passes during training. In addition to hyperparameters and other variables.
+In this case, to classify, once you have classified the images of a batch, shouldn't it save the output and release that memory for the next batch? If the classify works for one batch, shouldn't it work for the next batches independently of the number of batches?
+Can it be a memory leak? Is there anything I have not understood?
+Thanks in advance

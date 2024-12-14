@@ -1,0 +1,58 @@
+VasiliyRusin commented on 11 Jul 2019
+First of all, I'm not sure that it is really a bug. Sorry for inconveniences if it isn't.
+Steps to reproduce
+You need to have two Models linked by FK.
+Filter by any FK field value.
+Serialize this QS
+Expected behavior
+Get JSON only with filtred FK.
+Actual behavior
+You'll get QS with all FK fields.
+Example
+models.py
+class ModelChild(models.Model):
+    string = models.TextField()
+    item = models.ForeignKey('ModelParent', related_name='child', on_delete=models.CASCADE)
+
+class ModelParent(models.Model):
+    pass
+views.py
+class ModelParentListView(generics.ListAPIView):
+    serializer_class = ModelParentSerializer
+    queryset = ModelParent.objects.all().prefetch_related('child').distinct()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        print(queryset.values('id', 'child__string')) # <-- filtred FK 
+
+        serializer = self.get_serializer(queryset, many=True)
+        
+        print(serializer.data) # <-- all FK
+        return Response(serializer.data)
+
+    def get_queryset(self, *args, **kwargs):
+        string = self.request.query_params.get('string', None)
+
+        if string is not None:
+            self.queryset = self.queryset.filter(child__string__icontains=string)
+
+        return self.queryset
+serializers.py
+class ModelChildSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModelChild
+        fields = '__all__'
+
+class ModelParentSerializer(serializers.ModelSerializer):
+    id = serializers.ReadOnlyField()
+    children = ModelChildSerializer(source='child', many=True, read_only=False)
+
+    class Meta:
+        model = ModelParent
+        fields = '__all__'

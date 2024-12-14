@@ -1,0 +1,28 @@
+gnsiva commented on Jul 8, 2017 •
+edited
+In [7]: brier_score_loss(np.array([1, 1, 1]), np.array([1, 1, 1]))
+Out[7]: 1.0
+
+In [8]: brier_score_loss(np.array([0, 0, 0]), np.array([0, 0, 0]))
+Out[8]: 0.0
+
+In [9]: brier_score_loss(np.array([True, True, True]), np.array([1, 1, 1]))
+Out[9]: 1.0
+
+In [10]: brier_score_loss(np.array(["foo", "foo", "foo"]), np.array([1, 1, 1]), pos_label="foo")
+Out[10]: 1.0
+In all of these cases the output should be 0, as the y_pred correctly predicts y_true.
+The function calls are brier_score_loss -> _check_binary_probabilistic_predictions -> label_binarize, with the issue starting in label_binarize.
+brier_score_loss has a pos_label parameter, but setting this to 1, does not fix the issue. It then overwrites y_true with True and False based on the pos_label parameter. It then calls _check_binary_probabilistic_predictions to check the y_true and y_pred values, and returns the output of label_binarize(y_true, labels), where labels are the unique values in y_label. Manually setting this to [0, 1] for the case where y_true is all 1s does not fix the issue.
+In label_binarize, if there is only one class, the array is returned as 0 + the negative label
+    if y_type == "binary":
+        if n_classes == 1:
+            if sparse_output:
+                return sp.csr_matrix((n_samples, 1), dtype=int)
+            else:
+                Y = np.zeros((len(y), 1), dtype=np.int)
+                Y += neg_label
+                return Y
+The resulting comparison in brier_score_loss - np.average((y_true - y_prob) ** 2, weights=sample_weight) then has y_true values of all 0s instead of 1s, hence the incorrect score.
+Operating system: Ubuntu 17.04 64 bit, problem present in master, 18.1 and 18.2.
+👍 1

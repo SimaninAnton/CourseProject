@@ -1,0 +1,121 @@
+Contributor
+AraiKensuke commented on Apr 28, 2019 •
+edited
+I'm re-posting the issue
+#12273
+as its owner no longer works on scikit-learn.
+Here is a code snippet, fitting 2-cluster Gaussian data (blue) in 1-d with well-separated means. Fitting with mean_concentration_prior set to 0.001 (orange), BayesianGaussianMixture finds the 2 clusters nicely. However, with mean_concentration_prior set to 35, we can clearly see the 2 clusters biased towards mean_prior, which is by default the sample mean of the data.
+The documentation states
+| mean_precision_prior : float | None, optional.
+| The precision prior on the mean distribution (Gaussian).
+| Controls the extend to where means can be placed. Smaller (LARGER??)
+| values concentrate the means of each clusters around mean_prior.
+| The value of the parameter must be greater than 0.
+| If it is None, it's set to 1.
+while running the code, it seems larger values of mean_precision_prior concentrate the prior around mean_prior.
+import numpy as _N
+from sklearn.mixture import BayesianGaussianMixture
+import matplotlib.pyplot as _plt
+
+#  generate data  - 2-component Gaussian mixture
+N1 = 220
+N2 = 380
+
+X              = _N.empty((N1+N2, 1))
+X[0:N1, 0]     = 0.1*_N.random.randn(N1)
+X[N1:N1+N2, 0] = 5 + 0.1*_N.random.randn(N2)   #  2nd cluster well separted from 1st.
+
+
+#  max # of components for finite approx of Dirichlet process
+n_components = 4
+                                     
+#  example - setting dof_prior and cov. prior to reasonable value
+#  still produces very wide
+
+#  [dof_prior, cov_prior, mean_prec_prior]
+prm_sets = [[0.1, 0.1, 0.001],
+            [0.1, 0.1, 35.]]
+
+#  Documentation for mean_prec_prior says small value concentrates around
+#  mean prior.  In this case, I expect the 1st param set to not be able
+#  to fit the 2 clusters which are well separated.
+#  However running code shows the opposite.
+#  Therefore, I believe the documentation should say
+#  LARGER values concentrate the means of each clusters around `mean_prior`
+
+# |  mean_precision_prior : float | None, optional.
+# |      The precision prior on the mean distribution (Gaussian).
+# |      Controls the extend to where means can be placed. Smaller (LARGER??)
+# |      values concentrate the means of each clusters around `mean_prior`.
+# |      The value of the parameter must be greater than 0.
+# |      If it is None, it's set to 1.
+
+
+fig = _plt.figure(figsize=(7, 4))
+i_subpl = 0
+
+random_state = 10
+BNS=140
+
+#  bins for histogram
+xbns   = _N.linspace(-1, 6, BNS+1)
+xms    = 0.5*(xbns[0:-1] + xbns[1:])
+dx     = _N.diff(xbns)[0]
+
+for prm in prm_sets:
+    i_subpl += 1
+
+    occ_cnts, bnsx = _N.histogram(X[:, 0], bins=xbns)
+    
+    bgm = BayesianGaussianMixture(\
+        n_components=n_components,\
+        ################  priors
+        weight_concentration_prior_type="dirichlet_process",\
+        weight_concentration_prior=0.9,\
+        degrees_of_freedom_prior=prm[0],\
+        covariance_prior=_N.array([prm[1]]),\
+        mean_precision_prior=prm[2],\
+        ################  priors                              
+        reg_covar=0, init_params='random',\
+        max_iter=1500,\
+        random_state=random_state, covariance_type="diag")
+
+    bgm.fit(X)
+
+    pcs  = bgm.means_.shape[0]
+
+    mns_r  = bgm.means_.T.reshape((1, pcs))
+    isd2s_r= bgm.precisions_.T.reshape((1, pcs))
+    sd2s_r = bgm.covariances_.T.reshape((1, pcs))
+    xms_r  = xms.reshape((BNS, 1))
+
+    A      = (bgm.weights_ / _N.sqrt(2*_N.pi*sd2s_r)) * dx
+    occ_x = _N.sum(A*_N.exp(-0.5*(xms_r - mns_r)*(xms_r - mns_r)*isd2s_r), axis=1)
+    fig.add_subplot(1, 2, i_subpl)
+    _plt.ylim(0, 0.15)
+    _plt.plot(xms, occ_cnts/(X.shape[0]))
+    _plt.plot(xms, occ_x)
+    _plt.title("[%(dof).1f,  %(cov).1f,  %(prc).3f]" % {"dof" : prm[0], "cov" : prm[1], "prc" : prm[2]})
+
+_plt.suptitle("[dof prior,   cov prior,   mn prec prior]")
+_plt.savefig("prior_effect.png")
+>>> import sklearn; sklearn.show_versions()
+
+System:
+    python: 3.7.1 (default, Dec 14 2018, 13:28:58)  [Clang 4.0.1 (tags/RELEASE_401/final)]
+executable: /Users/arai/miniconda2/envs/py37/bin/python
+   machine: Darwin-14.5.0-x86_64-i386-64bit
+
+BLAS:
+    macros: SCIPY_MKL_H=None, HAVE_CBLAS=None
+  lib_dirs: /Users/arai/miniconda2/envs/py37/lib
+cblas_libs: mkl_rt, pthread
+
+Python deps:
+       pip: 18.1
+setuptools: 40.6.3
+   sklearn: 0.20.3
+     numpy: 1.15.4
+     scipy: 1.1.0
+    Cython: 0.29.2
+    pandas: 0.24.1

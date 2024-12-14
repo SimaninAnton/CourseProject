@@ -1,0 +1,49 @@
+ok2 commented on 5 Sep 2019
+I have such a code, which read's everything from stdin and send it to the given URL through websockets. All data which it gets from websockets will be send to stdout. It works well the most of the time, but sometimes it eats all of the memory and OOM killer comes, why?
+(it is on python 2 with tornado 5.1.1)
+conn = None
+input_counter = 0
+
+def on_message(message):
+    if message is None or message == '':
+        ioloop.stop()
+        return
+    sys.stdout.write(message)
+    sys.stdout.flush()
+
+@tornado.gen.coroutine
+def on_input(fd, events):
+    global input_counter
+    if not events & ioloop.READ:
+        sys.stderr.write("ERROR: failed to read file (error 0x%03x)\n" % events)
+        sys.exit(1)
+    if input_counter >= 16:
+        time.sleep(0.1)
+        gc.collect()
+        return
+    input_counter += 1
+    data = None
+    try:
+        try: data = sys.stdin.read()
+        except: data = ''
+        if conn is None or conn.protocol is None:
+            sys.exit(1)
+        yield conn.write_message(data, binary = True)
+    except Exception as err:
+        if data != '':
+            sys.stderr.write("ERROR: %s\n" % repr(err))
+            sys.exit(1)
+    finally: input_counter -= 1
+
+def on_start(*args):
+    fd = sys.stdin.fileno()
+    fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+    ioloop.add_handler(fd, on_input, ioloop.READ)
+
+url = urlparse(sys.argv[2])
+ioloop = tornado.ioloop.IOLoop.instance()
+request = tornado.httpclient._RequestProxy(tornado.httpclient.HTTPRequest(url, validate_cert = False),
+                                           tornado.httpclient.HTTPRequest._DEFAULTS)
+conn = tornado.websocket.WebSocketClientConnection(request, on_message_callback = on_message, max_message_size = 10*1024*1024)
+ioloop.add_future(conn.connect_future, on_start)
+ioloop.start()

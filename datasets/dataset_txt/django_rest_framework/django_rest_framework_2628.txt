@@ -1,0 +1,62 @@
+Contributor
+paulmelnikow commented on 10 Jan 2014
+While writing my own parser subclass to override handling of application/x-www-form-urlencoded, I discovered a startling bug: FormParser and MultiPartParser are never invoked, nor is it possible to use my own parser when the media type is application/x-www-form-urlencoded or multipart/form-data.
+I tracked down the code responsible for this, which is in Request._perform_form_overloading:
+# At this point we're committed to parsing the request as form data.
+self._data = self._request.POST
+self._files = self._request.FILES
+Then _load_data_and_files sees _data is there, and doesn't call _parse.
+Here are some test cases which illustrate the issue. The first two fail, and the third passes.
+from rest_framework import parsers
+
+class TestFormParser(TestCase):
+
+    def setUp(self):
+        class TestView(APIView):
+            class TestParser(parsers.FormParser):
+                def parse(self, stream, media_type=None, parser_context=None):
+                    return {'replacing_all_the_content': 'yes'}
+            parser_classes = (TestParser,)
+            def post(self, request, *args, **kwargs):
+                return Response(request.DATA)
+        self.view = TestView.as_view()
+
+    def test_form_parser_called(self):
+        request = factory.post('/', 'foo=bar', content_type='application/x-www-form-urlencoded')
+        response = self.view(request)
+        self.assertEquals(response.data, {'replacing_all_the_content': 'yes'})
+
+class TestMultipartParser(TestCase):
+
+    def setUp(self):
+        class TestView(APIView):
+            class TestParser(parsers.MultiPartParser):
+                def parse(self, stream, media_type=None, parser_context=None):
+                    return {'replacing_all_the_content': 'yes'}
+            parser_classes = (TestParser,)
+            def post(self, request, *args, **kwargs):
+                return Response(request.DATA)
+        self.view = TestView.as_view()
+
+    def test_form_parser_called(self):
+        request = factory.post('/', {'foo': 'bar'})
+        response = self.view(request)
+        self.assertEquals(response.data, {'replacing_all_the_content': 'yes'})
+
+class TestJsonParsers(TestCase):
+
+    def setUp(self):
+        class TestView(APIView):
+            class TestParser(parsers.JSONParser):
+                def parse(self, stream, media_type=None, parser_context=None):
+                    return {'replacing_all_the_content': 'yes'}
+            parser_classes = (TestParser,)
+            def post(self, request, *args, **kwargs):
+                return Response(request.DATA)
+        self.view = TestView.as_view()
+
+    def test_form_parser_called(self):
+        request = factory.post('/', {'foo':'bar'}, format='json')
+        response = self.view(request)
+        self.assertEquals(response.data, {'replacing_all_the_content': 'yes'})
+I tried for a while but couldn't come up with a working fix.

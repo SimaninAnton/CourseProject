@@ -1,0 +1,87 @@
+Soulthym commented on 22 Feb 2019 •
+edited
+I am experimenting with a very simple word2vec-like model, with data that doesn't in RAM, so I am using fit_generator. I haven't had any problem with it while using a single input, however while using multiple inputs (namely 2), and a batch_size > 1, I get the following Traceback:
+Traceback (most recent call last):
+  File "tf-clustering.py", line 74, in <module>
+    steps_per_epoch=nb_steps)
+  File "/usr/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py", line 2177, in fit_generator
+    initial_epoch=initial_epoch)
+  File "/usr/lib/python3.7/site-packages/tensorflow/python/keras/engine/training_generator.py", line 176, in fit_generator
+    x, y, sample_weight=sample_weight, class_weight=class_weight)
+  File "/usr/lib/python3.7/site-packages/tensorflow/python/keras/engine/training.py", line 1940, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/usr/lib/python3.7/site-packages/tensorflow/python/keras/backend.py", line 2986, in __call__
+    run_metadata=self.run_metadata)
+  File "/usr/lib/python3.7/site-packages/tensorflow/python/client/session.py", line 1439, in __call__
+    run_metadata_ptr)
+  File "/usr/lib/python3.7/site-packages/tensorflow/python/framework/errors_impl.py", line 528, in __exit__
+    c_api.TF_GetCode(self.status.status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Incompatible shapes: [10,3] vs. [5,3]
+         [[{{node loss/concatenate_loss/sub}} = Sub[T=DT_FLOAT, _class=["loc:@training/RMSprop/gradients/loss/concatenate_loss/sub_grad/Reshape"], _device="/job:localhost/replica:0/task:0/device:CPU:0"](concatenate/concat, _arg_concatenate_target_0_2)]]
+The code is pretty simple and I don't think I've used the keras API wrongly, here is my code:
+import json
+import tensorflow as tf
+import numpy as np
+from pprint import pprint
+from tensorflow.keras.layers import Input, Dense, Concatenate
+from tensorflow.keras.models import Model
+import tensorflow.keras.backend as K
+BATCH_SIZE = 5
+OUTPUT_SIZE = 3
+
+def euclidean_distance_loss(y_true, y_pred):
+    return K.sqrt(K.sum(K.square(y_pred[0] - y_pred[1]), axis=-1))
+    
+print(">>> Loading Data")
+with open('data/dataset.json', 'r') as jf:
+     dataset = json.load(jf)
+     
+vocab=dataset["vocab"]
+inv_vocab = {v: k for k, v in vocab.items()}
+vocab_size=len(vocab) 
+data=dataset["dataset"]
+print(">>> Estimating the amount of steps in Training")
+nb_steps=0
+for d in data:
+    for s in d["d_data"]:
+        nb_steps+= len(s)
+print("nb_steps: ",nb_steps)
+def iterdata():
+    while True:
+        for d in data:
+            for s in d["d_data"]:
+                for w in s:
+                    val1=tf.keras.utils.to_categorical(d["d_id"], num_classes=vocab_size)
+                    val2=tf.keras.utils.to_categorical(w, num_classes=vocab_size)
+                    yield [val1, val2], np.zeros(OUTPUT_SIZE)
+    
+def generate_batch():
+    batch_val1 = np.zeros((BATCH_SIZE, vocab_size))
+    batch_val2 = np.zeros((BATCH_SIZE, vocab_size))
+    batch_out = np.zeros((BATCH_SIZE, OUTPUT_SIZE))
+    while True: 
+        for ([v1, v2], o), batch in [(val, batch) for batch, val in zip(range(BATCH_SIZE),iterdata())]:
+            batch_val1[batch]=v1 
+            batch_val2[batch]=v2 
+            batch_out[batch]=o
+        print(batch_val1.shape)
+        yield [batch_val1, batch_val2], batch_out
+    
+word_a = Input(shape=(vocab_size,))
+word_b = Input(shape=(vocab_size,))
+
+shared_encode = Dense(OUTPUT_SIZE, activation=None)
+
+encoded_a = shared_encode(word_a)
+encoded_b = shared_encode(word_b)
+
+merged = Concatenate(axis=0)([encoded_a,encoded_b])
+
+model = Model(inputs=[word_a,word_b], outputs=merged)
+model.compile(
+        loss=euclidean_distance_loss,
+        optimizer='rmsprop',
+        metrics=['accuracy'])
+model.fit_generator(generate_batch(),
+        epochs=10,
+        steps_per_epoch=nb_steps)

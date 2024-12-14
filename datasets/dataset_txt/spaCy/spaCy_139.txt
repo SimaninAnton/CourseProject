@@ -1,0 +1,14 @@
+mabraham commented on 19 Nov 2019
+When loading the same model in spaCy many times, it allocates a small amount of new memory when a model is loaded. That memory cannot be cleaned up with python gc. This behaviour does not suit use in a long-lived server where the model is a parameter derived from the user, because eventually the server process will run out of memory. The repro script below continues to allocate new memory even with the iteration count increased to at least 200. Apparently the core data persists in CPython memory space and can be re-used, but each new model loaded also allocates additional memory, and this is problematic.
+Possible solutions
+run spaCy in its own process/container and accept the overhead of process creation, model load, and communication
+change Language.load() to allocate data that is unique to the load() of that model in Python space, so that Python scoping means that gc will eventually clean it up after the reference goes out of scope
+change Language.load() to not allocate data that is unique to the load() of that model, so that repeated load() of the same model does not lead to growth in memory allocated
+add new method Language.unload() deallocates all memory in CPython for that model
+Output of script below:
+How to reproduce the behaviour
+Script
+Your Environment
+spaCy version: 2.2.2
+Platform: Darwin-19.0.0-x86_64-i386-64bit
+Python version: 3.7.5

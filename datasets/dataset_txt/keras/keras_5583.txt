@@ -1,0 +1,40 @@
+jmargeta commented on 5 Apr 2016
+Hi, this is to report that the serialization/deserialization of functional Models from the keras-1 branch (#2152) might be broken.
+I am on the latest commit of the branch (d8b0fe0) and can seemingly successfully persist the trained models weights and their topology on disk:
+import keras
+from keras.layers import Input, Dense
+from keras.models import Model, model_from_json
+
+input = Input(shape=(32,))
+output = Dense(1)(input)
+model = Model(input=input, output=output)
+model.compile(optimizer='adam', loss='mse')
+
+# save the model and weights
+with open('model.json', 'w') as fp:
+    fp.write(model.to_json())
+model.save_weights('model.h5', overwrite=True)
+
+# restore the saved model
+with open('model.json', 'r') as fp:
+    model_loaded = model_from_json(fp.read())
+model_loaded.load_weights('model.h5')
+However, when compiling the loaded model (to get the "predict_function" assigned) I get an AssertError.
+model_loaded.compile(optimizer='adam', loss='mse')
+Traceback (most recent call last):
+File "/dev/tmp/kerasv1.py", line 19, in
+model_loaded.compile(optimizer='adam', loss='mse')
+File "/dev/libs/keras/keras/engine/training.py", line 482, in compile
+masks = self.compute_mask(self.inputs, mask=None)
+File "/dev/libs/keras/keras/engine/topology.py", line 1875, in compute_mask
+output_tensors, output_masks, output_shapes = self.run_internal_graph(inputs, masks)
+File "/dev/libs/keras/keras/engine/topology.py", line 2016, in run_internal_graph
+shapes = to_list(layer.get_output_shape_for(computed_tensors[0]._keras_shape))
+File "/dev/libs/keras/keras/layers/core.py", line 612, in get_output_shape_for
+assert input_shape and len(input_shape) == 2
+AssertionError
+Process finished with exit code 1
+Is there a "correct" way to reload the serialized models and get the prediction working as well?
+A more complete example where such serialization and compilation works with both Sequential and legacy Graph model but not with the functional Model can be found here:
+test_keras_new_api.txt
+Apart from this, the new functional API is such a pleasure to work with. Thank you for the work!

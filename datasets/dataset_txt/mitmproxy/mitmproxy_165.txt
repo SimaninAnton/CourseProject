@@ -1,0 +1,103 @@
+Contributor
+yan12125 commented on 24 Jan 2019
+Steps to reproduce the problem:
+Install wsproto 0.13
+Remove wsproto version upper bound in setup.py
+Try to run mitmproxy
+$ python3.6 -c 'from mitmproxy.tools.main import mitmproxy; mitmproxy()'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/tools/main.py", line 22, in <module>
+    from ._main import *  # noqa
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/tools/_main.py", line 13, in <module>
+    from mitmproxy.tools import cmdline  # noqa
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/tools/cmdline.py", line 3, in <module>
+    from mitmproxy.addons import core
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/addons/__init__.py", line 11, in <module>
+    from mitmproxy.addons import onboarding
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/addons/onboarding.py", line 2, in <module>
+    from mitmproxy.addons.onboardingapp import app
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/addons/onboardingapp/app.py", line 8, in <module>
+    from mitmproxy.proxy import config
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/__init__.py", line 2, in <module>
+    from .root_context import RootContext
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/root_context.py", line 4, in <module>
+    from mitmproxy.proxy import protocol
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/__init__.py", line 33, in <module>
+    from .http import UpstreamConnectLayer
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http.py", line 10, in <module>
+    from mitmproxy.proxy.protocol.websocket import WebSocketLayer
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/websocket.py", line 8, in <module>
+    from wsproto.connection import ConnectionType, WSConnection
+ImportError: cannot import name 'WSConnection'
+Any other comments? What have you tried so far?
+I tried to patch mitmproxy following a commit message in wsproto python-hyper/wsproto@994d1fa. Here I use wsproto.connection.Connection instead of wsproto.WSConnection as the former allows specifying extensions. With the following patch,
+diff --git a/mitmproxy/proxy/protocol/websocket.py b/mitmproxy/proxy/protocol/websocket.py
+index 0d1964a6..2a49e050 100644
+--- a/mitmproxy/proxy/protocol/websocket.py
++++ b/mitmproxy/proxy/protocol/websocket.py
+@@ -5,7 +5,7 @@ from OpenSSL import SSL
+ 
+ import wsproto
+ from wsproto import events
+-from wsproto.connection import ConnectionType, WSConnection
++from wsproto.connection import ConnectionType, Connection as WSConnection
+ from wsproto.extensions import PerMessageDeflate
+ 
+ from mitmproxy import exceptions
+@@ -67,13 +67,13 @@ class WebSocketLayer(base.Layer):
+                 conn.extensions[0].finalize(conn, handshake_flow.response.headers['Sec-WebSocket-Extensions'])
+ 
+         data = self.connections[self.server_conn].bytes_to_send()
+-        self.connections[self.client_conn].receive_bytes(data)
++        self.connections[self.client_conn].receive_data(data)
+ 
+         event = next(self.connections[self.client_conn].events())
+         assert isinstance(event, events.ConnectionRequested)
+ 
+         self.connections[self.client_conn].accept(event)
+-        self.connections[self.server_conn].receive_bytes(self.connections[self.client_conn].bytes_to_send())
++        self.connections[self.server_conn].receive_data(self.connections[self.client_conn].bytes_to_send())
+         assert isinstance(next(self.connections[self.server_conn].events()), events.ConnectionEstablished)
+ 
+     def _handle_event(self, event, source_conn, other_conn, is_server):
+@@ -197,7 +197,7 @@ class WebSocketLayer(base.Layer):
+                     is_server = (source_conn == self.server_conn)
+ 
+                     frame = websockets.Frame.from_file(source_conn.rfile)
+-                    self.connections[source_conn].receive_bytes(bytes(frame))
++                    self.connections[source_conn].receive_data(bytes(frame))
+                     source_conn.send(self.connections[source_conn].bytes_to_send())
+ 
+                     if close_received:
+Websocket tests in mitmproxy fail with:
+Traceback (most recent call last):
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/server.py", line 121, in handle
+    root_layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/modes/http_proxy.py", line 9, in __call__
+    layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/tls.py", line 286, in __call__
+    layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http1.py", line 83, in __call__
+    layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http.py", line 188, in __call__
+    if not self._process_flow(flow):
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http.py", line 260, in _process_flow
+    return self.handle_regular_connect(f)
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http.py", line 206, in handle_regular_connect
+    layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/tls.py", line 286, in __call__
+    layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http1.py", line 83, in __call__
+    layer()
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http.py", line 188, in __call__
+    if not self._process_flow(flow):
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/http.py", line 444, in _process_flow
+    layer = WebSocketLayer(self, f)
+  File "/Users/yen/var/syncthing/Projects/mitmproxy/mitmproxy/proxy/protocol/websocket.py", line 64, in __init__
+    extensions=extensions)
+TypeError: __init__() got an unexpected keyword argument 'host'
+System information
+Version: 139a385
+OS: macOS Mojave 10.14.2
+Python: 3.6.8

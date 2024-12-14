@@ -1,0 +1,59 @@
+saosir commented on 5 May 2017 •
+edited
+run the code:
+from tornado import ioloop
+
+i = 0
+
+
+def fun():
+    global i
+    print "time %d" % i
+    i += 1
+
+
+io = ioloop.IOLoop()
+ioloop.PeriodicCallback(fun, 1000, io).start()
+
+io.start()
+then always print the log:
+time 0
+time 1
+time 2
+...
+but if I change my system time 2017-5-5 to 2017-5-4, the code will stop print log.
+I think tornado should add the feature like libevent that auto correct timer after time running backwards:
+static void
+timeout_correct(struct event_base *base, struct timeval *tv)
+{
+ struct event **pev;
+ unsigned int size;
+ struct timeval off;
+
+ if (use_monotonic)
+  return;
+
+ /* Check if time is running backwards */
+ gettime(base, tv);
+ if (evutil_timercmp(tv, &base->event_tv, >=)) {
+  base->event_tv = *tv;
+  return;
+ }
+
+ event_debug(("%s: time is running backwards, corrected",
+      __func__));
+ evutil_timersub(&base->event_tv, tv, &off);
+
+ /*
+  * We can modify the key element of the node without destroying
+  * the key, beause we apply it to all in the right order.
+  */
+ pev = base->timeheap.p;
+ size = base->timeheap.n;
+ for (; size-- > 0; ++pev) {
+  struct timeval *ev_tv = &(**pev).ev_timeout;
+  evutil_timersub(ev_tv, &off, ev_tv);
+ }
+ /* Now remember what the new time turned out to be. */
+ base->event_tv = *tv;
+}

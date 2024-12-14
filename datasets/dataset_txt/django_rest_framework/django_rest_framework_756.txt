@@ -1,0 +1,66 @@
+sametmax commented on 8 Jun 2017 •
+edited
+Checklist
+[x ] I have verified that that issue exists against the master branch of Django REST framework.
+[x ] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[x ] This is not a usage question. (Those should be directed to the discussion group instead.)
+[x ] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[x ] I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a Serializer with a link to another serializer. You can have the relation be symbolized by an id, a hyperlink or a full object. But it must be either. This means you have to choose between hard to read (only a reference you have to fetch) but easy to write (only a reference to send) or easy to read (full object) but hard to write (you have to recreate the full chain of nested objects to create a new entry).
+Expected behavior
+There should be a way to ask for a serializer to accept only an reference (id or link) as an input, but always return the full object.
+Actual behavior
+Currently you have to do all the work manually or create 2 serializers.
+Current workaround
+I'm currently using something like this to work around this issue:
+from collections import OrderedDict
+
+from rest_framework import serializers
+
+
+class AsymetricRelatedField(serializers.PrimaryKeyRelatedField):
+
+    def to_representation(self, value):
+        return self.serializer_class(value).data
+
+    def get_queryset(self):
+        if self.queryset:
+            return self.queryset
+        return self.serializer_class.Meta.model.objects.all()
+
+    def get_choices(self, cutoff=None):
+        queryset = self.get_queryset()
+        if queryset is None:
+            return {}
+
+        if cutoff is not None:
+            queryset = queryset[:cutoff]
+
+        return OrderedDict([
+            (
+                item.pk,
+                self.display_value(item)
+            )
+            for item in queryset
+        ])
+
+    def use_pk_only_optimization(self):
+        return False
+
+    @classmethod
+    def from_serializer(cls, serializer, name=None, args=(), kwargs={}):
+        if name is None:
+            name = f"{serializer.__class__.name}AsymetricAutoField"
+
+        return type(name, [cls], {"serializer_class": serializer})
+This let me write:
+class FooSerializer(serilizers.ModelSerializer):
+
+    bar = AsymetricRelatedField(BarSerializer)
+
+    class Meta:
+        model = Foo
+Et I can send an id for bar in a POST, or get a a full bar object in my GET. I wish something like this would officially exist in DRF.
+17

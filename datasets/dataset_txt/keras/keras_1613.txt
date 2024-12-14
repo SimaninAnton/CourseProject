@@ -1,0 +1,31 @@
+Contributor
+mrTsjolder commented on 3 Oct 2017
+The truncated normal distribution is used in the [VarianceScaling] initialiser to get weights with a specific variance. However, the backends do not provide truncated normals with the correct variance.
+In the tensorflow backend, the documentation makes believe that the stddev argument is the standard deviation of the samples. This is also what the tensorflow documentation states, but instead, they use stddev as the standard deviation for the normal before truncation. Therefore, the samples have a variance that is significantly smaller. A possible solution could be to use stddev / 0.87962566103423978 instead of stddev as argument for the tensorflow function.
+import numpy as np
+import keras.backend as K
+
+assert K.backend() == 'tensorflow'
+
+tensor0 = K.truncated_normal([10000])
+samples0 = K.eval(tensor0)
+print("incorrect std:", np.std(samples0))
+
+tensor1 = K.truncated_normal([10000], stddev=1/.87962566103423978)
+samples1 = K.eval(tensor1)
+print("correct std:", np.std(samples1))
+For the Theano backend, the distribution is completely incorrect, but the variance is closer to the true expected value. In order to get a variance closer to the expected variance, a similar trick as above could be applied:
+import numpy as np
+import keras.backend as K
+
+assert K.backend() == 'theano'
+
+tensor0 = K.truncated_normal([10000])
+samples0 = K.eval(tensor0)
+print("incorrect std:", np.std(samples0))
+
+tensor1 = K.truncated_normal([10000], stddev=1/.95)
+samples1 = K.eval(tensor1)
+print("correct std:", np.std(samples1))
+I have made a pull request to implement the truncated normal distribution in Theano, so this could be used in the future to fix that problem.
+I can not test this with the CNTK backend, but probably the similar techniques could be used to resolve the issue.

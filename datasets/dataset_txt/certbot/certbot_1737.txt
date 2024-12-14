@@ -1,0 +1,11 @@
+Member
+bmw commented on 13 Oct 2016 •
+edited
+A user reported certbot renew --dry-run --pre-hook "service apache2 stop" --post-hook "service apache2 start" --standalone failed because Certbot couldn't bind to the port. I was able to spuriously repo this problem in master. Here's a log of the issue.
+Possible causes:
+service apache2 stop returns before it has actually stopped Apache
+Apache releases the port in a way that it isn't immediately returned to the OS.
+The OS isn't registering the port as available fast enough.
+Our certbot.plugins.util.already_listening code incorrectly detects the port as taken. I reproduced the problem with psutil installed. The user had the problem without psutil.
+Unless someone can determine the problem is 1 - 3, I'm inclined to stop checking that the port is available up front. In general, I think it's a bit of an antipattern to see if a resource is available and later, in a non-atomic way try to grab it. We should just try to grab the port and if it fails, potentially try provide more useful information about the problem.
+The only downside to this approach is it is backwards progress on #1216.

@@ -1,0 +1,62 @@
+hillenr14 commented on 6 Nov 2017 •
+edited
+When running this code:
+def create_dense_net(nb_classes, img_input, depth=40, nb_block=3, 
+     growth_rate=12, nb_filter=16, bottleneck=False, compression=1.0, p=None, wd=0, activation='softmax'):
+    
+    assert activation == 'softmax' or activation == 'sigmoid'
+    assert (depth - 4) % nb_block == 0
+    nb_layers_per_block = int((depth - 4) / nb_block)
+    nb_layers = [nb_layers_per_block] * nb_block
+
+    x = Lambda(preprocess)(img_input)
+    x = conv(x, nb_filter, 3, wd, 0)
+    for i,block in enumerate(nb_layers):
+        x = dense_block(x, block, growth_rate, bottleneck=bottleneck, p=p, wd=wd)
+        if i != len(nb_layers)-1:
+            x = transition_block(x, compression=compression, p=p, wd=wd)
+
+    x = relu_bn(x)
+    x = GlobalAveragePooling2D()(x)
+    return Dense(nb_classes, activation=activation, kernel_regularizer=l2(wd))(x)
+
+input_shape = (224,224,3)
+img_input = Input(shape=input_shape)
+x = create_dense_net(train_batches.num_class, img_input, depth=100, nb_filter=16, compression=0.5, 
+                     bottleneck=True, p=0.2, wd=1e-4)
+model = Model(img_input, x)
+model.compile(loss='sparse_categorical_crossentropy', 
+      optimizer=keras.optimizers.SGD(0.1, 0.9, nesterov=True), metrics=["accuracy"])
+
+nb_epoch = 1
+
+model.fit_generator(train_batches, steps_per_epoch=int(train_batches.samples/train_batches.batch_size),
+                    epochs=nb_epoch,
+                    validation_data=val_batches, 
+                    validation_steps=int(val_batches.samples/val_batches.batch_size)
+                   )
+I get this error:
+ValueError: Error when checking target: expected dense_1 to have shape (None, 1) but got array with shape (64, 120)
+The number of classes in my batches are 120 and the batch size is 64 so the (64, 120) shape for the output array is correct. The final Dense layer is correctly initialized with 120 output classes as well as can be seen at the end of model.summary():
+conv2d_99 (Conv2D)               (None, 56, 56, 12)    5196        activation_98[0][0]              
+____________________________________________________________________________________________________
+dropout_98 (Dropout)             (None, 56, 56, 12)    0           conv2d_99[0][0]                  
+____________________________________________________________________________________________________
+merge_48 (Merge)                 (None, 56, 56, 340)   0           merge_47[0][0]                   
+                                                                   dropout_98[0][0]                 
+____________________________________________________________________________________________________
+batch_normalization_99 (BatchNor (None, 56, 56, 340)   1360        merge_48[0][0]                   
+____________________________________________________________________________________________________
+activation_99 (Activation)       (None, 56, 56, 340)   0           batch_normalization_99[0][0]     
+____________________________________________________________________________________________________
+global_average_pooling2d_1 (Glob (None, 340)           0           activation_99[0][0]              
+____________________________________________________________________________________________________
+dense_1 (Dense)                  (None, 120)           40920       global_average_pooling2d_1[0][0] 
+====================================================================================================
+Total params: 818,980
+Trainable params: 795,468
+Non-trainable params: 23,512
+The model I use is based on this notebook: densenet-keras, which I have only modified slightly to increase the number of output classes from 10 to 120 and to adapt to Keras 2. I'm using Keras 2.0.5 with a Tensorflow back-end.
+Could this be caused by a known bug and if not, how to debug it further?
+Thanks,
+Robert

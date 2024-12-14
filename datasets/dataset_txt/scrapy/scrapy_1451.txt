@@ -1,0 +1,62 @@
+Contributor
+rmax commented on Jan 24, 2014
+This issue has been addressed before by #285 but at the time none of the proposed alternative solution have made it into Scrapy.
+Even though the solution proposed in #285 was a good workaround, it was discarded because it returned a different response.
+But by the same argument, the restrict_xpaths argument already causes to modify the body content and thus the link extractor acts on a different body than the original.
+Here is an example:
+In [6]: from scrapy.selector import Selector
+
+In [7]: from scrapy.http import HtmlResponse
+
+In [8]: resp = HtmlResponse('http://example.com', body='<html><body><p>&hearts;</p></body></html>')
+
+In [9]: Selector(resp).extract()
+Out[9]: u'<html><body><p>\u2665</p></body></html>'
+So, the link extractor by using the selector to build a fragment of the html get all the entities converted and thus causing the failure when trying to re-encode the body.
+In [10]: from scrapy.contrib.linkextractors.sgml import SgmlLinkExtractor
+
+In [11]: resp = HtmlResponse('http://example.com', encoding='iso8859-15', body='<html><body><p>&hearts;</p></body></html>')
+
+In [12]: SgmlLinkExtractor(restrict_xpaths='//p').extract_links(resp)
+---------------------------------------------------------------------------
+UnicodeEncodeError                        Traceback (most recent call last)
+<ipython-input-5-7d00fa2c152d> in <module>()
+----> 1 SgmlLinkExtractor(restrict_xpaths='//p').extract_links(resp)
+
+/home/rolando/Projects/scrapy/scrapy/contrib/linkextractors/sgml.pyc in extract_links(self, response)
+    122                             for x in self.restrict_xpaths
+    123                             for f in sel.xpath(x).extract()
+--> 124                             ).encode(response.encoding)
+    125         else:
+    126             body = response.body
+
+/usr/lib/python2.7/encodings/iso8859_15.pyc in encode(self, input, errors)
+     10 
+     11     def encode(self,input,errors='strict'):
+---> 12         return codecs.charmap_encode(input,errors,encoding_table)
+     13 
+     14     def decode(self,input,errors='strict'):
+
+UnicodeEncodeError: 'charmap' codec can't encode character u'\u2665' in position 3: character maps to <undefined>
+It's a bummer that the most widely used link extractor and the only one that supports the handy argument restrict_xpaths fails in such simple and very common case.
+I don't know what's the best solution (a solution that can be backported to 0.22), but it seems if the Selector have the support to work in other encodings than unicode by a given parameter it might work well for this case. This because lxml can handle the entities in different encodings nicely:
+In [46]: import lxml
+
+In [47]: parser = lxml.etree.HTMLParser()
+
+In [48]: parser.feed('<p>&hearts;</p>')
+
+In [52]: fragment = parser.close()
+
+In [53]: lxml.html.tostring(fragment)
+Out[53]: '<html><body><p>&#9829;</p></body></html>'
+
+In [54]: lxml.html.tostring(fragment, encoding='unicode')
+Out[54]: u'<html><body><p>\u2665</p></body></html>'
+
+In [55]: lxml.html.tostring(fragment, encoding='ascii')
+Out[55]: '<html><body><p>&#9829;</p></body></html>'
+
+In [56]: lxml.html.tostring(fragment, encoding='iso8859-15')
+Out[56]: '<html><body><p>&#9829;</p></body></html>'
+In this way, even though the entities still are being converted, the re-encoding of the extracted fragment won't fail.

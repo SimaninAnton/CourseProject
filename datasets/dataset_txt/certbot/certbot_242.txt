@@ -1,0 +1,112 @@
+igel-kun commented on 6 Mar 2019 •
+edited
+My operating system is (include version):
+Raspbian Stretch
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+package manager
+I ran this command and it produced this output:
+$ sudo certbot certonly -d redacted.root.sx -w /home/cache/www/html/ --config-dir /home/igel/.config/certbot --work-dir /tmp --logs-dir /home/igel/.config/certbot
+Saving debug log to /home/igel/.config/certbot/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+-------------------------------------------------------------------------------
+1: Place files in webroot directory (webroot)
+2: Spin up a temporary webserver (standalone)
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Cert is due for renewal, auto-renewing...
+Renewing an existing certificate
+Performing the following challenges:
+http-01 challenge for redacted.root.sx
+Using the webroot path /home/cache/www/html for all unmatched domains.
+Waiting for verification...
+Cleaning up challenges
+Failed authorization procedure. redacted.root.sx (http-01): urn:acme:error:connection :: The server could not connect to the client to verify the domain :: Fetching https://redacted.root.sx.well-known/acme-challenge/L4Q2mvc06bXC7y7LzilggJ7nDNSSaaZMjw6tn_ZyxAA: dns :: DNS problem: NXDOMAIN looking up A for redacted.root.sx.well-known
+
+IMPORTANT NOTES:
+ - The following errors were reported by the server:
+
+   Domain: redacted.root.sx
+   Type:   connection
+   Detail: Fetching
+   https://redacted.root.sx.well-known/acme-challenge/L4Q2mvc06bXC7y7LzilggJ7nDNSSaaZMjw6tn_ZyxAA:
+   dns :: DNS problem: NXDOMAIN looking up A for
+   redacted.root.sx.well-known
+
+   To fix these errors, please make sure that your domain name was
+   entered correctly and the DNS A record(s) for that domain
+   contain(s) the right IP address. Additionally, please check that
+   your computer has a publicly routable IP address and that no
+   firewalls are preventing the server from communicating with the
+   client. If you're using the webroot plugin, you should also verify
+   that you are serving files from the webroot path you provided.
+In particular, Fetching https://redacted.root.sx.well-known/acme-challenge/L4Q2mvc06bXC7y7LzilggJ7nDNSSaaZMjw6tn_ZyxAA well, duh, of course redacted.root.sx.well-known will not resolve. Sounds like something went wrong in the string-concatenation :)
+Certbot's behavior differed from what I expected because:
+I expect it to access redacted.root.sx/.well-known instead of redacted.root.sx.well-known
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+$ sudo grep -v '#' /etc/apache2/sites-enabled/default-ssl.conf 
+<IfModule mod_ssl.c>
+ <virtualhost *:80> 
+  ServerName redacted.root.sx
+  Redirect permanent / https://redacted.root.sx
+ </virtualhost>
+ <VirtualHost _default_:443>
+  ServerAdmin webmaster@localhost
+  DocumentRoot /home/cache/www/html
+
+  ErrorLog ${APACHE_LOG_DIR}/error.log
+  CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+  SSLEngine on
+  SSLCertificateFile /etc/ssl/certs/redacted.pem
+  SSLCertificateKeyFile /etc/ssl/private/redacted.key
+
+  <FilesMatch "\.(cgi|shtml|phtml|php)$">
+    SSLOptions +StdEnvVars
+  </FilesMatch>
+  <Directory /usr/lib/cgi-bin>
+    SSLOptions +StdEnvVars
+  </Directory>
+ </VirtualHost>
+</IfModule>
+
+<Directory /home/cache/www/html>
+ Require all granted
+</Directory>
+this may be interesting too
+certbot --version
+certbot 0.10.2
+just in case
+$ host -v redacted.root.sx
+Trying "redacted.root.sx"
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 33491
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;redacted.root.sx.  IN A
+
+;; ANSWER SECTION:
+redacted.root.sx. 45 IN A <my IP>
+
+Received 52 bytes from 192.168.1.1#53 in 44 ms
+Trying "redacted.root.sx"
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 9217
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;redacted.root.sx.  IN AAAA
+
+Received 36 bytes from 192.168.1.1#53 in 21 ms
+Trying "redacted.root.sx"
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52974
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;redacted.root.sx.  IN MX
+
+;; AUTHORITY SECTION:
+root.sx.  3600 IN SOA ns1.afraid.org. admin.root.sx. 1903060055 86400 7200 2419200 3600
+
+Received 92 bytes from 192.168.1.1#53 in 164 ms```

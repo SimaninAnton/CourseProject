@@ -1,0 +1,59 @@
+Contributor
+swgillespie commented on 20 Nov 2018
+Issue description
+When running multiple pipenv processes simultaneously, they may both attempt to use 'mkdir_p' at the same time, which can cause one of the pipenv processes to crash when it tries to create a directory that already exists. This is a classic TOCTOU bug that has bitten many a piece of software.
+I personally hit this in my continuous integration setup where I invoke pipenv multiple times, potentially in parallel, and see crashes such as this:
+[ tes/examples/python/smoke-test ] sample: /home/travis/gopath/src/github.com/pulumi/pulumi-kubernetes/examples/python/smoke-test
+[ etes/examples/python/guestbook ] sample: /home/travis/gopath/src/github.com/pulumi/pulumi-kubernetes/examples/python/guestbook
+[ tes/examples/python/smoke-test ] pulumi: /home/travis/.pulumi/bin/pulumi
+[ etes/examples/python/guestbook ] pulumi: /home/travis/.pulumi/bin/pulumi
+[ tes/examples/python/smoke-test ] **** Invoke '/home/travis/.local/bin/pipenv --python 3' in '/tmp/p-it-travis-job-smoke-test-aced7882-102623154'
+[ etes/examples/python/guestbook ] **** Invoke '/home/travis/.local/bin/pipenv --python 3' in '/tmp/p-it-travis-job-guestbook-63f89532-423054697'
+[ etes/examples/python/guestbook ] Invoke '/home/travis/.local/bin/pipenv --python 3' failed: exit status 1
+[ etes/examples/python/guestbook ] Traceback (most recent call last):
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/bin/pipenv", line 11, in <module>
+[ etes/examples/python/guestbook ]     sys.exit(cli())
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/core.py", line 764, in __call__
+[ etes/examples/python/guestbook ]     return self.main(*args, **kwargs)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/core.py", line 717, in main
+[ etes/examples/python/guestbook ]     rv = self.invoke(ctx)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/core.py", line 1114, in invoke
+[ etes/examples/python/guestbook ]     return Command.invoke(self, ctx)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/core.py", line 956, in invoke
+[ etes/examples/python/guestbook ]     return ctx.invoke(self.callback, **ctx.params)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/core.py", line 555, in invoke
+[ etes/examples/python/guestbook ]     return callback(*args, **kwargs)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/decorators.py", line 64, in new_func
+[ etes/examples/python/guestbook ]     return ctx.invoke(f, obj, *args, **kwargs)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/core.py", line 555, in invoke
+[ etes/examples/python/guestbook ]     return callback(*args, **kwargs)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/vendor/click/decorators.py", line 17, in new_func
+[ etes/examples/python/guestbook ]     return f(get_current_context(), *args, **kwargs)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/cli/command.py", line 203, in cli
+[ etes/examples/python/guestbook ]     clear=state.clear,
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/core.py", line 565, in ensure_project
+[ etes/examples/python/guestbook ]     pypi_mirror=pypi_mirror,
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/core.py", line 483, in ensure_virtualenv
+[ etes/examples/python/guestbook ]     if not project.virtualenv_exists:
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/project.py", line 259, in virtualenv_exists
+[ etes/examples/python/guestbook ]     if self.pipfile_exists and os.path.exists(self.virtualenv_location):
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/project.py", line 398, in virtualenv_location
+[ etes/examples/python/guestbook ]     self._virtualenv_location = self.get_location_for_virtualenv()
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/project.py", line 272, in get_location_for_virtualenv
+[ etes/examples/python/guestbook ]     name = self.virtualenv_name
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/project.py", line 384, in virtualenv_name
+[ etes/examples/python/guestbook ]     sanitized, encoded_hash = self._get_virtualenv_hash(self.name)
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/project.py", line 363, in _get_virtualenv_hash
+[ etes/examples/python/guestbook ]     or get_workon_home().joinpath(venv_name).exists()
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/utils.py", line 1254, in get_workon_home
+[ etes/examples/python/guestbook ]     mkdir_p(str(expanded_path))
+[ etes/examples/python/guestbook ]   File "/home/travis/.local/lib/python2.7/site-packages/pipenv/utils.py", line 571, in mkdir_p
+[ etes/examples/python/guestbook ]     os.mkdir(newdir)
+[ etes/examples/python/guestbook ] OSError: [Errno 17] File exists: '/home/travis/.local/share/virtualenvs'
+The root cause is that two pipenv processes are racing to create the new directory subtree rooted at /home/travis/.local/share/virtualenvs, one of them wins, and the other crashes.
+Expected result
+I'd except both pipenv processes to be successful.
+Actual result
+The pipenv that loses the race to create the directory crashes.
+Steps to replicate
+Launch multiple instances of pipenv --python 3 on a machine that previously has not used pipenv to create any virtualenvs. If you do this enough times, you'll hit the race and crash.

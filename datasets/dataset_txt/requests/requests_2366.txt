@@ -1,0 +1,71 @@
+Contributor
+sigmavirus24 commented on Sep 27, 2012
+sigmavirus24@4dd3d1a#commitcomment-1904600
+For reference, I'm going to copy the comments into here.
+@piotr-dobrogost
+Explicit type checking is code smell. We should be checking for iterability not types. See http://stackoverflow.com/questions/1952464/
+@sigmavirus24
+I was following the style of the rest of requests, if wanted I'll clean up this and the other places I saw it.
+@piotr-dobrogost
+@kennethreitz What do you think?
+@kennethreitz
+iterability is always preferred, but not always possible in requests because of the way certain types work (strings, dicts)
+@sigmavirus24
+@kennethreitz correct me if I'm wrong, but I believe you're against this. And if I remember correctly I had submitted an earlier PR that tried to do something similar to what @piotr-dobrogost is suggesting in _encode_data which failed when passed a dictionary. For reference in python 2 and 3, the following works
+>>> a = [1, 2, 3]
+>>> b = {4: 5}
+>>> a.extend(b)
+# a == [1, 2, 3, 4]
+Which may not be entirely obvious to some and certainly might seem like unintended behavior. Likewise,
+>>> a = [1, 2, 3]
+>>> a.extend('abcdef')
+# a == [1, 2, 3, 'a', 'b', 'c', 'd', 'e', 'f']
+We could always do the complement though (which is far less obvious):
+if hasattr(hook, '__iter__') and not isinstance(hook, (str, dict)):
+# ...
+@piotr-dobrogost
+All we should care here is that we want iterable. It's up to the user to pass iterable he thinks is appropriate. If someone wants to pass "random" iterable then it's not our business to know better and reject it. Yes, there is more type checking in the Requests and I think it should be cleaned as well.
+@piotr-dobrogost
+@shazow What's your opinion?
+@shazow
+I would vote for making an is_foo helper somewhere nearby which contains the "is iter and not str/dict" logic or whatever we want it to be. Then re-use that where appropriate. Also name foo something descriptive. is_plural?
+As for the logic, I'd be +0 on {iter and not str/dict}. I imagine people may want to pass in arbitrary generators and whatnot.
+@sigmavirus24
+I think @piotr-dobrogost would just rather the logic hasattr(foo, '__iter__') rather than excluding strs and dicts.
+@shazow
+In the context of hooks, shouldn't the check just be if it's callable? If not, then extend?
+(My previous suggestion was more towards the general style of Requests, rather than this hook-specific example.)
+@sigmavirus24
+Right, I was following the general style of requests when writing this. But yeah, you're right, if it's callable then it should be append otherwise we should try to extend it.
+@shazow
+Further: Shouldn't the logic for register_hook and deregister_hook live in the same place as dispatch_hook? If that was the case, then the {check for __call__ or extend} decision would be very evident. :)
+@piotr-dobrogost
+Just in case I asked this http://stackoverflow.com/questions/12590494/.
+In the context of hooks, shouldn't the check just be if it's callable? If not, then extend?
+Either we check all for callability or none. Why should the first one be better than the rest? :)
+@sigmavirus24
+So you just want something like:
+if callable(hook):
+    self.hooks[event].append(hook)
+else:
+    self.hooks[event].extend(hook)
+?
+How about a compromise on:
+if callable(hook):
+    self.hooks[event].append(hook)
+elif hasattr(hook, '__iter__'):
+    self.hooks[event].extend(hook)
+Because calling it with None would cause some issues. If you would rather check that each element of the iterable is callable then simply:
+if callable(hook):
+    self.hooks[event].append(hook)
+elif hasattr(hook, '__iter__'):
+    for h in hook:
+        self.register_hook(event, h)
+That will take care of checking for callability and allow for lists, tuples, sets, etc to be passed.
+@sigmavirus24
+@piotr-dobrogost, @shazow, @kennethreitz, does anyone mind if we take this to an issue instead of continuing to discuss everything here? An issue would make this more visible to future contributors/users/etc. of requests than it is here.
+@piotr-dobrogost
++1
+That will take care of checking for callability and allow for lists, tuples, sets, etc to be passed.
+Not only this, this will allow for nested iterables (trees) to be passed as well! :)
+Well that was painful, I'm all up for fixing this in particular and going through the rest of requests to see if we can get rid of some of these explicit checks unless anyone disagrees.

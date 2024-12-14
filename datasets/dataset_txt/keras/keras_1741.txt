@@ -1,0 +1,165 @@
+SebastianPopescu commented on 13 Aug 2017
+Hi, so I was trying to implement a variant of the DenseNet model with the difference that it has 3D ConvNets.
+Here is the code:
+`
+def conv_factory(x, nb_filter, dropout_rate=None, weight_decay=1E-4):
+"""
+Apply BatchNorm, Relu 3x3Conv3D, optional dropout
+:param x: Input keras network
+:param nb_filter: int -- number of filters
+:param dropout_rate: int -- dropout rate
+:param weight_decay: int -- weight decay factor
+
+:returns: keras network with b_norm, relu and convolution3d added
+:rtype: keras network
+"""
+
+x = BatchNormalization(mode=0,axis=-1,
+                       gamma_regularizer=l2(weight_decay),
+                       beta_regularizer=l2(weight_decay))(x)
+x = Activation('relu')(x)
+x = Convolution3D(filters=nb_filter,kernel_size = 3, strides = 3,
+                  kernel_initializer='he_normal',
+                  padding="same",
+                  data_format='channels_last',
+                  bias=False,
+                  W_regularizer=l2(weight_decay))(x)
+if dropout_rate:
+    x = Dropout(dropout_rate)(x)
+
+
+print 'inside conv_factory'
+return x
+def transition(x, nb_filter, dropout_rate=None, weight_decay=1E-4):
+"""
+Apply BatchNorm, Relu 1x1Conv3D, optional dropout and Maxpooling3D
+:param x: keras model
+:param nb_filter: int -- number of filters
+:param dropout_rate: int -- dropout rate
+:param weight_decay: int -- weight decay factor
+
+:returns: model
+:rtype: keras model, after applying batch_norm, relu-conv, dropout, maxpool
+
+"""
+
+x = BatchNormalization(mode=0,axis=4,
+                       gamma_regularizer=l2(weight_decay),
+                       beta_regularizer=l2(weight_decay))(x)
+x = Activation('relu')(x)
+x = Convolution3D(filters = nb_filter, kernel_size= 1, strides = 1,
+                  kernel_initializer="he_uniform",
+                  padding="same",
+                  data_format='channels_last',
+                  bias=False,
+                  W_regularizer=l2(weight_decay))(x)
+if dropout_rate:
+    x = Dropout(dropout_rate)(x)
+x = AveragePooling3D((2, 2, 2), strides=(2, 2,2))(x)
+print 'terminat transition'
+
+return x
+def denseblock(x, nb_layers, nb_filter, growth_rate, dropout_rate=None, weight_decay=1E-4):
+"""
+Build a denseblock where the output of each conv_factory is fed to subsequent ones
+:param x: keras model
+:param nb_layers: int -- the number of layers of conv_
+                  factory to append to the model.
+:param nb_filter: int -- number of filters
+:param dropout_rate: int -- dropout rate
+:param weight_decay: int -- weight decay factor
+
+:returns: keras model with nb_layers of conv_factory appended
+:rtype: keras model
+
+"""
+
+list_feat = [x]
+
+for i in range(nb_layers):
+    x = conv_factory(x, growth_rate, dropout_rate, weight_decay)
+    list_feat.append(x)
+    x = Concatenate(list_feat)
+    nb_filter += growth_rate
+
+return x, nb_filter
+def DenseNet(nb_classes, d1,d2,d3, depth, nb_dense_block, growth_rate,
+nb_filter, dropout_rate=None, weight_decay=1E-4):
+""" Build the DenseNet model
+:param nb_classes: int -- number of classes
+:param img_dim: tuple -- (channels, rows, columns)
+:param depth: int -- how many layers
+:param nb_dense_block: int -- number of dense blocks to add to end
+:param growth_rate: int -- number of filters to add
+:param nb_filter: int -- number of filters
+:param dropout_rate: float -- dropout rate
+:param weight_decay: float -- weight decay
+
+:returns: keras model with nb_layers of conv_factory appended
+:rtype: keras model
+
+"""
+
+model_input = Input(shape=(d1,d2,d3,1))
+
+assert (depth - 4) % 3 == 0, "Depth must be 3 N + 4"
+
+# layers in each dense block
+nb_layers = int((depth - 4) / 3)
+
+# Initial convolution
+x = Convolution3D(filters = nb_filter, kernel_size=3, strides=3,
+                  kernel_initializer="he_uniform",
+                  data_format='channels_last',
+                  padding="same",
+                  name="initial_conv3D",
+                  bias=False,
+                  W_regularizer=l2(weight_decay)
+                  )(model_input)
+
+# Add dense blocks
+for block_idx in range(nb_dense_block - 1):
+    x, nb_filter = denseblock(x, nb_layers, nb_filter, growth_rate,
+                              dropout_rate=dropout_rate,
+                              weight_decay=weight_decay)
+    # add transition
+    x = transition(x, nb_filter, dropout_rate=dropout_rate,
+                   weight_decay=weight_decay)
+
+
+
+# The last denseblock does not have a transition
+x, nb_filter = denseblock(x, nb_layers, nb_filter, growth_rate,
+                          dropout_rate=dropout_rate,
+                          weight_decay=weight_decay)
+
+x = BatchNormalization(mode=0,
+                       axis=4,
+                       gamma_regularizer=l2(weight_decay),
+                       beta_regularizer=l2(weight_decay))(x)
+x = Activation('relu')(x)
+x = Flatten(x)
+x = Dense(nb_classes,
+          W_regularizer=l2(weight_decay),
+          b_regularizer=l2(weight_decay))(x)
+
+densenet = Model(input=[model_input], output=[x], name="DenseNet")
+
+return densenet
+`
+This implementation throws out the following error message:
+Traceback (most recent call last):
+File "densenet.py", line 290, in model = DenseNet(nb_classes=1, d1=d1,d2=d2,d3=d3, depth=13, nb_dense_block=2, growth_rate=5,nb_filter=10, weight_decay=1E-4)
+File "densenet.py", line 152, in DenseNet
+weight_decay=weight_decay)
+File "densenet.py", line 106, in denseblock
+x = conv_factory(x, growth_rate, dropout_rate, weight_decay)
+File "densenet.py", line 39, in conv_factory
+beta_regularizer=l2(weight_decay))(x)
+File "/home/sebict/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 552, in call
+self.assert_input_compatibility(inputs)
+File "/home/sebict/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 425, in assert_input_compatibility
+str(inputs) + '. All inputs to the layer '
+ValueError: Layer batch_normalization_2 was called with an input that isn't a symbolic tensor. Received type: <class 'keras.layers.merge.Concatenate'>. Full input: [<keras.layers.merge.Concatenate object at 0x7ff940772dd0>]. All inputs to the layer should be tensors.
+`
+Do I have to manually cast that Concatenate object as a tensor before feeding it to the BatchNorm layer?

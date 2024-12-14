@@ -1,0 +1,89 @@
+ChrisPalmerNZ commented on 8 Nov 2019 •
+edited
+I may not correctly understand how to add multiple Matcher components, but after previously reporting this and having observed it agreed as being a bug and subsequently marked as resolved, I have waited until a newer version of spaCy has arrived (2.2.1) and have re-tested. Again, I am having a situation where if I have more than one phrase matcher in the pipeline only the label of the last matcher is used for any entities matched.
+Please let me know if I am making a mistake in adding the multiple components, or if this is a bug and has been fixed then in which version of spaCy, and how I can update to it.
+How to reproduce the behaviour
+import spacy
+print("spaCy version:", spacy.__version__)
+# 2.2.1
+
+from spacy.matcher import PhraseMatcher
+from spacy.tokens import Doc, Span
+
+nlp = spacy.load('en_core_web_sm')
+
+# Method to handle the custom login names component
+def login_name_component(doc):
+    # Apply the matcher to the doc
+    matches = matcher(doc)
+    # Create a Span for each match and assign the label 'LOGIN_NAME'
+    spans = [Span(doc, start, end, label="LOGIN_NAME") for match_id, start, end in matches]
+    # Overwrite the doc.ents with the matched spans
+    doc.ents = spans
+    return doc
+
+# Method to handle the custom State names component
+def state_terr_component(doc):
+    # Apply the matcher to the doc
+    matches = matcher(doc)
+    # Create a Span for each match and assign the label 'STATE_TERR'
+    spans = [Span(doc, start, end, label="STATE_TERR") for match_id, start, end in matches]
+    # Overwrite the doc.ents with the matched spans
+    doc.ents = spans
+    return doc
+
+# Method to print document entities
+def print_ents(txt):
+    test_doc = nlp(txt)
+    for ent in test_doc.ents:
+        # Print the entity text and its label
+        print(ent.text, ent.label_)
+
+txt = "JimBrown - 10/11/2019 - Note: Christopher Robin visited ACT then NSW on 08 Nov 2019\r\nSonnyBill - 11/11/2019 - Noted"
+
+print()
+print("Text being processed:")
+print(txt)
+print()
+print("Entities before any phrase matcher components:")
+print_ents(txt)
+
+# Add login names phrase matcher
+login_names = ['JimBrown', 'SonnyBill']
+login_name_pattern = list(nlp.pipe(login_names))
+login_name_pattern
+matcher = PhraseMatcher(nlp.vocab)
+matcher.add('LOGIN_NAME', None, *login_name_pattern )
+
+nlp.add_pipe(login_name_component, before="ner")
+print()
+print("login_name_pattern added :", login_name_pattern)
+print("Pipe names after adding login_name_component")
+print(nlp.pipe_names)
+
+# login names correctly identified
+print()
+print("Entities after addition of login_name_component:")
+print_ents(txt)
+
+# Add State / Territory phrase matcher
+State_Terr  = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
+state_terr_pattern = list(nlp.pipe(State_Terr))
+
+matcher.add('STATE_TERR', None, *state_terr_pattern)
+# Add the component to the pipeline before the 'login_name_component'
+nlp.add_pipe(state_terr_component, before="login_name_component")
+
+print()
+print("state_terr_pattern added :", state_terr_pattern)
+print("Pipe names after adding state_terr_component")
+print(nlp.pipe_names)
+
+# State Territory names incorrectly identified as login names
+print()
+print("Entities after addition of state_terr_component:")
+print_ents(txt)
+Your Environment
+Operating System: Windows-7-6.1.7601-SP1
+Python Version Used: 3.6.9
+spaCy Version Used: 2.2.1

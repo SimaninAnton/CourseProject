@@ -1,0 +1,63 @@
+Contributor
+mrocklin commented on 10 Oct 2015
+When we wait on several futures/coroutines
+yield [a(), b(), c()]
+If one coroutine raises an exception I would hope that the yield would raise the exception almost immediately. However, in the small example below we seem to wait until all futures/coroutines complete. Am I doing something silly here? Is there a way to achieve immediate percolation of exceptions?
+from tornado import gen
+from tornado.ioloop import IOLoop
+
+@gen.coroutine
+def throws():
+    raise Exception()
+
+@gen.coroutine
+def slow():
+    yield gen.sleep(1)
+    raise gen.Return(1)
+
+@gen.coroutine
+def f():
+    yield [throws(), slow()]
+
+IOLoop.current().run_sync(f)
+mrocklin@workstation:~/workspace/distributed$ time python foo.py 
+Traceback (most recent call last):
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/gen.py", line 879, in run
+    yielded = self.gen.send(value)
+  File "foo.py", line 11, in slow
+    raise gen.Return(1)
+tornado.gen.Return
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "foo.py", line 17, in <module>
+    IOLoop.current().run_sync(f)
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/ioloop.py", line 445, in run_sync
+    return future_cell[0].result()
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/concurrent.py", line 215, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/gen.py", line 876, in run
+    yielded = self.gen.throw(*exc_info)
+  File "foo.py", line 15, in f
+    yield [throws(), slow()]
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/gen.py", line 870, in run
+    value = future.result()
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/concurrent.py", line 215, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/gen.py", line 656, in callback
+    result_list.append(f.result())
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/concurrent.py", line 215, in result
+    raise_exc_info(self._exc_info)
+  File "<string>", line 3, in raise_exc_info
+  File "/home/mrocklin/Software/anaconda/lib/python3.4/site-packages/tornado/gen.py", line 215, in wrapper
+    result = func(*args, **kwargs)
+  File "foo.py", line 6, in throws
+    raise Exception()
+Exception
+
+real    0m1.113s
+user    0m0.091s
+sys 0m0.021s

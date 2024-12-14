@@ -1,0 +1,79 @@
+zxymike93 commented 17 days ago
+Expected Behavior
+I was working on the auth blueprint part of the tutorial. When I tested the login() function under the debug mode, with inputing correct pair of username/passowrd, it should've thrown werkzeug.routing.BuildError: Could not build url for endpoint 'index'..
+# flaskr/auth.py
+@bp.route('/login', methods=('GET', 'POST'))
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        db = get_db()
+        err = None
+        # ...
+
+        if err is None:
+            session.clear()
+            session['user_id'] = user['id']
+            return redirect(url_for('index'))
+        # ...
+
+# flaskr/__init__.py
+def create_app(test_config=None):
+    """Instead of creating an app (instance of `Flask` globally),
+    loading configurations and other setups inside `create_app`.
+    """
+    app = Flask(__name__, instance_relative_config=True)
+    app.config.from_mapping(
+        SECRECT_KEY='dev',
+        DATABASE=os.path.join(app.instance_path, 'flaskr.sqlite'),
+    )
+    # ...
+Actual Behavior
+However, I got
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 2463, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 2449, in wsgi_app
+    response = self.handle_exception(e)
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 1866, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "/.../.venv/lib/python3.7/site-packages/flask/_compat.py", line 39, in reraise
+    raise value
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 2446, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 1951, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 1820, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "/.../.venv/lib/python3.7/site-packages/flask/_compat.py", line 39, in reraise
+    raise value
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 1949, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/.../.venv/lib/python3.7/site-packages/flask/app.py", line 1935, in dispatch_request
+    return self.view_functions[rule.endpoint](**req.view_args)
+  File "/.../pycourse/flaskr_project/flaskr/auth.py", line 73, in login
+    session.clear()
+  File "/.../.venv/lib/python3.7/site-packages/flask/sessions.py", line 103, in _fail
+    "The session is unavailable because no secret "
+RuntimeError: The session is unavailable because no secret key was set.  Set the secret_key on the application to something unique and secret.
+So I checked SECRET_KEY and session. And I was confused since the secret_key seemed to be set but the session was still null.
+<Config {'ENV': 'development', 'DEBUG': True, 'TESTING': False, ..., 'SECRECT_KEY': 'dev', 'DATABASE': '.../instance/flaskr.sqlite'}>
+
+<session> <NullSession {}>
+I tried to fixed it by using app.secret_key.
+def create_app(test_config=None):
+    """Instead of creating an app (instance of `Flask` globally),
+    loading configurations and other setups inside `create_app`.
+    """
+    app = Flask(__name__, instance_relative_config=True)
+    app.config.from_mapping(
+        SECRECT_KEY='dev',
+        DATABASE=os.path.join(app.instance_path, 'flaskr.sqlite'),
+    )
+    app.secret_key = 'secret'
+    # ...
+This line didn't change the SECRET_KEY in app.config. But this time I got the werkzeug.routing.BuildError.
+Environment
+Python version: 3.7.2
+Flask version: 1.1.1
+Werkzeug version: 0.16.0
+(Also the tutorial is from) Doc version: 1.1.x

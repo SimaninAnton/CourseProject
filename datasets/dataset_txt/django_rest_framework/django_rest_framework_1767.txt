@@ -1,0 +1,49 @@
+awidgery commented on 12 Jun 2015
+I'm getting a strange result whereby POSTing JSON to a DRF endpoint returns:
+{"photos":["This field is required."],"tags":["This field is required."]}'
+Whereas when POSTing form data DRF doesn't mind that the fields are empty.
+Is this a bug?
+My model is:
+class Story(CommonInfo):
+    user = models.ForeignKey(User)
+    text = models.TextField(max_length=5000,blank=True)
+    feature = models.ForeignKey("Feature", blank=True, null=True)
+    tags = models.ManyToManyField("Tag")
+My serializer is:
+class StorySerializer(serializers.HyperlinkedModelSerializer):
+    user = serializers.CharField(read_only=True) 
+
+    def get_fields(self, *args, **kwargs):
+        user = self.context['request'].user
+        fields = super(StorySerializer, self).get_fields(*args, **kwargs)
+        fields['feature'].queryset = fields['feature'].queryset.filter(user=user)
+        fields['photos'].child_relation.queryset = fields['photos'].child_relation.queryset.filter(user=user)
+        return fields
+
+    class Meta:
+        model = Story
+        fields = ('url', 'user', 'text', 'photos', 'feature', 'tags')
+And my api.py is:
+class StoryViewSet(viewsets.ModelViewSet):
+    serializer_class = StorySerializer
+
+    def get_queryset(self):
+        return self.request.user.story_set.all()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+The results:
+# JSON request doesn't work
+IN: requests.post("http://localhost:8001/api/stories/",
+               auth=("user", "password",),
+               data=json.dumps({'text': 'NEW ONE!'}),
+               headers={'Content-type': 'application/json'}
+              ).content
+OUT: '{"photos":["This field is required."],"tags":["This field is required."]}'
+
+# Form data request does work
+IN: requests.post("http://localhost:8001/api/stories/",
+               auth=("user", "password",),
+               data={'text': 'NEW ONE!'},
+              ).content
+OUT: '{"url":"http://localhost:8001/api/stories/277/","user":"user","text":"NEW ONE!","photos":[],"feature":null,"tags":[]}'

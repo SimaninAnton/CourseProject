@@ -1,0 +1,115 @@
+Contributor
+justinvf-zz commented on Jul 2, 2013
+I am finding test_svm.py:test_svc_clone_with_callable_kernel to be flaky. I think there is maybe some randomness sneaking in. I got this on two machines. I am getting the errors in Python3 though, so I wanted to double check whether this is possibly a python3 bug before digging in too heavily (or if this is a known flaky test)
+These two runs are right after eachother without any code changes.
+(scikit-learn) justinvf@alf:~/github/justinvf$ nosetests --exe scikit-learn/sklearn/svm/tests/test_svm.py -s 
+I: Seeding RNGs with 1127491369
+........................[LibLinear]
+Cloned dual coef:  [[ 0.25 -0.25]] 
+builint dual coef:  [[ 0.25 -0.25]]
+
+Cloned intercept:  [-0.] 
+builint intercept:  [-0.]
+
+cloned  predicted proba:  [[ 0.83311448  0.16688552]
+ [ 0.73627062  0.26372938]
+ [ 0.83311448  0.16688552]
+ [ 0.21446606  0.78553394]
+ [ 0.13232847  0.86767153]
+ [ 0.13232847  0.86767153]] 
+builtin predicted proba:  [[ 0.82938691  0.17061309]
+ [ 0.74157903  0.25842097]
+ [ 0.82938691  0.17061309]
+ [ 0.25841623  0.74158377]
+ [ 0.17053327  0.82946673]
+ [ 0.17053327  0.82946673]]
+F..
+======================================================================
+FAIL: sklearn.svm.tests.test_svm.test_svc_clone_with_callable_kernel
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/justinvf/virtualenvs/scikit-learn/lib/python3.3/site-packages/nose/case.py", line 198, in runTest
+    self.test(*self.arg)
+  File "/home/justinvf/github/justinvf/scikit-learn/sklearn/svm/tests/test_svm.py", line 638, in test_svc_clone_with_callable_kernel
+    svm_builtin.predict_proba(X))
+  File "/home/justinvf/virtualenvs/scikit-learn/lib/python3.3/site-packages/numpy/testing/utils.py", line 812, in assert_array_almost_equal
+    header=('Arrays are not almost equal to %d decimals' % decimal))
+  File "/home/justinvf/virtualenvs/scikit-learn/lib/python3.3/site-packages/numpy/testing/utils.py", line 645, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not almost equal to 6 decimals
+
+(mismatch 100.0%)
+ x: array([[ 0.83311448,  0.16688552],
+       [ 0.73627062,  0.26372938],
+       [ 0.83311448,  0.16688552],...
+ y: array([[ 0.82938691,  0.17061309],
+       [ 0.74157903,  0.25842097],
+       [ 0.82938691,  0.17061309],...
+
+----------------------------------------------------------------------
+Ran 27 tests in 0.193s
+
+FAILED (failures=1)
+(scikit-learn) justinvf@alf:~/github/justinvf$ nosetests --exe scikit-learn/sklearn/svm/tests/test_svm.py -s 
+I: Seeding RNGs with 245319400
+........................[LibLinear]
+Cloned dual coef:  [[ 0.25 -0.25]] 
+builtin  dual coef:  [[ 0.25 -0.25]]
+
+Cloned intercept:  [-0.] 
+builtin  intercept:  [-0.]
+
+cloned  predicted proba:  [[ 0.83518712  0.16481288]
+ [ 0.74780932  0.25219068]
+ [ 0.83518712  0.16481288]
+ [ 0.25796172  0.74203828]
+ [ 0.1689573   0.8310427 ]
+ [ 0.1689573   0.8310427 ]] 
+builtin predicted proba:  [[ 0.83518712  0.16481288]
+ [ 0.74780932  0.25219068]
+ [ 0.83518712  0.16481288]
+ [ 0.25796172  0.74203828]
+ [ 0.1689573   0.8310427 ]
+ [ 0.1689573   0.8310427 ]]
+...
+----------------------------------------------------------------------
+Ran 27 tests in 0.191s
+
+OK
+Here is the code (added the print statements that you see above):
+def test_svc_clone_with_callable_kernel():
+    # create SVM with callable linear kernel, check that results are the same
+    # as with built-in linear kernel
+    svm_callable = svm.SVC(kernel=lambda x, y: np.dot(x, y.T),
+                           probability=True)
+    # clone for checking clonability with lambda functions.. 
+   svm_cloned = base.clone(svm_callable)
+    svm_cloned.fit(X, Y)
+
+    svm_builtin = svm.SVC(kernel='linear', probability=True)
+    svm_builtin.fit(X, Y)
+
+#    import pdb; pdb.set_trace()
+    print('\nCloned dual coef: ', svm_cloned.dual_coef_, 
+          '\nbuiltin dual coef: ', svm_builtin.dual_coef_)
+
+    assert_array_almost_equal(svm_cloned.dual_coef_,
+                              svm_builtin.dual_coef_)
+
+    print('\nCloned intercept: ', svm_cloned.intercept_,
+          '\nbuiltin intercept: ', svm_builtin.intercept_)
+
+
+    assert_array_almost_equal(svm_cloned.intercept_,
+                              svm_builtin.intercept_)
+    assert_array_equal(svm_cloned.predict(X), svm_builtin.predict(X))
+
+    print('\ncloned  predicted proba: ', svm_cloned.predict_proba(X),
+          '\nbuiltin predicted proba: ', svm_builtin.predict_proba(X))
+
+    assert_array_almost_equal(svm_cloned.predict_proba(X),
+                              svm_builtin.predict_proba(X))
+    assert_array_almost_equal(svm_cloned.decision_function(X),
+                              svm_builtin.decision_function(X))
+This works maybe 10% of the time.

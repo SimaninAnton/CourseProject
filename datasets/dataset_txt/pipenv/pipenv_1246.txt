@@ -1,0 +1,105 @@
+Contributor
+vlcinsky commented on 5 Apr 2018 •
+edited
+Hacking maya I learned few lessons which resulted in my following proposal of recommended usage of pipenv in python libraries. I expect others to review the proposal and if we reach agreement, the (updated) text could end up in pipenv docs.
+pipenv patterns and antipatterns for python library project
+EDIT
+Following is best applicable for general (mostly Open Source) python libraries, which are supposed to run on different python versions and OSes. Libraries developed in strict Enterprise environment may be different case (be sure to review all the Problems sections anyway).
+END OF EDIT
+TL;DR: Adding pipenv files into python library project is likely to introduce extra complexity and can hide some errors while not adding anything to library security. For this reason, keep Pipfile, Pipfile.lock and .env out of library source control.
+You will be able to use full power of pipenv regardless of it's files living in .gitignore.
+Python library versus python application
+By python library I mean a project, typically having setup.py, being targeted for distribution and usage on various platform differing in python version and/or OS.
+Examples being maya, requests, flask etc.
+On the other side (not python library) there are applications targeted for specific python interpreter, OS and often being deployed in strictly consistent environment.
+pipfile describes these differences very well in it's Pipfile vs setup.py.
+What is pipenv (deployment tool)
+I completely agree on the statement, that pipenv is deployment tool as it allows to:
+define strict requirements (Pipfile.lock) for deployment of virtual environment
+apply those strict requirements in reproducible manner on different machines
+It helps when one has to deploy an application or develop in python environment very consistent across multiple developers.
+To call pipenv packaging tool is misleading if one expects it to create python libraries or to be deeply involved in creation of them. Yes, pipenv can help a lot (in local development of libraries) but can possibly harm (often in CI tests when used without deeper thought).
+Applying "security reasons" in wrong context
+TL;DR: pipenv provides secure environment via applying approved concrete dependencies described in Pipfile.lock file and python library is only allowed to define abstract dependencies (thus cannot provide Pipfile.lock).
+pipenv shines in deployment scenarios following these steps:
+define abstract dependencies (via Pipfile)
+generate from it concrete dependencies resulting in Pipfile.lock
+create (virtual) python environment reflecting those concrete dependencies
+run tests to make sure, given environment works as expected and is secure
+release the tested "golden" Pipfile.lock as definition of approved python environment
+others can use pipenv sync to apply "the golden" Pipfile.lock elsewhere getting identical python environment.
+With development of python library one cannot achieve such security, because libraries must not define concrete dependencies. Breaking this rule (thus trying to declare concrete dependencies by python library) results in problems such as:
+problems to find satisfying version of shared libraries (each strict package defines exact version of shared library and it is very likely the versions will differ and prevent finding commonly acceptable version)
+concrete dependencies may depend on python version, OS or other environment markers and trying to install the package in diferent context can easily fail to satisfy some of rules defined in original abstract dependencies.
+Problem: Hiding broken setup.py defined dependencies
+setup.py shall define all abstract dependencies via install_requires.
+If Pipfile defines those dependencies too, it may easily hide problems such as:
+missing dependency in install_requires
+Pipfile defines specific rules (version ranges etc.) for a dependency and install_requires does not.
+To prevent it, follow these rules:
+library defined dependencies must not appear in Pipfile
+the [packages] section in Pipfile shall be either empty or define only single dependency on the library itself.
+Problem: Pipfile.lock in repository
+Keeping Pipfile.lock (typically for "security reasons") in library repository is wrong, because:
+described dependencies are likely to be invalid for different python versions or in another OS
+developers are forced to update the file not only when they add/remove some dependency, but also when other libraries are updated and may be usable within the library.
+To prevent it, one should:
+remove Pipfile.lock from repository and add it into .gitignore
+Problem: Competing with tox (hiding usedevelop)
+If tox.ini contains in it's commands section entries such as:
+pipenv install
+pipenv install --dev
+pipenv lock
+it is often a problem, because:
+pipenv install shall install only the library itself, and tox is (by default) doing it too. Apart from duplicity it also prevents of usedevelop=True and usedevelop=False in tox.ini because Pipenv is able to express it only in one variant (and tox.ini allows differencies in different environments).
+To prevent it, one should:
+refrain from using pipenv in tox.ini. See requests tox.ini
+Problem: Breaking builds, if pipenv fails
+pipenv is under heavy development and things break sometime. If such issue breaks your CI build, there is a failure which could be prevented by not using pipenv and using traditional tools (which are often a bit more mature).
+To prevent it, one should:
+think twice before adding pipenv into a CI build script, tox.ini or similar place. Do you know what value you get from adding it? Could be the job done with existing tooling?
+do not add it "just for security reasons" or because "everybody does".
+Summary
+Key questions regarding pipenv role in development of python library are:
+What value pipenv really brings? A: Virtualenv management tool.
+What is relevent use case for pipenv? A: Manage virtualenv.
+Shall it appear in the library repository? A: NO.
+Few more details and tricks follow.
+pipenv will not add any security to your package
+Do not push it into project just because everybody does it or because you expect extra security. It will disappoint you.
+Securing by using concrete (and approved) dependencies shall take place in later phase in the application going to use your library.
+Keep Pipfile, Pipfile.lock and .env files out of repository
+Put the files into .gitignore.
+Pipfile is easy to recreate as demonstrated below as most or all requirements are already defined in your setup.py. And the .env file probably contains private information, which shall not be shared.
+Keeping these files out of repository will prevent all the problems, which may happen with CI builds when using pipenv in situations, which are not appropriate.
+pipenv as developer's private toolbox
+pipenv may simplify developer's work as virtualenv management tool.
+The trick is to learn, how to quickly recreate your (private) pipenv related files, e.g.:
+$ cd <project_repository>
+$ # your library will bring the dependencies (via install_requires in setup.py)
+$ pipenv install -e .   
+$ # add more dev tools you preffer 
+$ pipenv install --dev ipython pdbpp
+$ # start hacking
+$ pipenv shell
+...
+Use .env file if you need convenient method for setting up environment variables.
+Remember: Keep pipenv usage out of your CI builds and your life will be simpler.
+Trick: Use setup.py ability to declare extras dependencies
+In your setup.py use the extras_requires section:
+from setuptools import setup
+
+setup(
+    name='mypackage',
+    ....,
+    install_requires=["jinja2", "simplejson"],
+    extras_require={
+        'tests': ['pytest', 'pyyaml'],
+        'pg': ['psycopg2'],
+    },
+    ....
+)
+To install all dependencies declared for tests extra:
+$ pipenv install -e .[tests]
+Note, that it will always include the install_requires dependencies.
+This method does not allow spliting dependencies into default and dev sections, but this shall not be real problem in expected scenarios.

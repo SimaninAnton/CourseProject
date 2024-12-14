@@ -1,0 +1,54 @@
+liyi193328 commented on 29 Jun 2016
+Hi:
+guys, I want to solve question answer task with max margin with loss function : max(0,margin - question_good_answer_sim + question_bad_answer_sim); Here is my main code:
+maxlen=150, featureNum=600
+question = Input( shape=(maxlen,featureNum), name="questions" )
+good_answer = Input( shape=(maxlen,featureNum), name = "good_answers")
+bad_answer = Input( shape=(maxlen,featureNum), name = "bad_answers")
+
+first_lstm = LSTM(output_dim=featureNum,return_sequences=False,input_length=maxlen,input_dim=featureNum,activation="relu")
+
+question_vector = first_lstm(question)
+good_answer_vector = first_lstm(good_answer)
+bad_answer_vector = first_lstm(bad_answer)
+
+question_goodAns_sim = merge([question_vector,good_answer_vector], mode="cos",output_shape=lambda x: x[0], 
+dot_axes=1,name="question_goodAns_sim")
+question_badAns_sim = merge( [question_vector,bad_answer_vector ], mode="cos",output_shape=lambda x: x[0], 
+dot_axes=1,name="question_badAns_sim")
+
+allSims = merge([question_goodAns_sim, question_badAns_sim], mode="concat", concat_axis = 1)
+
+allSims = Reshape((2,))(allSims)
+
+train_model = Model(input=[question,good_answer,bad_answer], output = [ allSims ] )
+
+predict_model = Model(input=[question,good_answer],output=[question_goodAns_sim])
+
+def Max_margin(y_true, y_pred):
+    global margin
+    if margin == None:
+        margin = 0.1
+    question_goodAns_sim = y_pred[:,0]
+    question_badAns_sim = y_pred[:,1]
+    return K.sum( K.maximum(1e-6, 1.0 - question_goodAns_sim + question_badAns_sim), axis = -1 )
+
+train_model.compile(loss= Max_margin,
+        optimizer='adam', metrics=["accuracy"])
+
+predict_model.compile(loss=lambda y_true, y_pred: y_pred, optimizer=sgd, metrics=["accuracy"] )
+training:
+questions (153, 150, 600)
+good_answers (153, 150, 600)
+bad_answers (153, 150, 600)
+train_y: (153, 2)
+Result:
+theano backend
+: train_y: (153, 2) Epoch 1/1 153/153 [==============================] - 93s - loss: nan - acc: 0.9935 after every sample loss is: [array(1.0059077739715576, dtype=float32), array(nan, dtype=float32), array(nan, dtype=float32), array(nan, dtype=float32), array(nan, dtype=float32), array(nan, dtype=float32), ...]
+tensorflow backend
+: InvalidArgumentError: In[0] and In[1] ndims must be >= 3: 2 [[Node: BatchMatMul_45 = BatchMatMul[T=DT_FLOAT, adj_x=false, adj_y=true, _device="/job:localhost/replica:0/task:0/gpu:0"](mul_45210, mul_45210)]] [[Node: Assign_116/_757 = _Recv[_start_time=0, client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_1623815_Assign_116", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]] Caused by op 'BatchMatMul_45', defined at: File "/home/bigdata/anaconda3/lib/python3.4/runpy.py", line 170, in _run_module_as_main "__main__", mod_spec) File "/home/bigdata/anaconda3/lib/python3.4/runpy.py", line 85, in _run_code exec(code, run_globals) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/kernel/__main__.py", line 3, in app.launch_new_instance() File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/config/application.py", line 574, in launch_instance app.start() File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/kernel/zmq/kernelapp.py", line 373, in start ioloop.IOLoop.instance().start() File "/home/bigdata/anaconda3/lib/python3.4/site-packages/zmq/eventloop/ioloop.py", line 151, in start super(ZMQIOLoop, self).start() File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tornado/ioloop.py", line 866, in start handler_func(fd_obj, events) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tornado/stack_context.py", line 275, in null_wrapper return fn(_args, *_kwargs) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/zmq/eventloop/zmqstream.py", line 433, in _handle_events self._handle_recv() File "/home/bigdata/anaconda3/lib/python3.4/site-packages/zmq/eventloop/zmqstream.py", line 465, in _handle_recv self._run_callback(callback, msg) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/zmq/eventloop/zmqstream.py", line 407, in _run_callback callback(_args, *_kwargs) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tornado/stack_context.py", line 275, in null_wrapper return fn(_args, *_kwargs) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/kernel/zmq/kernelbase.py", line 252, in dispatcher return self.dispatch_shell(stream, msg) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/kernel/zmq/kernelbase.py", line 213, in dispatch_shell handler(stream, idents, msg) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/kernel/zmq/kernelbase.py", line 362, in execute_request user_expressions, allow_stdin) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/kernel/zmq/ipkernel.py", line 181, in do_execute shell.run_cell(code, store_history=store_history, silent=silent) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/core/interactiveshell.py", line 2871, in run_cell interactivity=interactivity, compiler=compiler, result=result) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/core/interactiveshell.py", line 2975, in run_ast_nodes if self.run_code(code, result): File "/home/bigdata/anaconda3/lib/python3.4/site-packages/IPython/core/interactiveshell.py", line 3035, in run_code exec(code_obj, self.user_global_ns, self.user_ns) File "", line 2, in train_model, p_model = buildModel(config) File "", line 168, in buildModel question_goodAns_sim = merge([question_vector,good_answer_vector], mode="cos",dot_axes=1, output_shape=lambda x: x[0], name="question_goodAns_sim") File "/home/bigdata/software/keras/keras-master/keras/engine/topology.py", line 1464, in merge name=name) File "/home/bigdata/software/keras/keras-master/keras/engine/topology.py", line 1123, in __init__ self.add_inbound_node(layers, node_indices, tensor_indices) File "/home/bigdata/software/keras/keras-master/keras/engine/topology.py", line 543, in add_inbound_node Node.create_node(self, inbound_layers, node_indices, tensor_indices) File "/home/bigdata/software/keras/keras-master/keras/engine/topology.py", line 153, in create_node output_tensors = to_list(outbound_layer.call(input_tensors, mask=input_masks)) File "/home/bigdata/software/keras/keras-master/keras/engine/topology.py", line 1228, in call denominator = K.sqrt(K.batch_dot(l1, l1, self.dot_axes) *
+File "/home/bigdata/software/keras/keras-master/keras/backend/tensorflow_backend.py", line 249, in batch_dot
+out = tf.batch_matmul(x, y, adj_x=adj_x, adj_y=adj_y)
+File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tensorflow/python/ops/gen_math_ops.py", line 281, in _batch_mat_mul adj_y=adj_y, name=name)
+File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tensorflow/python/ops/op_def_library.py", line 683, in apply_op op_def=op_def) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tensorflow/python/framework/ops.py", line 2154, in create_op original_op=self._default_original_op, op_def=op_def) File "/home/bigdata/anaconda3/lib/python3.4/site-packages/tensorflow/python/framework/ops.py", line 1154, in __init__ self._traceback = _extract_stack()
+I try a lot ways that smart guys here suggest in similiar questions, but can't figure out. I'm struggling much about the project, can anyone help me, thanks vey much?

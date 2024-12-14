@@ -1,0 +1,88 @@
+Contributor
+rmax commented on Jan 29, 2014
+I had a spider which crawled a few thousand of URLs but noticed it didn't extract any item at all. Digging into the logs I noticed the 429 status code (Too Many Requests) after a few dozen of requests:
+2014-01-27 13:15:05 DEBUG Crawled (200) <GET http://site/...>
+2014-01-27 13:15:06 DEBUG Crawled (200) <GET http://site/...>
+2014-01-27 13:15:06 DEBUG Crawled (429) <GET http://site/...>
+2014-01-27 13:15:06 DEBUG Crawled (429) <GET http://site/...>
+And this message for thousands of requests without calling the callback at all. I would expect to scrapy show an error or ignore message for non-200 response but in this case it didn't happen. Below is the technical information and how to reproduce this behavior. I haven't verified if this happens for other 4xx response status codes.
+$ scrapy version -v
+Scrapy  : 0.23.0
+lxml    : 3.1.0.0
+libxml2 : 2.9.0
+Twisted : 12.3.0
+Python  : 2.7.4 (default, Sep 26 2013, 03:20:26) - [GCC 4.7.3]
+Platform: Linux-3.8.0-35-generic-x86_64-with-Ubuntu-13.04-raring
+# file: server.py
+# usage: python server.py
+from klein import run, route
+
+global counter
+counter = 0
+
+@route('/')
+def home(request):
+    global counter
+    counter += 1
+
+    if counter < 10:
+        return 'Hello, world %s!' % counter
+    else:
+        request.setResponseCode(429)
+        return 'Too Many Requests'
+
+run("localhost", 8080)
+# file: myspider.py
+from scrapy.http import Request
+from scrapy.spider import Spider
+
+class MySpider(Spider):
+    name = 'myspider'
+    start_urls = ['http://localhost:8080']
+
+    def parse(self, response):
+        return Request(response.url, dont_filter=True)
+$ scrapy runspider myspider.py   
+2014-01-28 16:15:15-0400 [scrapy] INFO: Scrapy 0.23.0 started (bot: scrapybot)
+2014-01-28 16:15:15-0400 [scrapy] INFO: Optional features available: ssl, http11, boto, django
+2014-01-28 16:15:15-0400 [scrapy] INFO: Overridden settings: {}
+2014-01-28 16:15:15-0400 [scrapy] INFO: Enabled extensions: LogStats, TelnetConsole, CloseSpider, WebService, CoreStats, SpiderState
+2014-01-28 16:15:15-0400 [scrapy] INFO: Enabled downloader middlewares: HttpAuthMiddleware, DownloadTimeoutMiddleware, UserAgentMiddleware, RetryMiddleware, DefaultHeadersMiddleware, MetaRefreshMiddleware, HttpCompressionMiddleware, RedirectMiddleware, CookiesMiddleware, ChunkedTransferMiddleware, DownloaderStats
+2014-01-28 16:15:15-0400 [scrapy] INFO: Enabled spider middlewares: HttpErrorMiddleware, OffsiteMiddleware, RefererMiddleware, UrlLengthMiddleware, DepthMiddleware
+2014-01-28 16:15:15-0400 [scrapy] INFO: Enabled item pipelines: 
+2014-01-28 16:15:15-0400 [myspider] INFO: Spider opened
+2014-01-28 16:15:15-0400 [myspider] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2014-01-28 16:15:15-0400 [scrapy] DEBUG: Telnet console listening on 0.0.0.0:6023
+2014-01-28 16:15:15-0400 [scrapy] DEBUG: Web service listening on 0.0.0.0:6080
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: None)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (200) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] DEBUG: Crawled (429) <GET http://localhost:8080> (referer: http://localhost:8080)
+2014-01-28 16:15:15-0400 [myspider] INFO: Closing spider (finished)
+2014-01-28 16:15:15-0400 [myspider] INFO: Dumping Scrapy stats:
+    {'downloader/request_bytes': 2368,
+     'downloader/request_count': 10,
+     'downloader/request_method_count/GET': 10,
+     'downloader/response_bytes': 1230,
+     'downloader/response_count': 10,
+     'downloader/response_status_count/200': 9,
+     'downloader/response_status_count/429': 1,
+     'finish_reason': 'finished',
+     'finish_time': datetime.datetime(2014, 1, 28, 20, 15, 15, 740849),
+     'log_count/DEBUG': 12,
+     'log_count/INFO': 7,
+     'request_depth_max': 9,
+     'response_received_count': 10,
+     'scheduler/dequeued': 10,
+     'scheduler/dequeued/memory': 10,
+     'scheduler/enqueued': 10,
+     'scheduler/enqueued/memory': 10,
+     'start_time': datetime.datetime(2014, 1, 28, 20, 15, 15, 622068)}
+2014-01-28 16:15:15-0400 [myspider] INFO: Spider closed (finished)
+```.

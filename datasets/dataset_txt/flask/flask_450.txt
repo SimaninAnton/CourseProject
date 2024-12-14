@@ -1,0 +1,86 @@
+Souvikray commented on 25 Feb 2018 •
+edited by ThiefMaster
+I have a Flask application where I let users access third party applications and fetch data from them and perform some visualizations.Now the user has to provide the application name and it's credentials in order to fetch the data.Now I want to avoid putting the application name in the url and rather all of the data should be sent as a POST request where I will parse the POST data, connect to the required app with the given credentials and perform some visualizations.This is what the user will send as a POST data
+{
+    "application_name": "appdynamics",
+    "account_id": "sdf632sef",
+    "username": "kuhku86tg",
+    "password": "oihsd832"
+}
+Now I want to trigger my particular REST API class based on the application name provided by the user.
+The way I planned was to create a seperate file that involves getting the POST data using request parser and then calling it in the main application where I will trigger my REST API class with a if condition based on the application name.Below is the file parse.py
+from flask_restful import reqparse
+
+# create a parser object
+parser = reqparse.RequestParser()
+# add agruments to the parser object
+parser.add_argument('account_id', type=str, required=False, help="Please define 'account_id'")
+parser.add_argument('username', type=str, required=False, help="Please define 'username'")
+parser.add_argument('password', type=str, required=False, help="Please define 'password'")
+parser.add_argument('application_name', type=str, required=False, help="Please define 'application name'")
+
+data = parser.parse_args()
+Now I call it in the main application app.py
+from parser import data
+from flask import Flask
+from flask_restful import Api
+
+app = Flask(__name__)
+# create an API for the Flask app
+api = Api(app)
+
+# if the user demands info for appdynamics, trigger the Appdynamics API class
+if data['application_name'] == "appdynamics":
+    api.add_resource(AppdynamicsAPI, "/<string:name>")  # the string will contain the metric requirement
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=True)
+Below is the section where the logic for the REST API is written
+from parser import data
+from flask_restful import Resource, reqparse
+from fetch_data.appdynamics import fetch_all_apps, fetch_avg_resp_time, calls_per_min
+from models.user import *
+
+class AppdynamicsAPI(Resource):
+    # authenticate users
+    def post(self, name):
+        first_data = data
+        # if the user passes the credentials, insert it into the database otherwise use the last known credentials
+        # ensure you only insert valid credentials
+        if all([first_data['account_id'], first_data['password'], first_data['username']]):
+            users.update(first_data, {i: j for i, j in first_data.items()}, upsert=True)
+            print({i: j for i, j in first_data.items()})
+        credentials = users.find_one({})
+        print("Credentials", credentials)
+        account_id = credentials['account_id']
+        username = credentials['username']
+        password = credentials['password']
+        t_duration = first_data['t_duration']
+
+
+        if name == "allapps":
+            status_code, result = fetch_all_apps(account_id, username, password)
+            if status_code == 200:
+                return {"information": result}, status_code
+            return {"message": "Please enter correct credentials"}, status_code
+However I receive the below error
+Traceback (most recent call last):
+  File "/home/souvik/PycharmProjects/ServiceHandler/app.py", line 3, in <module>
+    from resource.appdynamics_resource import AppdynamicsAPI
+  File "/home/souvik/PycharmProjects/ServiceHandler/resource/appdynamics_resource.py", line 4, in <module>
+    from authentication.parser import data
+  File "/home/souvik/PycharmProjects/ServiceHandler/authentication/parser.py", line 14, in <module>
+    data = parser.parse_args()
+  File "/home/souvik/utorapp/lib/python3.5/site-packages/flask_restful/reqparse.py", line 302, in parse_args
+    req.unparsed_arguments = dict(self.argument_class('').source(req)) if strict else {}
+  File "/home/souvik/utorapp/lib/python3.5/site-packages/werkzeug/local.py", line 364, in <lambda>
+    __setattr__ = lambda x, n, v: setattr(x._get_current_object(), n, v)
+  File "/home/souvik/utorapp/lib/python3.5/site-packages/werkzeug/local.py", line 306, in _get_current_object
+    return self.__local()
+  File "/home/souvik/utorapp/lib/python3.5/site-packages/flask/globals.py", line 37, in _lookup_req_object
+    raise RuntimeError(_request_ctx_err_msg)
+RuntimeError: Working outside of request context.
+
+This typically means that you attempted to use functionality that needed
+an active HTTP request.  Consult the documentation on testing for
+information about how to avoid this problem.

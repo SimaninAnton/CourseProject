@@ -1,0 +1,54 @@
+Contributor
+dulacp commented on 28 Jun 2013
+The error is raised when I'm submitting the following request thanks to the httpie command on an existing album :
+$ http -v PUT http://localhost:8000/api/albums/2/ songs:='[{"title":"Imagine"}]'
+Whereas, a POST request is working perfectly, like this one
+$ http -v POST http://localhost:8000/api/albums/ title="Let It Be" songs:='[{"title":"Dig a Pony"}]'
+I've track down the error to be that the variable instance is an instance of django.db.models.fields.related.RelatedManager that is not judged as an iterable object by default... it's only iterable after calling the all method.
+Whereas, for the POST request, this same variable instance is set to None.
+I didn't find a fix for it yet, but I'll make a PR as soon as I do.
+version of django-rest-framework: 2.3.6
+My Serializers
+class SongSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Song
+
+class AlbumSerializer(serializers.ModelSerializer):
+    songs = SongSerializer(many=True)
+    class Meta:
+        model = Album
+My Views
+class AlbumViewSet(viewsets.ModelViewSet):
+    model = Album
+    serializer_class = AlbumSerializer
+Full error traceback
+Traceback (most recent call last):
+  File "/MyVirtualEnv/lib/python2.7/site-packages/django/core/handlers/base.py", line 115, in get_response
+    response = callback(request, *callback_args, **callback_kwargs)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/viewsets.py", line 78, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/django/views/decorators/csrf.py", line 77, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/views.py", line 327, in dispatch
+    response = self.handle_exception(exc)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/views.py", line 324, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/Users/peteralaoui/Sites/Carousel/Code/carousel-website-api/carousel/apps/api/views.py", line 89, in update
+    return super(CardViewSet, self).update(request, pk=pk)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/mixins.py", line 129, in update
+    if serializer.is_valid():
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 480, in is_valid
+    return not self.errors
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 472, in errors
+    ret = self.from_native(data, files)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 868, in from_native
+    instance = super(ModelSerializer, self).from_native(data, files)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 318, in from_native
+    attrs = self.restore_fields(data, files)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 244, in restore_fields
+    field.field_from_native(data, files, field_name, reverted_data)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 397, in field_from_native
+    serializer = self.__class__(**kwargs)
+  File "/MyVirtualEnv/lib/python2.7/site-packages/rest_framework/serializers.py", line 168, in __init__
+    raise ValueError('instance should be a queryset or other iterable with many=True')
+ValueError: instance should be a queryset or other iterable with many=True

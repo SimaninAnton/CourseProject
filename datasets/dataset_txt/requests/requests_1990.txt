@@ -1,0 +1,71 @@
+ghost commented on Sep 12, 2013
+The application code uses the same requests.Session object to download bunch of files. In rare cases, downloading fails with the following trace (here, there is one successful download and one failed for the same Session object):
+2013-09-08 22:57:38,553 INFO root: Download 'http://node-testing.sugarlabs.org//packages/OLPC/11.3.1/ghostscript-8.71-16.fc14.i686.rpm' package
+2013-09-08 22:57:38,754 DEBUG requests.packages.urllib3.connectionpool: "GET //packages/OLPC/11.3.1/ghostscript-8.71-16.fc14.i686.rpm HTTP/1.1" 200 None
+2013-09-08 22:58:23,276 INFO root: Download 'http://node-testing.sugarlabs.org//packages/OLPC/11.3.1/poppler-data-0.4.4-1.fc14.noarch.rpm' package
+2013-09-08 22:58:23,442 ERROR root: Failed to install
+Traceback (most recent call last):
+  File "/usr/share/PackageKit/helpers/presolve/presolveBackend.py", line 65, in _install_packages
+    presolve.install(backend.split_package_id(i)[0])
+  File "/usr/share/PackageKit/helpers/presolve/presolve.py", line 133, in install
+    _install_bundles(_load_bundles(package))
+  File "/usr/share/PackageKit/helpers/presolve/presolve.py", line 291, in _load_bundles
+    _fetcher.download(url, bundle)
+  File "/usr/lib/python2.7/site-packages/sugar_network/toolkit/http.py", line 161, in download
+    reply = self.request('GET', path, allow_redirects=True)
+  File "/usr/lib/python2.7/site-packages/sugar_network/toolkit/http.py", line 206, in request
+    headers=headers, params=params, **kwargs)
+  File "/usr/lib/python2.7/site-packages/sugar_network/toolkit/../lib/requests/requests/sessions.py", line 335, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/lib/python2.7/site-packages/sugar_network/toolkit/../lib/requests/requests/sessions.py", line 438, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/lib/python2.7/site-packages/sugar_network/toolkit/../lib/requests/requests/adapters.py", line 327, in send
+    raise ConnectionError(e)
+ConnectionError: HTTPConnectionPool(host='node-testing.sugarlabs.org', port=80): Max retries exceeded with url: //packages/OLPC/11.3.1/poppler-data-0.4.4-1.fc14.noarch.rpm (Caused by : '')
+The server side was not heavy loaded and runing wget for the same urls was not capable to reproduce the issue. But in logs, I found that requests library generates bunch of entries like
+Resetting dropped connection..
+So, the guess was that requests tries to reuse pooled http connection which is arranged to be closed on server side or so. After the applying the fix
+diff --git a/requests/packages/urllib3/connectionpool.py b/requests/packages/urllib3/connectionpool.py
+index 4e851f0..c7dfa05 100644
+--- a/requests/packages/urllib3/connectionpool.py
++++ b/requests/packages/urllib3/connectionpool.py
+@@ -331,7 +331,7 @@ class HTTPConnectionPool(ConnectionPool, RequestMethods):
+ 
+     def urlopen(self, method, url, body=None, headers=None, retries=3,
+                 redirect=True, assert_same_host=True, timeout=_Default,
+-                pool_timeout=None, release_conn=None, **response_kw):
++                pool_timeout=None, release_conn=None, force_new=False, **response_kw):
+         """
+         Get a connection from the pool and perform an HTTP request. This is the
+         lowest level call for making a request, so you'll need to specify all
+@@ -420,7 +420,7 @@ class HTTPConnectionPool(ConnectionPool, RequestMethods):
+ 
+         try:
+             # Request a connection from the queue
+-            conn = self._get_conn(timeout=pool_timeout)
++            conn = self._new_conn() if force_new else self._get_conn(timeout=pool_timeout)
+ 
+             # Make the request on the httplib connection object
+             httplib_response = self._make_request(conn, method, url,
+@@ -471,7 +471,10 @@ class HTTPConnectionPool(ConnectionPool, RequestMethods):
+             err = e
+ 
+             if retries == 0:
+-                raise MaxRetryError(self, url, e)
++                if force_new:
++                    raise MaxRetryError(self, url, e)
++                force_new = True
++                retries = 1
+ 
+         finally:
+             if release_conn:
+@@ -487,7 +490,7 @@ class HTTPConnectionPool(ConnectionPool, RequestMethods):
+             return self.urlopen(method, url, body, headers, retries - 1,
+                                 redirect, assert_same_host,
+                                 timeout=timeout, pool_timeout=pool_timeout,
+-                                release_conn=release_conn, **response_kw)
++                                release_conn=release_conn, force_new=force_new, **response_kw)
+ 
+         # Handle redirect?
+         redirect_location = redirect and response.get_redirect_location()
+the issue cannot be reproduced any more.

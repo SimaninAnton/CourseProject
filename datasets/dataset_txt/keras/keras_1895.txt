@@ -1,0 +1,75 @@
+valerioorfano commented on 19 Jul 2017
+Hi i ve just craeted a CNN with Keras. It works fine and i get a val_accuracy of 0.98, but actually when i predict x_test (the same data usd for val_accuracy), i notice that results are completely different.
+The max of the proba distribution return from model.predict(x_test) doesn't match the corrispondent class of y_test. They are completely different. How is it possible? Am i using a wrong metrics accuracy function? Belowe my script:
+from keras.layers import Input, Dense, Embedding, merge, Convolution1D, Convolution2D, MaxPooling2D, MaxPooling1D, Dropout, LSTM
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing import sequence
+from sklearn.cross_validation import train_test_split
+from keras.layers.core import Reshape, Flatten
+from keras.callbacks import ModelCheckpoint
+from keras.optimizers import Adam
+from keras.models import Model,Sequential
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import LabelBinarizer
+df = pd.read_csv("/home/elastic/CNN_filt.csv", names=["file_id","classe","text"], encoding = "latin-1")
+output_dim = len(np.unique(df.classe))
+maxlen = max([len(df.text[i]) for i in range(df.text.shape[0])])
+sequence_length = 1000
+top_words = 5000
+embedding_dim = 256
+filter_sizes = [3,4,5]
+num_filters = 512
+drop = 0.5
+nb_epoch = 2
+batch_size = 128
+tokenizer = Tokenizer(num_words = top_words)
+tokenizer.fit_on_texts(df["text"])
+sequences = tokenizer.texts_to_sequences(df["text"])
+word_index = tokenizer.word_index
+print('Found %s unique tokens.' % len(word_index))
+data = tokenizer.sequences_to_matrix(sequences)
+encoder = LabelBinarizer()
+labels = encoder.fit_transform(df.classe)
+print('Shape of data tensor:', data.shape)
+print('Shape of label tensor:', labels.shape)
+indices = np.arange(data.shape[0])
+np.random.shuffle(indices)
+data = data[indices]
+labels = labels[indices]
+VALIDATION_SPLIT = 0.2
+nb_validation_samples = int(VALIDATION_SPLIT * data.shape[0])
+x_train = data[:-nb_validation_samples]
+y_train = labels[:-nb_validation_samples]
+x_test = data[-nb_validation_samples:]
+y_test = labels[-nb_validation_samples:]
+print('Pad sequences (samples x time)')
+x_train = sequence.pad_sequences(x_train, maxlen=sequence_length)
+x_test = sequence.pad_sequences(x_test, maxlen=sequence_length)
+print('x_train shape:', x_train.shape)
+print('x_test shape:', x_test.shape)
+model = Sequential()
+model.add(Embedding(input_dim = len(word_index)+1, output_dim = embedding_dim, input_length=sequence_length))
+inputs = Input(shape=(sequence_length,), dtype='int32')
+embedding = Embedding(output_dim=embedding_dim, input_dim=len(word_index) +1, input_length=sequence_length)(inputs)
+reshape = Reshape((sequence_length,embedding_dim,1))(embedding)
+conv_0 = Convolution2D(num_filters, filter_sizes[0], embedding_dim, border_mode='valid', init='normal', activation='relu', dim_ordering='tf')(reshape)
+conv_1 = Convolution2D(num_filters, filter_sizes[1], embedding_dim, border_mode='valid', init='normal', activation='relu', dim_ordering='tf')(reshape)
+conv_2 = Convolution2D(num_filters, filter_sizes[2], embedding_dim, border_mode='valid', init='normal', activation='relu', dim_ordering='tf')(reshape)
+maxpool_0 = MaxPooling2D(pool_size=(sequence_length - filter_sizes[0] + 1, 1), strides=(1,1), border_mode='valid', dim_ordering='tf')(conv_0)
+maxpool_1 = MaxPooling2D(pool_size=(sequence_length - filter_sizes[1] + 1, 1), strides=(1,1), border_mode='valid', dim_ordering='tf')(conv_1)
+maxpool_2 = MaxPooling2D(pool_size=(sequence_length - filter_sizes[2] + 1, 1), strides=(1,1), border_mode='valid', dim_ordering='tf')(conv_2)
+merged_tensor = merge([maxpool_0, maxpool_1, maxpool_2], mode='concat', concat_axis=1)
+flatten = Flatten()(merged_tensor)
+dropout = Dropout(drop)(flatten)
+output = Dense(output_dim=output_dim, activation='softmax')(dropout)
+model = Model(input=inputs, output=output)
+checkpoint = ModelCheckpoint('weights.{epoch:03d}-{val_acc:.4f}.hdf5', monitor='val_acc', verbose=1, save_best_only=True, mode='auto')
+adam = Adam(lr=1e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=batch_size, nb_epoch=nb_epoch, verbose=1, callbacks=[checkpoint], validation_data=(x_test, y_test)) # starts training
+predictions = model.predict(x_test)
+compare predictions and y_test give completely different result.
+np.argmax(predictions) != np.argmax(y_test) always
+What Am i doing wrong?
+Thanx valerio

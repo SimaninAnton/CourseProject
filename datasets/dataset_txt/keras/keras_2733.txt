@@ -1,0 +1,33 @@
+turtleizzy commented on 5 Apr 2017 •
+edited
+Environment:
+Ubuntu 16.04,
+Python 3.5.3, 
+Keras 2.0.2 from pypi, 
+Backend: Tensorflow 1.1.0rc0 (with CUDA, self-compiled)
+Code to reproduce this issue:
+from keras.engine.topology import get_source_inputs
+from keras.layers import Input, Dense
+from keras.models import Model
+
+input_shape = (512, 512, 3)
+
+input_tensor = Input(shape = input_shape)
+print (input_tensor._keras_history[0].is_placeholder) # True
+x_1 = Dense(16)(input_tensor)
+model_1 = Model(input_tensor, x_1)
+print (len(model_1. _feed_input_names)>0)  #  True
+
+img_input = Input(tensor = input_tensor, shape = input_shape) # <-- Bug here, digested from ./applications/inception_v3.py Line 160
+
+print (img_input._keras_history[0].is_placeholder) # False 
+print (input_tensor._keras_history[0].is_placeholder) # False <-- Somehow input_tensor is also modified
+x_2 = Dense(16)(img_input)
+inputs = get_source_inputs(img_input) # digested from ./applications/inception_v3.py Line 353
+model_2 = Model(inputs, x_2) 
+print (len(model_2. _feed_input_names)>0)  #  False
+
+# model_2.fit(x, y) will result in 'ValueError: The model expects 0 input arrays', which renders this model untrainable.
+This bug was originally found when I tried mitigating my code to Keras 2.x utilizing built-in inception-v3 framework. fit_on_generator wouldn't start and complained ValueError: The model expects 0 input arrays, but only received one array. A little bit digging into inception-v3 code revealed this bug.
+A temporary workaround is to change Line 160 in inception_v3.py into img_input = input_tensor.
+1

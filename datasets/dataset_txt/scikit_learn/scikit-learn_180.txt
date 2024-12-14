@@ -1,0 +1,24 @@
+Contributor
+glemaitre commented on Oct 31, 2019
+I want to give back some feedback regarding the scikit-learn module privatization which we need to handle in imbalanced-learn.
+Imports triggering some errors in imbalanced-learn
+So here is the list of the different imports which were currently failing in scikit-learn:
+from sklearn.ensemble.base import _set_random_states
+from sklearn.ensemble.forest import _parallel_build_trees
+from sklearn.metrics.classification import _check_target _classification
+from sklearn.utils.testing import set_random_state -> not defined in __all__
+from sklearn.utils.testing import assert_allclose_dense_sparse -> not defined in __all__
+from sklearn.utils.testing import assert_no_warnings -> not defined in __all__
+While one could argue that the imports with leading underscore would be the issue of the contrib packages, the failure with the testing modules is more problematic. The imports are failing because these functions are not defined in __all__ in _testing.py and thus, are not imported in testing.py by calling from _testing import *.
+So for the previous imports, we might have 2 solutions:
+add the function in __all__
+use the __getattr__ from PEP 562 in which in scikit-learn we could manage to still import thing if we get an ImportError.
+Now, I want to emphasize why one package might use the leading underscore function. In imbalanced-learn, we implemented the BalancedRandomForest which take some components from the RandomForest. Basically, we need to resample data and call _parallel_build_trees. As a developer, it makes no sense to reimplement our own codebase for this case.
+So we can easily update master and create a release at the same time than scikit-learn and catch the error if there is one. However, this might not be the case of other contrib packages.
+Update for the contrib packages
+So on the side of the contrib packages, master can easily be updated by fixing the import. However, the problem will start when people will update scikit-learn and contrib packages will not create a follow-up release or that a user just update scikit-learn without updating the contrib project. In short, there is no easy way for the contrib here. The backward compatibility should be preserved in scikit-learn.
+Conclusion
+So I think that this issue is a blocker for the release. We should just agree until which level we think this is fine to break backwards compatibility.
+I think this is worth mentioning that we need to advertise the 0.22 RC to packages which might extend scikit-learn to get these changes rights and not upset people which relies on scikit-learn. For instance, having feedback from @rasbt in mlxtend and other developers implementing scikit-learn-contrib packages could be great.
+ping @scikit-learn/core-devs
+👍 1

@@ -1,0 +1,37 @@
+drewpc commented on 30 Sep 2017 •
+edited
+It seems that the pagination classes accept a view variable in the paginate_queryset() function definition, but never actually use the value when constructing the next/previous links. Here is the function definition:
+django-rest-framework/rest_framework/pagination.py
+Line 199 in 018e43e
+ def paginate_queryset(self, queryset, request, view=None): 
+The get_next_link() function looks like this:
+django-rest-framework/rest_framework/pagination.py
+Lines 249 to 254 in 018e43e
+ def get_next_link(self): 
+     if not self.page.has_next(): 
+         return None 
+     url = self.request.build_absolute_uri() 
+     page_number = self.page.next_page_number() 
+     return replace_query_param(url, self.page_query_param, page_number) 
+Note that it only uses the request to build the absolute URI and never references the view passed in the previous queryset function. Is this a bug, oversight, or am I misunderstanding how the view variable was supposed to work?
+I'm happy to submit a PR if this is a bug/oversight. My temporary solution is below. In my case, I am constructing an absolute URI using the reverse() function and then passing that into the paginate_queryset() function as the view argument.
+class PageNumberPaginationCustomView(PageNumberPagination):
+    def paginate_queryset(self, queryset, request, view=None):
+        self.view = view
+        return super(PageNumberPaginationCustomView, self).paginate_queryset(queryset, request, view)
+
+    def get_next_link(self):
+        if not self.page.has_next():
+            return None
+        url = self.view or self.request.build_absolute_uri()
+        page_number = self.page.next_page_number()
+        return replace_query_param(url, self.page_query_param, page_number)
+
+    def get_previous_link(self):
+        if not self.page.has_previous():
+            return None
+        url = self.view or self.request.build_absolute_uri()
+        page_number = self.page.previous_page_number()
+        if page_number == 1:
+            return remove_query_param(url, self.page_query_param)
+        return replace_query_param(url, self.page_query_param, page_number)

@@ -1,0 +1,18 @@
+Contributor
+mrTsjolder commented on 31 Aug 2017
+For as far as I know, the covariance matrix can only be computed by means of the dot product if the data has zero mean. For what I understand from the Keras implementation of ZCA whitening, the assumption of zero mean data is not met when featurewise_center=False, which is the default.
+Why not simply use numpy.cov to compute the covariance matrix? If this would not be an option for some reason, it should be assured that the data is centred before computing the covariance by means of the dot product.
+The solution with numpy.cov would look like
+if self.zca_whitening:
+        flat_x = np.reshape(x, (x.shape[0], x.shape[1] * x.shape[2] * x.shape[3]))
+        sigma = np.cov(flat_x, rowvar=False, ddof=0) # ddof=0 for the biased estimate
+        u, s, _ = linalg.svd(sigma)
+        self.principal_components = np.dot(np.dot(u, np.diag(1. / np.sqrt(s + self.zca_epsilon))), u.T)
+The approach without numpy.cov, but with centring could look as follows
+if self.zca_whitening:
+        flat_x = np.reshape(x, (x.shape[0], x.shape[1] * x.shape[2] * x.shape[3]))
+        if not self.featurewise_center:
+                flat_x -= np.mean(flat_x, axis=0, keepdims=True)
+        sigma = np.dot(flat_x.T, flat_x) / flat_x.shape[0]
+        u, s, _ = linalg.svd(sigma)
+        self.principal_components = np.dot(np.dot(u, np.diag(1. / np.sqrt(s + self.zca_epsilon))), u.T)

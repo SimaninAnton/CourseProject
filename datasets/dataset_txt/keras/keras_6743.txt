@@ -1,0 +1,37 @@
+rex-yue-wu commented on 21 Aug 2015
+Hi,
+I am using Graph to train a multi-task CNN. Intutively, it makes sense to force training to focus on a main task, but I did not think this simple feature has already been supported. I guess I can introduce task_weight into the current Graph model, but please correct me if I am wrong.
+class Graph(Model, containers.Graph):
+    def compile(self, optimizer, loss, theano_mode=None):
+        # loss is a dictionary mapping output name to loss functions
+        ys = []
+        ys_train = []
+        ys_test = []
+        weights = []
+        train_loss = 0.
+        test_loss = 0.
+        for output_name in self.output_order:
+            loss_fn = loss[output_name]
+            output = self.outputs[output_name]
+            y_train = output.get_output(True)
+            y_test = output.get_output(False)
+            y = T.zeros_like(y_test)
+            ys.append(y)
+            ys_train.append(y_train)
+            ys_test.append(y_test)
+
+            if hasattr(output, "get_output_mask"):
+                mask = output.get_output_mask()
+            else:
+                mask = None
+
+            weight = T.ones_like(y_test)
+            weights.append(weight)
+            weighted_loss = weighted_objective(objectives.get(loss_fn))
+            # <-- begin of using task weight --> 
+            train_loss += weighted_loss(y, y_train, weight, mask) *  task_weight
+            test_loss += weighted_loss(y, y_test, weight, mask) * task_weight
+            # <-- end of using task weight -->
+        train_loss.name = 'train_loss'
+        test_loss.name = 'test_loss'
+I've also seen papers claiming it is important to stop different tasks at different iterations, but not sure how to support this feature in a systematic way ( sure I can manually stop training a model, remove the task I want to stop, and reload weights from previous trained model and lanch training on the rest of tasks again).

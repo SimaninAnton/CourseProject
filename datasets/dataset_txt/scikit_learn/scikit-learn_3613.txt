@@ -1,0 +1,57 @@
+Contributor
+aesuli commented on Sep 10, 2015
+Test code:
+from sklearn.linear_model import SGDClassifier
+
+
+binclasses = ['a','b']
+multiclasses = ['a','b','c']
+
+
+#ok
+clf = SGDClassifier(average=False)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],binclasses)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],binclasses)
+
+#ok
+clf = SGDClassifier(average=False)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],multiclasses)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],multiclasses)
+
+#ok
+clf = SGDClassifier(average=10)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],binclasses)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],binclasses)
+
+#the second partial_fit fails
+clf = SGDClassifier(average=10)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],multiclasses)
+clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],multiclasses)
+this last call fails with exception
+Traceback (most recent call last):
+  File "multiclass_average_bug.py", line 32, in <module>
+    clf.partial_fit([[1,0,0],[0,1,0]],['a','b'],multiclasses)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\linear_model\stochastic_gradient.py", line 526, in partial_fit
+    coef_init=None, intercept_init=None)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\linear_model\stochastic_gradient.py", line 387, in _partial_fit
+    sample_weight=sample_weight, n_iter=n_iter)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\linear_model\stochastic_gradient.py", line 471, in _fit_multiclass
+    for i in range(len(self.classes_)))
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\externals\joblib\parallel.py", line 659, in __call__
+    self.dispatch(function, args, kwargs)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\externals\joblib\parallel.py", line 406, in dispatch
+    job = ImmediateApply(func, args, kwargs)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\externals\joblib\parallel.py", line 140, in __init__
+    self.results = func(*args, **kwargs)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\linear_model\stochastic_gradient.py", line 272, in fit_binary
+    _prepare_fit_binary(est, y, i)
+  File "C:\Programs\Python3.4\lib\site-packages\sklearn\linear_model\stochastic_gradient.py", line 256, in _prepare_fit_binary
+    intercept = est.standard_intercept_[i]
+IndexError: index 1 is out of bounds for axis 0 with size 1
+This happens because est.standard_intercept_ is of size one instead of size three, as needed by the multiclass setup of the test case.
+I have found the issue originates from _fit_multiclass function in stochastic_gradient.py, line 485:
+self.standard_intercept_ = np.atleast_1d(intercept)
+I fixed it by replacing the above code with
+self.standard_intercept_ = np.atleast_1d(self.intercept_)
+because self.intercept_ is properly created using the intercept values from the various OvA jobs in lines 474-475; also, line 486 can be removed.
+Changing the code as I suggest solves the issue, but the role of self.standard_intercept_ and its relation with self.intercept_ is not 100% clear to me, so I would like a check from people with more experience on sklearn code before calling it a bugfix.

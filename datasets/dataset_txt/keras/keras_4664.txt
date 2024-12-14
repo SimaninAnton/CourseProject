@@ -1,0 +1,64 @@
+keskarnitish commented on 2 Aug 2016 •
+edited
+I was training a large model using the generator functions and found something amiss in model.evaluate_generator. Specifically, the number of samples requested by the generator and the ones actually fetched has a mismatch.
+The following code should reproduce the problem:
+from __future__ import print_function
+import numpy as np
+from keras.datasets import cifar10
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Activation, Flatten, Convolution2D, MaxPooling2D
+from keras.utils import np_utils
+
+# the data, shuffled and split between train and test sets
+(X_train, y_train), (X_test, y_test) = cifar10.load_data()
+
+# convert class vectors to binary class matrices
+Y_train = np_utils.to_categorical(y_train, 10)
+Y_test = np_utils.to_categorical(y_test, 10)
+
+model = Sequential()
+
+model.add(Convolution2D(32, 3, 3, border_mode='same',
+                        input_shape=(3,32,32)))
+model.add(Activation('relu'))
+model.add(Convolution2D(32, 3, 3))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Convolution2D(64, 3, 3, border_mode='same'))
+model.add(Activation('relu'))
+model.add(Convolution2D(64, 3, 3))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Flatten())
+model.add(Dense(512))
+model.add(Activation('relu'))
+model.add(Dense(10))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy',optimizer='adam',metrics=['accuracy'])
+
+X_train = X_train.astype('float32') / 255.
+X_test = X_test.astype('float32') / 255.
+datagen = ImageDataGenerator(
+    width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
+    height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
+    horizontal_flip=True)  # randomly flip images
+
+
+datagen.fit(X_train)
+
+flow_batch_size = 11
+total_dps_to_see = 100
+datagen_flow = datagen.flow(X_train,Y_train,batch_size=flow_batch_size)
+
+print('Total Batches Used (According to Flow) [Before Evaluation]:',datagen_flow.total_batches_seen)
+model.evaluate_generator(datagen_flow,total_dps_to_see)
+
+print('Total Batches Used (According to Flow) [After Evaluation]:',datagen_flow.total_batches_seen)
+print('Total Batches That Should Have Been Used:',np.ceil(total_dps_to_see*1./flow_batch_size))
+What I'm doing is setting up a CIFAR-10 model (identical to the one in the examples/) and then asking it to evaluate 100 samples worth of training data with 11 samples per batch. This should use 10 batches but the output is non-deterministic and usually either of (12,13,14). I'm using Theano and I've tested the reproducibility of this code on TITAN-X, K20 and CPUs.
+I'm not sure if this links to #1689 in any way. I did not notice any problems in the fit_generator calls and I have a bleeding-edge version of Keras.
+Am I doing/interpreting something wrong?

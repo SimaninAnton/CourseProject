@@ -1,0 +1,62 @@
+niedakh commented on 2 Jul 2019
+How to reproduce the behaviour
+I'm using the following approach to generate a data set from my data frame (from the jsonl to json converter):
+    model = get_lang_class('en')()
+    json_data = []
+    for raw_text, entities in tqdm(generate_spacy_entity_training_data(df context)):
+        try:
+            doc = model.make_doc(raw_text)
+            doc[0].is_sent_start = True
+            doc.ents = [doc.char_span(s, e, label=L) for s, e, L in entities]
+        except TypeError:
+            print(raw_text, entities)
+            break
+
+        json_data.append(doc.to_json())
+
+    if split:
+        output_path = Path(output_path)
+        train, test = train_test_split(json_data, test_size=0.33)
+        train_path = output_path.stem+'_train.json'
+        test_path = output_path.stem+'_test.json'
+        print('Writing {} training data to: {}'.format(len(train), train_path))
+        srsly.write_json(train_path, train)
+        print('Writing {} evaluation data to: {}'.format(len(test), test_path))
+        srsly.write_json(test_path, test)
+Spacy train then fails with KeyError 'paragraph' error. Running debug-data shows:
+=========================== Data format validation ===========================
+✔ Loaded ml_intent_dump_20190624_spacy_context_3_train.json
+✔ Loaded ml_intent_dump_20190624_spacy_context_3_test.json
+✔ Training data JSON format is valid
+✔ Development data JSON format is valid
+⠹ Analyzing corpus...
+Traceback (most recent call last):
+  File "/usr/lib64/python3.6/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/usr/lib64/python3.6/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/opt/venv36/lib64/python3.6/site-packages/spacy/__main__.py", line 35, in <module>
+    plac.call(commands[command], sys.argv[1:])
+  File "/opt/venv36/lib64/python3.6/site-packages/plac_core.py", line 328, in call
+    cmd, result = parser.consume(arglist)
+  File "/opt/venv36/lib64/python3.6/site-packages/plac_core.py", line 207, in consume
+    return cmd, self.func(*(args + varargs + extraopts), **kwargs)
+  File "/opt/venv36/lib64/python3.6/site-packages/spacy/cli/debug_data.py", line 94, in debug_data
+    corpus = GoldCorpus(train_data, dev_data)
+  File "gold.pyx", line 112, in spacy.gold.GoldCorpus.__init__
+  File "gold.pyx", line 123, in spacy.gold.GoldCorpus.write_msgpack
+  File "gold.pyx", line 277, in read_json_object
+  File "gold.pyx", line 289, in json_to_tuple
+KeyError: 'paragraphs'
+Your Environment
+spaCy version: 2.1.4
+Platform: Linux-3.10.0-957.21.3.el7.x86_64-x86_64-with-centos-7.6.1810-Core
+Python version: 3.6.6
+Models: en
+ℹ spaCy installation:
+TYPE NAME MODEL VERSION
+package en-vectors-web-lg en_vectors_web_lg 2.1.0 ✔
+package en-core-web-sm en_core_web_sm 2.1.0 ✔
+package en-core-web-md en_core_web_md 2.1.0 ✔
+package en-core-web-lg en_core_web_lg 2.1.0 ✔
+link en en_core_web_sm 2.1.0 ✔

@@ -1,0 +1,66 @@
+rahmonov commented on 5 Apr 2017
+The default timezone is TIME_ZONE = 'America/Chicago' and USE_TZ = False
+In the request data, I have time field whose value is something like this:
+'2017-04-05T14:42:52.472+05:00'
+And when I do this:
+serializer = self.get_serializer(data=data)
+if serializer.is_valid():
+    ...
+that time field is converted to this inside validated_data:
+2017-04-05 09:42:52.472000
+That is, it is making the time naive. However, it is not considering my default timezone. I would expect it to convert the time to Chicago time first and then make it naive to this:
+2017-04-05 04:42:52.875000
+just like how django.utils.timezone.make_naive() works.
+Serializer:
+class LocationSerializer(serializers.ModelSerializer):
+    time = UnixTimestampField()
+
+    class Meta:
+        model = Location
+        fields = (
+            'latitude',
+            'longitude',
+            'time'
+        )
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if user.is_authenticated():
+            attrs['tracking_id'] = user.tracking.id
+            attrs['device_id'] = user.current_device.id
+        return attrs
+UnixTimestampField:
+class UnixTimestampField(serializers.DateTimeField):
+    def to_representation(self, value):
+        if not value:
+            return value
+
+        return int(value.timestamp())
+Looking at the code I can see this is the intended behavior:
+def enforce_timezone(self, value):
+    """
+    When `self.default_timezone` is `None`, always return naive datetimes.
+    When `self.default_timezone` is not `None`, always return aware datetimes.
+    """
+    field_timezone = getattr(self, 'timezone', self.default_timezone())
+
+    if (field_timezone is not None) and not timezone.is_aware(value):
+        return timezone.make_aware(value, field_timezone)
+    elif (field_timezone is None) and timezone.is_aware(value):
+        return timezone.make_naive(value, utc)
+    return value
+That is, if field_timezone is None and the date is timezone aware, it is made utc naive. But this was not the behavior back in DRF 2.4.x:
+if settings.USE_TZ:
+    # For backwards compatibility, interpret naive datetimes in
+    # local time. This won't work during DST change, but we can't
+    # do much about it, so we let the exceptions percolate up the
+    # call stack.
+    warnings.warn("DateTimeField received a naive datetime (%s)"
+                  " while time zone support is active." % value,
+                  RuntimeWarning)
+    default_timezone = timezone.get_default_timezone()
+    value = timezone.make_aware(value, default_timezone)
+return value
+It just used to return the value itself without doing anything on it. I might be looking at the wrong place though.
+I am solving this by overriding the to_internal_value of DateTimeField.
+What is the proper way of doing this?

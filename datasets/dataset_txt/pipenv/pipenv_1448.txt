@@ -1,0 +1,82 @@
+mtdeguzis commented on 8 Mar 2018
+Be sure to check the existing issues, both open and closed.
+Our team uses pipenv to install and use some toolsets. It seems there is some kind of conflict with python-ldap maybe. This worked previously with buildout fine.
+Describe your environment
+OS Type: RHEL 7.4
+Python version: Python 2.7.5
+Pipenv version: 11.1.4
+Expected result
+That the plugin would run with no import errors
+Actual result
+Traceback (most recent call last):
+File "hiveserver2-service-check.py", line 21, in <module>
+    from opstools import hdppyhive
+  File "/opt/icinga-plugins/hiveserver2-service-check/python-opstools/opstools/__init__.py", line 8, in <module>
+    from hdpldap import *
+  File "/opt/icinga-plugins/hiveserver2-service-check/python-opstools/opstools/hdpldap.py", line 11, in <module>
+    from ldap.controls import SimplePagedResultsControl
+  File "/home/icinga/.local/share/virtualenvs/hiveserver2-service-check-wPnGv84d/lib/python2.7/site-packages/ldap/controls/__init__.py", line 160, in <module>
+    from ldap.controls.simple import *
+  File "/home/icinga/.local/share/virtualenvs/hiveserver2-service-check-wPnGv84d/lib/python2.7/site-packages/ldap/controls/simple.py", line 84, in <module>
+    KNOWN_RESPONSE_CONTROLS[ldap.CONTROL_MANAGEDSAIT] = ManageDSAITControl
+AttributeError: 'module' object has no attribute 'CONTROL_MANAGEDSAIT'
+Steps to replicate
+Provide the steps to replicate (which usually at least includes the commands and the Pipfile).
+Pipfile:
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[dev-packages]
+
+
+
+[packages]
+
+nagiosplugin = "*"
+
+
+[requires]
+
+python_version = "2.7"
+Makefile steps for our project:
+GIT_DIR ?= "/opt/icinga-plugins"
+
+all: setup build install
+
+setup:
+        # install require packages to install python-opstools
+        yum install -y cyrus-sasl-devel cyrus-sasl-gssapi \
+        cyrus-sasl-plain python-pip krb5-devel \
+        python-devel python-ldap python-pip
+        # Install pipenv
+        pip install pipenv
+        # Home dir
+        # mkhomedir_helper doens't seem to work here (possible due to lack of path-to-skel)
+        if [[ ! -d "/home/icinga" ]]; then \
+                mkdir -p "/home/icinga"; \
+                chown icinga:icinga; \
+        fi
+        # Fix permissions
+        chown -R icinga:icinga /opt/icinga-plugins
+
+build:
+        # temporarily switch to root perms on cache folder for install only
+        #chown -R root:root "/home/icinga/.cache"
+        # Install
+        export HOME="/home/icinga" && \
+        cd $(GIT_DIR)/hiveserver2-service-check && \
+        pipenv install --two &&  \
+        pipenv install nagiosplugin &&  \
+        pipenv run pip install -e python-opstools && \
+        pipenv lock
+
+install:
+        cp -v hiveserver2-service-check /usr/lib64/nagios/plugins/
+
+uninstall:
+        export HOME="/home/icinga" && \
+        cd $(GIT_DIR)

@@ -1,0 +1,98 @@
+louismartin commented on 12 Apr 2016
+I am trying to implement a fire module which is described in the SqueezeNet paper (http://arxiv.org/pdf/1602.07360v3.pdf). This module is very similar to the inception module from GoogLeNet.
+However when I try to use the new functional API I get an error with input shapes of convolutions.
+Definition of the module:
+class FireModule(Layer):
+    '''FireModule from the SqueezeNet paper
+    http://arxiv.org/pdf/1602.07360v3.pdf
+
+    # Input shape
+        4D tensor of shape (samples, channels, width, height)
+    # Output shape
+        4D tensor of shape (samples, e1x1+e3x3, width, height)
+    '''
+    def __init__(self, s1x1, e1x1, e3x3):
+        self.s1x1 = s1x1
+        self.e1x1 = e1x1
+        self.e3x3 = e3x3
+        super(FireModule, self).__init__()
+
+    def get_output_shape_for(self, input_shape):
+        shape = list(input_shape)
+        assert len(shape) == 4  # only valid for 4D tensors (samples, channels, width, height)
+        shape[1] = self.e1x1 + self.e3x3 # output channels
+        return tuple(shape)
+
+    def call(self, x, mask=None):
+        # squeeze1x1
+        squeeze1x1 = Convolution2D(self.s1x1, 1, 1, activation='relu')(x)
+
+        # expand1x1
+        expand1x1 = Convolution2D(self.e1x1, 1, 1, activation='relu')(squeeze1x1)
+
+        # expand3x3
+        squeeze1x1 = ZeroPadding2D((1,1))(squeeze1x1)
+        expand3x3 = Convolution2D(self.e3x3, 3, 3, activation='relu')(squeeze1x1)
+
+        output = merge([expand1x1, expand3x3], mode='concat', concat_axis=1)
+        return output
+I use this new layer with the functional API of Keras 1.0
+inputs = Input(shape=(3, 96, 96))
+
+x = FireModule(s1x1=16, e1x1=64, e3x3=64)(inputs)
+
+x = Flatten()(x)
+predictions = Dense(10, activation='softmax')(x)
+
+model = Model(input=inputs, output=predictions)
+model.compile(optimizer='rmsprop',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+I get the following error message when compiling the model:
+---------------------------------------------------------------------------
+Exception                                 Traceback (most recent call last)
+<ipython-input-64-1163cfea9525> in <module>()
+     27 model.compile(optimizer='rmsprop',
+     28               loss='categorical_crossentropy',
+---> 29               metrics=['accuracy'])
+     30 model.predict(np.ones((1, 3,input_size,input_size)))
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/training.pyc in compile(self, optimizer, loss, metrics, loss_weights, sample_weight_mode, **kwargs)
+    486 
+    487         # prepare output masks
+--> 488         masks = self.compute_mask(self.inputs, mask=None)
+    489         if masks is None:
+    490             masks = [None for _ in self.outputs]
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in compute_mask(self, input, mask)
+   1876             return self._output_mask_cache[cache_key]
+   1877         else:
+-> 1878             output_tensors, output_masks, output_shapes = self.run_internal_graph(inputs, masks)
+   1879             return output_masks
+   1880 
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in run_internal_graph(self, inputs, masks)
+   2004                     if len(computed_data) == 1:
+   2005                         computed_tensor, computed_mask = computed_data[0]
+-> 2006                         output_tensors = to_list(layer.call(computed_tensor, computed_mask))
+   2007                         output_masks = to_list(layer.compute_mask(computed_tensor, computed_mask))
+   2008                         computed_tensors = [computed_tensor]
+
+<ipython-input-62-3d5b91690748> in call(self, x, mask)
+     24 
+     25         # expand1x1
+---> 26         expand1x1 = Convolution2D(self.e1x1, 1, 1, activation='relu')(squeeze1x1)
+     27 
+     28         # expand3x3
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in __call__(self, x, mask)
+    450                 else:
+    451                     raise Exception('You tried to call layer "' + self.name +
+--> 452                                     '". This layer has no information'
+    453                                     ' about its expected input shape, '
+    454                                     'and thus cannot be built. '
+
+Exception: You tried to call layer "convolution2d_83". This layer has no information about its expected input shape, and thus cannot be built. You can build it manually via: `layer.build(batch_input_shape)`
+I am not sure how I can use the convolutional layers inside my FireModule layer, can anyone help?
+Thank you!
+Louis

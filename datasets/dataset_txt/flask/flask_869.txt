@@ -1,0 +1,79 @@
+Lothiraldan commented on 28 Mar 2016
+Hello,
+while fuzzing my API, I think I've discovered a Flask issue. The static_file endpoint generate a 500 if the filename include a null byte (\x00).
+Here is a minimal flask application:
+from flask import Flask
+app = Flask(__name__)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+I've tried launching it with either python 2 (2.7.11) or python 3 interpreter (3.5.1) with flask 0.10.1, then make this request:
+import requests
+requests.get('http://localhost:5000/static/\x00')
+I get a 500, here is the traceback for python2:
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1836, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1820, in wsgi_app
+    response = self.make_response(self.handle_exception(e))
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1403, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1817, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1477, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1381, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1475, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/usr/local/lib/python2.7/site-packages/flask/app.py", line 1461, in dispatch_request
+    return self.view_functions[rule.endpoint](**req.view_args)
+  File "/usr/local/lib/python2.7/site-packages/flask/helpers.py", line 823, in send_static_file
+    cache_timeout=cache_timeout)
+  File "/usr/local/lib/python2.7/site-packages/flask/helpers.py", line 613, in send_from_directory
+    if not os.path.isfile(filename):
+  File "/usr/local/Cellar/python/2.7.11/Frameworks/Python.framework/Versions/2.7/lib/python2.7/genericpath.py", line 37, in isfile
+    st = os.stat(path)
+TypeError: must be encoded string without NULL bytes, not unicode
+And here is the traceback for python 3:
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1836, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1820, in wsgi_app
+    response = self.make_response(self.handle_exception(e))
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1403, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "/usr/local/lib/python3.5/site-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1817, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1477, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1381, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "/usr/local/lib/python3.5/site-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1475, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/usr/local/lib/python3.5/site-packages/flask/app.py", line 1461, in dispatch_request
+    return self.view_functions[rule.endpoint](**req.view_args)
+  File "/usr/local/lib/python3.5/site-packages/flask/helpers.py", line 823, in send_static_file
+    cache_timeout=cache_timeout)
+  File "/usr/local/lib/python3.5/site-packages/flask/helpers.py", line 613, in send_from_directory
+    if not os.path.isfile(filename):
+  File "/usr/local/Cellar/python3/3.5.1/Frameworks/Python.framework/Versions/3.5/lib/python3.5/genericpath.py", line 30, in isfile
+    st = os.stat(path)
+ValueError: embedded null byte
+The error is not exactly the same but isfile doesn't seems to love null bytes.
+I've tried to fix it locally by adding this piece of code to detect null bytes in send_static_file (https://github.com/mitsuhiko/flask/blob/master/flask/helpers.py#L862):
+if '\x00' in filename:
+     raise RuntimeError("Null byte")
+It seems to works with both python2 and python3, but I'm not sure what is the best response when the request include a null byte.
+Here is the output of pip freeze if necessary:
+Flask==0.10.1
+itsdangerous==0.24
+Jinja2==2.8
+MarkupSafe==0.23
+Werkzeug==0.11.5
+I only tried on Mac OS X 10.11.4, I don't know if null byte are accepted in valid filename on other filesystems.

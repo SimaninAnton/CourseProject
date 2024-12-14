@@ -1,0 +1,253 @@
+tokestermw commented on 6 Jan 2016
+Hi, I'm writing some code to run a Siamese network like in #928.
+Input is a pair of sentences which is converted to an embedding layer before being fed to a GRU.
+I was able to run a vanilla Embedding -> GRU layer without the Siamese network.
+But it gives off an type error for the index when I use add_shared_layer.
+My guess it has something to do with the MaskedLayer before adding the shared layer. This is the issue raised here #928 (comment) where there needs to be a first layer. Is the shared layer compatible with embedding layer?
+Previously, I was able to use add_shared_layer for a feed forward network without the embeddings.
+I wrote a reproducible script below.
+Thanks
+cc @farizrahman4u
+def container():
+
+    from keras.layers.core import Dropout, Dense, Activation, Merge, add_shared_layer, MaskedLayer
+    from keras.layers.embeddings import Embedding
+    from keras.layers.recurrent import GRU
+    from keras.models import Sequential
+    from keras import optimizers, objectives, initializations
+
+    EMBEDDING_SIZE = 10
+    HIDDEN_SIZE = 32
+    VOCAB_SIZE = 100
+    MAXLEN = 25
+
+    optimizer = optimizers.adam()
+    loss = objectives.binary_crossentropy
+
+    ## -- this works
+    sample = Sequential()
+    sample.add(Embedding(VOCAB_SIZE, EMBEDDING_SIZE, mask_zero=True))
+    sample.add(GRU(HIDDEN_SIZE, return_sequences=False))
+    sample.add(Activation('sigmoid'))
+
+    print 'sample set..'
+    sample.compile(optimizer, loss, class_mode="binary")
+    print 'sample compiled!'
+
+    ## -- this does not work
+    layer = Sequential()
+    layer.add(MaskedLayer(input_shape=(VOCAB_SIZE, ))) # <-- not sure
+
+    shared = [layer, layer]
+
+    add_shared_layer(Embedding(VOCAB_SIZE, EMBEDDING_SIZE, input_length=MAXLEN, mask_zero=True), shared)
+    add_shared_layer(GRU(HIDDEN_SIZE, return_sequences=False), shared)
+    add_shared_layer(Activation('sigmoid'), shared)
+
+    similarity = Sequential()
+    similarity.add(Merge(shared, mode='dot'))
+    similarity.add(Dense(1))
+    similarity.add(Activation('sigmoid'))
+
+    print 'shared set..'
+    similarity.compile(optimizer, loss, class_mode="binary")
+    print 'shared compiled!'
+>>> container()
+sample set..
+sample compiled!
+shared set..
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-35-f6337a0fff18> in <module>()
+----> 1 container()
+
+<ipython-input-34-c5beabc10445> in container()
+     41 
+     42     print 'shared set..'
+---> 43     similarity.compile(optimizer, loss, class_mode="binary")
+     44     print 'shared compiled!'
+
+~/lib/python2.7/site-packages/keras/models.pyc in compile(self, optimizer, loss, class_mode)
+    406         self.X_test = self.get_input(train=False)
+    407 
+--> 408         self.y_train = self.get_output(train=True)
+    409         self.y_test = self.get_output(train=False)
+    410 
+
+~/lib/python2.7/site-packages/keras/layers/containers.pyc in get_output(self, train)
+    126 
+    127     def get_output(self, train=False):
+--> 128         return self.layers[-1].get_output(train)
+    129 
+    130     def set_input(self):
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output(self, train)
+    656 
+    657     def get_output(self, train=False):
+--> 658         X = self.get_input(train)
+    659         return self.activation(X)
+    660 
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output(self, train)
+    947 
+    948     def get_output(self, train=False):
+--> 949         X = self.get_input(train)
+    950         output = self.activation(K.dot(X, self.W) + self.b)
+    951         return output
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output(self, train)
+    544                 raise Exception('"dot" merge mode will only work with Theano.')
+    545             from theano import tensor as T
+--> 546             l1 = self.layers[0].get_output(train)
+    547             l2 = self.layers[1].get_output(train)
+    548             output = T.batched_tensordot(l1, l2, self.dot_axes)
+
+~/lib/python2.7/site-packages/keras/layers/containers.pyc in get_output(self, train)
+    126 
+    127     def get_output(self, train=False):
+--> 128         return self.layers[-1].get_output(train)
+    129 
+    130     def set_input(self):
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output(self, train)
+   1755 
+   1756     def get_output(self, train=False):
+-> 1757         return self.get_input(train)
+   1758 
+   1759     @property
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_input(self, train)
+   1762 
+   1763     def get_input(self, train=False):
+-> 1764         return self.previous.get_output_at(self.head, train)
+   1765 
+   1766     def get_config(self):
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output_at(self, head, train)
+   1607 
+   1608     def get_output_at(self, head, train=False):
+-> 1609         X = self.inputs[head].get_output(train)
+   1610         mask = self.inputs[head].get_output_mask(train)
+   1611         Y = self.layer(X, mask)
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output(self, train)
+   1755 
+   1756     def get_output(self, train=False):
+-> 1757         return self.get_input(train)
+   1758 
+   1759     @property
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_input(self, train)
+   1762 
+   1763     def get_input(self, train=False):
+-> 1764         return self.previous.get_output_at(self.head, train)
+   1765 
+   1766     def get_config(self):
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output_at(self, head, train)
+   1607 
+   1608     def get_output_at(self, head, train=False):
+-> 1609         X = self.inputs[head].get_output(train)
+   1610         mask = self.inputs[head].get_output_mask(train)
+   1611         Y = self.layer(X, mask)
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output(self, train)
+   1755 
+   1756     def get_output(self, train=False):
+-> 1757         return self.get_input(train)
+   1758 
+   1759     @property
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_input(self, train)
+   1762 
+   1763     def get_input(self, train=False):
+-> 1764         return self.previous.get_output_at(self.head, train)
+   1765 
+   1766     def get_config(self):
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in get_output_at(self, head, train)
+   1609         X = self.inputs[head].get_output(train)
+   1610         mask = self.inputs[head].get_output_mask(train)
+-> 1611         Y = self.layer(X, mask)
+   1612         return Y
+   1613 
+
+~/lib/python2.7/site-packages/keras/layers/core.pyc in __call__(self, X, mask, train)
+     68             self.get_input_mask = lambda _: mask
+     69         self.get_input = lambda _: X
+---> 70         Y = self.get_output(train=train)
+     71         # return input to what it was
+     72         if hasattr(self, 'get_input_mask'):
+
+~/lib/python2.7/site-packages/keras/layers/embeddings.pyc in get_output(self, train)
+    100     def get_output(self, train=False):
+    101         X = self.get_input(train)
+--> 102         out = K.gather(self.W, X)
+    103         return out
+    104 
+
+~/lib/python2.7/site-packages/keras/backend/theano_backend.pyc in gather(reference, indices)
+    129     Return: a tensor of same type as reference.
+    130     '''
+--> 131     return reference[indices]
+    132 
+    133 
+
+~/lib/python2.7/site-packages/theano/tensor/var.pyc in __getitem__(self, args)
+    500                             TensorVariable, TensorConstant,
+    501                             theano.tensor.sharedvar.TensorSharedVariable))):
+--> 502                 return self.take(args[axis], axis)
+    503             else:
+    504                 return theano.tensor.subtensor.advanced_subtensor(self, *args)
+
+~/lib/python2.7/site-packages/theano/tensor/var.pyc in take(self, indices, axis, mode)
+    532 
+    533     def take(self, indices, axis=None, mode='raise'):
+--> 534         return theano.tensor.subtensor.take(self, indices, axis, mode)
+    535 
+    536     # COPYING
+
+~/lib/python2.7/site-packages/theano/tensor/subtensor.pyc in take(a, indices, axis, mode)
+   2384                 [a.shape[:axis], indices.shape, a.shape[axis + 1:]])
+   2385         ndim = a.ndim + indices.ndim - 1
+-> 2386     return take(a, indices.flatten(), axis, mode).reshape(shape, ndim)
+
+~/lib/python2.7/site-packages/theano/tensor/subtensor.pyc in take(a, indices, axis, mode)
+   2362             return advanced_subtensor1(a.flatten(), indices)
+   2363         elif axis == 0:
+-> 2364             return advanced_subtensor1(a, indices)
+   2365         else:
+   2366             if axis < 0:
+
+~/lib/python2.7/site-packages/theano/gof/op.pyc in __call__(self, *inputs, **kwargs)
+    598         """
+    599         return_list = kwargs.pop('return_list', False)
+--> 600         node = self.make_node(*inputs, **kwargs)
+    601 
+    602         if config.compute_test_value != 'off':
+
+~/lib/python2.7/site-packages/theano/tensor/subtensor.pyc in make_node(self, x, ilist)
+   1685         ilist_ = theano.tensor.as_tensor_variable(ilist)
+   1686         if ilist_.type.dtype[:3] not in ('int', 'uin'):
+-> 1687             raise TypeError('index must be integers')
+   1688         if ilist_.type.ndim != 1:
+   1689             raise TypeError('index must be vector')
+
+TypeError: index must be integers
+Versions:
+Keras==0.3.1
+Theano==0.7.0

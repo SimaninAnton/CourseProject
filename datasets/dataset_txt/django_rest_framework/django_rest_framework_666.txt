@@ -1,0 +1,50 @@
+mhubig commented on 4 Sep 2017
+Im having a problem creating (nested) serializers for the following models:
+class Chapter(Model):
+    uuid = UUIDField(primary_key=True, editable=False)
+    description = TextField(blank=True)
+
+class Section(Model):
+    uuid = UUIDField(primary_key=True, editable=False)
+    description = TextField(blank=True)
+    chapter = ForeignKey(Chapter, related_name='sections', on_delete=CASCADE)
+Here is the serializer for the Chapter model with the create method:
+class ChapterSerializer(ModelSerializer):
+    uuid = UUIDField(read_only=False)
+    sections = SectionSerializer(many=True, read_only=False)
+
+    class Meta:
+        model = Chapter
+        fields = ('uuid', 'description', 'sections')
+
+    def create(self, validated_data):
+        sections = validated_data.pop('sections', [])
+        chapter = Chapter.objects.create(**validated_data)
+
+        for section in sections:
+            section.update({'chapter': chapter})
+            section = Section.objects.create(**section)
+
+        return chapter
+And here are two slightly different variants of the Section serializer:
+class SectionSerializer(ModelSerializer):
+        uuid = UUIDField(read_only=False)
+        chapter = PrimaryKeyRelatedField(read_only=true)
+    
+        class Meta:
+            model = Section
+            fields = ('uuid', 'description', 'chapter')
+
+class SectionSerializer(ModelSerializer):
+        uuid = UUIDField(read_only=False)
+        chapter = PrimaryKeyRelatedField(queryset=Chapter.objects.all())
+    
+        class Meta:
+            model = Section
+            fields = ('uuid', 'description', 'chapter')
+Now if I try to create a new Chapter with nested Sections and the PrimaryKeyRelatedField in the Section serializer has the queryset parameter set, I get the following error:
+'sections': [{'chapter': ['Invalid pk "x" - object does not exist.']}]
+I think this error is created while converting the pk to an internal value but actually sounds more like a validation error ...
+If I use the variant with the read_only=true parameter, creating a new Chapter with nested Sections works, but now I can no longer create a new Section (Chapter field is set to an existing Chapter UUID) because the chapter field is removed while validating the input data.
+django.db.utils.IntegrityError: null value in column "chapter_id" violates not-null constraint
+I think I could solve this by duplicating the SectionSerializer, but this seems to be a very crude solution ...

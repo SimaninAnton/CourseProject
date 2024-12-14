@@ -1,0 +1,17 @@
+Contributor
+dave-shawley commented on May 16, 2013
+PreparedRequest.prepare_url incorrectly applies IDNA encoding to the URL's netloc. It should only be encoding the hostname portion of the URL. The netloc is described in RFC2396 as:
+<userinfo>@<host>:<port>
+IDNA should only be applied to the host portion of the URL.
+I encountered this when integrating with an API that uses UUIDs as the username and password. This results in a netloc that is far larger than a 64 character DNS label. The result is the following stack trace:
+Traceback (most recent call last):
+  File "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/unittest.py", line 279, in run
+    testMethod()
+  File "/Users/daves/Source/requests/test_requests.py", line 528, in test_uuid_user_and_password_components
+    prepped = r.prepare()
+  File "/Users/daves/Source/requests/requests/models.py", line 221, in prepare
+    p.prepare_url(self.url, self.params)
+  File "/Users/daves/Source/requests/requests/models.py", line 298, in prepare_url
+    raise InvalidURL('URL has an invalid label.')
+InvalidURL: URL has an invalid label.
+The fix is pretty simple - split the netloc into its components, IDNA encode the host portion, and recombine.

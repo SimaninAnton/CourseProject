@@ -1,0 +1,51 @@
+Contributor
+gw0 commented on 19 Aug 2016
+Documentation for functional API says that you can "treat any model as if it were a layer" this works unless you try to use masking. Simple example that does not compile with mask_zero=True:
+import numpy as np
+from keras.layers import Input, Embedding, Dense, GRU
+from keras.models import Model
+
+X_words = np.random.randint(2, size=(5, 10))
+Y_first = X_words[:, 0].astype(np.float32)
+
+words_in = Input(shape=(10,), dtype='int32', name='x')
+#words_emb = Embedding(2, 10)(words_in)
+words_emb = Embedding(2, 10, mask_zero=True)(words_in)
+
+### a) masking works with GRU layer:
+#x = GRU(10, return_sequences=False)(words_emb)
+
+### b) but not with an equivalent sub-model used as layer:
+def build_submodel(batch_shape):
+    inputs = Input(batch_shape=batch_shape)
+    outputs = GRU(10, return_sequences=False)(inputs)
+    return Model(input=inputs, output=outputs)
+x = build_submodel(batch_shape=words_emb._keras_shape)(words_emb)
+
+y = Dense(1, activation='softmax', name="y")(x)
+
+model = Model(input=[words_in], output=[y])
+model.compile(optimizer='adam', loss='mse')
+model.fit([X_words], [Y_first], nb_epoch=100)
+Output (with latest Keras master):
+$ ./test_model_mask.py
+Using Theano backend.
+Traceback (most recent call last):
+  File "./test_model_mask.py", line 32, in <module>
+    x = build_submodel(batch_shape=words_emb._keras_shape)(words_emb)
+  File "/home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 515, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 573, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 150, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 2050, in call
+    output_tensors, output_masks, output_shapes = self.run_internal_graph(inputs, masks)
+  File "/home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 2193, in run_internal_graph
+    output_masks = to_list(layer.compute_mask(computed_tensor, computed_mask))
+  File "/home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py", line 608, in compute_mask
+    'but was passed an input_mask: ' + str(input_mask))
+Exception: Layer input_1 does not support masking, but was passed an input_mask: Elemwise{neq,no_inplace}.0
+> /home/app/.local/lib/python2.7/site-packages/keras/engine/topology.py(608)compute_mask()
+-> 'but was passed an input_mask: ' + str(input_mask))
+1

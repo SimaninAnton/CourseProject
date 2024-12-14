@@ -1,0 +1,34 @@
+AGASS007 commented on 29 Aug 2014
+I just upgraded to 2.4.0 and I stumbled upon an issue regarding field serialization.
+I have a custom field on a model that is a subclass of a Django CharField, and when instantiate the ModelSerializer based on this model, I encountered an error running this code (in the get_field method of ModelSerializer) :
+if model_field.null and \
+        issubclass(model_field.__class__, (models.CharField, models.TextField)):
+    kwargs['allow_none'] = True
+
+attribute_dict = {
+    models.CharField: ['max_length'],
+    models.CommaSeparatedIntegerField: ['max_length'],
+    models.DecimalField: ['max_digits', 'decimal_places'],
+    models.EmailField: ['max_length'],
+    models.FileField: ['max_length'],
+    models.ImageField: ['max_length'],
+    models.SlugField: ['max_length'],
+    models.URLField: ['max_length'],
+}
+
+if model_field.__class__ in attribute_dict:
+    attributes = attribute_dict[model_field.__class__]
+    for attribute in attributes:
+        kwargs.update({attribute: getattr(model_field, attribute)})
+
+try:
+    return self.field_mapping[model_field.__class__](**kwargs)
+except KeyError:
+    return ModelField(model_field=model_field, **kwargs)
+My field is a subclass of CharField so the kwargs do get an allow_none key, but since it is not in the attribute_dict, I get the KeyError exception, and since the ModelField constructor doesn't allow an allow_none argument, I'm screwed.
+I haven't submitted any code since I don't know which direction to take (yet) but some comments about these suggestions might help:
+Should the framework handle this case?
+If it does:
+Since IMO the test if the field is a subclass of a Charfield was meant for SlugField, EmailField, etc., maybe adding a membership test on the attribute_dict would prevent the allow_none key to be inserted?
+Or, when the KeyError exception is thrown, using the same subclass test, we could instantiate a CharField rather than a ModelField.
+Cheers

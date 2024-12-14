@@ -1,0 +1,137 @@
+clevilll commented on 5 Jun 2019 •
+edited
+I tried to improve implementation of RNN and LSTM by using multiprocessing and multithreading for Keras in order to use all capacity of CPU (all cores) but it seems when you call/fit the model via function in my case def train_model(model_type) it gets this problem as usual in shape of target .
+Note I don't access to CUDA just I access powerful server without VGA. My aim is to take advantage of multiprocessing and multithreading for using maximum capacity of CPU instead of 30% it means just one core while I have Quad-core during training RNN and LSTM simultaneously!
+Any advice would be greatly appreciated. I have uploaded a formatted csv dataset.
+Update: my HW configuration is following:
+CPU: AMD A8-7650K Radeon R7 10 Compute Cores 4C+6G 3.30 GHz
+RAM: 16GB
+OS: Win 7
+Python ver 3.6.6
+Tensorflow ver 1.8.0
+Keras ver 2.2.4
+import time
+import signal
+import numpy as np
+import pandas as pd
+import multiprocessing
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+
+
+def init_worker():
+    ''' Add KeyboardInterrupt exception to mutliprocessing workers '''
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def train_model(model_type):
+    '''
+    This code is parallelised and runs on each process
+    It trains a model with different layer sizes (hyperparameters)
+    It saves the model and returns the score (error)
+    '''
+    from keras.layers import LSTM, SimpleRNN, Dense, Activation, Dropout
+    from keras.models import Sequential
+    from keras.optimizers import Adam, RMSprop
+    from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+    from keras.layers.normalization import BatchNormalization
+
+    print(f'Training a model: {model_type}')
+
+    callbacks = [
+        EarlyStopping(patience=10, verbose=1),
+        ReduceLROnPlateau(factor=0.1, patience=3, min_lr=0.00001, verbose=1),
+    ]
+
+    model = Sequential()
+
+    if model_type == 'rnn':
+        model.add(SimpleRNN(units=1440, input_shape=(trainX.shape[1], trainX.shape[2])))
+    elif model_type == 'lstm':
+        model.add(LSTM(units=1440, input_shape=(trainX.shape[1], trainX.shape[2])))
+
+    model.add(Dense(960))
+    model.add(BatchNormalization())
+    model.add(Activation('tanh'))
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.fit(
+        trainX,
+        trainY,
+        epochs=5,
+        batch_size=20,
+        validation_data=(testX, testY),
+        verbose=1,
+        callbacks=callbacks,
+    )
+
+    # predict
+    Y_Train_pred = model.predict(trainX)
+    Y_Test_pred = model.predict(testX)
+
+    train_MSE = mean_squared_error(trainY, Y_Train_pred)
+    test_MSE = mean_squared_error(testY, Y_Test_pred)
+
+    
+    # you can also return values eg. the eval score
+    return {'type': model_type, 'train_MSE': train_MSE, 'test_MSE': test_MSE}
+
+
+
+# ---------
+
+df = pd.read_csv("D:\Train.csv", header=None)
+
+index = [i for i in list(range(1440)) if i % 3 == 2]
+
+Y_train = df[index]
+df = df.values
+
+# making history by using look-back to prediction next
+def create_dataset(dataset, data_train, look_back=1):
+    dataX, dataY = [], []
+    print("Len:", len(dataset) - look_back - 1)
+    for i in range(len(dataset) - look_back - 1):
+        a = dataset[i : (i + look_back), :]
+        dataX.append(a)
+        dataY.append(data_train[i + look_back, :])
+    return np.array(dataX), np.array(dataY)
+
+
+Y_train = np.array(Y_train)
+df = np.array(df)
+
+look_back = 10
+trainX, trainY = create_dataset(df, Y_train, look_back=look_back)
+
+# Split data into train & test
+trainX, testX, trainY, testY = train_test_split(
+    trainX, trainY, test_size=0.2, shuffle=False
+)
+
+#Shape of train and test data
+trainX, testX, trainY, testY = train_test_split(trainX,trainY, test_size=0.2 , shuffle=False)
+print("train size: {}".format(trainX.shape))
+print("train Label size: {}".format(trainY.shape))
+print("test size: {}".format(testX.shape))
+print("test Label size: {}".format(testY.shape))
+#train size: (23, 10, 1440)
+#train Label size: (23, 960)
+#test size: (6, 10, 1440)
+#test Label size: (6, 960)
+# -------
+
+num_workers = 2
+model_types = ['rnn', 'lstm']
+#need to guard in the main module to avoid creating subprocesses recursively.
+if __name__ == "__main__":
+    pool = multiprocessing.Pool(num_workers, init_worker)
+
+    scores = pool.map(train_model, model_types)
+
+    print(scores)
+
+###ValueError:
+Error when checking target: expected activation_1 to have shape (960,) but got array with shape (480,)

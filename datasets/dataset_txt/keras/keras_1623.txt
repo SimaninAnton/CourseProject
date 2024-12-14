@@ -1,0 +1,53 @@
+danmoller commented on 30 Sep 2017 •
+edited
+I have a simple code trying to multiply two matrices, using tensorflow backend. (Keras 2.0.8 / Tensorflow 1.3.0)
+This is a well known mathematical operation, and it fails because it is trying to squeeze my resulting matrix.
+Basically, I have a matrix shaped as (batch, 13, 1) and I want to multiply it by a (batch, 1, 7) matrix, resulting in a (batch, 13,7) matrix.
+This is my code:
+import keras.backend as K
+
+def repeat(x):
+
+    stepMatrix = K.ones_like(x[0][:,:,0]) #matrix with ones, shaped as (batch, steps, 1)
+    latentMatrix = K.expand_dims(x[1],axis=1) #latent vars, shaped as (batch, 1, latent_dim)
+
+   
+    #here all these options fail, being the option 4 the one I'd expect to work.
+
+    option 1: return K.dot(latentMatrix,stepMatrix) 
+              #works when creating the model, but causes error in tensorflow (see error 1)
+  
+    option 2: return K.dot(stepMatrix,latentMatrix) #incompatible shapes: see error 2
+
+    option 3: return K.batch_dot(latentMatrix, stepMatrix) #incompatible shapes: see error 3
+
+    option 4: return K.batch_dot(stepMatrix,latentMatrix)
+              #this does sound like the right one,
+              # but why is this trying to squeeze the result???? (see error 4)
+   
+    option 5: why not a K.matmul doing a standard multiplication taking the two last axes, 
+              no squeezing, no trying to gather two different operations in the same method?
+
+
+inp = Input((13,25))
+inp2 = Input((7,))
+
+repeated = Lambda(repeat,output_shape=(None,7))([inp,inp2])
+
+model = Model([inp,inp2], repeated)
+
+#print(model.predict([np.ones((19,13,25)),np.asarray([i for i in range(19*7)]).reshape((19,7))]))
+Errors
+Error 1:
+Occurs at prediction time:
+InvalidArgumentError (see above for traceback): Matrix size-incompatible: In[0]: [19,7], In[1]: [19,13]
+[[Node: lambda_14/MatMul = MatMul[T=DT_FLOAT, transpose_a=false, transpose_b=false, _device="/job:localhost/replica:0/task:0/cpu:0"](lambda_14/Reshape, lambda_14/Reshape_1)]]
+Error 2:
+Occurs when calling the Lambda layer:
+ValueError: Dimensions must be equal, but are 13 and 1 for 'lambda_16/MatMul' (op: 'MatMul') with input shapes: [?,13], [1,?].
+Error 3:
+Occurs when calling the Lambda layer:
+ValueError: Dimensions must be equal, but are 7 and 13 for 'lambda_17/MatMul' (op: 'BatchMatMul') with input shapes: [?,1,7], [?,13,1].
+Error 4:
+Occurs when calling the Lambda layer:
+ValueError: Can not squeeze dim[1], expected a dimension of 1, got 13 for 'lambda_18/Squeeze' (op: 'Squeeze') with input shapes: [?,13,7].

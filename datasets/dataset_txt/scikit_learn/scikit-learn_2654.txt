@@ -1,0 +1,44 @@
+Contributor
+ljwolf commented on Oct 19, 2016
+Description
+GaussianMixture.sample(n) occasionally returns incorrectly-sized samples possibly due to rounding error.
+Steps/Code to Reproduce
+from sklearn.mixture import GaussianMixture
+import numpy as np
+
+np.random.seed(1011)
+
+X = np.random.normal(size=(100,20))
+
+mixture_model = GaussianMixture(n_components=10).fit(X)
+Expected Results
+I'd expect that if n_samples are requested, n_samples are provided, even when n_samples is not an even multiple of the number of mixture distributions.
+Actual Results
+Instead, it appears that my expectations are confounded in Line 388 of mixture/base.py, since
+np.round(model.weights * n_samples).astype(int)
+will not necessarily sum to n, depending on the weights and samples.
+samples = mixture_model.sample(100)
+print(samples[0].shape)
+#prints: (100,20)
+samples = mixture_model.sample(104)
+print(samples[0].shape)
+#prints: (103, 20)
+samples = mixture_model.sample(1002)
+print(samples[0].shape)
+#prints: (1000,20)
+Suggested Patch
+I could be mistaken on this, but I think that the correct way to sample n_samples from a mixture distribution with frequency vector weights_ is to draw a count vector, np.random.multinomial(n_samples, weights_), and then draw the corresponding number of samples from each component distribution as comes out of the multinomial draw.
+This would involve a one-line change to mixture/base.py replacing line 388 referenced above with:
+rng.multinomial(n_samples, self.weights).astype(int)
+Versions
+>>> import platform; print(platform.platform())
+Linux-4.7.6-1-ARCH-x86_64-with-arch
+>>> import sys; print("Python", sys.version)
+Python 3.5.2 |Continuum Analytics, Inc.| (default, Jul  2 2016, 17:53:06)
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+>>> import numpy; print('NumPy', numpy.__version__)
+NumPy 1.11.2
+>>> import scipy; print('SciPy', scipy.__version__)
+SciPy 0.18.1
+>>> import sklearn; print('Scikit-Learn', sklearn.__version__)
+Scikit-Learn 0.18

@@ -1,0 +1,32 @@
+jstaehle commented on 8 Apr 2019 •
+edited
+My operating system is (include version):
+Linux (amazon aws fargate v 1.3.0 container)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+I am depending on the certbot/dns-dnsimple docker image in my Dockerfile.
+I ran this command and it produced this output:
+When attempting to generate certificates for qa environments in my startup script (full package here: https://github.com/askwonder/wonqa) I run docker run -i --name wonqa-certbot wonqa-certbot:latest certonly --dns-dnsimple --dns-dnsimple-credentials dnsimple.ini --agree-tos --no-eff-email -m eng@askwonder.com -d fix-qa.wondev.net,api.fix-qa.wondev.net,start.fix-qa.wondev.net,research.fix-qa.wondev.net,storybook.fix-qa.wondev.net,pusher.fix-qa.wondev.net.
+I get the following output:
+Obtaining a new certificate
+
+Performing the following challenges:
+
+dns-01 challenge for api.fix-qa.wondev.net
+dns-01 challenge for fix-qa.wondev.net
+dns-01 challenge for pusher.fix-qa.wondev.net
+dns-01 challenge for research.fix-qa.wondev.net
+
+dns-01 challenge for start.fix-qa.wondev.net
+dns-01 challenge for storybook.fix-qa.wondev.net
+Unsafe permissions on credentials configuration file: dnsimple.ini
+
+Cleaning up challenges
+
+Error adding TXT record: 400 Client Error: Bad Request for url: https://api.dnsimple.com/v281695/zones/wondev.net/records
+Certbot's behavior differed from what I expected because:
+I expect it to add the TXT records successfully. Instead the url is malformed and there is no slash in between v2 and 81695 which is my account id.
+Investigation
+After doing some digging I have determined that the issue was caused by a change made by lexicon (https://github.com/AnalogJ/lexicon), likely this commit: AnalogJ/lexicon@f46a072#diff-89f3c260164ceef017a121144c790f42.
+I do not have a good explanation as to why we only started seeing issues due to this last week, or why that change appears to affect certbot despite you guys having locked your lexicon version at dns-lexicon>=2.2.1 in your certbot-dns-dnsimple setup.py, but it has become a blocking issue for the wonqa repo referenced above. Fortunately, lexicon responded to our issue and merged a fix: AnalogJ/lexicon#389.
+Certbot can obtain that fix by upgrading your lexicon dependency. I have submitted a PR (#6928) and have tested that the proposed change does indeed resolve our issue. Obviously there may be additional considerations in bumping this dependency that I am not in a great position to test fully. But do let me know if there's any additional useful information that I can provide in the interim.
+1

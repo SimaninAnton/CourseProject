@@ -1,0 +1,22 @@
+jeremycline commented on Oct 22, 2016 •
+edited
+In current master:
+>>> import requests
+>>> requests.__version__
+'2.11.1'
+>>> session = requests.Session()
+>>> r = session.get('https://www.jcline.org/', verify=True, proxies={'http': 'http://vagrant:vagrant@localhost:3128', 'https': 'http://vagrant:vagrant@localhost:3128'})
+>>> 
+In current proposed/3.0.0:
+>>> import requests
+>>> requests.__version__
+'3.0.0'
+>>> session = requests.Session()
+>>> r = session.get('https://www.jcline.org/', verify=True, proxies={'http': 'http://vagrant:vagrant@localhost:3128', 'https': 'http://vagrant:vagrant@localhost:3128'})
+requests/packages/urllib3/connectionpool.py:838: InsecureRequestWarning: Unverified HTTPS request is being made. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/latest/security.html
+  InsecureRequestWarning)
+>>> 
+This is a problem I introduced in #3109 😞. What happens right now is if a request is not through a proxy and it's HTTPS, the urllib3 pool manager's connection_pool_kw are updated before requesting a new connection using requests.adapters.HTTPAdapter._update_poolmanager_ssl_kw. If it is through a proxy, the keywords aren't updated and the request is made with the default settings for urllib3.
+To me, the most appealing way to fix this is to add a keyword argument, connection_kwargs or something, to all the urllib3.poolmanager.PoolManager.connection_from_* methods that is either merged into connection_pool_kw or overrides them. That way urllib3 can handle getting the connection pool with the new kwargs in a thread-safe manner. Currently, requests has to manage updating the keys and getting the new connection pool with a lock. It seems like that would be better in urllib3.
+The other option is to patch up what's currently in HTTPAdapter so it handles updating the proxy manager or plain pool manager based on whether proxies are in use.
+What do people think?

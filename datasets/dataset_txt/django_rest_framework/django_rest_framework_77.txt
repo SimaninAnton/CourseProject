@@ -1,0 +1,47 @@
+pierremonico commented on 23 Aug 2019 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a simple model and order by date:
+class Event(models.Model):
+    event_date = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-event_date']
+Create simple serializer and viewset:
+class EventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Event
+        fields = ('event_date',)
+class EventViewSet(viewsets.ModelViewSet):
+    queryset = Event.objects.all()
+    serializer_class = EventSerializer
+Turn on pagination:
+REST_FRAMEWORK = {
+    ...,
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination'
+}
+Expose endpoint:
+router = routers.DefaultRouter()
+router.register(r'events', views.EventsViewSet)
+
+urlpatterns = [
+    path('', include(router.urls))
+]
+Make paginated calls:
+/api/events/?limit=25&offset=0
+/api/events/?limit=25&offset=25
+/api/events/?limit=25&offset=50
+Expected behavior
+Since I have 61 records in my test database, each unique record should be displayed on one of the pages. E.g. the event with the event date should be visible on the first page.
+Actual behavior
+Some records are not visible on any of the pages, and some records are duplicated across pages. The total count on the response objects is 61 as expected. But some records are simply not displayed.
+Setting ordering=['-event_date', 'id'] solves the problem.
+NB: my event model actually subclasses an abstract model that has many more fields. I don't know if that has an actual impact but I tried to simplify the example for this issue.
+Thanks.

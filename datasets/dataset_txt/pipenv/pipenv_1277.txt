@@ -1,0 +1,95 @@
+drcongo commented on 28 Mar 2018 •
+edited
+Issue
+I'm having trouble getting pipenv to deal with editable installs from git. I've narrowed down as much as possible for the purposes of this test. There's a repo here with the whole thing for reproducing.
+This is the three line requirements.txt I'm using - each line has a slightly different, but apparently valid url scheme. Installing this with pip works fine.
+-e git+http://github.com/hactar-is/django-admin-list-filter-dropdown.git@1a5e6040dfeca6b09317401f5bd7a518141c9433#egg=django_admin_list_filter_dropdown
+-e git+git@codebasehq.com:hactar/hactar-library/wagtail_eventbrite.git@90bdfc680fc920eed8618d29aefac770d258c359#egg=wagtail_eventbrite
+-e git://github.com/miracle2k/webassets.git@cc440911c6ac5f08fd98ea08442fe06e7a0aea2a#egg=webassets
+When I run pipenv install I get this output:
+requirements.txt found, instead of Pipfile! Converting…
+Warning: Your Pipfile now contains pinned versions, if your requirements.txt did.
+We recommend updating your Pipfile to specify the "*" version, instead.
+Pipfile.lock not found, creating…
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+nv/utils.py", line 285, in actually_resolve_reps
+    dep[len('-e '):]
+  File "/usr/local/lib/python3.5/dist-packages/pipenv/vendor/pip9/req/req_install.py", line 144, in from_editable
+    editable_req, default_vcs)
+  File "/usr/local/lib/python3.5/dist-packages/pipenv/vendor/pip9/req/req_install.py", line 1197, in parse_editable
+    "Could not detect requirement name, please specify one with #egg="
+pip9.exceptions.InstallationError: Could not detect requirement name, please specify one with #egg=
+Obviously the Pipfile.lock doesn't get created but the Pipfile does, and that contains this...
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[dev-packages]
+
+[requires]
+python_version = "3.5"
+
+[packages]
+"4c58dfa" = {path = "git+http://github.com/hactar-is/django-admin-list-filter-dropdown.git@1a5e6040dfeca6b09317401f5bd7a518141c9433", editable = true}
+wagtail_eventbrite = {ref = "90bdfc680fc920eed8618d29aefac770d258c359", editable = true, git = "git@codebasehq.com:hactar/hactar-library/wagtail_eventbrite.git"}
+webassets = {ref = "cc440911c6ac5f08fd98ea08442fe06e7a0aea2a", editable = true, git = "git://github.com/miracle2k/webassets.git"}
+All the #egg= bits have been removed. So I try manually adding them to the Pipfile, relevant lines now look like this:
+"4c58dfa" = {path = "git+http://github.com/hactar-is/django-admin-list-filter-dropdown.git@1a5e6040dfeca6b09317401f5bd7a518141c9433#egg=django_admin_list_filter_dropdown", editable = true}
+wagtail_eventbrite = {ref = "90bdfc680fc920eed8618d29aefac770d258c359", editable = true, git = "git@codebasehq.com:hactar/hactar-library/wagtail_eventbrite.git#egg=wagtail_eventbrite"}
+webassets = {ref = "cc440911c6ac5f08fd98ea08442fe06e7a0aea2a", editable = true, git = "git://github.com/miracle2k/webassets.git#egg=webassets"}
+pipenv lock produces this:
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+ges/pipenv/resolver.py", line 63, in resolve
+    verbose=verbose,
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/utils.py", line 425, in resolve_deps
+    pre,
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/utils.py", line 285, in actually_resolve_reps
+    dep[len('-e '):]
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/vendor/pip9/req/req_install.py", line 156, in from_editable
+    wheel_cache=wheel_cache)
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/vendor/pip9/req/req_install.py", line 91, in __init__
+    "Invalid requirement: '%s'\n%s" % (req, add_msg))
+pip9.exceptions.InstallationError: Invalid requirement: 'wagtail_eventbrite@90bdfc680fc920eed8618d29aefac770d258c359#egg=wagtail_eventbrite'
+= is not a valid operator. Did you mean == ?
+If I try the lines one at a time pipenv lock on just the django_admin_list_filter_dropdown package produces:
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+encies(best_match):
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/patched/piptools/resolver.py", line 275, in _iter_dependencies
+    for dependency in self.repository.get_dependencies(ireq):
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/patched/piptools/repositories/pypi.py", line 174, in get_dependencies
+    legacy_results = self.get_legacy_dependencies(ireq)
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/patched/piptools/repositories/pypi.py", line 193, in get_legacy_dependencies
+    dist = ireq.get_dist()
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/vendor/pip9/req/req_install.py", line 1069, in get_dist
+    egg_info = self.egg_info_path('').rstrip('/')
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/vendor/pip9/req/req_install.py", line 515, in egg_info_path
+    'No files/directories in %s (from %s)' % (base, filename)
+pip9.exceptions.InstallationError: No files/directories in None (from )
+The other two both produce the same(ish) error:
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+ges/pipenv/resolver.py", line 63, in resolve
+    verbose=verbose,
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/utils.py", line 425, in resolve_deps
+    pre,
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/utils.py", line 285, in actually_resolve_reps
+    dep[len('-e '):]
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/vendor/pip9/req/req_install.py", line 156, in from_editable
+    wheel_cache=wheel_cache)
+  File "/vagrant/test2/venv3/lib/python3.5/site-packages/pipenv/vendor/pip9/req/req_install.py", line 91, in __init__
+    "Invalid requirement: '%s'\n%s" % (req, add_msg))
+pip9.exceptions.InstallationError: Invalid requirement: 'wagtail_eventbrite@90bdfc680fc920eed8618d29aefac770d258c359#egg=wagtail_eventbrite'
+= is not a valid operator. Did you mean == ?
+I don't really understand what I'm doing wrong.
+$ python -m pipenv.help output (as run from the venv3 pipenv)
+$ python -m pipenv.help output (called outside a venv with `python3 -m pipenv.help`
+Expected result
+I expected it to install the dependencies and create valid working lines in the Pipfile.
+Actual result
+It created lines in the Pipfile that cause pipenv lock to break.
+Steps to replicate
+You can re-create it exactly using the vagrant VM in this repo.

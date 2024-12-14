@@ -1,0 +1,116 @@
+paolorota commented on 1 Feb 2016
+I updated the Theano/keras to the last version (today's bleeding edge). Some size mismatches errors are reported in the last version (which are not happening in the keras version of 8/12/15 Revision: 3620f02).
+Here's the code that generates the error in the new version
+import gzip
+import cPickle
+import numpy as np
+import theano
+import theano.tensor as T
+import random
+
+from keras.layers import containers
+import keras
+from keras.models import Sequential
+from keras.layers.core import Dense, Flatten, AutoEncoder, Dropout
+from keras.optimizers import SGD
+from keras.utils import np_utils
+
+examples_per_labels = 10
+
+
+# Load the pickle file for the MNIST dataset.
+dataset = 'mnist.pkl.gz'
+
+f = gzip.open(dataset, 'rb')
+train_set, dev_set, test_set = cPickle.load(f)
+f.close()
+
+#train_set contains 2 entries, first the X values, second the Y values
+train_x, train_y = train_set
+dev_x, dev_y = dev_set
+test_x, test_y = test_set
+
+print 'Train: ', train_x.shape
+print 'Dev: ', dev_x.shape
+print 'Test: ', test_x.shape
+
+examples = []
+examples_labels = []
+examples_count = {}
+
+for idx in xrange(train_x.shape[0]):
+    label = train_y[idx]
+
+    if label not in examples_count:
+        examples_count[label] = 0
+
+    if examples_count[label] < examples_per_labels:
+        arr = train_x[idx]
+        examples.append(arr)
+        examples_labels.append(label)
+        examples_count[label]+=1
+
+train_subset_x = np.asarray(examples)
+train_subset_y = np.asarray(examples_labels)
+
+print "Train Subset: ",train_subset_x.shape
+
+
+
+random.seed(3)
+np.random.seed(3)
+
+
+
+nb_epoch_pretraining = 2
+batch_size_pretraining = 500
+
+
+# Layer-wise pretraining
+encoders = []
+decoders = []
+nb_hidden_layers = [int(train_x.shape[1]), 300, 50]
+#nb_hidden_layers = [300, 500, 2]
+X_train_tmp = np.copy(train_x)
+
+dense_layers = []
+
+for i, (n_in, n_out) in enumerate(zip(nb_hidden_layers[:-1], nb_hidden_layers[1:]), start=0):
+    print('Training the layer {}: Input {} -> Output {}'.format(i, n_in, n_out))
+    # Create AE and training
+    ae = Sequential()
+
+    encoder = containers.Sequential([Dense(output_dim=n_out, input_dim=n_in, activation='tanh')])
+    decoder = containers.Sequential([Dense(output_dim=n_in, input_dim=n_out, activation='tanh')])
+    ae.add(AutoEncoder(encoder=encoder, decoder=decoder, output_reconstruction=False))
+
+    sgd = SGD(lr=2, decay=1e-6, momentum=0.0, nesterov=True)
+    ae.compile(loss='mse', optimizer=sgd)
+    ae.fit(X_train_tmp, X_train_tmp, batch_size=batch_size_pretraining, nb_epoch=nb_epoch_pretraining, verbose = True, shuffle=True)
+    # Store trainined weight and update training data
+    encoders.append(ae.layers[0].encoder)
+    decoders.append(ae.layers[0].decoder)
+
+    X_train_tmp = ae.predict(X_train_tmp)
+
+
+##############
+
+
+#End to End Autoencoder training
+if len(nb_hidden_layers) > 2:
+    full_encoder = containers.Sequential()
+    for encoder in encoders:
+        full_encoder.add(encoder)
+
+    full_decoder = containers.Sequential()
+    for decoder in reversed(decoders):
+        full_decoder.add(decoder)
+
+    full_ae = Sequential()
+    full_ae.add(AutoEncoder(encoder=full_encoder, decoder=full_decoder, output_reconstruction=False))
+    full_ae.compile(loss='mse', optimizer='adam')
+
+    print "Pretraining of full AE"
+    full_ae.fit(train_x, train_x, batch_size=batch_size_pretraining, nb_epoch=nb_epoch_pretraining, verbose = True, shuffle=True)
+You can run it as it is, you just need the db mnist file which you can find here

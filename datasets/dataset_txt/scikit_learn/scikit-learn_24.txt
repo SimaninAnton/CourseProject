@@ -1,0 +1,93 @@
+gtsoukas commented 21 days ago
+As per the documentation, the fit function of RandomizedSearchCV has a groups parameter. However, it seems that the groups-parameter is not passed to the estimators fit function.
+Steps to reproduce:
+from itertools import groupby
+import sklearn
+import scipy.stats as stats
+from sklearn.model_selection import GroupKFold, RandomizedSearchCV
+from sklearn.utils.fixes import loguniform
+import xgboost as xgb
+
+sklearn.__version__, xgb.__version__
+('0.22.1', '0.90')
+X = [[1,2],[3,4],[5,6],[7,8]]
+y = [1,2,3,4]
+group_counts = [2,2]
+# Utility function to bridge API incompatibilities
+def gen_group_inices(group_counts):
+    "Returns array of group indices for an array of group sizes"
+    group_indices = []
+    for i, n in enumerate(group_counts):
+        group_indices.extend([i for k in range(n)])
+    return group_indices
+
+grp_indices = gen_group_inices(group_counts)
+assert len(y) == len(grp_indices)
+# Inverse to gen_group_inices
+def gen_group_counts(group_indices):
+    "Returns array of group counts for an array of group indices"
+    return [len(list(group)) for key, group in groupby(group_indices)]
+    
+    
+assert gen_group_counts(grp_indices) == group_counts
+## Wrapper for XGBoost Ranker due to partially not compatible APIs
+class myXGBRanker(xgb.sklearn.XGBRanker):
+    
+    #def __init__(self):
+    #    pass
+    
+    def score(self):
+        #TODO: return actual score
+        return 0.5
+    
+    def fit(self, X, y, groups):
+        self.fit(X,y,gen_group_counts(groups))
+param_dist = {'learning_rate': loguniform(0.01, 0.5),
+              "max_depth": [2, 4]}
+
+n_iter_search = 5
+
+param_fixed = {
+    'objective': 'rank:pairwise'
+    , 'learning_rate': 0.1
+    , 'n_estimators': 2
+}
+model = myXGBRanker(**param_fixed)
+random_search = RandomizedSearchCV(model, param_distributions=param_dist,
+                                   n_iter=n_iter_search, cv=GroupKFold(n_splits=2) )
+param_dist = {'learning_rate': loguniform(0.01, 0.5),
+              "max_depth": [2, 4]}
+
+n_iter_search = 5
+
+param_fixed = {
+    'objective': 'rank:pairwise'
+    , 'learning_rate': 0.1
+    , 'n_estimators': 2
+}
+model = myXGBRanker(**param_fixed)
+random_search = RandomizedSearchCV(model, param_distributions=param_dist,
+                                   n_iter=n_iter_search, cv=GroupKFold(n_splits=2) )
+fit_params = {
+    "verbose":True
+}
+random_search.fit(X=X, y=y, groups=grp_indices)
+/usr/local/lib/python3.7/site-packages/sklearn/model_selection/_validation.py:536: FitFailedWarning: Estimator fit failed. The score on this train-test partition for these parameters will be set to nan. Details: 
+TypeError: fit() missing 1 required positional argument: 'groups'
+
+  FitFailedWarning)
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-7-03718790c35d> in <module>
+      2     "verbose":True
+      3 }
+----> 4 random_search.fit(X=X, y=y, groups=grp_indices)
+
+/usr/local/lib/python3.7/site-packages/sklearn/model_selection/_search.py in fit(self, X, y, groups, **fit_params)
+    737             refit_start_time = time.time()
+    738             if y is not None:
+--> 739                 self.best_estimator_.fit(X, y, **fit_params)
+    740             else:
+    741                 self.best_estimator_.fit(X, **fit_params)
+
+TypeError: fit() missing 1 required positional argument: 'groups'

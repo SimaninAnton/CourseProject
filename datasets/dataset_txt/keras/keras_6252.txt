@@ -1,0 +1,76 @@
+KlaymenGC commented on 17 Dec 2015
+Hello,
+I’ve been trying to implementing a deconvolutional network which takes in RGB images (128x128x3) from a dataset (the images contains 21 object classes) and then outputs probability maps of size 128x128x21 to do semantic segmentation. Each channel of the output probability map corresponds to a map to a class. I’ve built the network and I think theoretically the model has no problem. During the training phase the loss keeps decreasing while the training accuracy is slowly improving, looks nice.
+In the end, I should get something like this: http://postimg.org/image/bpb8bgtmn/
+But instead, I got strange output like this: http://postimg.org/image/4alwj37r3/
+I've been trying to solve the problem but until now still don't know what's wrong, I've attached a simplified version of my code. Any suggestion will be greatly appreciated!
+Note: the input data size is (number_of_images, 3, 128, 128)
+the output of the last layer is (number_of_images, 128 * 128, 21)
+the labels have been transformed to one-hot-label with the size (number_of_images, 128 * 128, 21)
+batch_size = 50
+nb_classes = 21
+nb_epoch = 10
+nb_test_img = 100
+
+# input image dimensions
+img_rows, img_cols = 128, 128
+
+# load data
+# data: (number_of_images, 3, img_rows*img_cols, nb_classes)
+# label: (number_of_images, img_rows*img_cols, nb_classes), one-hot-label
+data_train, label_train, data_test, label_test = load_data()
+
+# Deconvnet
+model = Sequential()
+
+# conv layer 1, 128x128x3 -> 128x128x8
+model.add(Convolution2D(8, 3, 3,
+                        border_mode='same',
+                        input_shape=(3, img_rows, img_cols)))
+model.add(Activation('relu'))
+# pooling layer 128x128x8 -> 64x64x8
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+# conv layer 2 64x64x8 -> 64x64x16
+model.add(Convolution2D(16, 3, 3,
+                        border_mode='same'))
+model.add(Activation('relu'))
+# pooling layer 64x64x16 -> 32x32x16
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+# deconv layer 1, 32x32x16 -> 32x32x8
+model.add(Convolution2D(8, 3, 3,
+                        border_mode='same'))
+model.add(Activation('relu'))
+# unpooling 32x32x8 -> 64x64x8
+model.add(UpSampling2D(size=(2, 2)))
+
+# deconv layer 2, 64x64x8 -> 64x64x8
+model.add(Convolution2D(8, 3, 3,
+                        border_mode='same'))
+model.add(Activation('relu'))
+# unpooling 64x64x8 -> 128x128x8
+model.add(UpSampling2D(size=(2, 2)))
+# deconv layer 3, 128x128x8 -> 128x128x21
+model.add(Convolution2D(21, 1, 1,
+                        border_mode='same'))
+model.add(Activation('relu'))
+
+# reshape output for the learning process
+model.add(Reshape((21, img_rows*img_cols)))
+model.add(Permute((2, 1)))
+model.add(Activation('sigmoid'))# or softmax
+
+# training phase
+sgd = SGD(lr=0.003, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+
+model.fit(data_train, label_train, batch_size=batch_size, nb_epoch=nb_epoch,
+          verbose=1, show_accuracy=True)
+# validation
+print("Validating...")
+val_loss, val_accuracy = model.evaluate(data_test, label_test, show_accuracy=True, verbose=1)
+print('Validation Accuracy: ', str(val_accuracy))
+# prediction
+print("Predicting...")
+preds = model.predict_proba(data_test, verbose=1) # reshape will be done later

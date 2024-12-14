@@ -1,0 +1,100 @@
+laszlosandor commented on Jun 25, 2014
+This reproduces a question from StackOverflow.
+The following code runs fine with smaller test samples, like 10^5 for n_samples. At least for the number below (10^6), the run breaks with the ensuing output. This is reproducible on 64-bit Windows Server 2012, with Python 2.7.7 from Anaconda 2.0.1, and I put the pool.py from Anaconda's multiprocessing package and parallel.py from scikit-learn's external package on my Dropbox for reference. All packages are the highest version numbers compatible with Py2k from repo.continuum.io/pkgs/{free|pro}/win-64/, I could not use conda to install a consistent install base.
+The test script is:
+import numpy as np
+import sklearn
+from sklearn.linear_model import SGDClassifier
+from sklearn import grid_search
+import multiprocessing as mp
+
+
+def main():
+    print("Started.")
+
+    print("numpy:", np.__version__)
+    print("sklearn:", sklearn.__version__)
+
+    n_samples = 1000000
+    n_features = 1000
+
+    X_train = np.random.randn(n_samples, n_features)
+    y_train = np.random.randint(0, 2, size=n_samples)
+
+    print("input data size: %.3fMB" % (X_train.nbytes / 1e6))
+
+    model = SGDClassifier(penalty='elasticnet', n_iter=10, shuffle=True)
+    param_grid = [{
+        'alpha' : 10.0 ** -np.arange(1,7),
+        'l1_ratio': [.05, .15, .5, .7, .9, .95, .99, 1],
+    }]
+    gs = grid_search.GridSearchCV(model, param_grid, n_jobs=8, verbose=100)
+    gs.fit(X_train, y_train)
+    print(gs.grid_scores_)
+
+if __name__=='__main__':
+    mp.freeze_support()
+    main()
+This results in the output:
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Started.
+('numpy:', '1.8.1')
+('sklearn:', '0.15.0b1')
+input data size: 8000.000MB
+Fitting 3 folds for each of 48 candidates, totalling 144 fits
+Memmaping (shape=(1000000L, 1000L), dtype=float64) to new file c:\users\laszlos\appdata\local\temp\4\joblib_memmaping_pool_6172_78765976\6172-284752304-75223296-0.pkl
+Failed to save <type 'numpy.ndarray'> to .npy file:
+Traceback (most recent call last):
+  File "C:\Anaconda\lib\site-packages\sklearn\externals\joblib\numpy_pickle.py", line 240, in save
+    obj, filename = self._write_array(obj, filename)
+  File "C:\Anaconda\lib\site-packages\sklearn\externals\joblib\numpy_pickle.py", line 203, in _write_array
+    self.np.save(filename, array)
+  File "C:\Anaconda\lib\site-packages\numpy\lib\npyio.py", line 453, in save
+    format.write_array(fid, arr)
+  File "C:\Anaconda\lib\site-packages\numpy\lib\format.py", line 406, in write_array
+    array.tofile(fp)
+ValueError: 1000000000 requested and 268435456 written
+
+Memmaping (shape=(1000000L, 1000L), dtype=float64) to old file c:\users\laszlos\appdata\local\temp\4\joblib_memmaping_pool_6172_78765976\6172-284752304-75223296-0.pkl
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Vendor:  Continuum Analytics, Inc.
+Package: mkl
+Message: trial mode expires in 28 days
+Traceback (most recent call last):
+  File "S:\laszlo\gridsearch_largearray.py", line 33, in <module>
+    main()
+  File "S:\laszlo\gridsearch_largearray.py", line 28, in main
+    gs.fit(X_train, y_train)
+  File "C:\Anaconda\lib\site-packages\sklearn\grid_search.py", line 597, in fit
+    return self._fit(X, y, ParameterGrid(self.param_grid))
+  File "C:\Anaconda\lib\site-packages\sklearn\grid_search.py", line 379, in _fit
+    for parameters in parameter_iterable
+  File "C:\Anaconda\lib\site-packages\sklearn\externals\joblib\parallel.py", line 651, in __call__
+    self.retrieve()
+  File "C:\Anaconda\lib\site-packages\sklearn\externals\joblib\parallel.py", line 503, in retrieve
+    self._output.append(job.get())
+  File "C:\Anaconda\lib\multiprocessing\pool.py", line 558, in get
+    raise self._value
+struct.error: integer out of range for 'i' format code

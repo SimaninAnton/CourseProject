@@ -1,0 +1,70 @@
+gsanroma commented on Jan 14, 2019
+Description
+GridSearchCV.fit() gives an error when using refit=True
+The error arises in script model_selection/_search.py when cloning best_estimator yields a NoneType object.
+Code snippet from search.py causing the error:
+        if self.refit:
+            self.best_estimator_ = clone(base_estimator).set_params(**self.best_params_)
+            # a couple of lines of code
+            self.best_estimator_.fit(X, **fit_params)  # <-- THIS CALL IS THROWING THE ERROR
+Steps/Code to Reproduce
+import numpy as np
+from sklearn.model_selection import GridSearchCV
+from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
+
+class dummy_estimator(BaseEstimator, RegressorMixin):
+
+    def __init__(self, param1=None):
+        self.param1 = param1
+
+    def set_params(self, **params):
+        if 'param1' in params.keys(): self.param1 = params['param1']
+
+    def fit(self, *_):
+        return self
+
+    def score(self, *_):
+        return float(np.random.rand(1))
+
+if __name__ == "__main__":
+
+    params = {}
+    params['param1'] = [1, 2]
+
+    gs = GridSearchCV(estimator=dummy_estimator(), param_grid=params, refit=True)
+
+    gs.fit(np.random.rand(10))
+Expected Results
+I would expect the gridsearchcv object gets fitted and best_estimator_ contains the model after refit.
+Actual Results
+Console output:
+/Users/sanromag/anaconda2/envs/base/bin/python /Users/sanromag/CODE_local/multimodal_corr/test_error_gridcv.py
+/Users/sanromag/anaconda2/envs/base/lib/python2.7/site-packages/sklearn/model_selection/_split.py:2053: FutureWarning: You should specify a value for 'cv' instead of relying on the default value. The default value will change from 3 to 5 in version 0.22.
+  warnings.warn(CV_WARNING, FutureWarning)
+/Users/sanromag/anaconda2/envs/base/lib/python2.7/site-packages/sklearn/model_selection/_search.py:841: DeprecationWarning: The default of the `iid` parameter will change from True to False in version 0.22 and will be removed in 0.24. This will change numeric results when test-set sizes are unequal.
+  DeprecationWarning)
+Traceback (most recent call last):
+  File "/Users/sanromag/CODE_local/multimodal_corr/test_error_gridcv.py", line 33, in <module>
+    gs.fit(np.random.rand(10))
+  File "/Users/sanromag/anaconda2/envs/base/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 742, in fit
+    self.best_estimator_.fit(X, **fit_params)
+AttributeError: 'NoneType' object has no attribute 'fit'
+Versions
+import sklearn; sklearn.show_versions()
+(I have the same problem in both macos and Linux. Below the output of macos)
+System:
+    python: 2.7.15 |Anaconda, Inc.| (default, Dec 14 2018, 13:10:39)  [GCC 4.2.1 Compatible Clang 4.0.1 (tags/RELEASE_401/final)]
+   machine: Darwin-16.7.0-x86_64-i386-64bit
+executable: /Users/sanromag/anaconda2/envs/base/bin/python
+BLAS:
+    macros: NO_ATLAS_INFO=3, HAVE_CBLAS=None
+cblas_libs: cblas
+  lib_dirs: 
+Python deps:
+    Cython: None
+     scipy: 1.2.0
+setuptools: 40.6.3
+       pip: 18.1
+     numpy: 1.15.4
+    pandas: 0.23.4
+   sklearn: 0.20.2

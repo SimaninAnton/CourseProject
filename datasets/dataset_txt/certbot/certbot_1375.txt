@@ -1,0 +1,50 @@
+guyzmo commented on 27 Feb 2017 •
+edited
+My operating system is (include version):
+Ubuntu Trusty 14.04.5 LTS
+My web server is (include version):
+nginx (but not relevant, I've been using the standalone here.
+How did you install Certbot:
+using pip3 install letsencrypt.
+What command did you run and what output did it produce?
+% certbot certonly --standalone -d example.org -d […]
+Saving debug log to /var/log/letsencrypt/letsencrypt.log                                                                                                                                                                                                                                                                                                                                                          -------------------------------------------------------------------------------                                                                                                                          You have an existing certificate that contains a portion of the domains you                                                                                                                              requested (ref: /etc/letsencrypt/renewal/example.org.conf)                                                                                                                                                                                                                                                                                                                                                        It contains these names: example.org […]                                                                                                                                                                                                                                                                                                                                   You requested these names for the new certificate: example.org, […].                                                                                                                                                                                                                                                                                                                                                                       Do you want to expand and replace this existing certificate with the new                                                                                                                                 certificate?                                                                                                                                                                                             -------------------------------------------------------------------------------                                                                                                                          (E)xpand/(C)ancel: e                                                                                                                                                                                     Renewing an existing certificate                                                                                                                                                                         Performing the following challenges:                                                                                                                                                                     tls-sni-01 challenge for example.org
+[…]
+Waiting for verification...                                                                                                                                                                              Cleaning up challenges                                                                                                                                                                                   Generating key (2048 bits): /etc/letsencrypt/keys/0007_key-certbot.pem                                                                                                                                   Creating CSR: /etc/letsencrypt/csr/0007_csr-certbot.pem                                                                                                                                                  An unexpected error occurred:                                                                                                                                                                            TypeError: must be str, not bytes                                                                                                                                                                        Please see the logfiles in /var/log/letsencrypt for more details.                                
+Can you provide a Certbot error log showing the issue?
+It is stored by default in /var/log/letsencrypt - feel free to redact domain names, e-mail and IP addresses as you see fit
+2017-02-26 23:55:31,201:DEBUG:certbot.storage:Writing new private key to /etc/letsencrypt/archive/example.org/privkey9.pem.
+2017-02-26 23:55:31,202:DEBUG:certbot.main:Exiting abnormally:
+Traceback (most recent call last):
+  File "/usr/local/bin/certbot", line 11, in <module>
+    sys.exit(main())
+  File "…/certbot/main.py", line 882, in main
+    return config.func(config, plugins)
+  File "…/certbot/main.py", line 659, in obtain_cert
+    action, _ = _auth_from_available(le_client, config, domains, certname, lineage)
+  File "…/certbot/main.py", line 104, in _auth_from_available
+    renewal.renew_cert(config, domains, le_client, lineage)
+  File "…/certbot/renewal.py", line 306, in renew_cert
+    lineage.save_successor(prior_version, new_cert, new_key.pem, new_chain, config)
+  File "…/certbot/storage.py", line 1062, in save_successor
+    f.write(new_privkey)
+TypeError: must be str, not bytes
+Workaround to make it work
+in the /usr/local/lib/python3.4/dist-packages/certbot/storage.py file I added the following function at module scope:
+ensure_str = lambda s: s if isinstance(s, str) else s.decode('utf8')
+and used it at the end to make sure str were being written to the files:
+1062         else:
+1063             with open(target["privkey"], "w") as f:
+1064                 logger.debug("Writing new private key to %s.", target["privkey"])
+1065                 f.write(ensure_str(new_privkey))
+1066                                                                                                                                                                                                     1067         # Save everything else
+1068         with open(target["cert"], "w") as f:
+1069             logger.debug("Writing certificate to %s.", target["cert"])
+1070             f.write(ensure_str(new_cert))
+1071         with open(target["chain"], "w") as f:
+1072             logger.debug("Writing chain to %s.", target["chain"])
+1073             f.write(ensure_str(new_chain))
+1074         with open(target["fullchain"], "w") as f:
+1075             logger.debug("Writing full chain to %s.", target["fullchain"])
+1076             f.write(ensure_str(new_cert) + ensure_str(new_chain))
+That solution is pretty dirty, but it works.

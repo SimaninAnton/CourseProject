@@ -1,0 +1,77 @@
+rallesiardo commented on 22 May 2017 •
+edited
+Hello everyone,
+I'm doing several training on the same dataset (5M exemples), in a loop. In each iteration, I draw 80% of the dataset for training the network and 20% for testing. I create a new model, compile it, then train it. After the training phase, I compute the mean error on the testing set.
+There is my issue: If I run the script several time with only one iteration, the error oscillate roughly around let say, y. But if I run the script with several iterations, the error starts at ~y then decrease to something as small as y/2.
+For me, one possible answer to this behavior is that the model has already learnt the test set from the previous iterations. However, before each iteration, I create a new model, I compile it again, I even tried to delete the Keras import and import them again before each iteration. So, is there an hidden state persisting between the iteration? How can I do a proper reset of everything?
+Thank you for your help.
+There is the code:
+random.seed()
+for i_iteration in range(5):
+       for old_index in range(len(X_data)):
+             new_index = np.random.randint(old_index, len(X_data))
+             X_data[old_index], X_data[new_index] = X_data[new_index], X_data[old_index]
+             Y_data[old_index], Y_data[new_index] = Y_data[new_index], Y_data[old_index]
+        
+        id_pivot = int(len(X_data) * 0.8)
+        
+        X_train = X_data[:id_pivot]
+        Y_train = Y_data[:id_pivot]
+        
+        X_test = X_data[id_pivot:]
+        Y_test = Y_data[id_pivot:]
+    
+        model = None
+
+        if 'Sequential' in locals():
+            del Sequential
+        if 'Dense' in locals():
+             del Dense
+        if 'Activation' in locals():
+            del Activation
+        if 'Dropout' in locals():
+            del Dropout
+        if 'model_from_json' in locals():
+            del model_from_json
+        if 'EarlyStopping' in locals():
+            del EarlyStopping
+        if 'regularizers' in locals():
+            del regularizers
+        if 'optimizers' in locals():
+            del optimizers
+        if 'metrics' in locals():
+            del metrics          
+                
+        from keras.models import Sequential
+        from keras.layers import Dense, Activation, Dropout
+        from keras.models import model_from_json
+        from keras.callbacks import EarlyStopping
+        from keras import regularizers, optimizers, metrics
+            
+        early_stopping = EarlyStopping(monitor='val_loss', patience=2, min_delta=0.00001)
+    
+
+        model = Sequential([
+                    Dense(60, input_shape=(w_x.size(),), kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.001)),
+                    Activation('elu'),
+                    Dropout(rate=0.1),
+                    Dense(60, kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.001)),
+                    Activation('elu'),
+                    Dropout(rate=0.1),
+                    Dense(1, kernel_regularizer=regularizers.l1_l2(l1=0.0001, l2=0.001)),
+                    Activation('elu')
+                ])
+                
+            
+        opti= optimizers.Nadam(lr=0.004, beta_1=0.9, beta_2=0.999, epsilon=1e-08, schedule_decay=0.004)
+
+        model.compile(optimizer=opti, loss='mean_squared_error', metrics=[metrics.mae])
+
+        model.fit(X_train, Y_train[:,0], epochs=100, verbose=1, batch_size=32, validation_split=0.2, callbacks=[early_stopping])
+                
+        
+        predictions = model.predict(X_test)
+          
+        absDif = np.absolute( Y_test[:,0]- predictions[:,0])
+        
+        print(absDif.mean())

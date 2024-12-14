@@ -1,0 +1,108 @@
+bsamuel-ui commented on 13 Aug 2018 •
+edited
+Issue description
+Running pipenv lock --verbose, contradictory dependencies are locked in the first round, preventing any solution.
+Possible related: #2720 .
+Relevant versions:
+$ pipenv --version
+pipenv, version 2018.7.1
+$ pip -V
+pip 18.0 from /Users/ben/.pyenv/versions/3.6.6/lib/python3.6/site-packages/pip (python 3.6)
+My case
+I have two projects that use botocore, one through aiobotocore[boto3] and another as boto3 directly. (On a practical note, AWS is being way too aggressive in their version constraints. But this is a deficiency in the solver all the same.)
+When pipenv lock --verbose runs, I see:
+                      ROUND 1
+Current constraints:
+  engine>=1.1.4 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-8vlq_0yh-requirements/pipenv-k13kkjyv-constraints.txt (line 4))
+  tob-utils>=1.1.2 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-8vlq_0yh-requirements/pipenv-k13kkjyv-constraints.txt (line 5))
+
+Finding the best candidates:
+  found candidate engine==1.1.4.3 (constraint was >=1.1.4)
+  ...
+  found candidate tob-utils==1.1.2.0 (constraint was >=1.1.2)
+
+engine==1.1.4.3           requires aiobotocore[boto3], aiohttp>=3.3.1, async-timeout<4.0,>=3.0, attrs, boto3==1.7.58; extra == "boto3", botocore<1.10.59,>=1.10.58, chardet<4.0,>=2.0, docutils>=0.10, engine==1.1.4.3, idna-ssl>=1.0, idna>=2.0, jmespath<1.0.0,>=0.7.1, multidict<5.0,>=4.0, numpy, python-dateutil<3.0.0,>=2.1; python_version >= "2.7", s3transfer<0.2.0,>=0.1.10, simplejson, six>=1.5, wrapt>=1.10.10, yarl<2.0,>=1.0
+tob-utils==1.1.2.0        requires boto3>=1.4.0, botocore<1.11.0,>=1.10.75, click, docutils>=0.10, jmespath<1.0.0,>=0.7.1, python-dateutil<3.0.0,>=2.1; python_version >= "2.7", s3transfer<0.2.0,>=0.1.10, six>=1.5, tob-utils==1.1.2.0
+When you look at those, you can see that pipenv has already set conflicting constraints on botocore, but those constraints aren't in either library; the install_requires only specify the top-level constraints:
+    install_requires=["boto3>=1.4.0", "click"],  # tob-utils
+    install_requires=['attrs', 'numpy', 'aiobotocore[boto3]', 'simplejson'],  # engine
+Pipenv lock appears to be adding dependencies too aggressively in the first round.
+Minimal case
+This Pipfile will fail:
+[packages]
+boto3 = "*"
+aiobotocore = {version="*", extras=["boto3"]}
+Expected result
+For the minimal case, a valid solution would be constrained according to aiobotocore (also note the extra_requires)
+Actual result
+For the minimal test case, with some editing:
+Locking [dev-packages] dependencies...
+Locking [packages] dependencies...
+using sources: [{'url': 'https://pypi.org/simple', 'verify_ssl': True, 'name': 'pypi'}]
+Using pip: -i https://pypi.org/simple
+
+                          ROUND 1
+Current constraints:
+  aiobotocore[boto3] (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-xasfg2mp-constraints.txt (line 3))
+  boto3 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-xasfg2mp-constraints.txt (line 2))
+
+Finding the best candidates:
+  found candidate aiobotocore[boto3]==0.9.4 (constraint was <any>)
+  found candidate boto3==1.7.75 (constraint was <any>)
+
+Finding secondary dependencies:
+  boto3==1.7.75             requires boto3==1.7.75, botocore<1.11.0,>=1.10.75, docutils>=0.10, jmespath<1.0.0,>=0.7.1, python-dateutil<3.0.0,>=2.1; python_version >= "2.7", s3transfer<0.2.0,>=0.1.10, six>=1.5
+  aiobotocore[boto3]==0.9.4 requires aiobotocore[boto3]==0.9.4, aiohttp>=3.3.1, async-timeout<4.0,>=3.0, attrs>=17.3.0, boto3==1.7.58; extra == "boto3", botocore<1.10.59,>=1.10.58, chardet<4.0,>=2.0, docutils>=0.10, idna-ssl>=1.0, idna>=2.0, jmespath<1.0.0,>=0.7.1, multidict<5.0,>=4.0, python-dateutil<3.0.0,>=2.1; python_version >= "2.7", s3transfer<0.2.0,>=0.1.10, six>=1.5, wrapt>=1.10.10, yarl<2.0,>=1.0
+At this point, boto3==1.7.75 and boto3==1.7.58 have been specified and a match is impossible.
+                          ROUND 2
+Current constraints:
+  aiobotocore[boto3]==0.9.4 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-xasfg2mp-constraints.txt (line 3))
+  aiohttp>=3.3.1
+  async-timeout<4.0,>=3.0
+  attrs>=17.3.0
+  boto3==1.7.58,==1.7.75 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-xasfg2mp-constraints.txt (line 2))
+  botocore<1.10.59,<1.11.0,>=1.10.58,>=1.10.75
+  <<SNIP>>
+
+Finding the best candidates:
+  found candidate aiobotocore[boto3]==0.9.4 (constraint was ==0.9.4)
+  found candidate aiohttp==3.3.2 (constraint was >=3.3.1)
+  found candidate async-timeout==3.0.0 (constraint was >=3.0,<4.0)
+  found candidate attrs==18.1.0 (constraint was >=17.3.0)
+
+                          ROUND 1
+Current constraints:
+  aiobotocore[boto3] (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-8q2pygmt-constraints.txt (line 3))
+  boto3 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-8q2pygmt-constraints.txt (line 2))
+
+Finding the best candidates:
+  found candidate aiobotocore[boto3]==0.9.4 (constraint was <any>)
+  found candidate boto3==1.7.75 (constraint was <any>)
+
+Finding secondary dependencies:
+  boto3==1.7.75             requires boto3==1.7.75, botocore<1.11.0,>=1.10.75, docutils>=0.10, jmespath<1.0.0,>=0.7.1, python-dateutil<3.0.0,>=2.1; python_version >= "2.7", s3transfer<0.2.0,>=0.1.10, six>=1.5
+  aiobotocore[boto3]==0.9.4 requires aiobotocore[boto3]==0.9.4, aiohttp>=3.3.1, async-timeout<4.0,>=3.0, attrs>=17.3.0, boto3==1.7.58; extra == "boto3", botocore<1.10.59,>=1.10.58, chardet<4.0,>=2.0, docutils>=0.10, idna-ssl>=1.0, idna>=2.0, jmespath<1.0.0,>=0.7.1, multidict<5.0,>=4.0, python-dateutil<3.0.0,>=2.1; python_version >= "2.7", s3transfer<0.2.0,>=0.1.10, six>=1.5, wrapt>=1.10.10, yarl<2.0,>=1.0
+New dependencies found in this round:
+  adding ['aiobotocore', '==0.9.4', "['boto3']"]
+  adding ['aiohttp', '>=3.3.1', '[]']
+  adding ['async-timeout', '<4.0,>=3.0', '[]']
+  adding ['attrs', '>=17.3.0', '[]']
+  adding ['boto3', '==1.7.58,==1.7.75', '[]']
+  adding ['botocore', '<1.10.59,<1.11.0,>=1.10.58,>=1.10.75', '[]']
+  <<SNIP>>
+Removed dependencies in this round:
+Unsafe dependencies in this round:
+------------------------------------------------------------
+Result of round 1: not stable
+
+                          ROUND 2
+Current constraints:
+  aiobotocore[boto3]==0.9.4 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-8q2pygmt-constraints.txt (line 3))
+  aiohttp>=3.3.1
+  async-timeout<4.0,>=3.0
+  attrs>=17.3.0
+  boto3==1.7.58,==1.7.75 (from -r /var/folders/vg/g4hqzfy162v08q1nsttnrjjh0000gn/T/pipenv-7_9_qnv3-requirements/pipenv-8q2pygmt-constraints.txt (line 2))
+  botocore<1.10.59,<1.11.0,>=1.10.58,>=1.10.75
+  <<SNIP>>
+Steps to replicate
+Run pipfile lock --verbose on the above Pipfile.

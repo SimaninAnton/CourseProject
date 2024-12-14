@@ -1,0 +1,33 @@
+socketpair commented on 21 Jan 2015
+Suppose test:
+@gen.coroutine
+def async_exec(args, **kwargs):
+    kwargs['stdout'] = Subprocess.STREAM
+    kwargs['stderr'] = Subprocess.STREAM
+    p = Subprocess(args, **kwargs)
+    (code, stdout, stderr) = yield [
+        Task(p.set_exit_callback),
+        p.stdout.read_until_close(),
+        p.stderr.read_until_close(),
+    ]
+    raise gen.Return((code, stdout, stderr))
+
+class TestAsyncExec(AsyncTestCase):
+    @gen_test
+    def test_async_exec(self):
+        (code, stdout, stderr) = yield async_exec(['echo', 'teststring'])
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, 'teststring\n')
+        self.assertEqual(stderr, '')
+This will SOMETIMES NOT WORKING (!) (race condition). To fix, I should do that:
+class TestAsyncExec(AsyncTestCase):
+    def setUp(self):
+        super(TestAsyncExec, self).setUp()
+        Subprocess.uninitialize() # someone may do initialize() during imports...
+        Subprocess.initialize(self.io_loop)
+
+    def tearDown(self):
+        super(TestAsyncExec, self).tearDown()
+        Subprocess.uninitialize()
+This is not so obvious. Seems, some changes required to make life of testers easy.
+Maybe integrate that code into AsyncTestCase.setUp()/tearDown()?

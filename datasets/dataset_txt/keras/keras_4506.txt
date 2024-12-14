@@ -1,0 +1,32 @@
+Contributor
+kuza55 commented on 27 Aug 2016
+This code crashes with this output:
+Exception: Only layers of same output shape can be merged using sum mode. Layer shapes: [((None, 10), 10), (None, 10)]
+import keras
+from keras.layers import Input, Dense, merge
+from keras.models import Model
+from keras.layers.core import Lambda
+
+def dense_fn(data_arr, output_dims):
+    out_arr = []
+    for layer in data_arr:
+        out_dense = Dense(output_dims)(layer)
+        out_arr.append(out_dense)
+
+    return merge(out_arr, mode='sum')
+
+numeric_columns = 10
+input = Input(shape=(numeric_columns,), name='numeric_input')
+
+concat_layers = []
+hidden = input
+concat_layers.append(hidden)
+hidden = Dense(10)(hidden)
+concat_layers.append(hidden)
+hidden = Lambda(dense_fn, output_shape=(10,), arguments={'output_dims':10})(concat_layers)
+concat_layers.append(hidden)
+hidden = merge([hidden, input])
+
+model = Model(input=input, output=hidden)
+I spent some time tracking it down and it seems to be due to the Lambda layer not dealing with lists of inputs. In TensorFlow, simply removing the output_shape parameter fixes this issue since TensorFlow figures out the correct shape.
+I'm not really sure what the right fix for this is; if the architecture doesn't support it, then maybe just adding an exception saying that output_shape and arrays of inputs are incompatible?

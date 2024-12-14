@@ -1,0 +1,32 @@
+rickyz commented on 14 Feb 2011
+I see that there's a comment in the code indicating that this is known, but it seems that the secure cookie function still hmacs the contents of cookies with the delimiter character removed. As a result, a user can cause a 500 error by moving a cookie delimiter to the beginning, causing the int() call to throw a ValueError.
+I see that you want to maintain backwards compatibility with the cookie, but in this case, I think it'd really be better to break compatibility and hmac the entire contents of the cookie before processing any of it:
+diff --git a/tornado/web.py b/tornado/web.py
+index 904336e..0a2f30d 100644
+--- a/tornado/web.py
++++ b/tornado/web.py
+@@ -321,6 +321,9 @@ class RequestHandler(object):
+
+         To read a cookie set with this method, use get_secure_cookie().
+         """
++        if '|' in name:
++            # Disallow delimiter characters in secure cookie names.
++            raise ValueError("Invalid secure cookie %r: %r" % (name, value))
+         self.set_cookie(name, self.create_signed_value(name, value),
+                         expires_days=expires_days, **kwargs)
+
+@@ -379,10 +382,10 @@ class RequestHandler(object):
+
+     def _cookie_signature(self, *parts):
+         self.require_setting("cookie_secret", "secure cookies")
+-        hash = hmac.new(self.application.settings["cookie_secret"],
+-                        digestmod=hashlib.sha1)
+-        for part in parts: hash.update(part)
+-        return hash.hexdigest()
++        cookie_hmac = hmac.new(self.application.settings["cookie_secret"],
++                               digestmod=hashlib.sha1)
++        cookie_hmac.update('|'.join(parts))
++        return cookie_hmac.hexdigest()
+
+     def redirect(self, url, permanent=False):
+         """Sends a redirect to the given (optionally relative) URL."""

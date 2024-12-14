@@ -1,0 +1,49 @@
+ghost commented on 14 Aug 2015
+I'm not sure if this is the right place for it. But I do not know a better place and don't saw a similar issue report. Maybe this works as intended, but maybe not.
+What's the problem?
+mitmdump is configured as a transparent proxy. Pages are recorded and mitmdump is started with this dump. When the server is online the dump is used to send the answer and no data is send to the server. When the server is (temporarily) offline mitmdump complaining about ProxyError(NetLibError('Error connecting [...], e.g. with Connection refused, depending on the problem of the server. The client receives a bad gateway as answer.
+What's expected?
+mitmdump sends the dumped page to the client.
+Which versions are affected?
+I first saw this issue in version 0.12.1 and could reproduce it with 0.13.
+How to reproduce the problem?
+We need a webserver which could be stopped.
+In my case I use three computers, one client, one for mitmdump and one Linux computer as a webserver in this network order.
+The webserver on the last computer can be a script like the following:
+#!/usr/bin/env python
+import socket
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.bind(('', 80))
+sock.listen(1)
+while 1:
+  con, addr = sock.accept()
+  data = con.recv(4096)
+  con.send("HTTP/1.1 200 OK\r\n")
+  con.send("Date: Thu, 10 Aug 2015 10:00:00 GMT\r\n")
+  con.send("Content-Type: text/html\r\n")
+  con.send("Connection: keep-alive\r\n")
+  con.send("Server: Apache\r\n")
+  con.send("Content-Length: 2\r\n")
+  con.send("\r\n")
+  con.send("17")
+  con.close()
+
+sock.close()
+Now mitmdump is started in transparent mode to capture sites and the client calls the webserver with Firefox or another browser.
+When the recording is finished mitmdump is started again with the captured file -- and in my case also with --no-pop but this should be not necessary.
+The client could ask again and get its answer. Thus the webserver needs a problem. For example a firewall rule like
+iptables -A FORWARD -p tcp --dport 80 -s [client ip] -j REJECT --reject-with tcp-reset
+. When no --no-pop is used it is maybe necessary to restart mitmdump.
+When the client ask again it should get a bad gateway.
+For me it also worked by stopping the python script and without the iptables rule. It took some time and after the timeout the client gets the bad gateway, I think not with Connection refused but another NetLibError.
+Why does this happen?
+In line 84 of libmproxy/proxy/server.py, in function ConnectionHandler.handle there is the comment # Can we already identify the target server and connect to it?.
+As far as I can tell in transparent mode when a client connects we already know the destination without interpreting the request. Thus the handle function tries to connect to the real server. Therefore on a cache miss this is faster, we already have a connection and do not need the create one.
+But in this case the connection fails, exceptions are thrown, the request could not be answered and a bad gateway is send to client even though the correct answer is there, in the dump. When the server is ok, the connection is established but no data is send.
+When the server is defect the _hash function of flow.py is not asked thus it is not tested if the data is in the cache/dump before answering with a bad gateway.
+How could the problem be solved?
+As a workaround I tried to cut the code of if self.server_conn and not self.server_conn.connection: and it worked. When a new page is requested the new data is send and when the defect server is requested the saved data is send. But SSL does not work any more. mitmdump does not recognise the SSL on port 443 and read it as HTTP and sending a HTTP error page back, confusing the browser. Without the modification 443 is interpreted as SSL and HTTPS pages worked as intended.
+Maybe one solution is to not send a HTTP error page if the connection in the handle function fails but to later check the cache and probably try to connect to the server again. Or maybe the prematurely connection is removed anyway. In that case even the original server does not know it when a cache hit is there because no connection is created (i.e. more transparent).
+For me it seems that the fix is not so trivial, I do not know which change lead to which side effect as I only know a small amount of source code.
+But as initially mentioned this is maybe no bug but the intended behaviour. In this case is there any option to force the answer even if the server is down but the data is in the cache/dump? Or is there a way to deactivate the early connection to the server?

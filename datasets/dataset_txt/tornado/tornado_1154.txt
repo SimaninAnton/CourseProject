@@ -1,0 +1,26 @@
+trott13 commented on 12 Jul 2011
+While working with Server Sent Events using Tornado, I discovered, that (at least) the WSGIContainer in wsgi.py
+will set a Content-Length header field in any case.
+However, this is not permitted, if a chunked or streamed HTTP result should be delivered. The Browser will interpret
+the set Content-Length as "this is no stream" and close the socket (which in turn kill the EventSource there and forces
+it to re-connect).
+I changed the setting of Content-Length therefore into:
+    # TRott, 12.7.2011: SSE and Webkit problem:
+    # the response should only have a set Content-Length header field,
+    # if it is not a HTTP-stream. In these cases HTTP is made of chunks
+    # separated by double newlines (like our SSEvents...).
+    # Therefore, if Content-Length is set, we are assumed
+    # _not_ to stream...
+    # We check the content-type for annoncing a stream here and switch of
+    # the Content-Length header field, if it is:
+    #
+    isStream=False
+    for (k,v) in headers:
+        if k=="Content-Type" and v.endswith("stream"):
+            isStream=True
+            break
+
+    if not isStream and "content-length" not in header_set:
+        headers.append(("Content-Length", str(len(body))))
+You probably should consider a more generalized solution to handle HTTP stream content
+in the future.

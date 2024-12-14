@@ -1,0 +1,23 @@
+jturmel commented on 20 Nov 2015
+I've got a situation where I have a model with two foreign keys on them when creating an instance need to just pass the IDs
+class FriendshipRequest(models.Model):
+    """ Model to represent friendship requests """
+    from_user = models.ForeignKey(AUTH_USER_MODEL, related_name='friendship_requests_sent')
+    to_user = models.ForeignKey(AUTH_USER_MODEL, related_name='friendship_requests_received')
+
+    message = models.TextField(_('Message'), blank=True)
+
+    created = models.DateTimeField(default=timezone.now)
+    rejected = models.DateTimeField(blank=True, null=True)
+    viewed = models.DateTimeField(blank=True, null=True)
+On the serializer when POSTing, want to just send the ID for from_user and to_user but on response want to actually get the User objects back, if I add depth to the serializer then POST starts failing saying that from_user and to_user are required, even though I'm still passing them in. I've also tried sending in an object for from_user and to_user just to see if that'd work but it still complains that they're required. I think this is because depth sets them to read-only but then not sure how you're supposed to be able to set foreign keys at all when using depth, doesn't it defeat the point?
+Is there a way to do this without defining your own create method on the viewset and switching serializers manually between the input (request) and output (response)? That's the only other solution I've come up with.
+    def create(self, request, *args, **kwargs):
+        serializer = FriendshipRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            instance = serializer.save()
+            headers = self.get_success_headers(serializer.data)
+            serializer = FriendshipRequestReadSerializer(instance)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

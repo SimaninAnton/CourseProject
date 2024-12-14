@@ -1,0 +1,57 @@
+EtienneCmb commented on Oct 3, 2016 •
+edited
+Description
+I just update to the 0.18 version, and I've now a recurrent parallelizing warning message that was absent previously.
+Steps/Code to Reproduce
+The code bellow is adapted from an online example, using several features selections. The same didn't produce a warning message with the previous scikit version.
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from sklearn.datasets import load_iris
+from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest
+
+if __name__ == '__main__':
+    iris = load_iris()
+
+    X, y = iris.data, iris.target
+
+    # This dataset is way too high-dimensional. Better do PCA:
+    pca = PCA(n_components=2)
+
+    # Maybe some original features where good, too?
+    selection = SelectKBest(k=1)
+
+    # Build estimator from PCA and Univariate selection:
+
+    combined_features = FeatureUnion([("pca", pca), ("univ_select", selection)], n_jobs=1)
+
+    # Use combined features to transform dataset:
+    X_features = combined_features.fit(X, y).transform(X)
+
+    svm = SVC(kernel="linear")
+
+    # Do grid search over k, n_components and C:
+
+    pipeline = Pipeline([("features", combined_features), ("svm", svm)])
+
+    param_grid = dict(features__pca__n_components=[1, 2, 3],
+                      features__univ_select__k=[1, 2],
+                      svm__C=[0.1, 1, 10])
+
+    grid_search = GridSearchCV(pipeline, param_grid=param_grid, verbose=0, n_jobs=-1)
+    grid_search.fit(X, y)
+    print(grid_search.best_estimator_)
+Actual Results
+Here is the waning message :
+joblib/parallel.py:540: UserWarning: Multiprocessing-backed parallel loops cannot be nested, setting n_jobs=1
+  **self._backend_args)
+It looks like there is deep process using parallelization.
+Versions
+Linux-3.19.0-32-generic-x86_64-with-debian-jessie-sid
+Python 3.5.1 |Anaconda 2.4.1 (64-bit)| (default, Dec 7 2015, 11:16:01)
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+NumPy 1.11.1
+SciPy 0.18.1
+Scikit-Learn 0.18
+Joblib 0.9.4

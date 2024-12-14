@@ -1,0 +1,81 @@
+mgeorgiadis commented on 28 Sep 2018 •
+edited
+Expected Behavior
+I have a piece of hardware that only supplies a 32 bit .dll, but it needs to be integrated into a piece of software that must be 64 bit for other reasons. So I used the opportunity to setup a 32-bit python server in Flask to communicate with device and be controlled by a client in my existing 64-bit program.
+The 32 bit server should simply just exist as a pass through for my 64 bit client to the hardware.
+Actual Behavior
+This all works well and fine for some number of function calls, however I get very repeatable timeouts after a specific number of function calls to the server. I have been able to reproduce this using a very simple simulation without any hardware that I can share below.
+In my program, the 64 bit version of python spins up a 32-bit python exe and specifies the server .py file. So to run this, you'll need to specify a location to your 32-bit version of python. Simply specify the location of the 32 bit python .exe in client.py and then run client.py in a 64 bit version of python.
+In any event, I'm finding that after 54 calls to the server from the client, the server just doesn't respond anymore. I initially remedied this by killing all 32 bit python processes and restarting the server, but this is really unstable to do over a long time, and this program needs to run for weeks without crashing. This seems like some sort of bug, but I've been unable to troubleshoot further since this is a bit out of my experience area.
+Code Examples
+Put the code below into a file called "server.py"
+# Simple server.py example to demonstrate timeout
+
+from flask import Flask
+import json
+
+app = Flask(__name__)
+
+@app.route('/')
+def start():
+    # Do nothing on root other than verify that server connects successfully
+    response={}
+    response["Connection"]=0
+    return json.dumps(response)
+
+@app.route('/dosomething')
+def hardwaredoessomething():
+    # in the full use case the client would tell the server to tell the
+    # hardware to do something, and then the function would return
+    # when that is done.  This is simulated here.
+    response={}
+    response["Status"]=0
+    response["Complete"]=0
+    return json.dumps(response)
+          
+app.run()
+Put the code below into a file called client.py, in the same folder as server.py
+# Simple client.py example
+
+import os
+import urllib.request
+import subprocess
+import json
+import time
+
+# insert path to your 32 bit version of python here
+python32bitpath = r'C:\Python\32 bit Python 3\python-3.4.4\python.exe'
+serverpath = os.getcwd() + r'\server.py'
+
+# Start the 32 bit python server
+p1 = subprocess.Popen([python32bitpath,serverpath],\
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+
+
+
+# Specify the location of the server
+root = 'http://localhost:5000/'
+
+# give a couple seconds for the server to initialize
+time.sleep(3)
+
+# Verify you can connect to the server
+ret = urllib.request.urlopen(root)
+response = ret.read().decode()
+print(response)
+
+numCalls = 0
+
+for i in range(100):
+    ret = urllib.request.urlopen(root+'dosomething')
+    response = ret.read().decode()
+    print('response',response)
+    print("number of calls",numCalls)
+    numCalls+=1
+    time.sleep(0.5)
+Environment
+Python version: I've seen this on python 3.4 and python 3.6
+Flask version: 0.11.1
+Follow up
+Also just as a follow up, I also tested this code by having a 64 bit client and a 64 bit server as well. Still stops at 54 calls. I definitely would appreciate the help as this would enable my program to be much more robust. I just wish hardware vendors would get modern and supply 64 bit .dlls.

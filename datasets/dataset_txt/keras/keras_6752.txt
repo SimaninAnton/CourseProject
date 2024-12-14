@@ -1,0 +1,61 @@
+tomohiro1221 commented on 19 Aug 2015
+I'm trying to implement face detection with multi-task CNN based on this paper with keras as it's easy to create and use custom objective functions.
+http://research.microsoft.com/en-us/um/people/chazhang/publications/wacv2014_ChaZhang.pdf
+The objective function is computed as follows:
+L = L1 (= loss of face/nonface decision) + L2 (= loss of head pose) + L3 (= loss of head landmarks)
+I want L2 and L3 to be zero when the input is nonface.
+As the loss for head pose / head landmarks depend on whether the input is face or not, it's not possible to just use Graph model with merge_mode 'sum'. So I merged the three outputs using add_output to obtain one output as a whole with a custom objective function. However, I've got a Theano error:
+theano.gradient.DisconnectedInputError: grad method was asked to compute the gradient with respect to a variable that is not part of the computational graph of the cost, or is used only by a non-differentiable operator: <TensorType(float64, 4D)>.
+I suspect the problem is Theano cannot compute the gradient for loss function as it involves subtensor.
+Are there any ways to work around it?
+Here's my model and custom objective function.
+    # Model construction
+    graph = Graph()
+    graph.add_input(name='input', ndim=4)
+
+    graph.add_node(Convolution2D(32, 1, 5, 5), name='conv1', input='input')
+    graph.add_node(Activation('relu'), name='activation1', input='conv1')
+    graph.add_node(MaxPooling2D(poolsize=(2, 2)), name='pool1', input='activation1')
+
+    graph.add_node(Convolution2D(32, 32, 3, 3), name='conv2', input='pool1')
+    graph.add_node(Activation('relu'), name='activation2', input='conv2')
+    graph.add_node(MaxPooling2D(poolsize=(2, 2)), name='pool2', input='activation2')
+
+    graph.add_node(Convolution2D(24, 32, 3, 3), name='conv3', input='pool2')
+    graph.add_node(Activation('relu'), name='activation3', input='conv3')
+    graph.add_node(MaxPooling2D(poolsize=(2, 2)), name='pool3', input='activation3')
+
+    graph.add_node(Flatten(), name='flattened', input='pool3')
+    graph.add_node(Dense(64 * 24, 512), name='dense')
+
+    # Face/nonface
+    #0: nonface / 1: face
+    graph.add_node(Dense(512, 128), name='dense11', input='dense')
+    graph.add_node(Dropout(0.5), name='drop11', input='dense11')
+    graph.add_node(Dense(128, 2), name='dense12', input='drop11')
+
+    # Face noise
+    graph.add_node(Dense(512, 128), name='dense21', input='dense')
+    graph.add_node(Dropout(0.5), name='drop21', input='dense12')
+    graph.add_node(Dense(128, 2), name='dense22', input='drop21')
+
+    # Face landmarks
+    graph.add_node(Dense(512, 256), name='dense31', input='dense')
+    graph.add_node(Dropout(0.5), name='drop31', input='dense31')
+    graph.add_node(Dense(256, 100), name='dense32', input='drop31')
+    graph.add_node(Dropout(0.5), name='drop32', input='dense32')
+    graph.add_node(Dense(100, 5), name='dense33', input='drop32')
+
+    graph.add_output(name='output', inputs=['dense12', 'dense22', 'dense33'])
+    graph.compile('sgd', {'output': loss})
+    graph.fit({'input': X, 'output': y})
+
+    def loss(y_true, y_pred):
+        is_face_true, is_face_pred = y_true[:2], y_pred[:2]
+        face_pose_true, face_pose_pred = y_true[2:7], y_pred[2:7]
+        face_landmarks_true, face_landmarks_pred = y_true[7:17], y_pred[7:17]
+        _loss = binary_crossentropy(is_face_true, is_face_pred)
+
+        # additional loss for pose and landmarks if face
+        return T.switch(T.lt(y_pred[0], y_pred[1]), _loss, 
+              _loss + categorical_crossentropy(face_pose_true, face_pose_pred)+mean_squared_error(face_landmarks_true, face_landmarks_pred))

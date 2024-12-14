@@ -1,0 +1,46 @@
+Contributor
+mplonka commented on Dec 19, 2016
+When using requests with Jython running on of IBM JVM, accessing HTTPS endpoints fails with:
+java.security.cert.CertificateException: Fail to parse input stream
+Example code:
+import requests
+r = requests.get('https://www.google.com/')
+The problem occurs only with Jython and only when running on IBM JVMs. The exception is being thrown by IBM's implementation of java.security.cert.CertificateFactory:
+certs = list(cf.generateCertificates(ByteArrayInputStream(f.read())))
+    at com.ibm.crypto.provider.X509Factory.b(Unknown Source)
+    at com.ibm.crypto.provider.X509Factory.engineGenerateCertificates(Unknown Source)
+    at java.security.cert.CertificateFactory.generateCertificates(CertificateFactory.java:448)
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+    at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:95)
+    at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:55)
+    at java.lang.reflect.Method.invoke(Method.java:508)
+It turns out that CertificateFactory in IBM JVMs is very strict when parsing PEM files and it does not allow non-ASCII characters at all, even in comments. After removing the following lines, everything works without issues:
+[ 1949]: # Issuer: CN=TÜBİTAK UEKAE Kök Sertifika Hizmet Sağlayıcısı - Sürüm 3 O=Türkiye Bilimsel ve Teknolojik Araştırma Kurumu - TÜBİTAK OU=Ulusal Elektronik ve Kriptoloji Araştırma Enstitüsü - UEKAE/Kamu Sertifikasyon Merkezi
+[ 1950]: # Subject: CN=TÜBİTAK UEKAE Kök Sertifika Hizmet Sağlayıcısı - Sürüm 3 O=Türkiye Bilimsel ve Teknolojik Araştırma Kurumu - TÜBİTAK OU=Ulusal Elektronik ve Kriptoloji Araştırma Enstitüsü - UEKAE/Kamu Sertifikasyon Merkezi
+[ 2280]: # Issuer: CN=NetLock Arany (Class Gold) Főtanúsítvány O=NetLock Kft. OU=Tanúsítványkiadók (Certification Services)
+[ 2281]: # Subject: CN=NetLock Arany (Class Gold) Főtanúsítvány O=NetLock Kft. OU=Tanúsítványkiadók (Certification Services)
+[ 2282]: # Label: "NetLock Arany (Class Gold) Főtanúsítvány"
+[ 2936]: # Issuer: CN=Certinomis - Autorité Racine O=Certinomis OU=0002 433998903
+[ 2937]: # Subject: CN=Certinomis - Autorité Racine O=Certinomis OU=0002 433998903
+[ 2938]: # Label: "Certinomis - Autorité Racine"
+[ 3413]: # Issuer: CN=TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı O=TÜRKTRUST Bilgi İletişim ve Bilişim Güvenliği Hizmetleri A.Ş. (c) Aralık 2007
+[ 3414]: # Subject: CN=TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı O=TÜRKTRUST Bilgi İletişim ve Bilişim Güvenliği Hizmetleri A.Ş. (c) Aralık 2007
+[ 3896]: # Issuer: CN=E-Tugra Certification Authority O=E-Tuğra EBG Bilişim Teknolojileri ve Hizmetleri A.Ş. OU=E-Tugra Sertifikasyon Merkezi
+[ 3897]: # Subject: CN=E-Tugra Certification Authority O=E-Tuğra EBG Bilişim Teknolojileri ve Hizmetleri A.Ş. OU=E-Tugra Sertifikasyon Merkezi
+[ 4303]: # Issuer: CN=CA 沃通根证书 O=WoSign CA Limited
+[ 4304]: # Subject: CN=CA 沃通根证书 O=WoSign CA Limited
+[ 4750]: # Issuer: CN=TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı H5 O=TÜRKTRUST Bilgi İletişim ve Bilişim Güvenliği Hizmetleri A.Ş.
+[ 4751]: # Subject: CN=TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı H5 O=TÜRKTRUST Bilgi İletişim ve Bilişim Güvenliği Hizmetleri A.Ş.
+[ 4752]: # Label: "TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı H5"
+[ 4783]: # Issuer: CN=TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı H6 O=TÜRKTRUST Bilgi İletişim ve Bilişim Güvenliği Hizmetleri A.Ş.
+[ 4784]: # Subject: CN=TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı H6 O=TÜRKTRUST Bilgi İletişim ve Bilişim Güvenliği Hizmetleri A.Ş.
+[ 4785]: # Label: "TÜRKTRUST Elektronik Sertifika Hizmet Sağlayıcısı H6"
+A temporary workaround is to remove all comments from cacerts.pem file and set REQUESTS_CA_BUNDLE variable:
+grep -v '^\s*\(#.*\)\?$' requests/cacert.pem > /tmp/cacert.pem
+export REQUESTS_CA_BUNDLE=/tmp/cacert.pem
+From what I can see in the Makefile, the requests/cacert.pem file is being downloaded from http://ci.kennethreitz.org/job/ca-bundle/lastSuccessfulBuild/artifact/cacerts.pem, which means that the patch should be either applied to that Jenkins job or the Makefile. Not sure which one is best?
+My suggested solution (but not necessarily the implementation) is to encode those special characters with 'backslashreplace'. Piping the pem file through this script does exactly that:
+import sys
+
+for l in sys.stdin.readlines():
+    print unicode(l, 'utf8').strip().encode('ascii', errors='backslashreplace')

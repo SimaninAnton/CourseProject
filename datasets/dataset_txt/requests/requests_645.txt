@@ -1,0 +1,42 @@
+jhallard commented on May 26, 2017
+Version: requests (2.12.4)
+I'm running a webserver based on the Bottle framework. This framework exposes an endpoint where you can upload a file. Sometimes, if the disk is full, the webserver is supposed to return a code 429 without reading the file. For some reason, when I'm uploading a file, if the server tries to return a 429 status code the following exception is raised:
+ File "../hooks.py", line 325, in post_video_content
+    response = requests.post(url, data=fh)
+  File "/usr/local/lib/python2.7/site-packages/requests/api.py", line 110, in post
+    return request('post', url, data=data, json=json, **kwargs)
+  File "/usr/local/lib/python2.7/site-packages/requests/api.py", line 56, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/usr/local/lib/python2.7/site-packages/requests/sessions.py", line 488, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/local/lib/python2.7/site-packages/requests/sessions.py", line 609, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python2.7/site-packages/requests/adapters.py", line 473, in send
+    raise ConnectionError(err, request=request)
+ConnectionError: ('Connection aborted.', error(32, 'Broken pipe'))
+But if try the exact same post but instead of posting a file I simply post some small amount of data, I actually get a response object back from the request and I can inspect the status code.
+To reproduce:
+webserver.py
+from bottle import Bottle, route, run, request, response, get, post, put, abort
+
+@post('/content')
+@authenticate
+def content():
+    response.status = 429
+    return "failed to write incoming movie to temp file (space might be full temporarily)"
+
+run(host="127.0.0.1", port=8080, debug=True)
+send_request.py
+import requests
+
+# this works and prints the status code
+ret = requests.post("127.0.0.1:8080/content", data="sdfsdfsdfsdf")
+print ret.status_code
+
+# this part will throw an exception
+try:
+    with open("~/some_large_video_file.mp4", 'rb') as fh:
+        ret = requests.post('127.0.0.1:8080/content', data=fh)
+except:
+    print traceback.format_exc()
+I've found out that it depends on the amount of data. If you try and post something like 10KB of data we get the 429 return code. So it looks like the magic filesize is somewhere between 104K and 117K. If I try the former it works as intended, I get the response from the request and can access the status code. If I try the former I get the exception raised.

@@ -1,0 +1,52 @@
+sbunchridecell commented on 29 Oct 2016
+Hey guys, I'm getting weird behavior with many related fields. Is this an error?
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a model serializer where one field renders the relation, and the other field writes to it.
+class UserSerializer(serializers.ModelSerializer):
+    dogs = DogSerializer(many=True, read_only=True)
+    dog_ids = serializers.PrimaryKeyRelatedField(source='dogs', many=True, queryset=Dog.objects.all())
+
+    class Meta:
+        fields = ('dogs', 'dog_ids',)
+        model = User
+Then do a patch.
+PATCH /api/users/23 HTTP/1.1
+Content-Type: application/json
+
+{
+    "dog_ids": [5, 9]
+}
+Expected behavior
+It should update my model.
+Actual behavior
+It throws an error complaining that nested writes aren't allowed.
+AssertionError at /api/users/23
+The `.update()` method does not support writable nestedfields by default.
+Write an explicit `.update()` method for serializer `app.serializers.DogSerializer`, or set `read_only=True` on nested serializer fields.
+tl;dr
+This assertion gets called, but it checks all fields rather than just the writable ones:
+https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/serializers.py#L721
+def raise_errors_on_nested_writes(method_name, serializer, validated_data):
+    assert not any(
+        isinstance(field, BaseSerializer) and
+        (key in validated_data) and
+        isinstance(validated_data[key], (list, dict))
+        for key, field in serializer.fields.items()
+    ), (
+        'The `.{method_name}()` method does not support writable nested'
+        'fields by default.\nWrite an explicit `.{method_name}()` method for '
+        'serializer `{module}.{class_name}`, or set `read_only=True` on '
+        'nested serializer fields.'.format(
+            method_name=method_name,
+            module=serializer.__class__.__module__,
+            class_name=serializer.__class__.__name__
+        )
+    )
+1

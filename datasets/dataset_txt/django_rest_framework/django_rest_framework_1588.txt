@@ -1,0 +1,55 @@
+ralmidani commented on 28 Aug 2015
+I tried testing something very similar to the example from the API Guide. For convenience, I've copied the example below:
+from django.core.urlresolvers import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+class AccountTests(APITestCase):
+    def test_create_account(self):
+        """
+        Ensure we can create a new account object.
+        """
+        url = reverse('account-list')
+        data = {'name': 'DabApps'}
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data, data)
+For my code, I kept getting a failing test due to response.data not being equal to data.
+One issue is response.data having an id field, while data does not. Another issue is if there are any fields, even non-required ones, left empty in the post request, they will cause the two dictionaries to be unequal (unless you make sure to submit either empty strings or None).
+Below is how I was able to get the test to pass. Notice manually setting id on data after the response comes back, and having to submit None or empty strings on non-required fields.
+from django.core.urlresolvers import reverse
+from django.contrib.auth.models import User
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+class AuthenticatedTestCase(APITestCase):
+    def setUp(self):
+        if len(User.objects.all()) == 0:
+            staff_user = User(username='ra', is_staff=True)
+            staff_user.set_password('1234')
+            staff_user.save()
+            self.client.force_authenticate(user=staff_user)
+
+class EmployeeTests(AuthenticatedTestCase):
+    def test_create_employee(self):
+        """
+        Ensure we can create a new employee object.
+        """
+        url = reverse('employee-list')
+        data = {
+            "user": 1,
+            "first_name": "R",
+            "last_name": "A",
+            "primary_phone": "123-456-7890",
+            "secondary_phone": "",
+            "address_street": "Somewhere St.",
+            "address_secondary": None,
+            "city": "Some City",
+            "state": "MI",
+            "postal_code": "48439",
+            "currently_employed": True
+        }
+        response = self.client.post(url, data, format='json')
+        data['id'] = response.data['id']
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data, data)

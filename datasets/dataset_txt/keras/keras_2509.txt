@@ -1,0 +1,100 @@
+Miail commented on 30 Apr 2017 •
+edited
+Does the scikit-wrapper correctly handle network which has multiple inputs?
+I am currently having this network:
+def model3(kernel_number = 200, kernel_shape = (window_height,3)):
+    #stride = 1
+    #dim = 40
+    #window_height = 8
+    #splits = ((40-8)+1)/1 = 33
+    #next(test_generator())
+    #next(train_generator(batch_size))
+
+    #kernel_number = 200
+    list_of_input = [Input(shape = (window_height,total_frames_with_deltas,3)) for i in range(splits)]
+    list_of_conv_output = []
+    list_of_max_out = []
+    for i in range(splits):
+        if splits == 1:
+            list_of_conv_output.append(Conv2D(filters = kernel_number , kernel_size = kernel_shape, activation = 'relu')(list_of_input[i]))
+            list_of_max_out.append((MaxPooling2D(pool_size=((1,11)))(list_of_conv_output[i])))
+        else:
+            list_of_conv_output.append(Conv2D(filters = 200 , kernel_size = (window_height,3) , activation = 'relu')(list_of_input[i]))
+            list_of_max_out.append((MaxPooling2D(pool_size=((1,11)))(list_of_conv_output[i])))
+
+    merge = keras.layers.concatenate(list_of_max_out)
+    print merge.shape
+    reshape = Reshape((total_frames/total_frames,-1))(merge)
+
+    dense1 = Dense(units = 1000, activation = 'relu',    name = "dense_1")(reshape)
+    dense2 = Dense(units = 1000, activation = 'relu',    name = "dense_2")(dense1)
+    dense3 = Dense(units = 145 , activation = 'softmax', name = "dense_3")(dense2)
+
+
+    model = Model(inputs = list_of_input , outputs = dense3)
+    model.compile(loss="categorical_crossentropy", optimizer="SGD" , metrics = [metrics.categorical_accuracy])
+
+    reduce_lr=ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1, mode='auto', epsilon=0.001, cooldown=0)
+    stop  = EarlyStopping(monitor='val_loss', min_delta=0, patience=5, verbose=1, mode='auto')
+    log=csv_logger = CSVLogger('/home/c/kaldi-trunk/dnn/training_'+str(total_frames)+"_"+str(dim)+"_"+str(window_height)+"_"+str(batch_size)+".csv")
+    checkpoint = ModelCheckpoint(filepath="/media/c/E2302E68302E443F/Timit-dataset/timit/fbank/nn/"+str(total_frames)+"_"+str(dim)+"_"+str(window_height)+"_"+str(batch_size)+".hdf5",save_best_only=True)
+
+    if len(sys.argv) == 7:
+        model.load_weigts(weights)
+
+    print model.summary()
+
+    #raw_input("okay?")
+    #hist_current = model.fit_generator(train_generator(batch_size),
+    #                    steps_per_epoch=10,
+    #                    epochs = 100000,
+    #                    verbose = 1,
+    #                    validation_data = test_generator(),
+    #                    validation_steps=1,
+    #                    pickle_safe = True,
+    #                    workers = 4,
+    #                    callbacks = [log,checkpoint])
+    return model
+For which i am trying to run gridsearchCV on using the scikit-wrapper:
+model = KerasClassifier(build_fn=model3,epochs = 10,batch_size = 1,verbose=1)
+kernel_number = [10,50,100,150,200,250]
+kernel_shape = [(window_height,3),(window_height,5),(window_height,8)]
+param_grid = dict(kernel_number = kernel_number , kernel_shape=kernel_shape)
+grid = GridSearchCV(estimator=model, param_grid=param_grid)
+train_input,train_output = next(train_generator(1))
+grid_results=grid.fit(train_input,train_output)
+
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+but grid.fit doesn't seem to like that my input is a stored as a list of numpy.ndarrays, as the network is a multi input single output network.
+I am getting error message:
+Traceback (most recent call last):
+  File "keras_cnn_phoneme_generator_fit.py", line 229, in <module>
+    grid_results=grid.fit(train_input,train_output)
+  File "/home/c/.local/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 940, in fit
+    return self._fit(X, y, groups, ParameterGrid(self.param_grid))
+  File "/home/c/.local/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 541, in _fit
+    X, y, groups = indexable(X, y, groups)
+  File "/home/c/.local/lib/python2.7/site-packages/sklearn/utils/validation.py", line 206, in indexable
+    check_consistent_length(*result)
+  File "/home/c/.local/lib/python2.7/site-packages/sklearn/utils/validation.py", line 181, in check_consistent_length
+    " samples: %r" % [int(l) for l in lengths])
+ValueError: Found input variables with inconsistent numbers of samples: [33, 1]
+Shapes if the input and output for a batch_size = 100
+print len(train_input)
+print train_input[0].shape
+print train_output.shape
+
+33
+(100, 8, 45, 3)
+(100, 1, 145)
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

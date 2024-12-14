@@ -1,0 +1,49 @@
+Contributor
+kevinburke commented on Apr 18, 2016 •
+edited
+Okay, this is admittedly an edge case.
+I was attempting to deploy to AWS from a CI server, and boto3 was returning this stack trace:
+Traceback (most recent call last):
+  File "deploy.py", line 43, in <module>
+    main(args.realm)
+  File "deploy.py", line 29, in main
+    results = [client.update_function_code(FunctionName=arn, ZipFile=data) for arn in arns]
+  File "/home/ubuntu/webhooks/src/botocore/botocore/client.py", line 236, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/client.py", line 489, in _make_api_call
+    operation_model, request_dict)
+  File "/home/ubuntu/webhooks/src/botocore/endpoint.py", line 117, in make_request
+    return self._send_request(request_dict, operation_model)
+  File "/home/ubuntu/webhooks/src/botocore/endpoint.py", line 146, in _send_request
+    success_response, exception):
+  File "/home/ubuntu/webhooks/src/botocore/endpoint.py", line 219, in _needs_retry
+    caught_exception=caught_exception)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/hooks.py", line 226, in emit
+    return self._emit(event_name, kwargs)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/hooks.py", line 209, in _emit
+    response = handler(**kwargs)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/retryhandler.py", line 183, in __call__
+    if self._checker(attempts, response, caught_exception):
+  File "/home/ubuntu/webhooks/src/botocore/botocore/retryhandler.py", line 250, in __call__
+    caught_exception)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/retryhandler.py", line 265, in _should_retry
+    return self._checker(attempt_number, response, caught_exception)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/retryhandler.py", line 313, in __call__
+    caught_exception)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/retryhandler.py", line 222, in __call__
+    return self._check_caught_exception(attempt_number, caught_exception)
+  File "/home/ubuntu/webhooks/src/botocore/botocore/retryhandler.py", line 355, in _check_caught_exception
+    raise caught_exception
+ValueError: You can only send PreparedRequests.
+The related code in Requests is here:
+        # It's possible that users might accidentally send a Request object.
+        # Guard against that specific failure case.
+        if not isinstance(request, PreparedRequest):
+            raise ValueError('You can only send PreparedRequests.')
+This was failing because unbeknownst to me, the server was running an outdated version of pip, vulnerable to this issue, which creates multiple subdirectories (src/requests, src/requests/requests) when you rerun pip install --target: pypa/pip#1489. So the PreparedRequest was being created in one version of the library and compared against the other version of the library, and throwing this exception, even though they were both PreparedRequest instances!
+I'm not sure of the best reference here, but as I understand it, it's preferable to check an object's behavior rather than its type, see for example Alex Martelli's message here:
+In other words, don't check whether it IS-a duck: check
+whether it QUACKS-like-a duck, WALKS-like-a duck,
+etc, etc, depending on exactly what subset of duck-like
+behaviour you need to play your language-games with.
+I may be the only human in the history of existence to hit this exact edge case, but it seems like Requests could still perform the request. Is there a better way to check for the necessary behaviour?

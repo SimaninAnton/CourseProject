@@ -1,0 +1,46 @@
+juliohm commented on 27 Jul 2016 •
+edited
+I am one of the many users having issues with passing the pre-trained embedding matrix to the Keras Embedding layer. My code currently looks like the following:
+from keras.models import Sequential
+from keras.layers import Embedding, LSTM, Dropout, Dense
+from keras.preprocessing.sequence import pad_sequences
+from keras.utils.np_utils import to_categorical
+
+trainX = [sentence_to_vecidxs(entry[0]) for entry in train_data]
+trainY = [entry[1] - 1 for entry in train_data]
+
+testX = [sentence_to_vecidxs(entry[0]) for entry in test_data]
+testY = [entry[1] - 1 for entry in test_data]
+
+hidden_units = 100
+maxwords = 50 # pad sentences to contain this number of words
+
+# padding sentences
+trainX = pad_sequences(trainX, maxlen=maxwords)
+testX = pad_sequences(testX, maxlen=maxwords)
+
+# class hot vectors
+trainY = to_categorical(trainY, nb_classes=nlabels)
+testY = to_categorical(testY, nb_classes=nlabels)
+
+# pre-trained word embeddings of size (vocabulary_size x embedding_size)
+W = final_embeedings
+
+model = Sequential()
+model.add(Embedding(vocabulary_size, embedding_size, input_length=maxwords, mask_zero=True, weights=[W]))
+model.add(LSTM(hidden_units, return_sequences=False))
+model.add(Dropout(0.3))
+model.add(Dense(nlabels, activation='softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='sgd', metrics=['accuracy'])
+model.fit(trainX, trainY, validation_data=(testX, testY), nb_epoch=30, batch_size=16, verbose=2)
+The first row of the pre-trained matrix final_embeddings contains a random vector for the special token 'PAD'. This token is assigned the index 0 in the corpus and I assume that this index has special meaning in the lookup. The second row in this matrix contains a trained vector for the 'UNK' token which is returned whenever a word is not found in the vocabulary ('PAD' != 'UNK').
+In the Embedding layer the input_dim is vocabulary_size, which is the same number of rows in the final_embeddings matrix. The output_dim is embedding_size, which is the dimension of the word vectors. The input_length is maxwords which is the (fixed) number of words in the padded sentences (padding with 0). The mask_zero argument is set to False because the matrix final_embeddings already has a vector assigned in the first row for the 'PAD' token (index 0).
+After running this on a very small training set of ~200 labeled sentences (3 labels) the accuracy is around 55% in both training and validation, but the prediction completely fails even on the training set. Almost all sentences therein are labeled the same.
+So now it comes the questions:
+Is it reasonable to use such a small training set to predict labels on sentences given a pre-trained word embeddnig matrix?
+We have tried not passing the pre-trained embedding matrix and it produces the "same" results in terms of accuracy and predicted labels. How can we make sure this matrix is being used by the LSTM classifier?
+Is it necessary to have a zero vector for the 'PAD' token or it can be random like we did?
+We observe that the accuracy is highly correlated to the proportion of the labels in the training set. Do you think this information can help further debug the issue?
+Could you add a complete example to the documentation with multiclass classification of sentences given word vectors? It seems that many people are struggling to get it working.
+Please let me know if you need anything else in order to help with this issue.

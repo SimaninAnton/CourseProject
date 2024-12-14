@@ -1,0 +1,33 @@
+Contributor
+erg commented on Oct 19, 2012
+Someone on IRC was trying to write their own cross validation class, but when calling check_cv it got replaced with a StratifiedKFolds object.
+The validator in question: https://gist.github.com/3919224
+The reason for this is that
+operator.isNumberType(CohortCrossValidator(np.array([True, False, True, False]), 2))
+returns True because operator is written with the C API.
+12:59 < Yhg1s> erg: classic class instances are a separate type that implement all the special 
+               methods (and when called, call the methods on the instance object.)
+12:59 < Yhg1s> erg: so to the C API (which the operator module uses), they look like they 
+               implement everything.
+To make the CohortCrossValidator work, just extend the object class.
+class CohortCrossValidator(object):
+However, this is apparently something that should have gone away in python 2.5 and is no longer a good idiom.
+Not sure what to do here, but it's confusing and a bug IMHO.
+From sklearn/cross_validation.py:
+def check_cv(cv, X=None, y=None, classifier=False):
+    is_sparse = sp.issparse(X)
+    if cv is None:
+        cv = 3
+    if operator.isNumberType(cv):  # <----- problem line
+        if classifier:
+            cv = StratifiedKFold(y, cv, indices=is_sparse)
+        else:
+            if not is_sparse:
+                n_samples = len(X)
+            else:
+                n_samples = X.shape[0]
+            cv = KFold(n_samples, cv, indices=is_sparse)
+    if is_sparse and not getattr(cv, "indices", True):
+        raise ValueError("Sparse data require indices-based cross validation"
+                         " generator, got: %r", cv)
+    return cv

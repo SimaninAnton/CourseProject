@@ -1,0 +1,69 @@
+HristoBuyukliev commented on 21 Nov 2016
+Memory allocation seems pretty arbitrary. I am able to train a network with 250k parameters no problem, and another with 25k parameters hangs (for a looong time) and eventually crashes. They are tested on the same data. Here are the two implementations:
+The 25k parameter model:
+def dense_gradient_model(X_train, y_train, epochs=5000):
+    n_samples, n_timesteps, n_feat = X_train.shape
+    main_input = Input(shape=(n_timesteps, n_feat), name='main_input')
+    lstms_1 = [Bidirectional(LSTM(2, return_sequences=True))(main_input) for _ in range(20)]
+    lstms_2 = [Bidirectional(LSTM(2, return_sequences=True))(lstm_1) for lstm_1 in lstms_1]
+    merge_l = merge(lstms_2, mode='concat')
+    outputs = TimeDistributed(Dense(7))(merge_l)
+    model = Model(input=main_input, output=outputs)
+    model.compile(optimizer='rmsprop', loss='mse')
+    history = model.fit(X_train, y_train, nb_epoch=epochs, 
+        validation_split=0.1)
+    return history, model
+And here is the 250k parameter model:
+def dense_gradient_model(X_train, y_train, epochs=5000):
+    n_samples, n_timesteps, n_feat = X_train.shape
+    main_input = Input(shape=(n_timesteps, n_feat), name='main_input')
+    lstm_1 = Bidirectional(LSTM(80, return_sequences=True))(main_input)
+    lstm_2 = Bidirectional(LSTM(80, return_sequences=True))(lstm_1)
+    outputs = TimeDistributed(Dense(7))(lstm_2)
+    model = Model(input=main_input, output=outputs)
+    model.compile(optimizer='rmsprop', loss='mse')
+    history = model.fit(X_train, y_train, nb_epoch=epochs, 
+        validation_split=0.1)
+    return history, model
+The smaller model gives the following error:
+Problem occurred during compilation with the command line below:
+/usr/bin/g++ -shared -g -O3 -fno-math-errno -Wno-unused-label -Wno-unused-variable -Wno-write-strings -march=core-avx2 -mcx16 -msahf -mmovbe -maes -mpclmul -mpopcnt -mabm -mno-lwp -mfma -mno-fma4 -mno-xop -mbmi -mbmi2 -mno-tbm -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mno-rtm -mno-hle -mrdrnd -mf16c -mfsgsbase -mno-rdseed -mno-prfchw -mno-adx -mfxsr -mxsave -mxsaveopt --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=3072 -mtune=core-avx2 -DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION -m64 -fPIC -I/home/hristo/mlenv/local/lib/python2.7/site-packages/numpy/core/include -I/usr/include/python2.7 -I/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof -L/usr/lib -fvisibility=hidden -o /home/hristo/.theano/compiledir_Linux-3.19--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.6-64/tmpD8_C2b/268803646968696c28ad22885423a5e1.so /home/hristo/.theano/compiledir_Linux-3.19--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.6-64/tmpD8_C2b/mod.cpp -lpython2.7
+ERROR (theano.gof.cmodule): [Errno 12] Cannot allocate memory
+ERROR (theano.gof.opt): Optimization failure due to: constant_folding
+ERROR (theano.gof.opt): node: MakeVector{dtype='int64'}(TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4}, TensorConstant{4})
+ERROR (theano.gof.opt): TRACEBACK:
+ERROR (theano.gof.opt): Traceback (most recent call last):
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/opt.py", line 1922, in process_node
+    replacements = lopt.transform(node)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/tensor/opt.py", line 6387, in constant_folding
+    no_recycling=[], impl=impl)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/op.py", line 924, in make_thunk
+    no_recycling)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/op.py", line 828, in make_c_thunk
+    output_storage=node_output_storage)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/cc.py", line 1190, in make_thunk
+    keep_lock=keep_lock)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/cc.py", line 1131, in __compile__
+    keep_lock=keep_lock)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/cc.py", line 1589, in cthunk_factory
+    key=key, lnk=self, keep_lock=keep_lock)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/cmodule.py", line 1155, in module_from_key
+    module = lnk.compile_cmodule(location)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/cc.py", line 1492, in compile_cmodule
+    preargs=preargs)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/gof/cmodule.py", line 2301, in compile_str
+    p_out = output_subprocess_Popen(cmd)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/misc/windows.py", line 77, in output_subprocess_Popen
+    p = subprocess_Popen(command, **params)
+  File "/home/hristo/mlenv/local/lib/python2.7/site-packages/theano/misc/windows.py", line 43, in subprocess_Popen
+    proc = subprocess.Popen(command, startupinfo=startupinfo, **params)
+  File "/usr/lib/python2.7/subprocess.py", line 710, in __init__
+    errread, errwrite)
+  File "/usr/lib/python2.7/subprocess.py", line 1223, in _execute_child
+    self.pid = os.fork()
+OSError: [Errno 12] Cannot allocate memory
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

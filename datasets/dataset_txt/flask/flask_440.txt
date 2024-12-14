@@ -1,0 +1,117 @@
+dlparker commented on 8 Mar 2018 •
+edited
+Environment
+Python version: 3.6.3
+Flask version: 0.12.2
+Werkzeug version: 0.14.1
+UWSGI version: 2.0.17
+Host: Raspberry Pi 3 running Raspbian stretch
+Nginx version: 1.10.3
+If a function starts a subprocess and uses queues to coordinate with it, and the function is run from @app.before_first_request, the first request hangs. This only happens under uwsgi, and only the first request hangs, everything is fine after that.
+I can work around this problem by starting the subprocess from a separate thread. I can also work around the process by having the subprocess exit quickly instead of hanging around waiting for more work.
+Since it works under Werkzeug, I realize that it may be a UWSGI bug, but I don't know how to diagnose it further.
+Below is example code that does it. This was run on a Raspberry Pi (3) on stretch.
+Note that, using the more complex real code, which also uses Flask JSON RPC, attempting to browse the API with chrome timed out after a minute and reported ERR_INCOMPLETE_CHUNKED_ENCODING.
+Test it with:
+curl -i http://your_host_here/ping
+and it will hang. Kill that process, do it again, and you'll get a response.
+You can change global variables in the code to switch the behavior to broken or either of the two work arounds (see comments in code).
+Code was run with this command:
+sudo /usr/local/bin/uwsgi --ini /mypath/ts.ini --uid www-data --gid www-data  >& /dev/null &
+and the ini file contents shown below the code.
+import sys
+import os
+import json
+import time
+import threading
+import multiprocessing as mp
+import queue as Queue
+from flask import Flask
+
+app = Flask(__name__)
+# change this to True and it works
+do_in_thread=False
+# or change this to True and it works
+one_loop_only=False
+    
+def worker(job_q, result_q):
+    go_command = job_q.get()
+    result_q.put_nowait("ok")
+    while(True):
+        if not job_q.empty():
+            try:
+                message = job_q.get_nowait()
+                if message == None:
+                    result_q.put_nowait('gone')
+                    return
+                command = message.get('command', None)
+                if command is not None:
+                    if command == 'ping':
+                        result = "pong"
+                    else:
+                        result = "error, invalid command {}".format(command)
+                else:
+                    result = "error invalid message, no command {}".format(message)
+                result_q.put(result)
+            except Queue.Empty:
+                pass
+        time.sleep(0.1)
+
+def cmd_init_thread():
+    job_queue = mp.Queue() # type: ignore
+    result_queue = mp.Queue() # type: ignore
+    p = mp.Process(target=worker, args=(job_queue, result_queue)) # type: ignore
+    job_queue.put(dict(command="go"))
+    p.start()
+    start_res = result_queue.get()
+    if start_res != 'ok':
+        job_queue.put(None)
+        raise Exception('got {}'.format(start_res))
+    if one_loop_only:
+        job_queue.put(None)
+        return
+    job_queue.put(dict(command="ping"))
+    pong_res = result_queue.get()
+    if pong_res != 'pong':
+        job_queue.put(None)
+        raise Exception('got {}'.format(pong_res))
+
+@app.before_first_request
+def cmd_init():
+    if do_in_thread:
+        thread = threading.Thread(target=cmd_init_thread, daemon=True)
+        thread.start()
+    else:
+        cmd_init_thread()
+        
+@app.route('/ping', methods=['GET'])
+def ping():
+    return json.dumps({"pong": True})
+
+def startup(host="0.0.0.0", port=5001):
+    cmd_init()
+    try:
+        app.run(host=host, port=port)
+    except RuntimeError:
+        sys.exit(1)
+
+if __name__ == "__main__":
+    startup()
+[uwsgi]
+chdir = /mypath
+module = ts
+callable = app
+
+master = true
+processes = 1
+threads = 2
+
+uid = www-data
+gid = www-data
+socket = /tmp/my.sock
+chmod-socket = 664
+vacuum = true
+
+die-on-term = true
+req-logger = file:/mypath/req.log
+logger = file:/mypath/error.log

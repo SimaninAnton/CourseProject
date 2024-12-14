@@ -1,0 +1,40 @@
+init-js commented on 7 Dec 2017 •
+edited
+In flask/config.py when loading a config file in silent=True mode, can you add ENOTDIR as part of the errnos that are absorbed?
+flask/flask/config.py
+Line 132 in 789715a
+ if silent and e.errno in (errno.ENOENT, errno.EISDIR): 
+(and the other similar lines)
+I've installed a package with pip, which stores its settings into directory ~/.grip as one of the potential locations to store its config flags. But the ubuntu package grip uses the same path as a regular file.
+When the python-grip tries config.from_pyfile(x, silent=True) to figure out its settings, it borks.
+It's definitely a packaging bug with the grip tools to use the same path to store their settings (and I'll file that with them), but it remains that I believe in the case of loading config files, passing a non-existent file should silently fail. I don't see the case as being that different than EISDIR (which is already handled).
+I'm happy to do a pull request on this.
+Expected Behavior
+When loading a config with Config.from_pyfile() and friends, from a path in which a (non-basename) component in the path is a regular file, I would expect the config loading to silently fail when silent=True,
+Paste a minimal example that causes the problem.
+# I use Xresources here, because it probably already exists on most systems. but in my
+# case it's ".grip".
+import os, os.path
+import flask
+APPNAME = "Xresources"
+SETTINGS_FILE = os.path.expanduser(
+    os.path.join("~", "." + APPNAME, "settings.py"))
+
+cfg = flask.Config(".")
+
+# borks -- ~/.Xresources already exists as a regular file
+cfg.from_pyfile(SETTINGS_FILE, silent=True)
+Actual Behavior
+ENOTDIR is not absorbed and is raised.
+Paste the full traceback if there was an exception.
+Traceback (most recent call last):
+  File "sample.py", line 11, in <module>
+    cfg.from_pyfile(SETTINGS_FILE, silent=True)
+  File "/usr/local/lib/python2.7/dist-packages/flask/config.py", line 129, in from_pyfile
+    with open(filename, mode='rb') as config_file:
+IOError: [Errno 20] Unable to load configuration file (Not a directory): 
+'/home/me/.Xresources/settings.py'
+Environment
+Python version: 2.7.x
+Flask version: 0.12.2
+Werkzeug version: x

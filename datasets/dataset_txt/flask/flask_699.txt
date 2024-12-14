@@ -1,0 +1,46 @@
+cinchent commented on 3 Jan 2017
+A very simple boilerplate Google App Engine example using Flask fails when upgrading from 0.10 to 0.12. The problem is something cryptic relating to module path resolution.
+The straight-off-the-web GAE Flask Hello World example works fine when deployed to a live GAE project. The reason why this works ok is that it is so simple that it makes no use of third-party libraries outside of those that are natively installed along with Flask as a standard 'pip' install.
+But when I extended this example to make the simplest use of the Google Cloud Datastore, then when the code is deployed, and a GET request is made, it fails with the following stack traceback:
+Traceback (most recent call last):
+File "/google/google-cloud-sdk/platform/google_appengine/google/appengine/runtime/wsgi.py", line 240, in Handle
+handler = _config_handle.add_wsgi_middleware(self._LoadHandler())
+File "/google/google-cloud-sdk/platform/google_appengine/google/appengine/runtime/wsgi.py", line 299, in _LoadHandler
+handler, path, err = LoadObject(self._handler)
+File "/google/google-cloud-sdk/platform/google_appengine/google/appengine/runtime/wsgi.py", line 85, in LoadObject
+obj = import(path[0])
+File "/home/cinchent/flask-skel/main.py", line 8, in
+from google.cloud import datastore
+ImportError: cannot import name datastore
+Digging deeper into this, I tried to use the GAE development application server on my local Windows box, and lo! then even the stock Hello World example fails: Flask is unable to even successfully import the native Python 'msvcrt' module from within its own Click initializer. Here's the traceback from that:
+Traceback (most recent call last):
+File "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\platform\google_appengine\google\appengine\runtime\wsgi.py", line 240, in Handle
+handler = _config_handle.add_wsgi_middleware(self._LoadHandler())
+File "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\platform\google_appengine\google\appengine\runtime\wsgi.py", line 299, in LoadHandler
+handler, path, err = LoadObject(self.handler)
+File "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\platform\google_appengine\google\appengine\runtime\wsgi.py", line 85, in LoadObject
+obj = import(path[0])
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\main.py", line 8, in
+from flask import Flask
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\flask_init.py", line 21, in
+from .app import Flask, Request, Response
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\flask\app.py", line 26, in
+from . import json, cli
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\flask\cli.py", line 17, in
+import click
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\click_init.py", line 18, in
+from .core import Context, BaseCommand, Command, MultiCommand, Group,
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\click\core.py", line 7, in
+from .types import convert_type, IntRange, BOOL
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\click\types.py", line 4, in
+from ._compat import open_stream, text_type, filename_to_ui,
+File "C:\CINCH\Freewave\GCP\appengine-flask-skeleton\lib\click_compat.py", line 164, in
+import msvcrt
+File "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\platform\google_appengine\google\appengine\tools\devappserver2\python\sandbox.py", line 964, in load_module
+raise ImportError('No module named %s' % fullname)
+ImportError: No module named msvcrt
+GAE runs the Flask webapp within a sandbox, but it provides the proper module paths to the installed modules, provided those obey a somewhat orthodox Python path resolution technique, but whatever exotic technique Flask now uses in 0.12 fails within that sandbox. (Other third-party libraries can be imported from within the sandbox just fine.)
+These problems are completely absent in Flask 0.10. (Once you're past the problem of importing 'protobuf', that is, a separate but known incompatibility with GAE's internal use, which has a workaround.)
+I've googled high and low for any information about what I may be missing in the Flask initialization recipe -- surely I must not be the only person to have encountered this! -- but have turned up nothing.
+In the enclosed 'main.py', setting the DATASTORE_EXAMPLE global to False causes it to behave as the stock GAE Hello World example app, and setting it to True extends that app to attempt use of the Cloud Datastore.
+bundle.zip

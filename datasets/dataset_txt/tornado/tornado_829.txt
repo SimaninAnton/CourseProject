@@ -1,0 +1,96 @@
+Contributor
+protoss-player commented on 7 May 2014
+While trying to figure out how to make IOStream's set_close_callback raise exceptions inside a chain of coroutines, I came across some strange exceptions propagation in Tornado 3.2.
+Consider the following test script, which raises exceptions from timeout handlers, which is pretty much the same as waiting for a close callback.
+NOTE: This test code works as expected with Tornado 3.3-dev1: all exceptions from timeouts reach IOLoop as uncaught. Yet I haven't found any relevant tests in gen_test.py, hence I'm not sure whether the issue has already been properly dealt with or it's just me being lucky with my test case.
+#!/usr/bin/env python
+# coding: utf-8
+
+from time import time
+
+from tornado.ioloop import IOLoop
+from tornado import gen
+
+
+@gen.coroutine
+def A():
+    def handle_error():
+        print 'ERROR A'
+        raise Exception('Error in A')
+
+    print 'A - Start'
+    IOLoop.current().add_timeout(time() + 1, handle_error)
+    print 'A - End'
+
+
+@gen.coroutine
+def B():
+    print 'B - Start'
+
+    #def handle_error():
+    #    print 'ERROR B'
+    #    raise Exception("Error in B")
+    #IOLoop.current().add_timeout(time() + 2, handle_error)
+    yield gen.Task(IOLoop.current().add_timeout, time() + 3)
+    print 'B - End'
+
+
+@gen.coroutine
+def test_root():
+    print 'Root - Start'
+
+    try:
+        yield A()
+    except Exception as e:
+        print '(Should not be there) A exception:', e
+
+    try:
+        yield B()
+    except Exception as e:
+        print '(Should not be there) B exception:', e
+
+    print 'Root - End'
+
+
+if __name__ == '__main__':
+    try:
+        test_root()
+    except Exception as e:
+        print 'Root exception:', e
+    IOLoop.instance().start()
+I expected that the exception from A's handle_error would either reach IOLoop as an uncaught one, or, less likely, be caught by try .. catch around test_root.
+Also, I expected that execution flow would be linear & synchronized at yield points, i.e. the output would look like:
+Root - Start
+A - Start
+A - End
+B - Start
+ERROR A
+ERROR:tornado.application:Exception in callback <function null_wrapper at 0xb6f24a04>
+Traceback (most recent call last):
+    ...
+Exception: Error in A
+B - End
+Root - End
+Both assumptions proved to be wrong:
+The exception was actually caught by try .. except block around yield B().
+Root reached its end-point before B.
+Here's the output:
+Root - Start
+A - Start
+A - End
+B - Start
+ERROR A
+(Should not be there) B exception: Error in A
+Root - End
+B - End
+What's even more strange, after I uncommented several lines in B() the output was:
+Root - Start
+A - Start
+A - End
+B - Start
+ERROR A
+(Should not be there) B exception: Error in A
+Root - End
+ERROR B
+B's exception was swallowed...
+... but execution never reached B - End.

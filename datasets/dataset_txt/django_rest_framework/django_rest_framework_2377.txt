@@ -1,0 +1,31 @@
+Contributor
+mskrajnowski commented on 19 Sep 2014
+ModelSerializer.__init__ crashes when used on a model, which has a custom django orm field based on a TextField or CharField.
+# ModelSerializer.get_field
+
+# issubclass returns True, so the allow_none kwarg is set
+if model_field.null and \
+        issubclass(model_field.__class__, (models.CharField, models.TextField)):
+    kwargs['allow_none'] = True
+...
+try:
+    # however, the field_mapping lookup is not using issubclass and fails
+    return self.field_mapping[model_field.__class__](**kwargs)
+except KeyError:
+    # lookup fails and the kwargs are passed to the ModelField, 
+    # which can't handle the allow_none argument
+    return ModelField(model_field=model_field, **kwargs)
+  ...
+  File ".../python2.7/site-packages/rest_framework/serializers.py", line 200, in __init__
+    self.fields = self.get_fields()
+  File ".../python2.7/site-packages/rest_framework/serializers.py", line 236, in get_fields
+    default_fields = self.get_default_fields()
+  File ".../python2.7/site-packages/rest_framework/serializers.py", line 721, in get_default_fields
+    field = self.get_field(model_field)
+  File ".../python2.7/site-packages/rest_framework/serializers.py", line 910, in get_field
+    return ModelField(model_field=model_field, **kwargs)
+  File ".../python2.7/site-packages/rest_framework/fields.py", line 400, in __init__
+    super(ModelField, self).__init__(*args, **kwargs)
+TypeError: __init__() got an unexpected keyword argument 'allow_none'
+I think the field_mapping lookup should also use the model_field's base classes to fetch the most relevant serializer field.
+Another, simple option would be removing incompatible kwargs, before instantiating the ModelField.

@@ -1,0 +1,39 @@
+caio commented on 23 Jul 2018 •
+edited
+Hello everyone,
+The reference Dockerfile in the root directory uses a deprecated directive and I'm opening this issue so that we decide what to do about it. (EDIT: The official -onbuild images were deprecated, that's it)
+Aside: I've been away from serious python development for many years and, now that I'm dipping my toes on it again, finding and using pipenv has been a blast. Fantastic improvement, thanks a lot for the hard work! <3
+So, ONBUILD has been deprecated and library maintainers started getting rid of it:
+docker-library/official-images#2076
+docker-library/python#314
+I see a few different options to solving this:
+Removing the onbuild directives but keeping the same idea/style (pro: the resulting Dockerfile will be super simple)
+Getting rid of the Dockerfile in this repo altogether as it's a tangent to this project (So, maybe move it to a separate repo so it can evolve separately and we can get some "good enough" base images on dockerhub)
+Crafting a fancier Dockerfile with multi-stage builds
+For the 3rd option, I've been using the following quite successfully:
+FROM ubuntu:18.04 as build
+
+RUN apt update && apt install python3-pip git -y && pip3 install pipenv
+RUN apt install -y python3-dev libxml2-dev libxslt1-dev zlib1g-dev libffi-dev libssl-dev
+
+WORKDIR /build
+COPY Pipfile Pipfile.lock /build/
+RUN bash -c 'PIPENV_VENV_IN_PROJECT=1 pipenv install'
+
+FROM ubuntu:18.04 as application
+
+ENV LC_ALL C.UTF-8
+ENV LANG C.UTF-8
+
+RUN apt update && apt install -y -q python3-minimal
+
+WORKDIR /app
+COPY --from=build /build /app/
+COPY . /app/
+
+CMD .venv/bin/python -mapplication.main
+It has the benefit of generating way lighter-weight final images when you need to compile things. This Dockerfile is used for a project that uses scrapy, sqlalchemy and psycopg2 and the resulting image size is in the 240MB whereas building it without multi-stage would result in a image sized around 680MB.
+However it's also quite awkward, which makes me unsure if it fits as a good "here's a Dockerfile to get you started asap" kind of thing:
+pipenv is made to generate the .env in the build directory so it can be easily copied (a flag would be helpful instead of using PIPENV_VENV_IN_PROJECT, I can try to make that happen if you think it makes sense)
+the application layer still has to run some apt install commands (pipenv generates binaries inside the .venv dir, but they aren't statically linked so not installing python3-minimal leads to missing libraries)
+So there's that. Options so far for the Dockerfile are: Getting rid of it; Or making it super simple but "not so good" for projects of medium or higher complexity; Or making it a bit more complex but more efficient. What do you all think?

@@ -1,0 +1,78 @@
+lynochka commented on 25 Nov 2019 •
+edited
+How to reproduce the behavior
+I use a custom tokenizer:
+import pickle
+import random
+import regex as re
+
+re_compile = re.compile("[\p{L}\d]+|[^\p{L}\d]+") 
+
+def _tokenizer(name):
+    return re_compile.findall(name)
+
+
+class CustomTokenizer(object):
+    def __init__(self, vocab):
+        self.vocab = vocab
+    def __call__(self, text):
+        words = _tokenizer(text)
+        spaces = [""] * len(words)
+        return Doc(self.vocab, words=words, spaces=spaces)
+    def to_bytes(self, **kwargs):
+        return pickle.dumps(self.__dict__)
+    def from_bytes(self, data, **kwargs):
+        self.__dict__.update(pickle.loads(data))
+    def to_disk(self, path, **kwargs):
+        with open(path, "wb") as file_:
+            file_.write(self.to_bytes())
+    def from_disk(self, path, **kwargs):
+        with open(path, "rb") as file_:
+            self.from_bytes(file_.read())
+            
+And train a small model
+data = [['SA1_360_05_KA401s', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1_360_02_RP501_TL', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1_360_08_ORS breakpoint Y2', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1.390_01_360_11_RF401m3h', {'entities': [[11, 17, 'SYSTEM']]}],
+ ['SA1_360_02_JV401s', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1_360_06_Cool output 1', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1_360_10_JP401_TV', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1_360_05_LR501%_TL', {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1_360_09_EA AHU filter pressure level',
+  {'entities': [[4, 10, 'SYSTEM']]}],
+ ['SA1.390_01_360_12_mod_SD', {'entities': [[11, 17, 'SYSTEM']]}]]
+
+nlp = spacy.blank("en") 
+ner = nlp.create_pipe("ner")
+ner.add_label("SYSTEM")
+
+nlp.add_pipe(ner, last=True)
+nlp.tokenizer = CustomTokenizer(nlp.vocab)
+nlp.begin_training()
+
+for itn in range(1):
+    random.shuffle(data)
+    losses = {}
+    batches = minibatch(data, size=compounding(4.0, 32.0, 1.001))
+    for batch in batches:
+        texts, annotations = zip(*batch)
+        nlp.update(
+            texts,  
+            annotations, 
+            drop=0.2,  
+            losses=losses,
+        )
+    print("Losses", losses)
+THE PROBLEM: Predicting the start and end of the entity has wrong indices:
+def get_entities(string):
+    doc = nlp(string)
+    return  [(ent.text, ent.label_, ent.start, ent.end) for ent in doc.ents]
+
+get_entities("SA1_360_05_KA401s")
+Output: [('360_05', 'SYSTEM', 2, 5)]
+Could you help?
+Your Environment
+spaCy version: 2.2.3
+Platform: Linux-5.0.0-36-generic-x86_64-with-Ubuntu-18.04-bionic
+Python version: 3.7.3

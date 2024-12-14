@@ -1,0 +1,43 @@
+Contributor
+yuyang-huang commented on 2 Apr 2017
+Hello,
+The in_top_k() function in theano_backend.py gives incorrect results when there are identical values in the input tensor predictions.
+For example, when predictions[i] = [0.2, 0.2, 0.4, 0.5] and we want to know whether predictions[i, 0] (i.e., 0.2) is in the top-3 list.
+Here's a simple script that reproduces the issue:
+https://gist.github.com/myutwo150/2400260865122cc509b0025452d1db0f
+When running with KERAS_BACKEND='tensorflow', the output is:
+Using TensorFlow backend.
+row number: 0   1   2
+in top-1: [ 0.  0.  0.]
+in top-2: [ 0.  0.  1.]
+in top-3: [ 1.  0.  1.]
+in top-4: [ 1.  1.  1.]
+in top-5: [ 1.  1.  1.]
+in top-6: [ 1.  1.  1.]
+in top-7: [ 1.  1.  1.]
+in top-8: [ 1.  1.  1.]
+in top-9: [ 1.  1.  1.]
+While with KERAS_BACKEND='theano', the output is:
+Using Theano backend.
+row number: 0   1   2
+in top-1: [ 0.  0.  0.]
+in top-2: [ 0.  0.  0.]
+in top-3: [ 0.  0.  0.]
+in top-4: [ 0.  0.  0.]
+in top-5: [ 0.  0.  0.]
+in top-6: [ 0.  0.  1.]
+in top-7: [ 1.  0.  1.]
+in top-8: [ 1.  1.  1.]
+in top-9: [ 1.  1.  1.]
+I think it's because in theano_backend.py, the "top-k" judgement is done by comparing the indices, instead of values.
+By changing the in_top_k() function from:
+predictions_top_k = T.argsort(predictions)[:, -k:]
+result, _ = theano.map(lambda prediction, target: any(equal(prediction, target)), sequences=[predictions_top_k, targets])
+return result
+to:
+predictions_k = T.sort(predictions)[:, -k]
+targets_values = predictions[T.arange(targets.shape[0]), targets]
+return T.ge(targets_values, predictions_k)
+the problem can be fixed.
+I can submit a PR if the tensorflow_backend.py version is indeed the desired behavior of this function.
+Thanks.

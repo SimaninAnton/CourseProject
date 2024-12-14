@@ -1,0 +1,49 @@
+jhayes14 commented on 31 Mar 2016
+I am getting a dimension mis-match error but I can't work out why...
+from __future__ import absolute_import
+from __future__ import print_function
+import numpy as np
+np.random.seed(1337) # for reproducibility
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers import containers, noise
+from keras.layers.core import Dense, AutoEncoder, Dropout
+from keras.optimizers import SGD, RMSprop
+from keras.utils import np_utils
+from keras.layers.noise import GaussianNoise
+from keras.callbacks import EarlyStopping, Callback
+
+def draw_stacked_encoders(X, batch_size=100, nb_epoch=3, hidden_layers=[42 , 100, 30, 20, 80, 10, 6, 3],
+    noise_schedule=[0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0], nb_classes=1):
+    X_train_tmp = X
+    trained_encoders = []
+    trained_decoders = []
+    for n_in, n_out, sigma_noise in zip(hidden_layers[:-1], hidden_layers[1:], noise_schedule):
+        print('Pre-training the layer: Input 42 -> Output {}'.format(n_out))
+        ae = Sequential()
+        encoder = containers.Sequential([noise.GaussianNoise(sigma_noise, input_shape=(n_in,)), Dense(output_dim=n_out, input_dim=n_in, activation='tanh')])
+        decoder = containers.Sequential([Dense(output_dim=n_in, input_dim=n_out, activation='tanh')])
+        ae.add(AutoEncoder(encoder=encoder, decoder=decoder, output_reconstruction=False))
+        ae.compile(loss='mean_squared_error', optimizer='adagrad')
+        ae.fit(X_train_tmp, X_train_tmp, batch_size=batch_size, nb_epoch=nb_epoch)
+        # Store trainined weight
+        trained_encoders.append((ae.layers[0].encoder.layers[1], ae.layers[0].encoder.layers[1].get_weights()))
+        trained_decoders.append((ae.layers[0].decoder, ae.layers[0].decoder.get_weights()))
+        # Update training data
+        X_train_tmp = ae.predict(X_train_tmp)
+        print(X_train_tmp.shape)
+    return trained_encoders
+
+if __name__ == "__main__":
+    X = np.random.rand(5000,42)
+    draw_stacked_encoders(X)
+Gives the error:
+ValueError: Input dimension mis-match. (input[0].shape[1] = 100, input[1].shape[1] = 42)
+Apply node that caused the error: Elemwise{sub,no_inplace}(Elemwise{Composite{tanh((i0 + i1))}}[(0, 0)].0, <TensorType(float32, matrix)>)
+Toposort index: 41
+Inputs types: [TensorType(float32, matrix), TensorType(float32, matrix)]
+Inputs shapes: [(100, 100), (100, 42)]
+Inputs strides: [(400, 4), (168, 4)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[Elemwise{sqr,no_inplace}(Elemwise{sub,no_inplace}.0), Elemwise{Composite{((i0 * i1 * i2 * i3 * (i4 - sqr(i5))) / i6)}}[(0, 3)](TensorConstant{(1, 1) of 2.0}, InplaceDimShuffle{x,x}.0, InplaceDimShuffle{0,x}.0, Elemwise{sub,no_inplace}.0, TensorConstant{(1, 1) of 1.0}, Elemwise{Composite{tanh((i0 + i1))}}[(0, 0)].0, Elemwise{Mul}[(0, 0)].0)]]
+P.S. The data i provided was just for this example, so people can recreate my problem.

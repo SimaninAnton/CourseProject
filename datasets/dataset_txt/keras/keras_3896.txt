@@ -1,0 +1,80 @@
+Contributor
+icyblade commented on 18 Nov 2016 •
+edited
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+I'm using Keras 1.1.1 (cloned from github) + Tensorflow 0.11.0 (from here) now.
+Everything was right until I started using Tensorboard callback.
+The problem is that TensorBoard(log_dir='/foo/bar/') is fine, but TensorBoard(log_dir='/foo/bar/', histogram_freq=1) raises such error in the exact SECOND RUN:
+Traceback (most recent call last):
+File "test.py", line 42, in
+m.fit(x.values, y.values, nb_epoch=1, verbose=0)
+File "/data/ycdai/pms-forecaster-clairvoyant/model/dnn.py", line 122, in fit
+callbacks=self.callbacks
+File "/usr/lib64/python2.7/site-packages/keras/models.py", line 627, in fit
+sample_weight=sample_weight)
+File "/usr/lib64/python2.7/site-packages/keras/engine/training.py", line 1124, in fit
+callback_metrics=callback_metrics)
+File "/usr/lib64/python2.7/site-packages/keras/engine/training.py", line 862, in _fit_loop
+callbacks.on_epoch_end(epoch, epoch_logs)
+File "/usr/lib64/python2.7/site-packages/keras/callbacks.py", line 42, in on_epoch_end
+callback.on_epoch_end(epoch, logs)
+File "/usr/lib64/python2.7/site-packages/keras/callbacks.py", line 534, in on_epoch_end
+result = self.sess.run([self.merged], feed_dict=feed_dict)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 717, in run
+run_metadata_ptr)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 915, in _run
+feed_dict_string, options, run_metadata)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 965, in _do_run
+target_list, options, run_metadata)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 985, in _do_call
+raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors.InvalidArgumentError: You must feed a value for placeholder tensor 'dense_input_2' with dtype float
+[[Node: dense_input_2 = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+Caused by op u'dense_input_2', defined at:
+File "test.py", line 40, in
+batchnormalization=bn)
+File "/data/ycdai/pms-forecaster-clairvoyant/model/dnn.py", line 57, in build_model
+input_dim=self.input_dim,
+File "/usr/lib64/python2.7/site-packages/keras/models.py", line 280, in add
+layer.create_input_layer(batch_input_shape, input_dtype)
+File "/usr/lib64/python2.7/site-packages/keras/engine/topology.py", line 366, in create_input_layer
+dtype=input_dtype, name=name)
+File "/usr/lib64/python2.7/site-packages/keras/engine/topology.py", line 1091, in Input
+input_tensor=tensor)
+File "/usr/lib64/python2.7/site-packages/keras/engine/topology.py", line 1010, in init
+name=self.name)
+File "/usr/lib64/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 193, in placeholder
+x = tf.placeholder(dtype, shape=shape, name=name)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/ops/array_ops.py", line 1332, in placeholder
+name=name)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/ops/gen_array_ops.py", line 1748, in _placeholder
+name=name)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/framework/op_def_library.py", line 749, in apply_op
+op_def=op_def)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2380, in create_op
+original_op=self._default_original_op, op_def=op_def)
+File "/usr/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 1298, in init
+self._traceback = _extract_stack()
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'dense_input_2' with dtype float
+[[Node: dense_input_2 = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+My code basically does something like this:
+for activation in ['sigmoid', 'sigmoid']:
+    m = Sequential()
+    m.add(Dense(100, activation=activation, input_dim=10))
+    # blahblah
+    m.compile('rmsprop', 'mse')
+    m.fit(x, y, nb_epoch=10, callbacks=[Tensorboard(log_dir='/foo/bar'), histogram_freq=1])
+The first loop(sigmoid) works fine, but the second loop(the other sigmoid) raises the error above. In other words, the same script cannot pass the second run.
+I'm sure it's not because of my coeffs, and model is redefined with m = Sequential().
+Google told me it's because of something summaries in my graph depend on my placeholders. I tried to figure it out but I failed. I think the buggy part is that keras should "refresh" some part(session, etc) of Tensorflow, so the Tensorboard won't use the "old" summaries.
+I can post my code if you like, but it's nearly 700 lines of code, and most of them are business logics of my company :-(
+Thanks in advance!
+References:
+http://stackoverflow.com/questions/35720595/tensorflow-issue-with-placeholder-and-summaries
+http://stackoverflow.com/questions/33772833/error-while-merging-summaries-for-tensorboard
+tensorflow/tensorflow#225
+3

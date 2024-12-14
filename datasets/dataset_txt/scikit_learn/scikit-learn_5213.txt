@@ -1,0 +1,53 @@
+pemistahl commented on Sep 19, 2012
+I use SciPy and scikit-learn to train and apply a Multinomial Naive Bayes Classifier for binary text classification. Precisely, I use the modules CountVectorizer for the word feature counts and the module MultinomialNB as the classifier implementation for training and testing.
+The input to the CountVectorizer is a list of text documents represented as unicode strings. The training data is much larger than the test data. My code looks like this (simplified):
+vectorizer = CountVectorizer(**kwargs)
+
+# sparse matrix with training data
+X_train = vectorizer.fit_transform(list_of_documents_for_training)
+
+# vector holding target values (=classes, either -1 or 1) for training documents
+# this vector has the same number of elements as the list of documents
+y_train = numpy.array([1, 1, 1, -1, -1, 1, -1, -1, 1, 1, -1, -1, -1, ...])
+
+# sparse matrix with test data
+X_test = vectorizer.fit_transform(list_of_documents_for_testing)
+
+# Training stage of NB classifier
+classifier = MultinomialNB()
+classifier.fit(X=X_train, y=y_train)
+
+# Prediction of log probabilities on test data
+X_log_proba = classifier.predict_log_proba(X_test)
+Problem: As soon as MultinomialNB.predict_log_proba() is called, I get ValueError: dimension mismatch. According to the IPython stacktrace below, the error occurs in SciPy:
+/path/to/my/code.pyc
+--> 177         X_log_proba = classifier.predict_log_proba(X_test)
+
+/.../sklearn/naive_bayes.pyc in predict_log_proba(self, X)
+    76             in the model, where classes are ordered arithmetically.
+    77         """
+--> 78         jll = self._joint_log_likelihood(X)
+    79         # normalize by P(x) = P(f_1, ..., f_n)
+    80         log_prob_x = logsumexp(jll, axis=1)
+
+/.../sklearn/naive_bayes.pyc in _joint_log_likelihood(self, X)
+    345         """Calculate the posterior log probability of the samples X"""
+    346         X = atleast2d_or_csr(X)
+--> 347         return (safe_sparse_dot(X, self.feature_log_prob_.T)
+    348                + self.class_log_prior_)
+    349 
+
+/.../sklearn/utils/extmath.pyc in safe_sparse_dot(a, b, dense_output)
+    71     from scipy import sparse
+    72     if sparse.issparse(a) or sparse.issparse(b):
+--> 73         ret = a * b
+    74         if dense_output and hasattr(ret, "toarray"):
+    75             ret = ret.toarray()
+
+/.../scipy/sparse/base.pyc in __mul__(self, other)
+    276 
+    277             if other.shape[0] != self.shape[1]:
+--> 278                 raise ValueError('dimension mismatch')
+    279 
+    280             result = self._mul_multivector(np.asarray(other))
+I have no idea why this error occurs. Can anybody please explain it to me and provide a solution for this problem? Thanks a lot in advance!

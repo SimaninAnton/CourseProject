@@ -1,0 +1,47 @@
+dave-shawley commented on 8 Jan 2016
+I stumbled into this when running tests on pypy3. The code in question is in the HTTPResponse initializer:
+class HTTPResponse(object):
+    def __init__(self, request, code, ... error=None ...):
+        self.code = code
+        self.reason = reason or httputil.responses.get(code, "Unknown")
+        #....
+        if error is None:
+            if self.code < 200 or self.code >= 300:
+                self.error = HTTPError(self.code, message=self.reason,
+                                       response=self)
+            else:
+                self.error = None
+This might not be a huge problem in terms of memory but these could accrete over time. The specific problem that I ran into was with pypy3 where logging repr(error) causes an infinite recursion failure. The following simple program exhibits the problem when run under pypy3. Request a failure status with http://localhost:8000/319 and it will raise a RuntimeError: maximum recursion depth exceeded in the call to logging.exception.
+import logging
+
+from tornado import gen, httpclient, ioloop, web
+
+
+class Handler(web.RequestHandler):
+
+    @gen.coroutine
+    def get(self, status):
+        request = httpclient.HTTPRequest(
+            'http://httpbin.org/status/{}'.format(status))
+        client = httpclient.AsyncHTTPClient()
+        try:
+            yield client.fetch(request)
+            self.set_status(200)
+            self.finish()
+        except httpclient.HTTPError as error:
+            logging.exception('%s %s failed: %r', request.method,
+                              request.url, error)
+            self.send_error(error.code, reason='fubard')
+
+
+def make_application():
+    return web.Application([web.url('/(?P<status>\d+)', Handler)])
+
+
+if __name__ == '__main__':
+    app = make_application()
+    app.listen(8000)
+    try:
+        ioloop.IOLoop.current().start()
+    except KeyboardInterrupt:
+        pass

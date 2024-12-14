@@ -1,0 +1,18 @@
+csdev commented on 9 Jan 2018
+On Ubuntu 16.04+, certbot automatically runs a renewal command twice a day via a systemd timer. This magic feature is totally undocumented.
+Furthermore, the documentation on cert renewal (https://certbot.eff.org/docs/using.html#renewing-certificates) suggests that the user should set up their own renewal command, and place it in a crontab. The user's renewal command may include custom options, such as renewal/deployment hooks. However, the default renewal command in the systemd service may preempt the user's renewal command, renew the certificate, and completely bypass the user's custom renewal/deployment hooks.
+Rough example of how to reproduce:
+Register and request the initial cert, using the procedure at https://certbot.eff.org/docs/using.html#manual
+certbot register --non-interactive --agree-tos --email 'admin@email.com.example' --no-eff-email
+
+certbot certonly --manual --non-interactive --manual-public-ip-logging-ok \
+    --domains "domain.com.example" \
+    --preferred-challenges dns \
+    --manual-auth-hook /opt/my_certbot_hooks/auth_hook.sh \
+    --manual-cleanup-hook /opt/my_certbot_hooks/cleanup_hook.sh
+Deploy the cert (deployment commands do not matter). Then, make a crontab that runs the following command once a week:
+certbot renew --non-interactive \
+    --renew-hook "/opt/my_certbot_hooks/renew_hook.sh"
+When the cert nears expiration, it is likely that the systemd service will run first and renew it. As a result, our renewal command will be a no-op and renew_hook.sh will never be called.
+1
+3

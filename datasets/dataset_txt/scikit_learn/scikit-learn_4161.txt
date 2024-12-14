@@ -1,0 +1,34 @@
+Contributor
+mattilyra commented on Oct 30, 2014
+There's a smallish bug in the AdaBoostClassifier which results in the decision_function failing further down the line. The failure should be reported earlier during training.
+Specifically. When training a discrete ensemble, if the first model in the ensemble performs worse than random, the entire fit process is cancelled and self.estimators_ is empty. This results in the decision_function failing during the averaging procedure due to pred being nan after being divided by a bunch of zero vector self.estimator_weights_.
+def _boost_discrete():
+    ...
+    # Stop if the error is at least as bad as random guessing
+    if estimator_error >= 1. - (1. / n_classes):
+        self.estimators_.pop(-1)
+        return None, None, None
+     ...
+https://github.com/scikit-learn/scikit-learn/blob/4860126bfa70547042b08fae0ead4cf4a08eb4e0/sklearn/ensemble/weight_boosting.py#L546-549
+def decision_function():
+    ...
+        pred = sum((estimator.predict(X) == classes).T * w
+                    for estimator, w in zip(self.estimators_,
+                                            self.estimator_weights_))
+    pred /= self.estimator_weights_.sum()
+    if n_classes == 2:
+        pred[:, 0] *= -1
+        return pred.sum(axis=1)
+    ...
+scikit-learn/sklearn/ensemble/weight_boosting.py
+Lines 651 to 659 in 4860126
+ else:   # self.algorithm == "SAMME" 
+     pred = sum((estimator.predict(X) == classes).T * w 
+                for estimator, w in zip(self.estimators_, 
+                                        self.estimator_weights_)) 
+    pred /= self.estimator_weights_.sum() 
+ if n_classes == 2: 
+     pred[:, 0] *= -1 
+     return pred.sum(axis=1) 
+I thought of adding a check after taking the estimator off self.estimators_ to make sure that self.estimators_ isn't emtpy. If it is, then raise an error.
+I'm happy to take this issue.

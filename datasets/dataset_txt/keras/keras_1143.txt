@@ -1,0 +1,67 @@
+uzi0espil commented on 27 Mar 2018 •
+edited
+I am trying to run a stacked regression when the n_jobs is 1 it runs fine however, whenever I set the n_jobs to 2 it crashes with the error below. I looked into similar issues but none actually solved my error.
+The code:
+from civismlext.stacking import StackedRegressor
+from civismlext.nonnegative import NonNegativeLinearRegression
+
+def create_model():
+    model = Sequential()
+    model.add(Dense(150, activation='softmax', kernel_initializer='VarianceScaling', input_dim=456, name='HL1'))
+    model.add(Dropout(0.25, name="Dropout1"))
+    model.add(Dense(150, kernel_initializer='VarianceScaling', activation='softmax', name='HL2'))
+    model.add(Dropout(0.25, name="Dropout2"))
+    model.add(Dense(1, name='Output_Layer'))
+    model.compile(optimizer='adam', loss='mae', metrics=['mae', 'mean_squared_error'])
+    return model
+
+mlp_model = KerasRegressor(build_fn=create_model, epochs=50, batch_size=75, validation_split=0.2, verbose=True)
+
+super_learner = StackedRegressor([
+    ('pipe_mlp', mlp_model),
+    ('rf', rf),
+    ('xgb', gb),
+    ('meta', NonNegativeLinearRegression())
+], cv=5, n_jobs=2, verbose=5)
+the error:
+MaybeEncodingError                        Traceback (most recent call last)
+<ipython-input-7-1d4b04377633> in <module>()
+      1 # fitting the model
+----> 2 super_learner.fit(X_train[:50], y_train[:50])
+
+~/anaconda3/lib/python3.6/site-packages/civismlext/stacking.py in fit(self, X, y, **fit_params)
+    163         self.meta_estimator.fit(Xmeta, ymeta, **meta_params)
+    164         # Now fit base estimators again, this time on full training set
+--> 165         self._base_est_fit(X, y, **fit_params)
+    166 
+    167         return self
+
+~/anaconda3/lib/python3.6/site-packages/civismlext/stacking.py in _base_est_fit(self, X, y, **fit_params)
+    220             n_jobs=self.n_jobs,
+    221             verbose=self.verbose,
+--> 222             pre_dispatch=self.pre_dispatch)(_jobs)
+    223 
+    224         for name, _ in self.estimator_list[:-1]:
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in __call__(self, iterable)
+    787                 # consumption.
+    788                 self._iterating = False
+--> 789             self.retrieve()
+    790             # Make sure that we get a last message telling us we are done
+    791             elapsed_time = time.time() - self._start_time
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in retrieve(self)
+    697             try:
+    698                 if getattr(self._backend, 'supports_timeout', False):
+--> 699                     self._output.extend(job.get(timeout=self.timeout))
+    700                 else:
+    701                     self._output.extend(job.get())
+
+~/anaconda3/lib/python3.6/multiprocessing/pool.py in get(self, timeout)
+    642             return self._value
+    643         else:
+--> 644             raise self._value
+    645 
+    646     def _set(self, i, obj):
+
+MaybeEncodingError: Error sending result: '[<keras.callbacks.History object at 0x7f93fe43c7b8>]'. Reason: 'TypeError("can't pickle _thread.lock objects",)'

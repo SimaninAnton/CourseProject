@@ -1,0 +1,40 @@
+Contributor
+anx-ckreuzberger commented on 27 Apr 2016 •
+edited
+I am using SimpleRouter to create routes for my viewsets. While doing this, I also have (several good) reasons to override the get_queryset method in my ViewSets.
+This requires me to also set queryset MyModel.objects.none(), else I do get an error that base_name is not set for my ViewSet.
+base_name argument not specified, and could not automatically determine the name from the viewset, as it does not have a .queryset attribute.
+Code looks as follows (simplified example, I'm also using my own Object Manager which implements created_by_current_user() and viewable() - you could replace that with objects.filter(...) in your mind, if you want)
+class ProjectViewSetAuthenticated(ModelViewset):
+    serializer_class = ProjectSerializer
+
+    def get_queryset(self):        
+        return Project.objects.created_by_current_user().viewable()
+However, I do have a serializer on my model, which also has class Meta and sets model = Project.
+class ProjectSerializer(ModelSerializer):
+    class Meta:
+        model = Project
+Now we look at what SimpleRouter.get_default_base_name is doing:
+    def get_default_base_name(self, viewset):
+        queryset = getattr(viewset, 'queryset', None)
+
+        assert queryset is not None, '`base_name` argument not specified, and could ' \
+            'not automatically determine the name from the viewset, as ' \
+            'it does not have a `.queryset` attribute.'
+
+        return queryset.model._meta.object_name.lower()
+So I'm wondering if it is possible/good practice to just extend it as follows:
+from rest_framework import routers
+
+class CustomSimpleRouter(routers.SimpleRouter):
+    def get_default_base_name(self, viewset):
+        # get the serializer class of the viewset
+        serializer = getattr(viewset, 'serializer_class', None)
+        # if serializer is set and .Meta.model is set, we can access the models name and return it
+        if serializer is not None and serializer.Meta.model is not None:
+            return serializer.Meta.model.__name__.lower()
+
+        # else: do whatever the super class wants to do
+        return super(CustomSimpleRouter, self).get_default_base_name(viewset)
+This updated method has the benefit of also looking if serializer.meta.model is set, and in the same way it returns the name of the model. My preliminary testing shows that this works, though I'm sure I will be getting in deep trouble sooner or later.
+Anyway, what do you guys think about this? Would this be something that could be merged into DRF?

@@ -1,0 +1,41 @@
+pkgw commented on Oct 30, 2018
+Description
+In the conda-forge project, we see a segfault in the test suite when building scikit-learn packages against Python 3.7 using an older GCC. Here is the related issue report.
+Steps/Code to Reproduce
+This failure comes up in our CI-based automated build system. Here is the build info and here is the relevant log file.
+My reproduction of the build environment isolates the segfault to this test:
+test_common.py::test_non_meta_estimators[AgglomerativeClustering-AgglomerativeClustering-check_clustering(readonly_memmap=True)] <- $PREFIX/lib/python3.7/site-packages/sklearn/tests/test_common.py
+The bit involving a memmap seems to me like it could potentially be fragile, but I see that there are other tests with the same flag that succeed.
+Running in a debugger, I don't have any debug symbols, but the backtrace lands in scipy:
+(gdb) bt
+#0  0x00007fffcc189f3e in pdist_euclidean_double_wrap ()
+   from /a/TEMP37/lib/python3.7/site-packages/scipy/spatial/_distance_wrap.cpython-37m-x86_64-linux-gnu.so
+#1  0x0000000000431f3d in cfunction_call_varargs ()
+#2  0x0000000000431fee in PyCFunction_Call ()
+#3  0x00000000004ef5df in do_call_core ()
+(Then the backtrace continues for many frames inside the Python interpreter.)
+We do not see this failure on other versions of Python, or when building with GCC7, or on macOS.
+I can upload the Conda package made out of the build that exhibits this problem, but since it doesn't have debugging symbols I think it would be a challenge to do much investigation with it.
+Versions
+System
+------
+    python: 3.7.0 | packaged by conda-forge | (default, Sep 30 2018, 14:56:18)  [GCC 4.8.2 20140120 (Red Hat 4.8.2-15)]
+executable: /a/TEMP37/bin/python
+   machine: Linux-4.18.16-200.fc28.x86_64-x86_64-with-fedora-28-Twenty_Eight
+
+BLAS
+----
+    macros: HAVE_CBLAS=None
+  lib_dirs: /a/TEMP37/lib
+cblas_libs: openblas, openblas
+
+Python deps
+-----------
+       pip: 18.1
+setuptools: 40.5.0
+   sklearn: 0.20.0
+     numpy: 1.15.3
+     scipy: 1.1.0
+    Cython: None
+    pandas: None
+👍 1

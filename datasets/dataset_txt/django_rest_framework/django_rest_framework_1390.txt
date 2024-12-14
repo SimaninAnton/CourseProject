@@ -1,0 +1,28 @@
+shabble commented on 10 Dec 2015
+I've been playing around with getting URLPathVersioning working properly, and have discovered what might be a bug, or maybe just undocumented (or obvious and expected) behaviour.
+urlconf contains:
+from rest_framework.authtoken.views import obtain_auth_token
+# ...
+
+api_patterns = [
+    url(r'^', include(router.urls), name='api-root'),
+    url(r'^auth-token/', obtain_auth_token, name='api-auth-token'),
+]
+urlpatterns = [
+    url(r'^api/(?P<version>v\d{1,})/', include(api_patterns)),
+    # ...
+]
+When testing, with something like:
+url = reverse('api-auth-token', kwargs=dict(version='v1'))
+self.client.post(url, data, format='json')
+I get an exception that ultimately ends in:
+  File "/usr/local/lib/python2.7/dist-packages/rest_framework/views.py", line 463, in dispatch
+    response = handler(request, *args, **kwargs)
+TypeError: post() got an unexpected keyword argument 'version'
+Investigation shows that the ObtainAuthToken.post() method doesn't accept any kwargs, so it's clearly failing because it's getting version passed in by default from the rest of the versionating mechanism.
+Simplest fix would be to just fix the definition of ObtainAuthToken.post(self, request, **kwargs),
+but it made me wonder if it'll be an issue for other views that are receiving a somewhat unexpected kwarg, and which is by intent already available to them in request.version.
+If there's no good reason to keep it around after extracting it, would it make sense to clean it from the
+view args in views.APIView somewhere in the initial pre-dispatch phases, maybe as simple as a
+kwargs.pop(request.versioning_scheme.version_param, None) (with some checks around it) in the appropriate place?
+I'm currently subclassing authtoken.ObtainAuthToken to do exactly this in post(), but I figured it might make sense to raise a a more general issue.

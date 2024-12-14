@@ -1,0 +1,60 @@
+Contributor
+jamesbeith commented on 10 Aug 2015
+The choices property of the RelatedField class returns an OrderedDict with the values set to the __str__ (__unicode__ on Python 2) representation of the models in the queryset. I propose adding a method that subclasses can override to provide the value used in the dictionary (named label_from_instance in the following example).
+An example. An address model has a foreign key relationship with a country model.
+class Country(models.Model):
+    name = models.CharField(max_length=255)
+    iso_code = models.CharField(max_length=3, unique=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+class Address(models.Model):
+    line_1 = models.CharField(max_length=50)
+    country = models.ForeignKey(Country)
+A model serializer is declared using the address model.
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = ('line_1', 'country',)
+In the template a HTML select control is rendered for the user (customer) to choose a country for their address. This is achieved by using the country field's choices property. (Jinja2 template syntax)
+{% with field = form.country.as_form_field() %}
+  <select name="{{ field.name }}">
+    {% for key, value in field.choices.items() %}
+      <option value="{{ key }}" {% if key == field.value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+{% endwith %}
+The rendered HTML is.
+<select name="country">
+  <option value="3">Australia</option>
+  <option value="1" selected>France</option>
+  <option value="2">United Kingdom</option>
+</select>
+And the user (customer) sees this in the browser.
+The choices values are the __str__ representation of the model. Whilst this works for most cases there can be times when a different value displayed to the user is desired.
+Continuing on the example. A different user (staff) of the system may also be editing instances of the same country model but would benefit from additional information than that of other users (customers), in this case the iso_code.
+With the use of a method that subclasses can implement to provide the values for the choices this could be achieved. The serializer would be written as so.
+class CountryField(serializers.PrimaryKeyRelatedField):
+    def label_from_instance(self, instance):
+        return '{name} ({iso_code})'.format(
+            name=instance.name, iso_code=instance.iso_code)
+
+
+class AddressSerializer(serializers.ModelSerializer):
+    country = CountryField(queryset=Country.objects.all())
+
+    class Meta:
+        model = Address
+        fields = ('line_1', 'country',)
+The same template syntax could be used and the rendered HTML would now be.
+<select name="country">
+  <option value="3">Australia (AUS)</option>
+  <option value="1" selected>France (FRA)</option>
+  <option value="2">United Kingdom (GBR)</option>
+</select>
+And the user (staff) sees this in the browser.
+Related discussion group.

@@ -1,0 +1,56 @@
+kaijfox commented on 9 Aug 2017
+When trying to write a custom loss function, I ran into the issue that a Keras model cannot output a scalar value. If it does, then the _standardize_input functions will fail during training. This lack of support was not clear in the error message or the documentation. It appears that a 1-dimensional tensor is fine, but a scalar is not. Here's a simple example:
+import keras
+from keras.layers import Input, Dense, Lambda, Reshape
+from keras.models import Model 
+import keras.backend as K
+import numpy as np
+
+# Control whether the code should break or not
+use_reshape = True
+
+# Testing dataset of constants
+train_x = np.ones([10, 5])
+
+# Define a simple autoencoder model
+x = Input(shape = [5])
+encoded = Dense(2, name="encoder")(x)
+decoded = Dense(5, name="decoder")(encoded)
+
+# Define a custom loss as part of the graph
+loss = Lambda(lambda _x: K.mean(K.square(decoded - _x), axis = [1]), name="loss")(x)
+
+# Add an extra dimension to the scalar to avoid a crash
+if use_reshape: loss = Reshape([1])(loss)
+
+# Compile the model
+model = Model(x, loss)
+model.compile(loss = "mae", optimizer = "adam")
+
+# Check model output
+print(model.output_shape)
+# When use_reshape == False
+# >>> (None,)
+# When use_reshape == True
+# >>> (None, 1)
+
+# Train the model
+# Pass zeros as targets, because we want to minimize the loss
+model.train_on_batch(train_x, np.zeros([10]))
+The flag at the beginning of the file (use_reshape) controls whether the output should be scalar or 1-dimensional (ignoring the batch dimension). The result of running this script is the following:
+# When use_reshape == False
+ValueError: Error when checking target: expected loss to have 1 dimensions, but got array with shape (10, 1)
+# When use_reshape == True
+(No Error)
+Looking into the traceback, I found that this error is thrown when train_on_batch checks that the target shapes match those of the model outputs. (10,1) in the ValueError is referring to np.zeros([10]); however, that zeros call clearly does not have a shape of (10,1). It appears that there is a block of code in keras.engine.training._standardize_input_data which makes target array shapes at least two dimensions during this check. From keras/engine/training.py, line 110:
+# Make arrays at least 2D.
+for i in range(len(names)):
+    array = arrays[i]
+    if len(array.shape) == 1:
+        array = np.expand_dims(array, 1)
+        arrays[i] = array
+This causes the target shape checks to fail when targets are passed with only a batch dimension, even if that matches the model's output. The Reshape workaround in the above code is simple, but the error that is thrown when this issue arises is quite unclear. It seems that either:
+Scalar output should be supported (I'm not familiar enough with the keras backend code to know how much work this would be).
+A separate exception should be raised when a model with scalar output is trained/compiled. If Keras does not support scalar output of models, it should commit to that decision and let the user know as early as possible. (Model.__init__ or compile function?)
+A note should be added to the documentation about the type of targets that are accepted. This could be in addition to number 2.
+3

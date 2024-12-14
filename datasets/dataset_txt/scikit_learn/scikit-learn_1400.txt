@@ -1,0 +1,75 @@
+EemeliSaari commented on May 2, 2018
+Description
+NearestNeighbors uses a large chunck of memory in run time without releasing it even after calling del or assigning a empty array to the object variable. The memory will how ever be released after the python process is terminated.
+I noticed the bug when I was trying to fit a DBSCAN model and by looking deeper into the issue I was able to reproduce the same memory leak with a random data by using NearestNeighbors.radius_neighbors() method.
+The memory leaked in a 12GB RAM machine was: 10%.
+Steps/Code to Reproduce
+from sklearn.neighbors import NearestNeighbors
+import numpy as np
+
+X = np.random.rand(20000, 2) # Random data
+
+neighbors_model = NearestNeighbors()
+neighbors_model.fit(X)
+
+neighborhoods = neighbors_model.radius_neighbors(X, 0.5, return_distance=False)
+
+del neighborhoods
+del neighbors_model
+del X
+
+while True:
+ pass
+The algorithm modes that were producing the leak were:
+auto
+ball_tree
+kd_tree
+With the algorithm brute the memory leak didn't happen but when increasing the data size by factor of 10 the following error happened
+Expected Results
+MemoryError                               Traceback (most recent call last)
+<ipython-input-14-df89794bb3b3> in <module>()
+----> 1 neighborhoods = neighbors_model.radius_neighbors(X, 0.5, return_distance=False)
+
+/usr/local/lib/python3.5/dist-packages/sklearn/neighbors/base.py in radius_neighbors(self, X, radius, return_distance)
+    588             if self.effective_metric_ == 'euclidean':
+    589                 dist = pairwise_distances(X, self._fit_X, 'euclidean',
+--> 590                                           n_jobs=self.n_jobs, squared=True)
+    591                 radius *= radius
+    592             else:
+
+/usr/local/lib/python3.5/dist-packages/sklearn/metrics/pairwise.py in pairwise_distances(X, Y, metric, n_jobs, **kwds)
+   1245         func = partial(distance.cdist, metric=metric, **kwds)
+   1246 
+-> 1247     return _parallel_pairwise(X, Y, func, n_jobs, **kwds)
+   1248 
+   1249 
+
+/usr/local/lib/python3.5/dist-packages/sklearn/metrics/pairwise.py in _parallel_pairwise(X, Y, func, n_jobs, **kwds)
+   1088     if n_jobs == 1:
+   1089         # Special case to avoid picklability checks in delayed
+-> 1090         return func(X, Y, **kwds)
+   1091 
+   1092     # TODO: in some cases, backend='threading' may be appropriate
+
+/usr/local/lib/python3.5/dist-packages/sklearn/metrics/pairwise.py in euclidean_distances(X, Y, Y_norm_squared, squared, X_norm_squared)
+    244         YY = row_norms(Y, squared=True)[np.newaxis, :]
+    245 
+--> 246     distances = safe_sparse_dot(X, Y.T, dense_output=True)
+    247     distances *= -2
+    248     distances += XX
+
+/usr/local/lib/python3.5/dist-packages/sklearn/utils/extmath.py in safe_sparse_dot(a, b, dense_output)
+    138         return ret
+    139     else:
+--> 140         return np.dot(a, b)
+    141 
+    142 
+
+MemoryError: 
+Versions
+Linux-4.13.0-39-generic-x86_64-with-Ubuntu-16.04-xenial
+Python 3.5.2 (default, Nov 23 2017, 16:37:01)
+[GCC 5.4.0 20160609]
+NumPy 1.14.3
+SciPy 1.0.1
+Scikit-Learn 0.19.1

@@ -1,0 +1,201 @@
+MaratZakirov commented on 28 Jun 2017 •
+edited
+I made simple model for speech recognition on keras/theano + keras ctc loss function + LibreSpeech dataset.
+Following code is trained on just 2 .wav files and works fine on CPU. But on GPU it gives NaNs on learning loss. I found that removing of BatchNormalization layers removes NaNs from GPU and the model start learning, but I do not want to remove BatchNormalization layers it gives significant/crucial quality boost. So what recommendations you may give me to debug BatchNormalization layers (I tried bigger epsilon but with no help)?
+import os
+import numpy
+import scipy.io.wavfile
+from scipy import signal
+import matplotlib.pyplot as plt
+from keras.layers import Input, Masking, LSTM, Dense, RepeatVector, TimeDistributed, Bidirectional
+from keras.models import Model, Sequential
+from keras.layers import Reshape, Lambda, Activation
+from keras import backend as K
+from keras.layers.normalization import BatchNormalization
+from keras.optimizers import adam
+
+def formMask(value=90, ingebitor=7):
+    m = []
+    ind = 0
+    for i in range(value):
+        start_ind = ind
+        for j in range(1 + int(i/ingebitor)):
+            ind += 1
+        m.append((start_ind, ind))
+    return m
+m = formMask()
+
+DIR = '/media/aaa/606d36ae-2e4e-4309-b51c-195f788d9111/audio/debug'
+
+def getFiles(dir):
+    audio_files = []
+    text_files = []
+    for root, dirs, files in os.walk(dir):
+        for file in files:
+            if file.endswith(".wav"):
+                audio_files.append(os.path.join(root, file))
+            if file.endswith(".trans.txt"):
+                text_files.append(os.path.join(root, file))
+    name2text = {}
+    for file in text_files:
+        for line in open(file):
+            parts = line.rstrip().split(' ')
+            name2text[parts[0]] = (' '.join(parts[1:])).lower()
+    file2text = []
+    for file in audio_files:
+        fname = file.split('/')[-1]
+        file2text.append((file, name2text[fname[:-4]]))
+    file2text = sorted(file2text)
+    return file2text
+
+def produceX(fname, tick_p_sec=16, reduce=True, showplt=0):
+    r, snd    = scipy.io.wavfile.read(fname)
+    f, t, Zxx = signal.stft(snd, nperseg=r/tick_p_sec)
+    Zxx = numpy.absolute(Zxx).astype('float32')
+    if reduce:
+        Zxx_red = numpy.zeros((90, Zxx.shape[1]), dtype='float32')
+        for i in range(len(m)):
+            if m[i][0] > Zxx.shape[0]: break
+            Zxx_red[i] = numpy.sum(Zxx[m[i][0] : m[i][1]], axis=0) / (m[i][1] - m[i][0])
+        Zxx = Zxx_red
+        f = range(0, Zxx.shape[0])
+    if showplt:
+        plt.pcolormesh(t, f, Zxx, vmin=0, vmax=300)
+        plt.title('STFT Magnitude')
+        plt.ylabel('Frequency [Hz]')
+        plt.xlabel('Time [sec]')
+        plt.show()
+    return Zxx.T
+
+def produceY(text, char2num):
+    Y = numpy.zeros(shape=len(text), dtype='int32')
+    i = 0
+    for c in text:
+        if c in char2num:
+            Y[i] = char2num[c]
+            i += 1
+    return Y
+
+def sortData(X, Y, parts=1):
+    Sx = []
+    Sy = []
+    for x, y in zip(X, Y):
+        Sx.append(x.shape[0])
+        Sy.append(y.shape[0])
+    Sx = numpy.array(Sx)
+    Sy = numpy.array(Sy)
+    I = numpy.argsort(Sx).astype('int32')
+    I_s = []
+    for part in range(parts):
+        a = int(I.shape[0]*part/parts)
+        b = int(I.shape[0]*(part + 1)/parts)
+        I_s.append(I[a:b])
+    data = []
+    for I in I_s:
+        X_wave   = numpy.zeros(shape=(len(I), max(Sx[I]), X[0].shape[1]), dtype='float32')
+        Y_labels = numpy.zeros(shape=(len(I), max(Sy[I])), dtype='int32')
+        X_len = numpy.zeros(shape=(len(I)), dtype='int32')
+        Y_len = numpy.zeros(shape=(len(I)), dtype='int32')
+        for i in range(I.shape[0]):
+            size = X[I[i]].shape[0]
+            X_wave[i][0:size] = X[I[i]][0:size]
+            X_len[i] = size
+            size = len(Y[I[i]])
+            Y_labels[i][0:size] = Y[I[i]]
+            Y_len[i] = size
+        data.append((X_wave, Y_labels, X_len, Y_len))
+    return data
+
+def DataGenerator(files, batch_size=2):
+    X = []
+    Y = []
+    while(True):
+        for batch_num, elem in enumerate(files):
+            X.append(produceX(elem[0]))
+            Y.append(produceY(elem[1], char2num))
+            if (batch_num + 1) % batch_size == 0:
+                xsize = numpy.array([x.shape[0] for x in X])
+                ysize = numpy.array([y.shape[0] for y in Y])
+                xmax = max([x.shape[0] for x in X])
+                ymax = max([y.shape[0] for y in Y])
+                X_b = numpy.zeros(shape=(batch_size, xmax, X[0].shape[1]))
+                Y_b = numpy.zeros(shape=(batch_size, ymax))
+                for i in range(X_b.shape[0]):
+                    X_b[i][0:xsize[i]] = X[i][0:xsize[i]]
+                    Y_b[i][0:ysize[i]] = Y[i][0:ysize[i]]
+                yield [X_b, Y_b, xsize, ysize], Y_b
+                X = []; Y = []
+
+char2num = {}
+num2char = []
+for i, c in enumerate(' qwertyuiopasdfghjklzxcvbnm'):
+    char2num[c] = i
+    num2char.append(c)
+num2char = numpy.array(num2char)
+files = getFiles(DIR)
+print(len(files))
+
+X = []
+Y = []
+for elem in files:
+    X.append(produceX(elem[0]))
+    Y.append(produceY(elem[1], char2num))
+
+MODEL_SZ = 600
+CHAR_SZ  = len(char2num)
+WAVE_SZ = X[0].shape[1]
+
+if 1:
+    data = sortData(X, Y)
+
+# the actual loss calc occurs here despite it not being
+# an internal Keras loss function
+
+def ctc_loss(x):
+    labels, pred, wlen, llen = x
+    pred = pred[:, 2:, :]
+    return K.ctc_batch_cost(labels, pred, wlen, llen)
+
+inp_wave   = Input(name='INP_W', shape=(None, WAVE_SZ))
+inp_labels = Input(name='INP_L', shape=(None, ), dtype='int32')
+wave_len   = Input(name='INP_WL', shape=[1], dtype='int32')
+labels_len = Input(name='INP_LL', shape=[1], dtype='int32')
+
+inner = LSTM(MODEL_SZ, return_sequences=True)(inp_wave)
+inner = BatchNormalization()(inner)
+if 0:
+    inner = LSTM(int(MODEL_SZ/2), return_sequences=True)(inner)
+    inner = BatchNormalization()(inner)
+
+inner  = TimeDistributed(Dense(CHAR_SZ * 3, activation='relu'))(inner)
+inner = BatchNormalization()(inner)
+inner  = TimeDistributed(Dense(CHAR_SZ, activation='tanh'))(inner)
+inner = BatchNormalization()(inner)
+y_pred = TimeDistributed(Activation(activation='softmax'))(inner)
+
+y = Lambda(ctc_loss, output_shape=(1,))([inp_labels, y_pred, wave_len, labels_len])
+
+model = Model(inputs=[inp_wave, inp_labels, wave_len, labels_len], outputs=y)
+model.compile(loss=lambda y_true, y_pred: y_pred, optimizer='adam')
+
+model_run = Model(inputs=inp_wave, outputs=y_pred)
+
+if False: # Using full education
+    for data_part in data:
+        D_waves, D_labels, D_w_len, D_l_len = data_part
+        print(D_waves.shape, D_labels.shape, D_w_len, D_l_len)
+        model.fit(x=[D_waves, D_labels, D_w_len, D_l_len], y=D_w_len, validation_split=0.0, epochs=100)
+else: # Using fit generator
+    model.fit_generator(generator=DataGenerator(files), steps_per_epoch=len(files), epochs=20)
+
+D_waves, D_labels = data[0][0 : 2]
+P = model_run.predict(D_waves)
+
+R_labels = numpy.argmax(P, axis=2)
+
+print('AAAAA: ', R_labels.shape, D_labels.shape, R_labels.dtype, D_labels.dtype)
+
+print(P)
+print(R_labels)
+print(num2char[R_labels])
+print(num2char[D_labels])

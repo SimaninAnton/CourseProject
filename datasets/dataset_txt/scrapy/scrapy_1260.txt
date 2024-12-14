@@ -1,0 +1,18 @@
+Contributor
+nyov commented on Mar 31, 2015
+A ticket to discuss and reference Spider development in other languages (GSoC idea).
+The goal is to allow creating spiders in any language, that can be executed by the scrapy framework like a builtin spider. (And I would like a solution that is generic enough to decouple other scrapy components in the future the same way, like item pipelines.)
+As I see it, this is about defining an a) interface and b) protocol which should be suitable for use across different programming languages. Then there are actual c) implementation details to consider (how might scrapy's codebase need to change, to support this).
+a) The interface, should be at the smallest common denominator (across languages): OS (POSIX/SYSV) IPC (Inter Process Communication), giving us these options, I believe:
+shared memory, mmapped files, message queues (not really on OSX), sockets (incl. unix sockets), pipes. (For an overview, see Beej's Guide to Unix IPC)
+(I would prefer sticking to local IPC, meaning no inet sockets, and let people who need networked IPC write their own transport middleware, for example using zeromq or json-rpc.)
+b) The protocol needs consideration on what kind of data needs to be exchanged and how we're doing it. Pipes are unidirectional (unless you're on Solaris) while sockets work full-duplex.
+(The GSoC ideas page also refers to Hadoop Streaming, which is using line-based communication through pipes. Q: How does this handle binary data?)
+We might use some custom line-based interactions like this hadoop streaming style, or there are other standardized protocols: Protocol buffers/protobuf, BERT comes to mind.
+c) To this I would put questions on how such a foreign language Spider fits into the current scrapy framework. For example inside a project the SpiderManager currently detects available spiders, with the help of the SPIDER_MODULES settings, how would it adapt?
+Then there is statefulness to consider, do we need to know which response for the spider returned which new requests and/or items? Should it be workload-based (wait until the spider processed a response and returned everything, signaling a finish) or queue/stream-based (independent input and output, serial bus) or async callbacks. (The current Spider being asynchronous, it might be nice to have a similar, callback-based, protocol.)
+How to best handle setup and teardown (open/close_spider), for example defining signals for spiders to trap and exit codes to return.
+Not to forget error handling - if a spider dies, is it restartable or fatal (SIGSEGV, incompatible protocol version) and stopping the crawler?
+Hopefully this is a good collection of things to take into account before starting hacking. I tried to keep it brief, if anything is missing or wrong please let me know.
+Let's get this party started :)
+// cc @shaneaevans, @pablohoffman

@@ -1,0 +1,46 @@
+awbacker commented on 5 Feb 2018 •
+edited
+When sending a multipart/form-data request to a serializer with a ListField, the default value returned for the field is always the empty list []. Any default= passed to field will be ignored due to the way html input is handled in the get_value() function.
+This functionality works properly when posting json data
+May be related to #5807 but I don't think so.
+Steps to reproduce
+class SimpleSerializer(Serializer):
+    a = IntegerField(required=True)
+    c = ListField(default=lambda: [1, 2, 3])
+
+# simulate a multipart/form-data post (querydict is a confusing name here)
+s1 = SimpleSerializer(data=QueryDict("a=3"))
+s1.is_valid(raise_exception=True)
+print("html:", s1.validated_data)
+
+# simulate a JSON post
+s2 = SimpleSerializer(data={'a': 3})
+s2.is_valid(raise_exception=True)
+print("json:", s2.validated_data)
+
+>>> html: OrderedDict([(u'a', 3), (u'c', [])])
+>>> json: OrderedDict([(u'a', 3), (u'c', [1, 2, 3])])
+Expected behavior
+Default value should be honored in HTML mode
+Actual behavior
+Default value is always returned as []
+Explanation and Workaround
+The ListField.get_value() function always returns the value of html.parse_html_list from get_value when that field_name was not passed. There is a check at the top for a missing key, but that only affects partial posts. Missing keys on regular POSTs will still be processed normally and return [].
+I'm not sure if it is OK to just remove that check for partial and always return empty, but that is what I have done for this version of my workaround. The list fields I use this way are in pure serializers and are only used for validating input. They are not used in ModelSerializers so for my case this is ok.
+Initial Workaround
+class ListFieldWithSaneDefault(ListField):
+    """
+    This is used ONLY as a base class for other fields.  When using it, please ensure that you
+    always provide a default value (at least `default=lambda: []`) if the field is not required.
+    Your derived class should take no parameters to __init__, it should be self contained
+    """
+    def get_value(self, dictionary):
+        """
+        When handling html multipart forms input (as opposed to json, which works properly)
+        the base list field returns `[]` for _missing_ keys.  This override checks for that specific
+        case and returns `empty` so that standard default-value processing takes over
+        """
+        if self.field_name not in dictionary:
+            return empty
+        return super(ListFieldWithSaneDefault, self).get_value(dictionary)
+1

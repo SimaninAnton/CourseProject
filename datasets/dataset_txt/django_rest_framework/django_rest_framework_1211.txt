@@ -1,0 +1,107 @@
+Devansh3790 commented on 8 May 2016 •
+edited
+i am working on a project for learning purpose with following config:
+Python 3.4.4
+django==1.9.1
+djangorestframework==3.3.3
+OS (Windows 8.1)
+In project i having a model Post for that i have created permissions.py:
+from rest_framework import permissions
+class IsAuthorOfPost(permissions.BasePermission):
+def has_object_permission(self, request, view, post):
+if request.user:
+return post.author == request.user
+return False
+views.py:
+`
+from rest_framework import permissions, viewsets
+from rest_framework.response import Response
+from posts.models import Post
+from posts.permissions import IsAuthorOfPost
+from posts.serializers import PostSerializer
+class PostViewSet(viewsets.ModelViewSet):
+queryset = Post.objects.order_by('-created_at')
+serializer_class = PostSerializer
+def get_permissions(self):
+    if self.request.method in permissions.SAFE_METHODS:
+        return (permissions.AllowAny(),)
+    return (permissions.IsAuthenticated, IsAuthorOfPost(),)
+
+def perform_create(self, serializer):
+    instance = serializer.save(author=self.request.user)
+    return super(PostViewSet, self).perform_create(serializer)
+class AccountPostViewSet(viewsets.ModelViewSet):
+queryset = Post.objects.select_related('author').all()
+serializer_class = PostSerializer
+def list(self, request, account_username=None):
+    queryset = self.queryset.filter(author__username=account_username)
+    serializer = self.serializer_class(queryset, many=True)
+
+    return Response(serializer.data)`
+serializers.py:
+`
+from rest_framework import serializers
+from authentication.serializers import AccountSerializer
+from posts.models import Post
+class PostSerializer(serializers.ModelSerializer):
+author = AccountSerializer(read_only=True, required=False)
+class Meta:
+    model = Post
+    fields = ('id', 'author', 'content', 'created_at', 'updated_at')
+    read_only_fields = ('id', 'created_at', 'updated_at')
+
+def get_validation_exclusions(self, *args, **kwargs):
+    exclusions = super(PostSerializer, self).get_validation_exclusions()
+
+    return exclusions + ['author']`
+urls.py:
+`from django.conf.urls import url, include
+from django.contrib import admin
+from rest_framework.routers import DefaultRouter
+from rest_framework_nested import routers
+from djangular.views import IndexView
+from authentication.views import AccountViewSet, LoginView, LogoutView
+from posts.views import PostViewSet, AccountPostViewSet
+router = routers.SimpleRouter()
+router.register(r'accounts', AccountViewSet)
+router.register(r'posts', PostViewSet)
+account_router = routers.NestedSimpleRouter(
+router, r'accounts', lookup='account'
+)
+account_router.register(r'posts', AccountPostViewSet)
+urlpatterns = [
+url(r'^admin/', admin.site.urls),
+url(r'^api/v1/', include(router.urls)),
+url(r'^api/v1/', include(account_router.urls)),
+url(r'^api/v1/auth/login/$', LoginView.as_view(), name='login'),
+url(r'^api/v1/auth/logout/$', LogoutView.as_view(), name='logout'),
+url('^.*$', IndexView.as_view(), name='index'),
+]
+`
+now when i am trying to access http://localhost:8000/api/v1/posts/
+its thrown error:
+TypeError at /api/v1/posts/
+has_permission() missing 1 required positional argument: 'view'
+Request Method: GET
+Request URL: http://localhost:8000/api/v1/posts/
+Django Version: 1.9.1
+Exception Type: TypeError
+Exception Value:
+has_permission() missing 1 required positional argument: 'view'
+Exception Location: C:\Users\Devansh\Envs\19\lib\site-packages\rest_framework\views.py in check_permissions, line 318
+Python Executable: C:\Users\Devansh\Envs\19\Scripts\python.exe
+Python Version: 3.4.4
+Python Path:
+['D:\djangular-app',
+'C:\Windows\SYSTEM32\python34.zip',
+'C:\Users\Devansh\Envs\19\DLLs',
+'C:\Users\Devansh\Envs\19\lib',
+'C:\Users\Devansh\Envs\19\Scripts',
+'c:\python34\Lib',
+'c:\python34\DLLs',
+'C:\Users\Devansh\Envs\19',
+'C:\Users\Devansh\Envs\19\lib\site-packages']
+Server time: Sun, 8 May 2016 13:42:49 +0530
+I have exploring about the error but nothing get till now.
+Thanks in advance.
+Stack overflow ref

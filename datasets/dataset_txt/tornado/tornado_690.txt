@@ -1,0 +1,49 @@
+misuzu commented on 9 Feb 2015
+tornado.httputil._NormalizedHeaderCache class convert Sec-WebSocket-Key and Sec-WebSocket-Version headers to Sec-Websocket-Key and Sec-Websocket-Version (s in Websocket is lowercase).
+So some servers can misinterpret WebSocket version (telnet):
+GET /WebSocketConnection HTTP/1.1
+Host: <host>
+Connection: Upgrade
+Origin: null
+Sec-Websocket-Key: LS34zB0raD7SH1iW6KppXQ==
+Sec-Websocket-Version: 13
+Upgrade: websocket
+
+
+HTTP/1.1 101 Web Socket Protocol Handshake
+Upgrade: WebSocket
+Connection: Upgrade
+WebSocket-Origin: null
+WebSocket-Location: ws://<host>/WebSocketConnection
+But with capital s all is fine:
+GET /WebSocketConnection HTTP/1.1
+Host: <host>
+Connection: Upgrade
+Origin: null
+Sec-WebSocket-Key: LS34zB0raD7SH1iW6KppXQ==
+Sec-WebSocket-Version: 13
+Upgrade: websocket
+
+
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: GXPYujuKxDumAkK84+pWXLTJ1RY=
+Now i can connect to server only when i monkeypatch tornado.httputil._NormalizedHeaderCache:
+import tornado.httputil
+
+
+class NormalizedHeaderCache(tornado.httputil._NormalizedHeaderCache):
+    def __missing__(self, key):
+        normalized = "-".join([w.capitalize() for w in key.split("-")])
+        # Fix WebSocket issue
+        normalized = normalized.replace('Websocket', 'WebSocket')
+        self[key] = normalized
+        self.queue.append(key)
+        if len(self.queue) > self.size:
+            old_key = self.queue.popleft()
+            del self[old_key]
+        return normalized
+
+
+tornado.httputil._normalized_headers = NormalizedHeaderCache(1000)

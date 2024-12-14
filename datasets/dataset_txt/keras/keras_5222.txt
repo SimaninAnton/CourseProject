@@ -1,0 +1,37 @@
+cmishra commented on 9 May 2016 •
+edited
+I've implemented a sparsity regularizer which seems to be working. If there's interest and someone can offer guidance, I can modify it as needed before submitting a pull request. I'd have it done fairly quickly once the semester ends (semester ends in ~10 days).
+I used this to implement a sparse autoencoder. I think it works because on normalized data 3D (subtracted mean, divided by standard dev), with the sparsity parameter being 0 and the coefficient being 1, ADAM couldn't achieve better than 1 MSE (which is what we'd expect). I would need to implement real test cases though.
+Code is below:
+Update 1: Code is not currently working. If anyone can offer guidance, I'd appreciate it
+Update 2: Code works! (I think).
+from keras.regularizers import l2, ActivityRegularizer
+import keras.backend as K
+
+def kl_divergence(s_hat, s):
+    s_hat += 10 ** -5
+    val = s * K.log(s/s_hat) + (1 - s) * K.log((1 - s)/(1 - s_hat))
+    return val
+
+
+class SparsityRegularizer(ActivityRegularizer):
+    def __init__(self, kl_coef=0.01, sparsity_param=0.05):
+        self.coef = K.cast_to_floatx(kl_coef)
+        self.target_sparsity = K.cast_to_floatx(sparsity_param)
+        self.uses_learning_phase = True
+
+    def __call__(self, loss):
+        if not hasattr(self, 'layer'):
+            raise Exception('Need to call `set_layer` on '
+                            'SparsityRegularizer instance '
+                            'before calling the instance.')
+        regularized_loss = loss
+        for i in range(len(self.layer.inbound_nodes)):
+            output = self.layer.get_output_at(i)
+            regularized_loss += self.coef * K.sum(kl_divergence(K.mean(output, 0), self.target_sparsity))
+        return K.in_train_phase(regularized_loss, loss)
+
+    def get_config(self):
+        return {'name' : self.__class__.__name__,
+                'coef' : self.coef,
+                'sparsity_param' : self.target_sparsity}

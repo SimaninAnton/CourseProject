@@ -1,0 +1,91 @@
+Contributor
+tboquet commented on 19 Nov 2015
+Hello all,
+I'm experimenting with the Graph model and I think I'm not using the validation_data parameter properly.
+This is the structure of my model where I'm trying to fit a time series using lags:
+f_length = [2,3,4,5]
+convs = []
+model = Graph()
+model.add_input(name='endog', input_shape=(len_ts_y,1))
+for i in f_length:
+    model.add_node(Convolution1D(nb_filter=nb_filter/2,
+                                filter_length=i,
+                                border_mode="full",
+                                activation="relu",
+                                subsample_length=1,
+                                W_regularizer=l1(0.0001)
+                                ),
+                                name='conv_'+str(i), input='endog')
+    model.add_node(MaxPooling1D(pool_length=pool_length),
+               name="Max_pool"+str(i), input='conv_'+str(i))
+
+for i in f_length:
+    model.add_node(Convolution1D(nb_filter=nb_filter/2,
+                                filter_length=i,
+                                border_mode="full",
+                                activation="relu",
+                                subsample_length=1,
+                                W_regularizer=l1(0.0001)
+                                ),
+                                name='conv_2'+str(i), input="Max_pool"+str(i))
+
+    model.add_node(Flatten(), name="flat_"+str(i), input='conv_2'+str(i))
+    convs.append("flat_"+str(i))
+
+model.add_node(Dense(32, activation="sigmoid"), name="Dense_rec2", inputs=convs)
+model.add_node(Dense(32, activation="sigmoid"), name="Dense_rec3", input='Dense_rec2')
+model.add_node(Dense(1, activation="softplus"), name='last_dense', input='Dense_rec3')
+model.add_output(name='output', input='last_dense')
+model.compile(optimizer='adam', loss={'output':'mse'})
+The shape of my data is:
+endog_train.shape, y_train.shape
+((182725, 60), (182725, 120))
+And I tried with both validation_split and validation_data.
+model.fit({'endog': endog_train[:-10000,:,None], 'output': y_train[:-10000,-1]},
+          # validation_split=0.3,
+          validation_data={'endog':endog_train[-10000:,:,None], 'output': y_train[-10000:,-1]},
+          batch_size=batch_size,
+          nb_epoch=nb_epoch+4)
+When the model is evaluated on the test set I get this error:
+Train on 172725 samples, validate on 10000 samples
+Epoch 1/8
+172544/172725 [============================>.] - ETA: 0s - loss: 0.0155
+---------------------------------------------------------------------------
+IndexError                                Traceback (most recent call last)
+<ipython-input-50-c0aba739c291> in <module>()
+      3           validation_data={'endog':endog_train[-10000:,:,None], 'output': y_train[-10000:,-1]},
+      4           batch_size=batch_size,
+----> 5           nb_epoch=nb_epoch+4)
+
+/media/thomas/data/libraries/keras/keras/models.pyc in fit(self, data, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight)
+    680                             verbose=verbose, callbacks=callbacks,
+    681                             val_f=val_f, val_ins=val_ins,
+--> 682                             shuffle=shuffle, metrics=metrics)
+    683         return history
+    684 
+
+/media/thomas/data/libraries/keras/keras/models.pyc in _fit(self, f, ins, out_labels, batch_size, nb_epoch, verbose, callbacks, val_f, val_ins, shuffle, metrics)
+    226                     if do_validation:
+    227                         # replace with self._evaluate
+--> 228                         val_outs = self._test_loop(val_f, val_ins, batch_size=batch_size, verbose=0)
+    229                         if type(val_outs) != list:
+    230                             val_outs = [val_outs]
+
+/media/thomas/data/libraries/keras/keras/models.pyc in _test_loop(self, f, ins, batch_size, verbose)
+    280         for batch_index, (batch_start, batch_end) in enumerate(batches):
+    281             batch_ids = index_array[batch_start:batch_end]
+--> 282             ins_batch = slice_X(ins, batch_ids)
+    283 
+    284             batch_outs = f(*ins_batch)
+
+/media/thomas/data/libraries/keras/keras/models.pyc in slice_X(X, start, stop)
+     56             if hasattr(start, 'shape'):
+     57                 start = start.tolist()
+---> 58             return [x[start] for x in X]
+     59         else:
+     60             return [x[start:stop] for x in X]
+
+IndexError: index 1 is out of bounds for axis 1 with size 1
+Everything is working fine if I use validation_split.
+Am I doing something wrong?
+Thank you!

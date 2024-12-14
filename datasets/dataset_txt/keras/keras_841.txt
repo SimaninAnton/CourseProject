@@ -1,0 +1,213 @@
+yasar-rehman commented on 2 Aug 2018 •
+edited
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Hi,
+I am trying to implement a " gated pooling function" using Keras. Everything works fine, even my model gets compiled. However, after compilation it gives a shape mis-match error in the reshape.
+Here is my custom layer:
+####################################################################
+class gated_pool(Layer):
+# Implementation of Gated pooling,  for learning a parameter per layer option
+
+def __init__(self, pool_size, strides, padding ='same', data_format=None,**kwargs):
+
+    super(gated_pool,self).__init__(**kwargs)
+    self.pool_size = pool_size,
+    self.strides = strides
+    self.padding = padding
+    self.data_format = data_format
+
+
+def build(self, input_shape):
+    # input_shape is a 4D tensor with [batch size, height, width ,channels]
+    self.mask = self.add_weight(name='kernel1',
+                                shape=(self.pool_size[0][0], self.pool_size[0][0],1,1),
+                                initializer='uniform',
+                                trainable=True)
+
+    super(gated_pool, self).build(input_shape)
+
+def call(self, x, **kwargs):
+
+    nb_batch, input_row, input_col, nb_filter = K.int_shape(x)   # get the output shape
+
+    
+    rows = np.int(np.ceil((input_row - self.pool_size[0][0]) / self.strides[0]) + 1)
+    cols = np.int(np.ceil((input_col - self.pool_size[0][0]) / self.strides[0]) + 1)
+    xs = []
+
+    for c in tf.split(x, nb_filter, 3):
+        conv1 = K.conv2d(c,
+                         self.mask,
+                         strides=(1, 1),
+                         padding='same')
+
+        conv1 =tf.reshape(conv1, [tf.shape(x)[0], rows, cols, 1])
+
+        xs.append(conv1)
+
+    output = K.sigmoid(K.concatenate(xs, axis=3))
+    print(output)
+
+    pool_max = K.pool2d(x,
+                        pool_size=(self.pool_size[0][0],self.pool_size[0][0]),
+                        strides=(self.strides[0],self.strides[0]),
+                        padding='same',
+                        pool_mode='max')
+    pool_avg = K.pool2d(x,
+                        pool_size=(self.pool_size[0][0], self.pool_size[0][0]),
+                        strides=(self.strides[0], self.strides[0]),
+                        padding='same',
+                        pool_mode='avg')
+
+    f_gated = tf.add(tf.multiply(output, pool_max), tf.multiply((1-output), pool_avg))
+
+    return f_gated
+
+def compute_output_shape(self, input_shape):
+    rows = np.int(np.ceil(((input_shape[1] - self.pool_size[0][0]) / self.strides[0])) + 1)
+    cols = np.int(np.ceil(((input_shape[2] - self.pool_size[0][0]) / self.strides[0])) + 1)
+    return (input_shape[0], rows, cols, input_shape[3])
+####################################################################
+Example code:
+batch_size = 128
+num_classes = 10
+epochs = 12
+input image dimensions
+img_rows, img_cols = 28, 28
+the data, split between train and test sets
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+if K.image_data_format() == 'channels_first':
+x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+input_shape = (1, img_rows, img_cols)
+else:
+x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+input_shape = (img_rows, img_cols, 1)
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+convert class vectors to binary class matrices
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+model_input = Input(shape=input_shape)
+model_conv1 = Conv2D(32, kernel_size=(3, 3), activation='relu',padding='same')(model_input)
+model_conv2 = Conv2D(64, kernel_size=(3, 3), activation='relu',padding='same')(model_conv1)
+gated_p_1 = gated_pool(pool_size=(2,2),strides=(2,2))(model_conv2)
+model_drp1 = Dropout(0.25)(gated_p_1)
+model_flat = Flatten()(model_drp1)
+model_fc1 = Dense(128, activation='relu')(model_flat)
+model_drp2 = Dropout(0.5)(model_fc1)
+model_classifier = Dense(num_classes, activation='softmax')(model_drp2)
+my_model = Model(model_input,model_classifier)
+print(my_model.summary())
+my_model.compile(loss=keras.losses.categorical_crossentropy,
+optimizer=keras.optimizers.Adadelta(),
+metrics=['accuracy'])
+my_model.fit(x_train, y_train,
+batch_size=batch_size,
+epochs=epochs,
+verbose=1,
+validation_data=(x_test, y_test))
+score = my_model.evaluate(x_test, y_test, verbose=0)
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])
+#####################
+*Here is what I got after running my model
+(virtual-py3) yaurehman2@mybeast:~/PycharmProjects/face_anti_sp_newidea$ CUDA_VISIBLE_DEVICES=0 python mnist_custompooling.py
+/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/h5py/init.py:36: FutureWarning: Conversion of the second argument of issubdtype from float to np.floating is deprecated. In future, it will be treated as np.float64 == np.dtype(float).type.
+from ._conv import register_converters as _register_converters
+Using TensorFlow backend.
+x_train shape: (60000, 28, 28, 1)
+60000 train samples
+10000 test samples
+Tensor("gated_pool_1/Sigmoid:0", shape=(?, 14, 14, 64), dtype=float32)
+Layer (type) Output Shape Param #
+input_1 (InputLayer) (None, 28, 28, 1) 0
+conv2d_1 (Conv2D) (None, 28, 28, 32) 320
+conv2d_2 (Conv2D) (None, 28, 28, 64) 18496
+gated_pool_1 (gated_pool) (None, 14, 14, 64) 4
+dropout_1 (Dropout) (None, 14, 14, 64) 0
+flatten_1 (Flatten) (None, 12544) 0
+dense_1 (Dense) (None, 128) 1605760
+dropout_2 (Dropout) (None, 128) 0
+dense_2 (Dense) (None, 10) 1290
+Total params: 1,625,870
+Trainable params: 1,625,870
+Non-trainable params: 0
+None
+Train on 60000 samples, validate on 10000 samples
+Epoch 1/12
+2018-08-02 17:46:05.217702: I tensorflow/core/platform/cpu_feature_guard.cc:140] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 AVX512F FMA
+2018-08-02 17:46:05.619348: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1344] Found device 0 with properties:
+name: GeForce GTX 1080 Ti major: 6 minor: 1 memoryClockRate(GHz): 1.582
+pciBusID: 0000:17:00.0
+totalMemory: 10.92GiB freeMemory: 10.76GiB
+2018-08-02 17:46:05.619398: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1423] Adding visible gpu devices: 0
+2018-08-02 17:46:05.861716: I tensorflow/core/common_runtime/gpu/gpu_device.cc:911] Device interconnect StreamExecutor with strength 1 edge matrix:
+2018-08-02 17:46:05.861763: I tensorflow/core/common_runtime/gpu/gpu_device.cc:917] 0
+2018-08-02 17:46:05.861772: I tensorflow/core/common_runtime/gpu/gpu_device.cc:930] 0: N
+2018-08-02 17:46:05.862012: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1041] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 10413 MB memory) -> physical GPU (device: 0, name: GeForce GTX 1080 Ti, pci bus id: 0000:17:00.0, compute capability: 6.1)
+##################################3
+Traceback (most recent call last):
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1327, in _do_call
+return fn(*args)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1312, in _run_fn
+options, feed_dict, fetch_list, target_list, run_metadata)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1420, in _call_tf_sessionrun
+status, run_metadata)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/framework/errors_impl.py", line 516, in exit
+c_api.TF_GetCode(self.status.status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Input to reshape is a tensor with 100352 values, but the requested shape has 25088
+[[Node: gated_pool_1/Reshape_43 = Reshape[T=DT_FLOAT, Tshape=DT_INT32, _device="/job:localhost/replica:0/task:0/device:GPU:0"](gated_pool_1/convolution_43-0-0-TransposeNCHWToNHWC-LayoutOptimizer, gated_pool_1/Reshape/shape)]]
+[[Node: loss/mul/_417 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_2834_loss/mul", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+File "mnist_custompooling.py", line 76, in
+validation_data=(x_test, y_test))
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/keras/engine/training.py", line 1037, in fit
+validation_steps=validation_steps)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/keras/engine/training_arrays.py", line 199, in fit_loop
+outs = f(ins_batch)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 2672, in call
+return self._legacy_call(inputs)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 2654, in _legacy_call
+**self.session_kwargs)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 905, in run
+run_metadata_ptr)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1140, in _run
+feed_dict_tensor, options, run_metadata)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1321, in _do_run
+run_metadata)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1340, in _do_call
+raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Input to reshape is a tensor with 100352 values, but the requested shape has 25088
+[[Node: gated_pool_1/Reshape_43 = Reshape[T=DT_FLOAT, Tshape=DT_INT32, _device="/job:localhost/replica:0/task:0/device:GPU:0"](gated_pool_1/convolution_43-0-0-TransposeNCHWToNHWC-LayoutOptimizer, gated_pool_1/Reshape/shape)]]
+[[Node: loss/mul/_417 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_2834_loss/mul", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]
+Caused by op 'gated_pool_1/Reshape_43', defined at:
+File "mnist_custompooling.py", line 57, in
+gated_p_1 = gated_pool(pool_size=(2,2),strides=(2,2))(model_conv2)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/keras/engine/base_layer.py", line 457, in call
+output = self.call(inputs, **kwargs)
+File "/home/yaurehman2/PycharmProjects/face_anti_sp_newidea/custom_layers.py", line 95, in call
+conv1 =tf.reshape(conv1, [tf.shape(x)[0], rows, cols, 1])
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/ops/gen_array_ops.py", line 5782, in reshape
+"Reshape", tensor=tensor, shape=shape, name=name)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/framework/op_def_library.py", line 787, in _apply_op_helper
+op_def=op_def)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 3290, in create_op
+op_def=op_def)
+File "/home/yaurehman2/.virtualenvs/virtual-py3/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 1654, in init
+self._traceback = self._graph._extract_stack() # pylint: disable=protected-access
+InvalidArgumentError (see above for traceback): Input to reshape is a tensor with 100352 values, but the requested shape has 25088
+[[Node: gated_pool_1/Reshape_43 = Reshape[T=DT_FLOAT, Tshape=DT_INT32, _device="/job:localhost/replica:0/task:0/device:GPU:0"](gated_pool_1/convolution_43-0-0-TransposeNCHWToNHWC-LayoutOptimizer, gated_pool_1/Reshape/shape)]]
+[[Node: loss/mul/_417 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_2834_loss/mul", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]]

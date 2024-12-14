@@ -1,0 +1,46 @@
+Mateusz-Slisz commented on 11 Jan 2019 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Let's use the built-in permission IsAdmin and a custom permission IsAuthenticatedUserOwner with OR operator provided in the latest 3.9 version. IsAdminUser does not implement the has_object_permission method, while IsAuthenticatedUserOwner only defines the has_object_permission method, to check whether user has permission to edit their own User instance. Since both of these classes inherit from BasePermission, by default they return True. In this case, when object permissions are checked, the IsAdminUser class will return True even for unauthenticated user (!), and effectively anyone can edit/delete the User instance.
+class IsAdminUser(BasePermission):
+    """
+    Allows access only to admin users.
+    """
+
+    def has_permission(self, request, view):
+        return request.user and request.user.is_staff
+class IsAuthenticatedUserOwner(IsAuthenticated):
+    def has_object_permission(self, request, view, obj):
+        return request.user == obj
+permission_classes = (IsAuthenticatedUserOwner | IsAdmin,)
+Expected behavior
+Add checking has_permission before checking has_object_permission for each permissions in OR and AND class.
+Example
+class OR:
+    def __init__(self, op1, op2):
+        self.op1 = op1
+        self.op2 = op2
+
+    def has_permission(self, request, view):
+        return (
+            self.op1.has_permission(request, view) |
+            self.op2.has_permission(request, view)
+        )
+
+    def has_object_permission(self, request, view, obj):
+        return (
+            self.op1.has_object_permission(request, view, obj) if self.op1.has_permission(request, view) else False |
+            self.op2.has_object_permission(request, view, obj) if self.op2.has_permission(request, view) else False
+        )
+With this scenario we would only access to our user object.
+Actual behavior
+We would have access to any users without being an admin.
+I didn't mention it but we means logged user, and access means that we could update, delete etc. any users.
+3

@@ -1,0 +1,28 @@
+Contributor
+Ga-ryo commented on 20 Oct 2017
+Steps to reproduce the problem:
+Launch Wifi Access Point(OS X)
+Setup pfctl configuration so that http packet will be forwarded.
+Launch mitmproxy ( sudo mitmproxy -p 8080 -m transparent --showhost )
+Access web page after connecting to AP which launched before.
+See event log.
+Any other comments? What have you tried so far?
+When I tried to use transparent mode with OS X(10.11.6).
+RuntimeError("Could not resolve original destination.") raised.
+I investigated this bug.
+And I found that this is caused by difference between AF_INET's and AF_INET6's peername.
+mitmproxy/mitmproxy/net/tcp.py
+Line 567 in de006ea
+ self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM) 
+If we use AF_INET, getpeername() return string like "192.168.2.5:45670".
+But if we use AF_INET6, getpeername() return string like "::ffff:192.168.2.5:45670".
+pfctl -s state 's result is like below.
+ALL tcp 192.168.2.5:45670 -> xx.xx.xx.xx:33291 -> xx.xx.xx.xx:443 ESTABLISHED:ESTABLISHED
+As you see, ::ffff: doesn't exist.
+So lookup function raises RuntimeError() because spec in i condition won't become true.
+System information
+Mitmproxy version: 3.0.0 (release version)
+Python version: 3.6.2
+Platform: Darwin-15.6.0-x86_64-i386-64bit
+SSL version: OpenSSL 1.0.2l 25 May 2017
+Mac version: 10.11.6 ('', '', '') x86_64

@@ -1,0 +1,408 @@
+sekti92 commented on 3 Feb 2019 •
+edited
+I downloaded Keras weight VGG16 (vgg16_weights_tf_dim_ordering_tf_kernels.h5) from here: https://github.com/fchollet/deep-learning-models/releases/
+The training is working, using this code:
+VGG16.py
+from keras.models import Sequential
+from keras.layers.core import Flatten, Dense, Dropout
+from keras.layers.convolutional import Conv2D, MaxPooling2D, ZeroPadding2D
+from keras.optimizers import SGD
+import cv2, numpy as np
+
+def VGG16_Model():
+    model = Sequential()
+    model.add(ZeroPadding2D((1,1),input_shape=(224,224,3)))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(128, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(128, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(256, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(256, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(256, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(Flatten())
+    model.add(Dense(4096, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(4096, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(1000, activation='softmax'))
+
+    model.load_weights('C:/Users/w024029h/PycharmProjects/keras_pretrained/vgg16_weights_tf_dim_ordering_tf_kernels.h5')
+
+    return model
+vgg16_keras_finetuning.py
+from pathlib import Path
+from keras.models import Sequential
+from keras.layers.core import Dense
+from keras.optimizers import Adam
+from keras.preprocessing.image import ImageDataGenerator
+
+import VGG16
+
+# image_prep
+train_path = Path("database") / "train"
+test_path = Path("database") / "test"
+validation_path = Path("database") / "validation"
+class_list = ['P1','P2','P3','P4','P5','P6','P7','P8','P9','P10']
+
+train_batches = ImageDataGenerator().flow_from_directory(train_path, target_size=(224,224), classes=class_list, batch_size=12, class_mode="categorical")
+validation_batches = ImageDataGenerator().flow_from_directory(validation_path, target_size=(224,224), classes=class_list, batch_size=4, class_mode="categorical")
+
+# Fine tune VGG16
+# ====================================================================================================
+vgg16_model = VGG16.VGG16_Model()
+# vgg16_model.summary()
+
+# print(type(vgg16_model))
+
+model = Sequential()
+for layer in vgg16_model.layers[:-1]:
+    model.add(layer)
+
+# model.summary()
+
+# # add 12 Dense Layer
+model.add(Dense(10, activation='softmax', name='predictions'))
+model.summary()
+
+# compile fine-tuning vgg16
+model.compile(optimizer=Adam(lr=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
+history = model.fit_generator(train_batches, steps_per_epoch=10,
+                    validation_data=validation_batches, validation_steps=10, epochs=5, verbose=1)
+
+# save model weight
+model.save('vgg16_finetuning.h5')
+
+# summarize history for accuracy
+import matplotlib.pyplot as plt
+plt.plot(history.history['acc'])
+plt.plot(history.history['val_acc'])
+plt.title('model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+# summarize history for loss
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+Training Result
+Found 42 images belonging to 10 classes.
+Found 23 images belonging to 10 classes.
+Found 31 images belonging to 10 classes.
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #
+=================================================================
+zero_padding2d_1 (ZeroPaddin (None, 226, 226, 3)       0
+_________________________________________________________________
+conv2d_1 (Conv2D)            (None, 224, 224, 64)      1792
+_________________________________________________________________
+zero_padding2d_2 (ZeroPaddin (None, 226, 226, 64)      0
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 224, 224, 64)      36928
+_________________________________________________________________
+max_pooling2d_1 (MaxPooling2 (None, 112, 112, 64)      0
+_________________________________________________________________
+zero_padding2d_3 (ZeroPaddin (None, 114, 114, 64)      0
+_________________________________________________________________
+conv2d_3 (Conv2D)            (None, 112, 112, 128)     73856
+_________________________________________________________________
+zero_padding2d_4 (ZeroPaddin (None, 114, 114, 128)     0
+_________________________________________________________________
+conv2d_4 (Conv2D)            (None, 112, 112, 128)     147584
+_________________________________________________________________
+max_pooling2d_2 (MaxPooling2 (None, 56, 56, 128)       0
+_________________________________________________________________
+zero_padding2d_5 (ZeroPaddin (None, 58, 58, 128)       0
+_________________________________________________________________
+conv2d_5 (Conv2D)            (None, 56, 56, 256)       295168
+_________________________________________________________________
+zero_padding2d_6 (ZeroPaddin (None, 58, 58, 256)       0
+_________________________________________________________________
+conv2d_6 (Conv2D)            (None, 56, 56, 256)       590080
+_________________________________________________________________
+zero_padding2d_7 (ZeroPaddin (None, 58, 58, 256)       0
+_________________________________________________________________
+conv2d_7 (Conv2D)            (None, 56, 56, 256)       590080
+_________________________________________________________________
+max_pooling2d_3 (MaxPooling2 (None, 28, 28, 256)       0
+_________________________________________________________________
+zero_padding2d_8 (ZeroPaddin (None, 30, 30, 256)       0
+_________________________________________________________________
+conv2d_8 (Conv2D)            (None, 28, 28, 512)       1180160
+_________________________________________________________________
+zero_padding2d_9 (ZeroPaddin (None, 30, 30, 512)       0
+_________________________________________________________________
+conv2d_9 (Conv2D)            (None, 28, 28, 512)       2359808
+_________________________________________________________________
+zero_padding2d_10 (ZeroPaddi (None, 30, 30, 512)       0
+_________________________________________________________________
+conv2d_10 (Conv2D)           (None, 28, 28, 512)       2359808
+_________________________________________________________________
+max_pooling2d_4 (MaxPooling2 (None, 14, 14, 512)       0
+_________________________________________________________________
+zero_padding2d_11 (ZeroPaddi (None, 16, 16, 512)       0
+_________________________________________________________________
+conv2d_11 (Conv2D)           (None, 14, 14, 512)       2359808
+_________________________________________________________________
+zero_padding2d_12 (ZeroPaddi (None, 16, 16, 512)       0
+_________________________________________________________________
+conv2d_12 (Conv2D)           (None, 14, 14, 512)       2359808
+_________________________________________________________________
+zero_padding2d_13 (ZeroPaddi (None, 16, 16, 512)       0
+_________________________________________________________________
+conv2d_13 (Conv2D)           (None, 14, 14, 512)       2359808
+_________________________________________________________________
+max_pooling2d_5 (MaxPooling2 (None, 7, 7, 512)         0
+_________________________________________________________________
+flatten_1 (Flatten)          (None, 25088)             0
+_________________________________________________________________
+dense_1 (Dense)              (None, 4096)              102764544
+_________________________________________________________________
+dropout_1 (Dropout)          (None, 4096)              0
+_________________________________________________________________
+dense_2 (Dense)              (None, 4096)              16781312
+_________________________________________________________________
+dropout_2 (Dropout)          (None, 4096)              0
+_________________________________________________________________
+predictions (Dense)          (None, 10)                40970
+=================================================================
+Total params: 134,301,514
+Trainable params: 134,301,514
+Non-trainable params: 0
+_________________________________________________________________
+Epoch 1/5
+
+ 1/10 [==>...........................] - ETA: 1:11 - loss: 4.1517 - acc: 0.1667
+ 2/10 [=====>........................] - ETA: 1:10 - loss: 3.7662 - acc: 0.1667
+ 3/10 [========>.....................] - ETA: 1:02 - loss: 3.6699 - acc: 0.1944
+ 4/10 [===========>..................] - ETA: 53s - loss: 3.4681 - acc: 0.1875
+ 5/10 [==============>...............] - ETA: 45s - loss: 3.2101 - acc: 0.2167
+ 6/10 [=================>............] - ETA: 36s - loss: 3.1064 - acc: 0.1944
+ 7/10 [====================>.........] - ETA: 27s - loss: 2.8932 - acc: 0.2262
+ 8/10 [=======================>......] - ETA: 17s - loss: 2.7874 - acc: 0.2396
+ 9/10 [==========================>...] - ETA: 8s - loss: 2.7347 - acc: 0.2407
+10/10 [==============================] - 95s 10s/step - loss: 2.6706 - acc: 0.2496 - val_loss: 2.7206 - val_acc: 0.2821
+Epoch 2/5
+
+ 1/10 [==>...........................] - ETA: 1:26 - loss: 2.7270 - acc: 0.2500
+ 2/10 [=====>........................] - ETA: 1:16 - loss: 2.7057 - acc: 0.2500
+ 3/10 [========>.....................] - ETA: 1:06 - loss: 2.2910 - acc: 0.3056
+ 4/10 [===========>..................] - ETA: 50s - loss: 2.1614 - acc: 0.3125
+ 5/10 [==============>...............] - ETA: 43s - loss: 2.1302 - acc: 0.3000
+ 6/10 [=================>............] - ETA: 35s - loss: 2.0387 - acc: 0.3333
+ 7/10 [====================>.........] - ETA: 25s - loss: 1.9969 - acc: 0.3571
+ 8/10 [=======================>......] - ETA: 17s - loss: 1.9431 - acc: 0.3750
+ 9/10 [==========================>...] - ETA: 8s - loss: 1.8929 - acc: 0.3611
+10/10 [==============================] - 98s 10s/step - loss: 1.8601 - acc: 0.3662 - val_loss: 1.0251 - val_acc: 0.7105
+Epoch 3/5
+
+ 1/10 [==>...........................] - ETA: 48s - loss: 0.8584 - acc: 0.6667
+ 2/10 [=====>........................] - ETA: 1:00 - loss: 0.9798 - acc: 0.6250
+ 3/10 [========>.....................] - ETA: 57s - loss: 1.0065 - acc: 0.6111
+ 4/10 [===========>..................] - ETA: 51s - loss: 0.9981 - acc: 0.6042
+ 5/10 [==============>...............] - ETA: 43s - loss: 0.8804 - acc: 0.6667
+ 6/10 [=================>............] - ETA: 32s - loss: 0.8887 - acc: 0.6944
+ 7/10 [====================>.........] - ETA: 25s - loss: 0.8915 - acc: 0.7024
+ 8/10 [=======================>......] - ETA: 17s - loss: 0.8466 - acc: 0.7187
+ 9/10 [==========================>...] - ETA: 8s - loss: 0.7842 - acc: 0.7407
+10/10 [==============================] - 97s 10s/step - loss: 0.7643 - acc: 0.7500 - val_loss: 0.4308 - val_acc: 0.8684
+Epoch 4/5
+
+ 1/10 [==>...........................] - ETA: 48s - loss: 0.4381 - acc: 0.8333
+ 2/10 [=====>........................] - ETA: 59s - loss: 0.3394 - acc: 0.8750
+ 3/10 [========>.....................] - ETA: 47s - loss: 0.2472 - acc: 0.9167
+ 4/10 [===========>..................] - ETA: 45s - loss: 0.1970 - acc: 0.9375
+ 5/10 [==============>...............] - ETA: 39s - loss: 0.2454 - acc: 0.9333
+ 6/10 [=================>............] - ETA: 32s - loss: 0.2432 - acc: 0.9306
+ 7/10 [====================>.........] - ETA: 25s - loss: 0.2265 - acc: 0.9286
+ 8/10 [=======================>......] - ETA: 17s - loss: 0.2135 - acc: 0.9375
+ 9/10 [==========================>...] - ETA: 8s - loss: 0.1938 - acc: 0.9444
+10/10 [==============================] - 94s 9s/step - loss: 0.1803 - acc: 0.9501 - val_loss: 0.0712 - val_acc: 0.9487
+Epoch 5/5
+
+ 1/10 [==>...........................] - ETA: 1:26 - loss: 0.0243 - acc: 1.0000
+ 2/10 [=====>........................] - ETA: 1:00 - loss: 0.0434 - acc: 1.0000
+ 3/10 [========>.....................] - ETA: 57s - loss: 0.1203 - acc: 0.9444
+ 4/10 [===========>..................] - ETA: 51s - loss: 0.0990 - acc: 0.9583
+ 5/10 [==============>...............] - ETA: 43s - loss: 0.0846 - acc: 0.9667
+ 6/10 [=================>............] - ETA: 35s - loss: 0.1600 - acc: 0.9583
+ 7/10 [====================>.........] - ETA: 27s - loss: 0.1376 - acc: 0.9643
+ 8/10 [=======================>......] - ETA: 17s - loss: 0.1204 - acc: 0.9688
+ 9/10 [==========================>...] - ETA: 8s - loss: 0.1270 - acc: 0.9537
+10/10 [==============================] - 94s 9s/step - loss: 0.1527 - acc: 0.9416 - val_loss: 0.1040 - val_acc: 0.9474
+similarity_calc.py
+from math import sqrt
+from scipy import spatial
+
+def findEuclideanDistance(source_representation, test_representation):
+    calculate = sum(pow(a - b, 2) for a, b in zip(source_representation, test_representation))
+    euclideanResult = sqrt(calculate)
+    return euclideanResult
+
+def findCosineDistance(source_representation, test_representation):
+    result = 1 - spatial.distance.cosine(source_representation, test_representation)
+    return result
+On the image database I got 10 Images faces from P1 to P10, but
+When I tested with OpenCV i got wrong prediction anybody know what wrong with my code?
+run.py
+from flask import Flask, render_template, Response
+import cv2
+import numpy as np
+from face_detector import vgg16, vgg16_keras_finetuning
+from face_detector import detect_face, imgdb_extracts, similarity_calc
+
+np.set_printoptions(threshold=np.nan)
+
+# call vgg16 model
+# model = vgg16.loadVggFaceModel_16()
+model = vgg16_keras_finetuning.vgg16_finetuning()
+
+# get face extraction from imgdb
+imgdb_path = "C:/Users/w024029h/PycharmProjects/flask_dlib/database"
+people = imgdb_extracts.extract_by_path(imgdb_path, model)
+print("db image retrieved successfully")
+
+# test result of people dictionary
+for person, val in people.items():
+    print(person,' - val: ', np.array(val))
+
+# Flask
+app = Flask(__name__)
+camera = cv2.VideoCapture(0)
+# fps = camera.get(cv2.CAP_PROP_FPS)
+
+@app.route('/')
+def index():
+    """Load template to index"""
+    return render_template('index.html')
+
+def load():
+    """Load Image from Camera"""
+    while True:
+        success, frame = camera.read()
+
+        # detect face locations
+        face_locations, scores, face_type = detect_face.detect_locations(frame)
+        total_face = detect_face.total_faces(face_locations)
+
+        if total_face < 1:
+            frame = cv2.imencode('.jpg', frame)[1].tobytes()
+            yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            frame = cv2.imdecode(np.fromstring(frame, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+        else:
+            for face_location in face_locations:
+                top, left, bottom, right = face_location.top(), face_location.left(), face_location.bottom(), face_location.right()
+
+                print('Camera found {} face(s)'.format(total_face))
+                cv2.rectangle(frame, (left,top), (right,bottom), (0,255,0), 3) #green rectangle
+
+                crop = frame[top:bottom, left:right]
+                detected_face = cv2.resize(crop, (224, 224), interpolation = cv2.INTER_AREA)
+                face2pixels = vgg16.preprocess_image(detected_face)
+                captured_image = model.predict(face2pixels)[0, :]
+
+                found = 0
+                results = list()
+                labels = list()
+                for person in people:
+                    img_representation = people[person]
+                    labels.append(person)
+
+                    euclidean_image = similarity_calc.findEuclideanDistance(img_representation, captured_image)
+                    results.append(euclidean_image)
+                    # cosine_image = similarity_calc.findCosineDistance(img_representation, captured_image)
+                    # results.append(cosine_image)
+
+                # print(labels)
+                # print(results)
+
+                # show result on terminal
+                for name, value in zip(labels, results):
+                    print(name,':',value)
+
+                # add all result to file
+                # with open("result.txt", "a+") as myfile:
+                #     for idx, value in enumerate(results):
+                #         myfile.write(str(value+'\n'))
+                #         myfile.write(str(labels[idx]+'\n'))
+
+                (val, idx) = min((v,i) for i,v in enumerate(results))
+                # (val, idx) = max((v, i) for i, v in enumerate(results))
+
+                # show prediction on terminal
+                print('======================')
+                print(labels[idx])
+                print(val)
+                print('======================')
+
+                # save prediction to file
+                with open("result.txt", "a+") as myfile:
+                    myfile.write('======================\n')
+                    myfile.write(str(labels[idx])+'\n')
+                    myfile.write(str(val)+'\n')
+                    myfile.write('======================\n')
+
+                if val:
+                    found = 1
+                    person_name = labels[idx]
+                    print('Detected', person_name)
+                    font = cv2.FONT_HERSHEY_DUPLEX
+                    cv2.putText(frame, person_name, (left + 6, bottom - 6), font, 1.0, (0, 0, 255), 2)
+
+                    frame = cv2.imencode('.jpg', frame)[1].tobytes()
+                    yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                    frame = cv2.imdecode(np.fromstring(frame, dtype=np.uint8),cv2.IMREAD_COLOR)
+                else:
+                    found = 0
+                    person_name = 'Unknown'
+                    print('Detected', person_name)
+                    font = cv2.FONT_HERSHEY_DUPLEX
+                    cv2.putText(frame, person_name, (left + 6, bottom - 6), font, 1.0, (0, 0, 255), 2)
+
+                    frame = cv2.imencode('.jpg', frame)[1].tobytes()
+                    yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                    frame = cv2.imdecode(np.fromstring(frame, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+@app.route('/video_feed')
+def video_feed():
+    # return Response(load(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(load(),  mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == '__main__':
+    app.debug = True
+    app.threaded = True
+    app.run(use_reloader=False)
+When I scan P10 picture i got constant value of P8

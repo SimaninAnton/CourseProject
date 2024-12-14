@@ -1,0 +1,154 @@
+jfx319 commented on 23 Nov 2016
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+[X ] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[ X] If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[X ] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Summary:
+I believe it would be helpful to allow toggling off of the forced conversion to 8bit:
+def load_img(path, grayscale=False, target_size=None):
+    from PIL import Image
+    img = Image.open(path)
+    if grayscale:
+        img = img.convert('L')
+    else:  # Ensure 3 channel even when loaded image is grayscale
+        img = img.convert('RGB')
+    return img
+This is causing issues with, in my case, higher depth 16bit, grayscale images. And in the future, I can only imagine images getting more complex as processing power and the complexity demand size grows.
+Expected behavior:
+from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
+
+img = Image.open('./toy/foo.png')  # this image is 16bit grayscale, PIL.Image autoloads as mode "I" 
+#img = load_img('./toy/foo.png')  # keras hardcodes PIL.Image.convert to mode "L", which is acting as a low-pass filter, truncating all values above 255
+x = img_to_array(img)  # this is a Numpy array with shape (101, 101, 3)
+x
+Clearly, the values are quite diverse.
+array([[[ 26947.],
+        [ 26367.],
+        [ 26429.],
+        ..., 
+        [ 38390.],
+        [ 40277.],
+        [ 39516.]],
+
+       [[ 27135.],
+        [ 27470.],
+        [ 26532.],
+        ..., 
+        [ 39014.],
+        [ 39567.],
+        [ 39516.]],
+
+       [[ 27723.],
+        [ 27323.],
+        [ 26781.],
+        ..., 
+        [ 39972.],
+        [ 39491.],
+        [ 39063.]],
+
+       ..., 
+       [[ 27533.],
+        [ 28660.],
+        [ 28660.],
+        ..., 
+        [ 42340.],
+        [ 41147.],
+        [ 41948.]],
+
+       [[ 27893.],
+        [ 27744.],
+        [ 29005.],
+        ..., 
+        [ 42521.],
+        [ 41457.],
+        [ 41250.]],
+
+       [[ 27914.],
+        [ 26532.],
+        [ 27366.],
+        ..., 
+        [ 43681.],
+        [ 41897.],
+        [ 40684.]]], dtype=float32)
+BUG:
+from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
+
+#img = Image.open('./toy/foo.png')  # this image is 16bit grayscale, PIL.Image autoloads as mode "I" 
+img = load_img('./toy/foo.png')  # keras hardcodes PIL.Image.convert to mode "L", which is acting as a low-pass filter, truncating all values above 255
+x = img_to_array(img)  # this is a Numpy array with shape (101, 101, 3)
+x
+Now, the values are all "whitened"
+array([[[ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        ..., 
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.]],
+
+       [[ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        ..., 
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.]],
+
+       [[ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        ..., 
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.]],
+
+       ..., 
+       [[ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        ..., 
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.]],
+
+       [[ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        ..., 
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.]],
+
+       [[ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        ..., 
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.],
+        [ 255.,  255.,  255.]]], dtype=float32)
+Sample images
+illustrating the difference between de facto load_img() behavior and manually calling PIL.open(), letting it stick with mode "I".
+from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
+datagen = ImageDataGenerator(
+        rotation_range=40,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True,
+        fill_mode='nearest')
+#img = Image.open('./toy/foo.png')  # this image is 16bit grayscale, PIL.Image autoloads as mode "I" 
+img = load_img('./toy/foo.png')  # keras hardcodes PIL.Image.convert to mode "L" 8bit, which is acting as a low-pass filter, truncating all values above 255
+x = img_to_array(img)  # this is a Numpy array with shape (101, 101, 3)
+i = 0
+for batch in datagen.flow(x, batch_size=1, save_to_dir='./toy', save_prefix='bug', save_format='png'):
+    i += 1
+    if i > 20:
+        break
+Original image:
+
+Expected ImageDataGenerator sample:
+
+Actual ImageDataGenerator:

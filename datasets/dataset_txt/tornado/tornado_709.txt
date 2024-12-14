@@ -1,0 +1,77 @@
+kamelzcs commented on 25 Dec 2014
+Python: 2.7.6
+Tornado: 4.0.2
+Psycopg2: 2.5.4
+A single insert and commit query could lead to very huge unstable time cost.
+The code:
+import os
+
+import tornado.web
+import tornado.ioloop
+import tornado.options
+from tornado import gen
+import tornado.httpserver
+import psycopg2
+import logging
+
+db_database = `test`
+db_user = 'postgres'
+db_password = ''
+db_host = ''
+db_port = 5431
+dsn = 'dbname=%s user=%s password=%s host=%s port=%s' % (
+    db_database, db_user, db_password, db_host, db_port)
+
+class BaseHandler(tornado.web.RequestHandler):
+    @property
+    def db(self):
+        return self.application.db
+
+
+class OverviewHandler(BaseHandler):
+    @gen.coroutine
+    def get(self):
+        try:
+            cursor = self.db.cursor()
+            cursor.execute('INSERT INTO "member" ("membername", "birthday") VALUES (%s, %s) RETURNING ID', ('123', '2014/12/17'))
+            logging.debug('before commit')
+            self.db.commit()
+            logging.debug('after commit')
+            self.write('Query results: %s<br>\n' % cursor.fetchall())
+        except Exception as error:
+            self.write(str(error))
+
+        self.finish()
+
+
+def main():
+    try:
+        tornado.options.parse_command_line()
+        application = tornado.web.Application([
+            (r'/', OverviewHandler),
+        ], debug=True)
+
+        application.db = psycopg2.connect(dsn)
+
+        http_server = tornado.httpserver.HTTPServer(application)
+        http_server.listen(8888, 'localhost')
+        tornado.ioloop.IOLoop.instance().start()
+    except KeyboardInterrupt:
+        print('Exit')
+
+
+if __name__ == '__main__':
+    main()
+The result is as follows:
+[I 141225 17:18:52 web:1811] 200 GET /query (127.0.0.1) 19.35ms
+[I 141225 17:18:53 web:1811] 200 GET /query (127.0.0.1) 16.96ms
+[I 141225 17:18:55 web:1811] 200 GET /query (127.0.0.1) 402.65ms
+[I 141225 17:18:58 web:1811] 200 GET /query (127.0.0.1) 2317.28ms
+[I 141225 17:19:02 web:1811] 200 GET /query (127.0.0.1) 1396.84ms
+[I 141225 17:19:03 web:1811] 200 GET /query (127.0.0.1) 33.61ms
+[I 141225 17:19:04 web:1811] 200 GET /query (127.0.0.1) 444.74ms
+[I 141225 17:19:05 web:1811] 200 GET /query (127.0.0.1) 15.53ms
+[I 141225 17:19:06 web:1811] 200 GET /query (127.0.0.1) 18.40ms
+[I 141225 17:19:07 web:1811] 200 GET /query (127.0.0.1) 12.16ms
+[I 141225 17:19:11 web:1811] 200 GET /query (127.0.0.1) 3081.28ms
+As I am not sure whether it has something to do with Psycopg, post the same link on Psycopg

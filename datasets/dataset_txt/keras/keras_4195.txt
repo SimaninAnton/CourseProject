@@ -1,0 +1,67 @@
+longlouisly commented on 11 Oct 2016
+It seems Upsampling2D loses track of image size when it comes after a dilated convolution. The only difference between these two models is the atrous_rate. (I'm using tensorflow 0.11, but the error occurs for both dim_orderings={'th','tf'})
+K.set_image_dim_ordering('th')     
+
+working_model = Sequential()  
+working_model.add(ZeroPadding2D((1,1),input_shape=(3,224,224)))  
+working_model.add(AtrousConvolution2D(64,3,3, activation='relu',atrous_rate=(1,1)))  
+working_model.add(UpSampling2D(size=(2,2)))  
+working_model.summary()  
+
+bug_model = Sequential()  
+bug_model.add(ZeroPadding2D((1,1),input_shape=(3,224,224)))  
+bug_model.add(AtrousConvolution2D(64,3,3, activation='relu',atrous_rate=(2,2)))  
+bug_model.summary()  
+bug_model.add(UpSampling2D(size=(2,2)))  
+Error: notice how the summaries output the correct dimensions for the convolution even though tf shape output does not for the 2nd model.
+[<tf.Tensor 'zeropadding2d_input_1:0' shape=(?, 3, 224, 224) dtype=float32>]
+[<tf.Tensor 'Pad:0' shape=(?, 3, 226, 226) dtype=float32>]
+[<tf.Tensor 'Relu:0' shape=(?, 64, 224, 224) dtype=float32>]
+
+Layer (type)                     Output Shape          Param #     Connected to
+==========================================================================================
+zeropadding2d_1 (ZeroPadding2D)  (None, 3, 226, 226)   0           zeropadding2d_input_1[0
+__________________________________________________________________________________________
+atrousconvolution2d_1 (AtrousConv(None, 64, 224, 224)  1792        zeropadding2d_1[0][0]
+__________________________________________________________________________________________
+upsampling2d_1 (UpSampling2D)    (None, 64, 448, 448)  0           atrousconvolution2d_1[0
+==========================================================================================
+Total params: 1792
+
+
+[<tf.Tensor 'zeropadding2d_input_2:0' shape=(?, 3, 224, 224) dtype=float32>]
+[<tf.Tensor 'Pad_1:0' shape=(?, 3, 226, 226) dtype=float32>]
+[<tf.Tensor 'Relu_1:0' shape=(?, 64, ?, ?) dtype=float32>]
+
+Layer (type)                     Output Shape          Param #     Connected to
+==========================================================================================
+zeropadding2d_2 (ZeroPadding2D)  (None, 3, 226, 226)   0           zeropadding2d_input_2[0
+__________________________________________________________________________________________
+atrousconvolution2d_2 (AtrousConv(None, 64, 222, 222)  1792        zeropadding2d_2[0][0]
+==========================================================================================
+Total params: 1792
+
+
+Traceback (most recent call last):
+    bug_model.add(UpSampling2D(size=(2,2)))
+File "../keras/models.py", line 308, in add
+    output_tensor = layer(self.outputs[0])
+File "../keras/engine/topology.py", line 514, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+File "../keras/engine/topology.py", line 572, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+File "../keras/layers/convolutional.py", line 1336, in call
+    self.dim_ordering)
+File "../keras/backend/tensorflow_backend.py", line 757, in resize_images
+    X.set_shape((None, original_shape[1] * height_factor, original_shape[2] * width_factor, None))
+TypeError: unsupported operand type(s) for *: 'NoneType' and 'int'`
+where I modified keras.engine.topology.create_node to print out the tensor shapes above:
+for inbound_layer, node_index, tensor_index in zip(inbound_layers, node_indices, t
+            inbound_node = inbound_layer.inbound_nodes[node_index]
+            input_tensors.append(inbound_node.output_tensors[tensor_index])
+            input_masks.append(inbound_node.output_masks[tensor_index])
+            input_shapes.append(inbound_node.output_shapes[tensor_index])
+
+        assert len(input_shapes) == len(input_tensors) == len(input_masks)
++       print (input_tensors)
+4

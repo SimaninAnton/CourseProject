@@ -1,0 +1,46 @@
+s-dixit commented on Jul 24, 2014
+
+Hi
+I am seeing an issue where after a 302 redirect, requests does not use custom adapter attached to the session. The custom adapter is a subclass of requests HTTPAdapter and uses 'source_address' property of HTTPLib. For the first session.get, it uses the source IP address from the custom adapter. However, when a request is redirected, it uses a the default IP address on the machine.
+For the ifconfig below, first GET it sent out with IP 20.20.1.4 which is set in the custom transport adapter. Redirect request uses IP= 20.20.1.3. Please see attached image of PCAP.
+eth1 Link encap:Ethernet HWaddr 00:50:56:98:40:3c
+inet addr:20.20.1.3 Bcast:20.20.1.255 Mask:255.255.255.0
+inet6 addr: fe80::250:56ff:fe98:403c/64 Scope:Link
+UP BROADCAST RUNNING MULTICAST MTU:1500 Metric:1
+RX packets:11604716 errors:0 dropped:0 overruns:0 frame:0
+TX packets:5560908 errors:0 dropped:0 overruns:0 carrier:0
+collisions:0 txqueuelen:1000
+RX bytes:15153507687 (15.1 GB) TX bytes:532461537 (532.4 MB)
+eth1:1 Link encap:Ethernet HWaddr 00:50:56:98:40:3c
+inet addr:20.20.1.4 Bcast:20.20.1.255 Mask:255.255.255.0
+UP BROADCAST RUNNING MULTICAST MTU:1500 Metric:1
+Here is the code in main
+...
+HTTPHeaders = {'Connection': 'keep-alive', 'Cache-Control': 'no-cache', 'Accept-Encoding': 'gzip,deflate,sdch', 'Accept-Language': 'en-US'}
+srcIP = '20.20.1.4'
+s1 = requests.session()
+s1.mount('http://20.20.1.2/', customTransportAdapter(srcIP))
+s1.auth = HTTPCustomNtlmAuth('systemqa\tester1', '12345678', srcIP)
+response1 = s1.get('http://20.20.1.2/dbx.html', headers=HTTPHeaders, timeout=1)
+end of main
+Custom transport adapter
+!/home/tester/HTTP_AUTH/bin/python
+import requests
+import requests.adapters
+from requests.adapters import HTTPAdapter
+DEFAULT_POOLBLOCK = False
+DEFAULT_POOLSIZE = 10
+DEFAULT_RETRIES = 0
+class customTransportAdapter(HTTPAdapter):
+def init(self, sourceIP):
+self.sourceIP = sourceIP
+HTTPAdapter.init(self, pool_connections=DEFAULT_POOLSIZE,
+pool_maxsize=DEFAULT_POOLSIZE, max_retries=DEFAULT_RETRIES,
+pool_block=DEFAULT_POOLBLOCK)
+    def init_poolmanager(self, connections, maxsize, block=DEFAULT_POOLBLOCK):
+    # save these values for pickling
+            self._pool_connections = connections
+            self._pool_maxsize = maxsize
+            self._pool_block = block
+            self.poolmanager = requests.adapters.PoolManager(num_pools=connections, maxsize=maxsize,
+                                   block=block, source_address=(self.sourceIP, 0))

@@ -1,0 +1,43 @@
+Member
+ncoghlan commented on 24 Feb 2018
+I'm assuming this problem is environment related (since it doesn't happen in Travis CI), but I'm getting a number of test failures related to Mock objects being passed to os APIs that expect real strings. For example:
+_____________________________________________________________________ TestPipenv.test_pip_install_should_try_every_possible_source _____________________________________________________________________
+
+self = <tests.test_legacy.TestPipenv object at 0x7f3a8179b780>, mocked_delegator = <MagicMock name='run' id='139889257069704'>, mocked_sources = <PropertyMock name='sources' id='139889257652120'>
+
+    @patch('pipenv.project.Project.sources', new_callable=PropertyMock)
+    @patch('delegator.run')
+    def test_pip_install_should_try_every_possible_source(self, mocked_delegator, mocked_sources):
+        sources = [
+            {'url': 'http://dontexistis.in.pypi/simple'},
+            {'url': 'http://existis.in.pypi/simple'}
+        ]
+        mocked_sources.return_value = sources
+        first_cmd_return = Mock()
+        first_cmd_return.return_code = 1
+        second_cmd_return = Mock()
+        second_cmd_return.return_code = 0
+        mocked_delegator.side_effect = [first_cmd_return, second_cmd_return]
+>       c = pip_install('package')
+
+tests/test_legacy.py:28: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+pipenv/core.py:1407: in pip_install
+    quoted_pip = which_pip(allow_global=allow_global)
+pipenv/core.py:1472: in which_pip
+    return which('pip')
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+command = 'pip', location = <Mock name='mock.out.strip()' id='139889257992488'>, allow_global = False
+
+    def which(command, location=None, allow_global=False):
+        if location is None:
+            location = project.virtualenv_location
+    
+        if not allow_global:
+            if os.name == 'nt':
+                p = find_windows_executable(os.path.join(location, 'Scripts'), command)
+            else:
+>               p = os.sep.join([location] + ['bin/{0}'.format(command)])
+E               TypeError: sequence item 0: expected str instance, Mock found
+Filing a self-assigned issue in case anyone else has already seen the problem and has ideas on what causes it, or else sees it in the future.

@@ -1,0 +1,89 @@
+dongfangyixi commented on 5 Sep 2017 •
+edited
+Hi, I did a comparison of the speed between keras(theano and tensorflow backend) and tensorflow. I run same toy model on keras using theano and tensorflow backend and native tensorflow. Found that tensorflow is more faster than keras in training process.
+The Model is simply an embedding layer followed by two dense layer.
+When using tensorflow as backend of keras, I also test the speed of TFOptimizer and Keras Optimizer to avoid embedding layer's influence. Mentioned here #4365
+All the experiments run on a single nvidia k40 GPU
+keras 2.0.8 theano 0.9.0 tensorflow 1.2.0
+Here is the result:
+unit: samples/sec
+keras-theano: 160
+keras-tf-keras_opt: 246
+keras-tf-tf_opt: 640
+tensorflow: 1625
+Tensorflow is about 2.5X faster than keras with tensoflow backend and TFOptimizer.
+The scripts:
+Keras:
+from keras.models import Sequential, Model
+import numpy as np
+from keras.layers import Dense,Activation, Input
+from keras.layers.embeddings import Embedding
+#import tensorflow as tf
+from keras.optimizers import TFOptimizer
+import os
+
+os.environ['CUDA_VISIBLE_DEVICES']='1'
+
+#model=Sequential()
+inputs=Input(shape=(50,))
+embedding_vec=Embedding(700000,512)(inputs)
+d1=Dense(256, activation='sigmoid')(embedding_vec)
+
+d2=Dense(10000, activation='softmax')(d1)
+
+model=Model(inputs=inputs,outputs=d2)
+#model.compile(loss='sparse_categorical_crossentropy', optimizer=TFOptimizer(tf.train.GradientDescentOptimizer(0.1)))
+
+model.compile(loss='sparse_categorical_crossentropy',optimizer='sgd')
+
+x_train=np.random.random_integers(0,9999,(3200,50))
+y_train=np.random.random_integers(0,9999,(3200,50,1))
+print model.summary()
+model.fit(x_train, y_train, nb_epoch=20, batch_size=50)
+tensorflow:
+import tensorflow as tf
+import numpy as np
+from tqdm import tqdm
+import os
+os.environ['CUDA_VISIBLE_DEVICES']='3'
+inputs=tf.placeholder(shape=(None, 50),dtype=tf.int32)
+outputs=tf.placeholder(shape=(None,50),dtype=tf.int32)
+#embedding_vec=EmbeddingLayer(70000,128)(inputs)
+embedding = tf.get_variable(name = 'embedding', shape=(700000, 512))
+embedding_vec = tf.gather(embedding, inputs)
+
+#d1=Dense(128,256)(embedding_vec,scope='dense1')
+W1 = tf.get_variable(name='W1',shape=(512,256),dtype=tf.float32)
+b1 = tf.get_variable(name='b1',shape=(256,),dtype=tf.float32)
+d1 = tf.matmul(tf.reshape(embedding_vec,shape=(-1,512)),W1) + b1
+d1 = tf.reshape(d1,shape=(-1,50,256))
+d1=tf.sigmoid(d1)
+
+#d2=Dense(256,10000)(d1,scope='predict')
+W2 = tf.get_variable(name='W2',shape=(256,10000),dtype=tf.float32)
+b2 = tf.get_variable(name='b2',shape=(10000,),dtype=tf.float32)
+d2 = tf.matmul(tf.reshape(d1,shape=(-1,256)),W2) + b2
+d2 = tf.reshape(d2,shape=(-1,50,10000))
+
+
+loss=tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=outputs,logits=d2))
+opt=tf.train.GradientDescentOptimizer(0.1)
+update=opt.minimize(loss)
+
+config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+config.gpu_options.allow_growth=True
+
+x=np.random.random_integers(0,9999,(3200,50))
+y=np.random.random_integers(0,9999,(3200,50))
+batch_size=50
+with tf.Session(config=config) as sess:
+    sess.run(tf.global_variables_initializer())
+    for i in xrange(20):
+        print 'epooch: ', i
+        for i in tqdm(range(0,(3200/batch_size)*batch_size,batch_size)):
+            x_batch=x[i:i+batch_size]
+            y_batch=y[i:i+batch_size]
+            _,loss_val=sess.run((update,loss),feed_dict={inputs:x_batch,outputs:y_batch})
+            #print loss_val
+Many thanks!!
+8

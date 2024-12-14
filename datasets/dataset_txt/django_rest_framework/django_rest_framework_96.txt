@@ -1,0 +1,55 @@
+Contributor
+chrisv2 commented on 24 Jul 2019
+Steps to reproduce
+create a UserSerializer as instance of ModelSerializer and use it in a viewset (just like in quickstart tutorial)
+run manage.py generateschema
+Expected behavior
+generateschema returns a valid OpenAPI schema
+Actual behavior
+The generated schema's description fields contains unserialized lazy strings
+openapi: 3.0.2
+info:
+  title: ''
+  version: TODO
+paths:
+  /users/:
+    get:
+      operationId: ListUsers
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                required:
+                - username
+                properties:
+                  url:
+                    type: string
+                    readOnly: true
+                  username:
+                    type: string
+                    description: &id003 !!python/object/apply:django.utils.functional._lazy_proxy_unpickle
+                    - &id001 !!python/name:django.utils.translation.ugettext ''
+                    - !!python/tuple
+                      - Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+                        only.
+                    - {}
+                    - &id002 !!python/name:builtins.str ''
+Suggested solution
+Force description to text in schemas.openapi.AutoSchema._map_serializer()
+Workaround
+This problem can be worked around with a custom schema generator:
+from django.utils.encoding import force_text
+from rest_framework.schemas.openapi import AutoSchema
+
+class FixedAutoSchema(AutoSchema):
+    def _map_serializer(self, serializer):
+        result = super()._map_serializer(serializer)
+        for prop, value in result['properties'].items():
+            if 'description' in value:
+                value['description'] = force_text(value['description'])
+        return result
+
+# in settings.py
+DEFAULT_SCHEMA_CLASS = 'myapp.FixedAutoSchema'

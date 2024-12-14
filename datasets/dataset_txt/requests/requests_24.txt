@@ -1,0 +1,49 @@
+rafaduran commented on Dec 23, 2019
+Proxy setup without scheme is not working on Python 3.7.6
+While it works on Python 3.7.5:
+Python 3.7.5 (default, Nov 23 2019, 05:59:34) 
+[GCC 8.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import requests
+>>> requests.get("http://httpbin.org/get", proxies={"http": "103.250.166.4:6666"})
+<Response [200]>
+Is not under Python 3.7.6
+Python 3.7.6 (default, Dec 21 2019, 08:28:11) 
+[GCC 8.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import requests
+>>> requests.get("http://httpbin.org/get", proxies={"http": "103.250.166.4:6666"})
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/local/lib/python3.7/site-packages/requests/api.py", line 75, in get
+    return request('get', url, params=params, **kwargs)
+  File "/usr/local/lib/python3.7/site-packages/requests/api.py", line 60, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/usr/local/lib/python3.7/site-packages/requests/sessions.py", line 533, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/local/lib/python3.7/site-packages/requests/sessions.py", line 646, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python3.7/site-packages/requests/adapters.py", line 412, in send
+    conn = self.get_connection(request.url, proxies)
+  File "/usr/local/lib/python3.7/site-packages/requests/adapters.py", line 309, in get_connection
+    proxy_manager = self.proxy_manager_for(proxy)
+  File "/usr/local/lib/python3.7/site-packages/requests/adapters.py", line 199, in proxy_manager_for
+    **proxy_kwargs)
+  File "/usr/local/lib/python3.7/site-packages/urllib3/poolmanager.py", line 470, in proxy_from_url
+    return ProxyManager(proxy_url=url, **kw)
+  File "/usr/local/lib/python3.7/site-packages/urllib3/poolmanager.py", line 420, in __init__
+    raise ProxySchemeUnknown(proxy.scheme)
+urllib3.exceptions.ProxySchemeUnknown: Not supported proxy scheme None
+It seems that some changes on Python urllib.parse.urlparse brake requests.utils.prepend_scheme_if_needed
+>>> utils.prepend_scheme_if_needed('103.250.166.4:6666', 'http')
+'103.250.166.4://6666'
+So it looks like this utils has to update to match Python changes (I think the change that produces this is python/cpython@5a88d50). In both cases I'm using requests 2.22.0.
+Reporting here since urllib.parse.urlparse behaviour is wrong in both Python versions and I think the problem is requests.utils.prepend_scheme_if_needed problem:
+Python 3.7.5
+>>> from urllib import parse
+>>> parse.urlparse("103.250.166.4:6666")
+ParseResult(scheme='', netloc='', path='103.250.166.4:6666', params='', query='', fragment='')
+Python 3.7.6
+>>> from urllib import parse
+>>> parse.urlparse("103.250.166.4:6666")
+ParseResult(scheme='103.250.166.4', netloc='', path='6666', params='', query='', fragment='')

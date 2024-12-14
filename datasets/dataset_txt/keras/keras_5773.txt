@@ -1,0 +1,28 @@
+NasenSpray commented on 11 Mar 2016
+@fchollet
+I think the implementation is flawed. Take a look at the code for GRU (and also LSTM):
+def append_regulariser(input_regulariser, param, regularizers_list):
+    regulariser = regularizers.get(input_regulariser)
+    if regulariser:
+        regulariser.set_param(param)
+        regularizers_list.append(regulariser)
+
+self.regularizers = []
+for W in [self.W_z, self.W_r, self.W_h]:
+    append_regulariser(self.W_regularizer, W, self.regularizers)
+for U in [self.U_z, self.U_r, self.U_h]:
+    append_regulariser(self.U_regularizer, U, self.regularizers)
+for b in [self.b_z, self.b_r, self.b_h]:
+    append_regulariser(self.b_regularizer, b, self.regularizers)
+The problem is that regularizers can't be reused for multiple params because they are stateful and store a ref to the param. In the example above, only W_h, U_h and b_h actually end up being regularized.
+Proposed fix:
+## regularize concatenated params
+## untested
+
+W = K.concatenate([self.W_z, self.W_r, self.W_h])
+append_regulariser(self.W_regularizer, W, self.regularizers)
+U = K.concatenate([self.U_z, self.U_r, self.U_h])
+append_regulariser(self.U_regularizer, U, self.regularizers)
+b = K.concatenate([self.b_z, self.b_r, self.b_h])
+append_regulariser(self.b_regularizer, b, self.regularizers)
+Any thoughts?

@@ -1,0 +1,72 @@
+luccitan commented on 25 Oct 2018
+Hello,
+I wanted to check the behaviour of my generator in order to fit a model and I noticed that my generator actually yield more than x steps defined in arguments. Outputs and code speak more than words.
+The following output is what i logged. I put as "commentary" some shortcuts to shorten this for you, you get the idea
+// .... 
+DEBUG - Fitting the model :: 14 training steps to expect
+DEBUG - Fitting the model :: 2 validation steps to expect
+DEBUG - Number of train_docs : 220
+DEBUG - Number of train_labels : 220
+DEBUG - Number of val_docs : 25
+DEBUG - Number of val_labels : 25
+Epoch 1/250
+DEBUG - [train] starting epoch.
+DEBUG - [train] number of steps : 14
+DEBUG - [train] number of docs : 220
+DEBUG - [train] number of labels : 220
+DEBUG - [train] yielding 0:16
+// 13 more yields log printing
+DEBUG - [train] starting epoch.
+DEBUG - [train] number of steps : 14
+DEBUG - [train] number of docs : 220
+DEBUG - [train] number of labels : 220
+DEBUG - [train] yielding 0:16
+// 9 more yields log printing
+DEBUG - [val] starting epoch.
+DEBUG - [val] number of steps : 2
+DEBUG - [val] number of docs : 25
+DEBUG - [val] number of labels : 25
+DEBUG - [val] yielding 0:16
+DEBUG - [val] yielding 16:32
+// The 6 previous lines are printed again 5 times
+ - 18s - loss: 1.0193 - categorical_accuracy: 0.4955 - val_loss: 0.9229 - val_categorical_accuracy: 0.6400
+So for the first epoch, before the fit_generator consider it as one epoch, my loop yields 24 times instead of 14 times (2 'epochs') for the training generator and 10 times instead of 2 (5 'epochs').
+Here is the main code used to get these results :
+def generator(self, type, docs, labels, steps, predict=False):  # TODO: remove (type)
+  # vectorizing stuff, getting X and y 
+  
+  while True:
+    self.logger.debug("[{}] starting epoch.".format(type))  # TODO: remove after debugging
+    self.logger.debug("[{}] number of steps : {}".format(type, steps))  # TODO: remove after debugging
+    self.logger.debug("[{}] number of docs : {}".format(type, len(docs)))  # TODO: remove after debugging
+    self.logger.debug("[{}] number of labels : {}".format(type, len(labels)))  # TODO: remove after debugging
+
+    indices = list(range(len(docs)))
+    if not predict:
+      indices = np.random.permutation(indices)
+
+    for bi in range(steps):
+      batch = indices[(bi * self.batch_size):((bi + 1) * self.batch_size)]
+      self.logger.debug("[{}] yielding {}:{}".format(
+        type,
+        bi * self.batch_size,
+        (bi + 1) * self.batch_size))
+      yield X[batch] if predict else (X[batch], y[batch])
+this is a class method, self.batch_size = 16 FYI
+Then the fit_generator is called like this :
+# ...
+self.logger.debug("Number of train_docs : {}".format(len(train_docs)))  # TODO : remove
+self.logger.debug("Number of train_labels : {}".format(len(train_labels)))  # TODO : remove
+self.logger.debug("Number of val_docs : {}".format(len(val_docs)))  # TODO : remove
+self.logger.debug("Number of val_labels : {}".format(len(val_labels)))  # TODO : remove
+self.model.fit_generator(
+  self.generator('train', train_docs, train_labels, training_steps),
+  validation_data=self.generator('val', val_docs, val_labels, validation_steps),
+  epochs=self.epochs,
+  steps_per_epoch=training_steps,
+  validation_steps=validation_steps,
+  callbacks=[early_stopping, board],
+  verbose=2)
+TL;DR : I can't understand why keras consider epochs being finish after exactly ten yields more than the number precised in arguments. My while loop is not bad though because it restarts after the good number of steps.
+What did I miss ?
+Thank you :)

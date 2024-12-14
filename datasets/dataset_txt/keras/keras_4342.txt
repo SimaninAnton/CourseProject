@@ -1,0 +1,58 @@
+FBMachine commented on 20 Sep 2016 •
+edited
+Following the workflow here:
+https://blog.keras.io/keras-as-a-simplified-interface-to-tensorflow-tutorial.html#using-keras-models-with-tensorflow
+Using a layer with dropout throws an exception. It works if there is no dropout.
+Edit: it has nothing to do with the Embedding layer. The problem is specifically with the dropout layer, and will also happen if you manually add a dropout layer to the model.
+Minimal code to reproduce:
+import tensorflow as tf
+from keras import backend as K
+from keras.models import Sequential
+from keras.layers import Embedding
+
+with tf.Graph().as_default():
+    with tf.Session() as session:
+        input_length = 140
+        x = tf.placeholder(tf.int32, shape=(None, input_length))
+
+        K.set_session(session)
+
+        model = Sequential()
+        model.add(Embedding(257, 300, input_length=input_length, dropout=0.2))
+Stack trace:
+$ KERAS_BACKEND=tensorflow python exception-repro.py 
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "exception-repro.py", line 14, in <module>
+    model.add(Embedding(257, 300, input_length=input_length, dropout=0.2))
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/models.py", line 275, in add
+    layer.create_input_layer(batch_input_shape, input_dtype)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/engine/topology.py", line 367, in create_input_layer
+    self(x)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/engine/topology.py", line 511, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/engine/topology.py", line 569, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/engine/topology.py", line 150, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/layers/embeddings.py", line 134, in call
+    W = K.in_train_phase(self.W * B, self.W)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 1109, in in_train_phase
+    lambda: alt)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/ops/control_flow_ops.py", line 1150, in cond
+    res_t = context_t.BuildCondBranch(fn1)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/ops/control_flow_ops.py", line 1089, in BuildCondBranch
+    real_v = _SwitchRefOrTensor(real_v, self._pred)[self._branch]
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/ops/control_flow_ops.py", line 304, in _SwitchRefOrTensor
+    return switch(data, pred, name=name)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/ops/control_flow_ops.py", line 198, in switch
+    with ops.op_scope([data, pred], name, "Switch") as name:
+  File "/usr/lib/python2.7/contextlib.py", line 17, in __enter__
+    return self.gen.next()
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3692, in op_scope
+    g = _get_graph_from_inputs(values)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3499, in _get_graph_from_inputs
+    _assert_same_graph(original_graph_element, graph_element)
+  File "/home/dgonzalez/tf_env/local/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3444, in _assert_same_graph
+    "%s must be from the same graph as %s." % (item, original_item))
+ValueError: Tensor("cond/pred_id:0", dtype=bool) must be from the same graph as Tensor("mul_1:0", shape=(257, 300), dtype=float32).

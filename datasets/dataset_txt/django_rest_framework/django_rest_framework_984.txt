@@ -1,0 +1,48 @@
+cdosborn commented on 5 Nov 2016
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Use filters.SearchFilter and include a seach_field which is a many to many lookup.
+    filter_backends = (filters.SearchFilter)
+    search_fields = ('many__to__many__field')
+Make a query against this view with several search terms.
+Expected behavior
+The search time would increase somewhat linearly with the # of terms.
+Actual behavior
+The search grows exponentially with each added term. In our application several words (3) resulted in a 30 sec query against a model that only had several hundred entries. It would take several minutes for another term and so on.
+Summary
+I was able to change a single block in drf and the performance became linear as I would expect. The problem and (a potential) solution are known. I wanted to bring them to your attention.
+The culprit
+Chaining filters in django on querysets doesn't behave as one would expect when dealing with ManyToMany relations. If you look at the gist below, you'll see that the second bit of sql is quite different from the first bit because of this difference.
+https://gist.github.com/cdosborn/cb4bdfd0467feaf987476f4aefdf7ee5
+From looking at the sql, you'll notice the first bit generated a bunch of unnecessary joins. These joins result in a multiplicative factor on the number of rows that the query contains. Notice how the bottom query doesn't have the redundant joins. So what we can conclude is that chaining filters can produce unnecessary joins which can dramatically effect the performance.
+So there is a bit of code in drf, which chains filter for each term in the search query. This explodes whenever the search_fields contains a ManyToMany.
+A solution
+Rather than chaining filters in SearchFilter we build up a query first, and call filter once.
+diff --git a/rest_framework/filters.py b/rest_framework/filters.py
+index 531531e..0e7329b 100644
+--- a/rest_framework/filters.py
++++ b/rest_framework/filters.py
+@@ -144,13 +144,15 @@ class SearchFilter(BaseFilterBackend):
+         ]
+ 
+         base = queryset
++        conditions = []
+         for search_term in search_terms:
+             queries = [
+                 models.Q(**{orm_lookup: search_term})
+                 for orm_lookup in orm_lookups
+             ]
+-            queryset = queryset.filter(reduce(operator.or_, queries))
++            conditions.append(reduce(operator.or_, queries))
+ 
++        queryset = queryset.filter(reduce(operator.and_, conditions))
+         if self.must_call_distinct(queryset, search_fields):
+             # Filtering against a many-to-many field requires us to
+             # call queryset.distinct() in order to avoid duplicate items
+This may not be the fix you want. My guess is that the must_call_distinct was trying to fix this problem, but it's not sufficient. My impression is that this is a pretty serious issue that django needs to resolve.

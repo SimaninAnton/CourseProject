@@ -1,0 +1,139 @@
+Leocodefocus commented on Sep 27, 2016 •
+edited by redapple
+I would like to use my spider to crawl about 80000 pages and parse their information,but it finished without error messages,here is my code:
+# -*- coding: utf-8 -*-
+from cved
+
+etails.items import testItem
+import scrapy
+import urlparse
+from scrapy.selector import Selector
+from scrapy.linkextractors import LinkExtractor
+import re
+import string
+import pymongo
+import dbconfig
+import requests
+from scrapy import log
+from bs4 import BeautifulSoup
+import extralib
+import datetime
+import threading
+class cvedetails(scrapy.Spider):
+    #3217
+    name = "cvedetails"
+    allowed_domains = ['www.cvedetails.com']
+    #start_urls = ['http://www.cvedetails.com/vendor-search.php?search=Omron']#,'http://www.cvedetails.com/vendor-search.php?search=NI']
+    link_extract = LinkExtractor()
+    def start_requests(self):
+        self.conn = self.connDB()
+        r = requests.get("http://www.cvedetails.com/browse-by-date.php")
+        bsObj = BeautifulSoup(r.text)
+        date_trs = bsObj.find("table",{"id":"maintable"}).find("div",{"id":"contentdiv"}).find("table",{"class":"stats"}).findAll("tr",{"onmouseover":"this.style.background='#F5F4B8'"})
+        for date_tr in date_trs:
+            tds = date_tr.findAll('td')
+            for td_s in tds:
+                a_href = td_s.find('a')
+                if a_href != None:
+                    if 'href' in a_href.attrs:
+                        if re.compile(r'^(/vulnerability-list/year-)(\d){4}/month-(\d){1,2}/[A-Za-z]+(\.html)$').match(a_href['href']):
+                            url = urlparse.urljoin("http://www.cvedetails.com/",a_href['href'])
+                            print url
+                            yield scrapy.Request(url, callback=self.parse,
+                                                errback=self.errback_httpbin,
+                                                dont_filter=True)
+
+    def errback_httpbin(self,response):
+        self.logger.info('Got failed response from {}'.format(response.url))
+    def connDB(self):
+        connection=pymongo.MongoClient(
+        dbconfig.MONGODB_SERVER,
+        dbconfig.MONGODB_PORT
+        )
+        db=connection[dbconfig.MONGODB_DB]
+        return db[dbconfig.MONGODB_COLLECTION_CVEDETAILSHTML]
+
+    def insertHtml(self,link,html):
+        htmls = {"link":link,"html":html}
+        count = self.conn.find({"link":htmls['link']}).count()
+        if count < 1:
+            self.conn.insert(dict(htmls))
+    def parse(self,response):
+        bsObj = BeautifulSoup(response.body)
+        tdd = bsObj.find("table",{"id":"maintable"}).findAll("tr")[1].find("td",{"align":"left","valign":"top"})
+        trs = tdd.find("div",{"id":"contentdiv"}).find("div",{"id":"searchresults"}).find("table",{"class":"searchresults sortable","id":"vulnslisttable"}).findAll("tr",{"class":"srrowns"})
+        for s_tr in trs:
+            a_href = s_tr.find("td",{"class":"num"}).next_sibling.next_sibling.find("a")
+            url = urlparse.urljoin("http://www.cvedetails.com/",a_href['href'])
+            yield scrapy.Request(url, callback=self.parse_item,
+                                            errback=self.errback_httpbin,
+                                            dont_filter=True)
+
+        if re.compile(r'.*(/vulnerability-list/year-)(\d){4}/month-(\d){1,2}/[A-Za-z]+(\.html)$').match(response.url):
+            all_a = tdd.find("div",{"id":"contentdiv"}).find("div",{"id":"pagingb","class":"paging"}).findAll(lambda tag: 'href' in tag.attrs and tag['title'] != 'Go to page 1')
+            for aa in all_a:
+                url = urlparse.urljoin("http://www.cvedetails.com/",aa['href'])
+                yield scrapy.Request(url, callback=self.parse,
+                                            errback=self.errback_httpbin,
+                                            dont_filter=True)
+
+    def parse_item(self,response):
+            cve_item = testItem()
+            cve_item = extralib.initialfunc(cve_item)
+            cve_item['link'] = response.url
+
+            t = threading.Thread(target=self.insertHtml,args={response.url,response.body})
+            t.start()
+            all_text = Selector(text=response.body)
+            item_text = all_text.xpath("//table[@id='maintable']/tr[2]/td[2]/div[@id='contentdiv']/table/tr[1]/td[@id='cvedetails']").extract()[0]
+            #parse description
+            description = Selector(text=item_text).xpath("//td/div[@class='cvedetailssummary']/text()").extract()[0]
+            cve_item['description'].append(description)
+            # parse date
+            date_note = Selector(text=item_text).xpath("//td/div[@class='cvedetailssummary']/span[@class='datenote']/text()").extract()[0]
+            cve_item['publish_time'] = extralib.parseTime(date_note.strip().replace(' ','').split('\t')[0].split(':')[1])
+            cve_item['commit_time'] = extralib.parseTime(date_note.strip().replace(' ','').split('\t')[1].split(':')[1])
+            cve_item['found_time'] = cve_item['commit_time']
+            cve_item['update_time'] = datetime.datetime.now()
+            # parse items
+            vul_cvss_vultype = Selector(text=item_text).xpath("//td/table[2]/tr/td[1]/table[@id='cvssscorestable']/tr").extract()
+            for tr in vul_cvss_vultype:
+                tr_name = Selector(text=tr).xpath("//tr/th/text()").extract()[0].strip()
+                if tr_name == "CVSS Score":
+                    cve_item['cvss_score'] = Selector(text=tr).xpath("//tr/td/div[@class='cvssbox']/text()").extract()[0]
+                elif tr_name == "Confidentiality Impact":
+                    cve_item['confidentiality_impact'] = Selector(text=tr).xpath("//tr/td/span[1]/text()").extract()[0].strip()
+                elif tr_name == "Integrity Impact":
+                    cve_item['integrity_impact'] = Selector(text=tr).xpath("//tr/td/span[1]/text()").extract()[0].strip()
+                elif tr_name == "Availability Impact":
+                    cve_item['availability_impact'] = Selector(text=tr).xpath("//tr/td/span[1]/text()").extract()[0].strip()
+                elif tr_name == "Access Complexity":
+                    cve_item['access_complexity'] = Selector(text=tr).xpath("//tr/td/span[1]/text()").extract()[0].strip()
+                elif tr_name == "Authentication":
+                    cve_item['authentication'] = Selector(text=tr).xpath("//tr/td/span[1]/text()").extract()[0].strip()
+                elif tr_name == "Gained Access":
+                    cve_item['gained_access'] = Selector(text=tr).xpath("//tr/td/span[1]/text()").extract()[0].strip()
+                elif tr_name == "Vulnerability Type(s)":
+                    cve_item['vul_type'] = Selector(text=tr).xpath("//tr/td/span/text()").extract()
+            # parse products
+            pro_trs = Selector(text=item_text).xpath("//td/table[@id='vulnprodstable']/tr").extract()
+            products = []
+            for tr in pro_trs:
+                try:
+                    tr_num = Selector(text=tr).xpath("//tr/td[@class='num']/text()").extract()[0].strip()
+                    if tr_num != "#":
+                        product = {}
+                        product['type']=Selector(text=tr).xpath("//tr/td[2]/text()").extract()[0].strip()
+                        product['vendor']=Selector(text=tr).xpath("//tr/td[3]/a/text()").extract()[0].strip()
+                        product['name']=Selector(text=tr).xpath("//tr/td[4]/a/text()").extract()[0].strip()
+                        product['version']=Selector(text=tr).xpath("//tr/td[5]/text()").extract()[0].strip()
+                        product['update']=Selector(text=tr).xpath("//tr/td[6]/text()").extract()[0].strip()
+                        products.append(product)
+                except:
+                    continue
+            cve_item['products']=products
+            # parse reference
+            references = Selector(text=item_text).xpath("//td/table[@id='vulnrefstable']/tr/td/a/@href").extract()
+            cve_item['reference']=references
+            cve_item['source_id']=response.url.split('/')[-2]
+            yield cve_item

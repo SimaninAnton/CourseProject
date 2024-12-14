@@ -1,0 +1,95 @@
+hugman commented on 8 Oct 2015
+I'm trying to implement some experimental codes using graph API.
+What I'm trying to do is follows:
+data
+X, Y, Y_slided
+Y_slided is just a copied Y
+Y_slided[i][1:] = Y[i][0:-1]
+X is feed to input_x
+Y_slided is feed to input_y
+encode input sequence (input_x) using RNN to context
+context is repeated using RepeatVector to contexts
+input_y is merged with contexts and feed to RNN
+that's all.
+my code and graphical illustration are follows:
+# toy training example 
+nb_samples  = 10
+nb_steps_x  = 4
+nb_steps_y  = 5
+x_dim       = 5   # vocabsize(x) = 5
+y_dim       = 10  # vocabsize(y) = 10
+n_hidden    = 50
+
+# raw data
+x_raw = np.random.randint(x_dim, size=(nb_samples, nb_steps_x) )
+y_raw = np.random.randint(y_dim, size=(nb_samples, nb_steps_y) )
+
+# to index
+X        = np.zeros( (nb_samples, nb_steps_x, x_dim ), dtype=np.bool)
+Y        = np.zeros( (nb_samples, nb_steps_y, y_dim ), dtype=np.bool)
+Y_slided = np.zeros( (nb_samples, nb_steps_y, y_dim ), dtype=np.bool)
+
+# vectorization
+for i in range( nb_samples ):
+    for s in range( nb_steps_x ): X[i][s][ x_raw[i][s] ] = True
+    for s in range( nb_steps_y ): Y[i][s][ y_raw[i][s] ] = True
+
+    Y_slided[i][1:] = Y[i][0:-1]  # ex) Y=[1,2,3] --> Y_slided=[0,1,2] 
+
+# model build
+graph = Graph()
+graph.add_input(name='input_x', input_shape=(nb_steps_x,x_dim,))  # input_shape = (nb_samples, nb_steps_x, x_dim )
+graph.add_input(name='input_y', input_shape=(nb_steps_y,y_dim,))  # input_shape = (nb_samples, nb_steps_y, y_dim )
+
+graph.add_node(GRU(n_hidden, input_shape=(None, x_dim), return_sequences=False),
+               name='context',
+               input='input_x')
+
+# context is repeated nb_steps_y times
+graph.add_node(RepeatVector(nb_steps_y),
+               name='contexts',
+               input='context')
+
+# merged Y_slided and contexts is feeded to RNN
+graph.add_node(GRU(n_hidden, input_shape=(None, y_dim+y_dim), return_sequences=True),
+               name='decoder',
+               inputs=['input_y', 'contexts'],
+               merge_mode='concat')
+
+graph.add_node(TimeDistributedDense(y_dim),
+               name='result',
+               input='decoder')
+
+graph.add_node(Activation('softmax'), 
+               name='output', 
+               input='result', create_output=True)
+
+graph.compile('adam', {'output': 'categorical_crossentropy'})
+
+# fit model
+graph.fit(
+            { 
+              'input_x': X,
+              'input_y': Y_slided, 
+              'output' : Y 
+            }, 
+            nb_epoch=10, 
+            verbose=1
+        )
+model compilation is ok. But in graph.fit() generates errors
+( cpu mode)
+ValueError: total size of new array must be unchanged
+Apply node that caused the error: Reshape{2}(InplaceDimShuffle{1,0,2}.0, MakeVector.0)
+Inputs types: [TensorType(float32, 3D), TensorType(int64, vector)]
+Inputs shapes: [(5, 10, 60), (2,)]
+Inputs strides: [(240, 1200, 4), (8,)]
+Inputs values: ['not shown', array([50, 10])]
+(gpu mode)
+ValueError: GpuJoin: Wrong inputs for input 2 related to inputs 0.!
+Apply node that caused the error: GpuJoin(TensorConstant{-1}, GpuFromHost.0, GpuDimShuffle{1,0,2}.0)
+Inputs types: [TensorType(int8, scalar), CudaNdarrayType(float32, 3D), CudaNdarrayType(float32, 3D)]
+Inputs shapes: [(), (10, 5, 10), (10, 5, 50)]
+Inputs strides: [(), (50, 10, 1), (50, 500, 1)]
+Inputs values: [array(-1, dtype=int8), 'not shown', 'not shown']
+Any advice to fix errors?
+I think 'merge' in graph is not properly used in my code.

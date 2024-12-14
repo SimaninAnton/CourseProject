@@ -1,0 +1,96 @@
+ibalmeida commented on Jun 29, 2015
+I noticed the SGD Classifier throws an exception when trying to make predictions on input data with a different number of features compared to that used for the first fit.
+However, the number of features are not checked when running partial_fit. I can do a partial_fit with 3 features and then another one with 4 features (and vice versa).
+I am unsure this is a correct behaviour. The input's dimensions should be checked when doing partial_fit if the model has been fitted before.
+Below is a self-contained code which replicates the issue I experienced.
+I know the data is highly redundant, but the focus here is on the different number of features.
+import numpy as np
+from sklearn.linear_model import SGDClassifier
+
+# the data is very simplistic: a very redundant logical AND
+# first dataset has three features
+three_feature_input = np.array([[0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1],
+                                [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1]
+                                ])
+
+three_feature_output = np.array([0, 1, 0, 1,
+                                 0, 1, 0, 1,
+                                 0, 1, 0, 1,
+                                 0, 1, 0, 1,
+                                 0, 1, 0, 1,
+                                 0, 1, 0, 1,
+                                 0, 1, 0, 1,
+                                 0, 1, 0, 1
+                                 ])
+
+# second dataset has four features and reversed labels
+# the labels are reversed to force the parameters to change
+four_feature_input = np.array([[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [1, 1, 1, 1],
+                               [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [1, 1, 1, 1],
+                               [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [1, 1, 1, 1],
+                               [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [1, 1, 1, 1]
+                               ])
+
+four_feature_output = np.array([1, 0, 1, 0,
+                                1, 0, 1, 0,
+                                1, 0, 1, 0,
+                                1, 0, 1, 0
+                                ])
+
+# notice these datasets have incompatible formats
+print three_feature_input.shape # (32, 3)
+print four_feature_input.shape # (16, 4)
+The first case is doing a second fit with data that has more features than the first one. The fourth feature seems to be ignored during the partial_fit, but an exception is raised when trying to do a prediction (via the score method).
+# CASE 1: second dataset has more features
+
+sgd_model = SGDClassifier()#learning_rate='constant', eta0=1e-9, warm_start=False)
+print sgd_model.coef_
+# => None
+
+# the initial fit works
+sgd_model.partial_fit(three_feature_input, three_feature_output, classes=[0, 1])
+print sgd_model.coef_
+# => [[  9.7   9.7   9.7]]
+print sgd_model.score(three_feature_input, three_feature_output)
+# => 1.0
+
+# second fit works even though second dataset has one more feature than the first
+sgd_model.partial_fit(four_feature_input, four_feature_output)
+print sgd_model.coef_
+# => [[  -9.6   -9.6   -9.6]]
+
+# predicting on the second data does not work:
+# raises ValueError: X has 4 features per sample; expecting 3
+print sgd_model.score(four_feature_input, four_feature_output)
+In the case of doing a second partial_feature with less features, the issue is even more serious. The first three features change but the fourth barely does so. I do not know if the model considers the fourth feature to have some default value.
+# CASE 2: second dataset has less features
+
+sgd_model2 = SGDClassifier()#learning_rate='constant', eta0=1e-9, warm_start=False)
+print sgd_model2.coef_
+# => None
+
+# the initial fit works
+sgd_model2.partial_fit(four_feature_input, four_feature_output, classes=[0, 1])
+print sgd_model2.coef_
+# => [[ -9.9  -9.9  -9.9  -9.9]]
+
+print sgd_model2.score(four_feature_input, four_feature_output)
+# => 1.0
+
+# second fit works even though second dataset has one less feature than the first
+# NOTICE how the first three coefficients are modified but the fourth is not
+sgd_model2.partial_fit(three_feature_input, three_feature_output)
+print sgd_model2.coef_
+# => [[  9.6   9.6   9.6  -9.6]]
+
+# predicting on the second dataset does not work:
+# raises ValueError: X has 3 features per sample; expecting 4
+print sgd_model2.score(three_feature_input, three_feature_output)
+For me, trying to do a partial fit with data having a different number of features should raise an exception.
+Even if I am wrong regarding this, I believe something should be done to make the behaviour more consistent: if you can fit with a different number of features, your should be able to predict using a different number of features. Or, both of these are wrong and should raise an exception.

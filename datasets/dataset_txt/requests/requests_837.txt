@@ -1,0 +1,36 @@
+juokaz commented on Dec 8, 2016 •
+edited
+When requesting a https:// url, request method falls into an infinite recursion.
+The issue is this method in python/ssl.py.
+    @options.setter
+    def options(self, value):
+        super(SSLContext, SSLContext).options.__set__(self, value)
+The commit which introduced this line to python is this https://hg.python.org/cpython/rev/c32e9f9b00f7.
+The actual error looks like this:
+  File "/usr/local/lib/python3.6/site-packages/requests/sessions.py", line 501, in get
+    return self.request('GET', url, **kwargs)
+  File "/usr/local/lib/python3.6/site-packages/requests/sessions.py", line 488, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/local/lib/python3.6/site-packages/requests/sessions.py", line 609, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python3.6/site-packages/requests/adapters.py", line 423, in send
+    timeout=timeout
+  File "/usr/local/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 594, in urlopen
+    chunked=chunked)
+  File "/usr/local/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 350, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 835, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.6/site-packages/requests/packages/urllib3/connection.py", line 311, in connect
+    cert_reqs=resolve_cert_reqs(self.cert_reqs),
+  File "/usr/local/lib/python3.6/site-packages/requests/packages/urllib3/util/ssl_.py", line 264, in create_urllib3_context
+    context.options |= options
+  File "/usr/local/lib/python3.6/ssl.py", line 459, in options
+    super(SSLContext, SSLContext).options.__set__(self, value)
+  File "/usr/local/lib/python3.6/ssl.py", line 459, in options
+    super(SSLContext, SSLContext).options.__set__(self, value)
+  File "/usr/local/lib/python3.6/ssl.py", line 459, in options
+    super(SSLContext, SSLContext).options.__set__(self, value)
+  [Previous line repeated 316 more times]
+RecursionError: maximum recursion depth exceeded while calling a Python object
+Tested using python 3.6.0b4.

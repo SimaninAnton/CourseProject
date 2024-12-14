@@ -1,0 +1,35 @@
+cbourjau commented on Oct 8, 2013
+This is a follow up to http://stackoverflow.com/questions/19068308/access-django-models-with-scrapy-defining-path-to-django-project/19083978#19083978
+The problem occurred on scrapy 0.18.0 and 0.18.1. Even though the title might suggest that the problem is scrapyd related I am fairly sure it is associated with DjangoItem
+The problem occurred when running several spiders scrapping to a DjangoItem in parallel on scrapyd.
+The DjangoItem is defined as usual:
+items.py
+class MyItem(DjangoItem):
+django_model = MyModel
+The item is processed like this in the pipeline:
+pipeline.py
+ def process_item(self, item, spider):
+     try:
+        with transaction.commit_on_success():
+            item.save()
+     except IntegrityError, e:
+         spider.log(str(e), log.DEBUG)
+         return None
+     return item
+When several spiders are run in parallel at some point all spiders stop working with a "max_locks_per_transaction" error in the spiders log.
+I fixed the problem for myself by not using DjangoItem at the moment and instead am creating the model object directly prior to the save() in the pipeline:
+error is not occurring when not using DjangoItem and instead having:
+pipeline.py
+class Django_pipeline(object):
+def process_item(self, item, spider):
+try:
+with transaction.commit_on_success():
+obj = MyModel(**item)
+obj.save()
+except IntegrityError, e:
+spider.log(str(e), log.DEBUG)
+raise DropItem('Dropped item after IntegrityError')
+return item
+I believe the error is caused by DjangoItem creating to many model objects in parallel exceeding the postgresql max_locks_per_transaction limit but I have to little knowledge of Postgresql (and Django for that sake) to be certain.
+I would like to submit an actual example but am a little uncertain about which pages to crawl sufficiently long and in parallel to reproduce the issue while not having any legal issues with publishing the code...
+I hope this helps anyhow!

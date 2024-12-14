@@ -1,0 +1,60 @@
+whitehathackersree commented on 21 Sep 2018
+I have two serializers for an EmployeeViewSet as EmployeePOSTSerializer and EmployeeUPDATESerializer:
+class EmployeePOSTSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(max_length=None, min_length=None, allow_blank=False)
+    class Meta:
+        model = Employee
+        fields = ('email', 'access')
+
+    def validate_access(self, value):
+        requester = self.context['user'].works.get(business__id=self.context['business_id'])
+        if requester.access>value:
+            raise serializers.ValidationError("Not allowed.")
+        return value
+
+class EmployeeUPDATESerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Employee
+        fields = ['access']
+
+    def validate_access(self, value):
+        requester = self.context['user'].works.get(business__id=self.context['business_id'])
+        if requester.access>value:
+            raise serializers.ValidationError("Not allowed.")
+        return value
+views.py
+class EmployeeViewSet(viewsets.ModelViewSet):
+    serializer_class = EmployeeSerializer
+    action_serializers = {
+        'create': EmployeePOSTSerializer,
+        'update': EmployeeUPDATESerializer,
+        'partial_update': EmployeeUPDATESerializer
+    }
+
+    def get_serializer_context(self):
+        return {'user': self.request.user, 'business_id': self.kwargs['business_id']}
+
+    def get_queryset(self, **kwargs):
+        #some queryset
+
+    def create(self, request, *args, **kwargs):
+        #create
+
+    def get_serializer_class(self):
+        assert self.serializer_class is not None, (
+            "'%s' should either include a `serializer_class` attribute, "
+            "or override the `get_serializer_class()` method."
+            % self.__class__.__name__
+        )
+        if hasattr(self, 'action_serializers'):
+            if self.action in self.action_serializers:
+                return self.action_serializers[self.action]
+        return self.serializer_class
+As you can see both EmployeePOSTSerializer and EmployeeUPDATESerializer have a validate_access method(same methods). I am passing the context to the serializers through the get_serializer_context method in the EmployeeViewSet.
+But it appears that the context data is passed only for the EmployeeUPDATESerializer and not EmployeePOSTSerializer. During update I was able to get the context data and validate_access with the data. But during post i.e, creation of an object the EmployeePOSTSerilaizer throws keyerror 'user'.
+Steps to reproduce
+Try to validate or read context data in a Serializer, passed through the get_serializer_context method of the ModelViewSet. Do actions as retreive, post, update.
+Expected behavior
+The serializer should be able to read the context data without throwing any keyerror for all types of actions.
+Actual behavior
+The context data is not passed during post action. Other actions work well.

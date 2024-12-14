@@ -1,0 +1,48 @@
+ericmclachlan commented on 1 Oct 2019 •
+edited
+How to Reproduce the Behavior
+For my application, I'm loading 8 language models simultaneously. The models are loaded as follows:
+from concurrent.futures import ThreadPoolExecutor
+
+def init_nlp_provider(language):
+    logging.debug(f'Language with "{language.language_code}": Loading...')
+    language.init_nlp_provider()
+    logging.debug(f'Language with "{language.language_code}": Done')
+    
+def initialize_languages() -> List[ALanguage]:
+    languages = [
+        DutchLanguage(),
+        EnglishLanguage(),
+        FrenchLanguage(),
+        GermanLanguage(),
+        GreekLanguage(),
+        ItalianLanguage(),
+        PortugueseLanguage(),
+        SpanishLanguage(),
+    ]
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        for language in languages:
+            executor.submit(init_nlp_provider, language)
+    
+    return languages
+Each of the language wrappers above quickly delegates to spacy.load(...) as illustrated by the implementation for the EnglishLanguage class below:
+    def init_nlp_provider(self):
+        self._nlp_provider = spacy.load('en_core_web_sm')
+This all works well when max_workers=1; however it takes almost 10 minutes to load all language models.
+The real problem starts when I set max_workers to 2 or more. This action results in the following exception:
+Undefined operator: >>
+  Called by (<thinc.neural._classes.function_layer.FunctionLayer object at 0x000001BAFD3CCD08>, <thinc.neural._classes.feed_forward.FeedForward object at 0x000001BAFD3833C8>)
+  Available: 
+
+  Traceback:
+  ├─ <lambda> [782] in C:\Python37\lib\site-packages\spacy\language.py
+  ├─── from_disk [611] in C:\Python37\lib\site-packages\spacy\util.py
+  └───── build_tagger_model [511] in C:\Python37\lib\site-packages\spacy\_ml.py
+         >>> pretrained_vectors=pretrained_vectors,
+Your Environment
+spaCy version: 2.1.3
+Platform: Windows-10-10.0.18990-SP0
+Python version: 3.7.4
+Specific Questions
+Should it be possible to load all language models concurrently as I've tried to do above?
+And, if not, what is the sub-10-minute solution to loading all language models?

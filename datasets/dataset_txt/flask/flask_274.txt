@@ -1,0 +1,69 @@
+StoneMoe commented on 18 Oct 2018
+Expected Behavior
+Handle any exception in route function
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from flask import Flask, Blueprint
+
+bp = Blueprint('section', __name__)
+
+
+@bp.route("/")
+def hello():
+    return "you are visiting 'http://hostname/section/'"
+
+@bp.route("/exc")
+def exc_test():
+    raise Exception("bug")
+
+app = Flask(__name__)
+
+
+@app.errorhandler(Exception)
+def any_unknown_error(e):
+    upload_exception_to_log_server(e)
+    if app.debug:
+        raise e  # Show Werkzeug debugger while debugging
+
+    # return api json with message
+    # rather than break front-end page ajax
+    return '{"code": 5, "message": "%s"}' % e
+
+
+app.register_blueprint(bp, url_prefix='/%s' % bp.name)
+Actual Behavior
+This break strict_slash redirect, which raised a werkzeug.routing.RequestRedirect: 301 Moved Permanently: None to do the redirection
+To reproduce this, visit localhost:5000/section (without trailing slash)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 2309, in __call__
+    return self.wsgi_app(environ, start_response)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 2295, in wsgi_app
+    response = self.handle_exception(e)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1741, in handle_exception
+    reraise(exc_type, exc_value, tb)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\_compat.py", line 35, in reraise
+    raise value
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 2292, in wsgi_app
+    response = self.full_dispatch_request()
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1815, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1713, in handle_user_exception
+    return self.handle_http_exception(e)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1644, in handle_http_exception
+    return handler(e)
+File "F:\Code\flask_bug_test\start.py", line 21, in any_unknown_error
+    raise e  # Show exception while debugging
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1813, in full_dispatch_request
+    rv = self.dispatch_request()
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1791, in dispatch_request
+    self.raise_routing_exception(req)
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\app.py", line 1774, in raise_routing_exception
+    raise request.routing_exception
+File "f:\code\flask_bug_test\venv\lib\site-packages\flask\ctx.py", line 336, in match_request
+self.url_adapter.match(return_rule=True)
+File "f:\code\flask_bug_test\venv\lib\site-packages\werkzeug\routing.py", line 1542, in match
+safe='/:|+') + '/', query_args))
+    werkzeug.routing.RequestRedirect: 301 Moved Permanently: None
+Environment
+Python version: 3.6.6
+Flask version: 1.0.2
+Werkzeug version: 0.14.1

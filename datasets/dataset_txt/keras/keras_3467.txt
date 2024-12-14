@@ -1,0 +1,62 @@
+pavitrakumar78 commented on 14 Jan 2017 •
+edited
+Hi,
+I am trying to build a Dual-DQN architecture as per this paper. I am using the latest keras with Theano backend.
+I keep getting a dimension mismatch when I try to predict with the network. I am not sure where I went wrong.
+Reproducible Code:
+import numpy as np
+from keras.models import Sequential, Model
+from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute, Input, merge
+from keras.optimizers import Adam
+
+from keras import backend as K
+K.set_image_dim_ordering('th')
+
+
+nb_actions = 3 
+
+model = Sequential()
+input_layer = Input(shape = (4, 84, 84))
+conv1 = Convolution2D(32, 8, 8, subsample=(4, 4), activation='relu')(input_layer)
+conv2 = Convolution2D(64, 4, 4, subsample=(2, 2), activation='relu')(conv1)
+conv3 = Convolution2D(64, 3, 3, subsample=(1, 1), activation = 'relu')(conv2)
+flatten = Flatten()(conv3)
+
+fc1 = Dense(512)(flatten)
+advantage = Dense(nb_actions)(fc1)
+
+fc2 = Dense(512)(flatten)
+value = Dense(1)(fc2)
+
+#value + advantage - mean(advantage, reduction_indices=1, keep_dims=True)
+#x[1] + x[0] - K.mean(x[0])
+
+policy = merge([advantage, value], mode = lambda x: x[1] + x[0] - K.mean(x[0], keepdims=True), output_shape = (nb_actions,))
+model = Model(input=[input_layer], output=[policy])
+model.compile(optimizer='sgd', loss='mse')
+
+batch = np.random.rand(1, 4, 84, 84)
+
+model.predict(batch, batch_size = 1)
+Error:
+ValueError: dimension mismatch in args to gemm (1,512)x(512,1)->(1,3)
+Apply node that caused the error: GpuGemm{inplace}(GpuElemwise{Add}[(0, 0)].0, TensorConstant{1.0}, GpuElemwise{Add}[(0, 0)].0, dense_53_W, TensorConstant{1.0})
+Toposort index: 118
+Inputs types: [CudaNdarrayType(float32, matrix), TensorType(float32, scalar), CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix), TensorType(float32, scalar)]
+Inputs shapes: [(1, 3), (), (1, 512), (512, 1), ()]
+Inputs strides: [(0, 1), (), (0, 1), (1, 0), ()]
+Inputs values: [CudaNdarray([[-0.07228518 -0.17196161  0.01056603]]), array(1.0, dtype=float32), 'not shown', 'not shown', array(1.0, dtype=float32)]
+Outputs clients: [[GpuElemwise{Add}[(0, 2)](GpuDimShuffle{x,0}.0, GpuElemwise{Composite{(-((i0 / i1) / i2))}}[(0, 0)].0, GpuGemm{inplace}.0)]]
+If I change both the advantage and the value layer's Dense param as nb_actions, it works, but that is not the right way to construct the network.
+Keras version:
+1.2.0
+Theano version:
+0.9.0dev4
+Numpy version:
+1.11.3
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

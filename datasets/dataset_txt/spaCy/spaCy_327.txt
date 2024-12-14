@@ -1,0 +1,75 @@
+AnnaAnia commented on 17 Sep 2019 •
+edited
+Hi,
+I'm adding a custom pipe to my custom NER model. It is inteded to enhance my entity of CMPNY with your "ORG" entity. As I'm adding the pipe in after ner, I was expecting to see better recall and possibly worse precision due more false positives. Instead all scores plumment. I can't work out where it is I'm going wrong or if something not working as expected. I would apprecite any help.
+Custom pipe:
+def company(doc):
+    
+    Model_Spacy = spacy.load("en_core_web_sm-2.1.0")
+    
+    Doc=Model_Spacy(doc.text)
+    
+    ent_doc=[]
+    for ent in doc.ents:
+        ent_doc.append(ent)
+    
+    add_ents=[]
+    for ent in Doc.ents:
+        if ent.label_ == 'ORG' and ent.end<= 300:
+            add_ent = Span(Doc,ent.start,ent.end,label=CMPNY )
+            add_ents.append(add_ent)
+        else:
+            continue
+    
+    ent_doc_temp=[]
+    for ent in ent_doc:
+        if ent.start<300:
+            ent_doc_temp.append(ent)
+    
+    new_ents=[]
+    for ent in add_ents:
+        count=[]
+        for e in ent_doc_temp:
+            ent_range=set(range(ent.start,ent.end))
+            e_range=set(range(e.start,e.end))
+            if ent_range.issubset(e_range) or e_range.issubset(ent_range):
+                count.append(1)
+                break
+            if not ent_range.isdisjoint(e_range):
+                count.append(1)
+                break
+            else:
+                continue
+        if len(count)==0:
+            new_ents.append(ent)
+    
+    for ent in new_ents:
+        ent_doc.append(ent)  
+    
+    doc.ents=ent_doc
+    
+    return (doc)
+Add pipe to model:
+Model_S215_V2.add_pipe(company, after='ner')
+Evaluate new model:
+def evaluate(ner_model, examples):
+       """ Evaluate spacy model with p,r & f overall scores and scores per entity """
+       scorer = Scorer()
+       for input_, annot in examples:
+           doc_gold_text = ner_model.make_doc(str(input_))
+           gold = GoldParse(doc_gold_text, entities=annot.get("entities"))
+           pred_value = ner_model(str(input_))
+           scorer.score(pred_value, gold)
+       return scorer.scores
+
+results = evaluate(Model_S215_V2,BLIND_S216_V2)  
+Results before adding the pipe in:
+'CMPNY': {'p': 40.625,
+'r': 71.65354330708661, |  
+'f': 51.85185185185185}, | 
+``` 
+
+Resulft after:
+'CMPNY': {'p': 2.0091556459816884,
+'r': 16.08961303462322,
+'f': 3.572236038887632}

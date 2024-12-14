@@ -1,0 +1,25 @@
+nixon-nyx commented on 28 May 2019
+I have a seq2seq model built with keras. It seems to be fine when training, however, it can't save the states properly when doing model.save(filepath)
+Here's how my model looks like:
+enc_in = Input(shape=(None, self.total_characters), name='enc_in')
+enc_lstm_1 = Bidirectional(CuDNNLSTM(units=128, return_sequences=True, return_state=True, name='enc_lstm_1'))
+enc_lstm_2 = Bidirectional(CuDNNLSTM(units=64, return_sequences=False, return_state=True, name='enc_lstm_2'))
+enc_out_1, forward_eh_1, forward_ec_1, back_eh_1, back_ec_1 = enc_lstm_1(enc_in)
+enc_out_2, forward_eh_2, forward_ec_2, back_eh_2, back_ec_2 = enc_lstm_2(enc_out_1)
+
+enc_states = [Concatenate()([forward_eh_1, back_eh_1]), Concatenate()([forward_ec_1, back_ec_1]),
+              Concatenate()([forward_eh_2, back_eh_2]), Concatenate()([forward_ec_2, back_ec_2])]
+
+dec_in = Input(shape=(None, self.total_characters), name='dec_in')
+
+dec_lstm_1 = CuDNNLSTM(units=256, return_sequences=True, return_state=True, name='dec_lstm_1')
+dec_lstm_2 = CuDNNLSTM(units=128, return_sequences=True, return_state=True, name='dec_lstm_2')
+
+dec_out_1, _, _ = dec_lstm_1(dec_in, initial_state=enc_states[:2])
+dec_out_2, _, _ = dec_lstm_2(dec_out_1, initial_state=enc_states[2:4])
+dec_dense = Dense(units=self.total_characters, activation='softmax', name='dec_dense')
+dec_out_f = dec_dense(dec_out_2)
+
+model = Model([enc_in, dec_in], dec_out_f)
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+model.summary()

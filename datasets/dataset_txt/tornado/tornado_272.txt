@@ -1,0 +1,37 @@
+Contributor
+pitrou commented on 6 Nov 2017
+If some executing gen.coroutine has its future cancelled by some other code, a spurious error is logged when the generator finishes:
+tornado.application - ERROR - Exception in callback functools.partial(<function wrap.<locals>.null_wrapper at 0x7fd9840a70d0>, <Future finished result=None>)
+Traceback (most recent call last):
+  File "/home/antoine/tornado/tornado/gen.py", line 1065, in run
+    yielded = self.gen.send(value)
+StopIteration
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/antoine/tornado/tornado/ioloop.py", line 687, in _run_callback
+    ret = callback()
+  File "/home/antoine/tornado/tornado/stack_context.py", line 277, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/home/antoine/tornado/tornado/gen.py", line 1155, in inner
+    self.run()
+  File "/home/antoine/tornado/tornado/gen.py", line 1084, in run
+    self.result_future.set_result(_value_from_stopiteration(e))
+asyncio.base_futures.InvalidStateError: invalid state
+The following patch seems to be a quick fix, but perhaps there is a better resolution.
+diff --git a/tornado/gen.py b/tornado/gen.py
+index 533ccb7..18ef4de 100644
+--- a/tornado/gen.py
++++ b/tornado/gen.py
+@@ -1080,7 +1080,8 @@ class Runner(object):
+                         raise LeakedCallbackError(
+                             "finished without waiting for callbacks %r" %
+                             self.pending_callbacks)
+-                    self.result_future.set_result(_value_from_stopiteration(e))
++                    if not self.result_future.cancelled():
++                        self.result_future.set_result(_value_from_stopiteration(e))
+                     self.result_future = None
+                     self._deactivate_stack_context()
+                     return
+@bdarnell

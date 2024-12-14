@@ -1,0 +1,45 @@
+rakanalh commented on 2 Jan 2015
+Hello,
+I've been using DRF for a while now and the way i have been using it in my project is by creating an "api" django app which basically constructed the URLs, serializers and views for all my other apps.
+Recently i've been wondering about how we could create reusable apps that also ship with their own APIs all wrapped in the same app folder, while also having all api-enabled apps to be under the same URL prefix "/api/xyz". Thinking about how this would be achieved, i figured the way to go for this is to actually create a "url autoloader".
+The app is structured as follows:
+-> My App
+---> models.py
+---> admin.py
+---> ...etc
+---> rest_api
+-------> urls.py
+-------> serializers.py
+-------> views.py
+The following piece of code would then look through the INSTALLED_APPS and register "appX.rest_api.urls" into the urlpatterns.
+# Register a generic url autoload according to scheme appx.rest_api.urls
+urlpatterns += autoload_api_urls()
+# Register custom modules which have urls.py within. Those do not follow the above pattern
+urlpatterns += autoload_submodule('api.v1.comments')
+urlpatterns += autoload_submodule('api.v1.pushy')
+This is the autoloader:
+from django.conf import settings
+from django.conf.urls import patterns, url, include
+from django.utils.importlib import import_module
+from django.utils.module_loading import module_has_submodule
+def autoload_api_urls():
+    urlpatterns = patterns('')
+    for app in settings.INSTALLED_APPS:
+        module = import_module(app)
+        if not module_has_submodule(module, 'rest_api'):
+            continue
+
+        urlpatterns += autoload_submodule('{}.{}'.format(app, 'rest_api'))
+
+    return urlpatterns
+
+
+def autoload_submodule(module_name):
+    submodule = import_module(module_name)
+    if not module_has_submodule(submodule, 'urls'):
+        return []
+
+    return patterns('', url('', include('{}.{}'.format(module_name, 'urls'))))
+This is currently working fine on the project i am working on. I would like to publish this as a package but i think it's too small to be one. Should be something as a framework utility so thought you can have an opinion about it.
+Basically the motivation behind this is to have one django app to contain everything including it's own APIs and serializers. Rather than having a single app that gathers api views and serializers from all apps. So it's more of a utility for an architectural decision for the app creator more than being just an autoloader implementation.
+Your feedback would be much appreciated on this.

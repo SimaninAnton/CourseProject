@@ -1,0 +1,22 @@
+Member
+bmw commented on 30 Mar 2018 •
+edited by ohemorange
+#5800 caused failures in the test-everything branch.
+The purpose of that PR was to update our "oldest" tests whose purpose is to test components with the oldest versions of their dependencies they support. That PR caused the certbot "oldest" tests to use acme==0.22.0 and the certbot-nginx oldest tests to use acme==0.22.0 and certbot=0.22.0. Currently these tests are still using the versions from master (which was needed before we released 0.22.0).
+While these components should still work with the older versions, the reason for these failures is the test-everything branch is trying to run the latest boulder integration test (found in tests/boulder-integration.sh) after installing certbot-nginx as defined for the certbot-nginx oldest tests (see .travis.yml on the test-everything branch). This integration test script currently tests both Certbot and Certbot with the Nginx plugin, but changes have landed in that script that test functionality in Certbot that was added after 0.22.0.
+There are a few ways to fix this, but what I would like to see happen is to split the oldest integration tests for certbot and certbot-nginx. I'd like the normal integration tests to still test both packages. To do this, I'd do something like:
+Rename tests/boulder-integration.sh to something like _boulder-integration.sh or certbot-boulder-integration.sh.
+At the bottom of the script, remove the call to certbot-nginx/tests/boulder-integration.sh and update the coverage percentage so it passes without testing nginx.
+Add a new boulder-integration.sh script with logic like the following bashy pseudo-code:
+if [ "$TOXENV" != "py27-nginx-oldest" ];
+   tests/_boulder-integration.sh
+fi
+if [ "$TOXENV" != "py27-certbot-oldest" ];
+    certbot-nginx/tests/boulder-integration.sh
+fi
+Add two new jobs to test-everything's .travis.yml for the environments:
+TOXENV=py27-certbot-oldest BOULDER_INTEGRATION=v1
+TOXENV=py27-certbot-oldest BOULDER_INTEGRATION=v2
+Rename v1 and v2 to acmev1 and acmev2 to make it more clear for people looking at tests
+The changes to test-everything's .travis.yml need to be made in a separate PR against the test-everything branch once all of the other changes have landed.
+After all of this, #5800 should be able to be unreverted and should be done before the next release and this issue is closed.

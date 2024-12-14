@@ -1,0 +1,28 @@
+atleta commented on Feb 24, 2017
+Hi,
+Akkording to the RFC (2616, https://www.ietf.org/rfc/rfc2616.txt) the location header MAY contain non-ascii characters if encoded with iso-8859-1. However, this case is handled incorrectly by requests.
+httplib will correctly parse the header as iso-8859-1 (see parse_headers in http/client.py, around line 214 for python 3.5), but the resulting string, when following the redirect, is quoted without specifying an encoding by requests (see requote_uri in requests/utils.py):
+def requote_uri(uri):
+    """Re-quote the given URI.
+
+    This function passes the given URI through an unquote/quote cycle to
+    ensure that it is fully and consistently quoted.
+
+    :rtype: str
+    """
+    safe_with_percent = "!#$%&'()*+,/:;=?@[]~"
+    safe_without_percent = "!#$&'()*+,/:;=?@[]~"
+    try:
+        # Unquote only the unreserved characters
+        # Then quote only illegal characters (do not quote reserved,
+        # unreserved, or '%')
+        print('Yo')
+        return quote(unquote_unreserved(uri), safe=safe_with_percent)
+    except InvalidURL:
+        # We couldn't unquote the given URI, so let's try quoting it, but
+        # there may be unquoted '%'s in the URI. We need to make sure they're
+        # properly quoted so they do not cause issues elsewhere.
+        return quote(uri, safe=safe_without_percent)
+The calls to quote should have encoding='iso-8859-1' as a parameter otherwise quote will assume utf-8 and that will result in a wrong url. I.e.:
+return quote(unquote_unreserved(uri), encoding='iso-8859-1', safe=safe_with_percent)
+I have looked into fixing it, which I'm willing to do, but not 100% sure where to add the test. My best guess is doing it in test_lowlevel.py using the test_server (httpbin can't be used for this as it quotes the non-ascii characters).

@@ -1,0 +1,36 @@
+CaffeineFueled commented on 18 Feb 2016
+Django==1.9.2
+djangorestframework==3.3.2
+This is essentially a repost of #3814. There is already some research and discussion attached to that issue that I will not rehash, but the author closed out the item once a workaround was found.
+Is that workaround the long term solution? Is the answer to never touch the Django Request before DRF has a chance to do its thing? This can be difficult to control in projects with third party middleware.
+The issue seems to be that, when POSTing data, Django is exhausting the underlying request stream if the WSGIRequest is accessed prior to initialize_request in the DRF View dispatcher. PUTs seem to be unaffected.
+A totally contrived example that demonstrates the issue. First example, presuming no middleware Request meddling...
+class TestView(APIView):
+
+    def post(self, request, *args, **kwargs):
+        # request.data, .FILES, and .POST are populated
+        # request._request.FILES and .POST are empty
+        return Response()
+
+    def put(self, request, *args, **kwargs):
+        # request.data, .FILES, and .POST are populated
+        # request._request.FILES and .POST are empty
+        return Response()
+Second example, forcibly evaluating the Django request before dispatching.
+class TestView(APIView):
+
+    def dispatch(self, request, *args, **kwargs):
+        p = request.POST  # Force evaluation of the Django request
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        # request.data, .FILES, and .POST are empty
+        # request._request.FILES and .POST are populated
+        return Response()
+
+    def put(self, request, *args, **kwargs):
+        # request.data, .FILES, and .POST are populated
+        # request._request.FILES and .POST are empty
+        return Response()
+Cheers!
+9

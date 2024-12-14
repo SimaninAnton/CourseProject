@@ -1,0 +1,37 @@
+phdowling commented on 20 May 2016 •
+edited
+I'm trying to build a character-level model with separate inputs, but I would like to share their Embedding layer and the first LSTM layer. However, my model currently won't compile since my inputs have different lengths (think story vs. question in bAbI).
+shared_char_embed = Embedding(
+    input_dim=self.num_inputs,
+    output_dim=self.char_embedding_size,
+    mask_zero=True,
+    name="char-embed"
+)
+shared_word_embed_lstm = LSTM(
+    self.input_embed_size,
+    return_sequences=False,
+    name="shared-lstm"
+)
+story_embed_input = Input((self.story_maxlen,), dtype='int32', name='story_embed')
+story_embed = shared_char_embed(story_embed_input)
+story_embed = Dropout(0.3)(story_embed)
+story_embed = shared_word_embed_lstm(story_embed)
+story_embed = Dropout(0.3)(story_embed)
+# LSTM for story encoding
+story_embed = LSTM(self.input_embed_size, return_sequences=False, name="story_lstm")(story_embed)
+story_embed = Dropout(0.3)(story_embed)
+# low-level embed is shared
+question_embed_input = Input((self.question_maxlen,), dtype='int32', name='question_embed')
+question_embed = shared_char_embed(question_embed_input)
+question_embed = Dropout(0.3)(question_embed)
+question_embed = shared_word_embed_lstm(question_embed)
+question_embed = Dropout(0.3)(question_embed)
+# another LSTM for question-specific encoding
+question_embed = LSTM(self.input_embed_size, return_sequences=False, name="question_lstm")(question_embed)
+question_embed = Dropout(0.3)(question_embed)
+Problem no. 1 is of course that I'm not specifying input_length in the embedding layer EDIT: nevermind, this part was more likely because of the return_sequences flag
+Exception: Input 0 is incompatible with layer story_lstm: expected ndim=3, found ndim=2
+However, I don't see a good way to specify it since my inputs have different lengths.I tried using TimeDistributed, which enables me to share weights for the char embeddings if I use a Dense layer instead, but that doesn't have a mask_zero option. EDIT: I got this to work just using a plain embedding layer. The LSTM problem still persists though.
+This also does not help with the LSTM varying length problem. Is it somehow be possible to symbolically share the LSTM weights in different nodes but have them have different input_lengths?
+I guess a workaround would be to simply force them to the same length, but this is not ideal since my second input tends to be quite a bit shorter than the first input.
+Any ideas?

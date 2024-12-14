@@ -1,0 +1,48 @@
+92kz1h commented on 2 Mar 2018
+Short Story
+tl;dr, I would like to be able to either set the .cache directory Pipenv wants to use or disable using it.
+Long Story
+I'm trying to deploy an application using Pipenv, my install step is simple and works fine:
+pipenv install --three --deploy \
+&& pipenv run python setup.py install
+I'm running this command using Chef as part of my CI system which runs as root but the actual command is executed with the permissions of a user with less authorisation. This causes an issue when the install tries to access ~/.cache/pipenv and resolves to /root/.cache/pipenv rather than /home/foo/.cache/pipienv.
+Pip has the same behaviour up to this point, but supports the --cache-dir=/var/cache/pip flag which lets me work around my permissions issue. That's easy to set using export PIP_CONFIG_FILE=/etc/pip.conf and writing something simple like:
+[global]
+cache-dir=/var/cache/pip
+Without overriding the cache directory for pip I have the same issue, however - after overriding the cache directory for pip I only have the issue with pipenv.
+Here is the dump to the console on install error:
+Traceback (most recent call last):
+File "/usr/local/bin/pipenv", line 11, in <module>
+sys.exit(cli())
+File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 722, in __call__
+return self.main(*args, **kwargs)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 697, in main
+rv = self.invoke(ctx)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 1063, in invoke
+Command.invoke(self, ctx)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 895, in invoke
+return ctx.invoke(self.callback, **ctx.params)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 535, in invoke
+return callback(*args, **kwargs)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/decorators.py", line 17, in new_func
+return f(get_current_context(), *args, **kwargs)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/cli.py", line 52, in cli
+if core.need_update_check():
+File "/usr/local/lib/python2.7/dist-packages/pipenv/utils.py", line 996, in need_update_check
+mkdir_p(PIPENV_CACHE_DIR)
+File "/usr/local/lib/python2.7/dist-packages/pipenv/utils.py", line 653, in mkdir_p
+os.mkdir(newdir)
+OSError: [Errno 13] Permission denied: '/root/.cache/pipenv'
+I can confirm that if I change the permissions I execute my install script with this is the only file created in that directory and the rest of the system continues to work as expected:
+$ ll -a ~/.cache/pipenv/
+total 8
+drwxr-xr-x 2 root root 4096 Mar  2 15:59 ./
+drwxr-xr-x 4 root root 4096 Mar  2 15:59 ../
+-rw-r--r-- 1 root root    0 Mar  2 15:59 .pipenv_update_check
+Describe your environment
+OS Type: Ubuntu 16.04
+Python version: Python 2.7.12 (although the application is run with Python 3.5.2)
+Pipenv version: pipenv, version 10.1.2
+Expected result
+When I set the pip cache directory using PIP_CACHE_DIR, Pipenv would respect it as well.
+Thanks to all the contributors on this project. This is a really, really neat way of controlling Python applications!

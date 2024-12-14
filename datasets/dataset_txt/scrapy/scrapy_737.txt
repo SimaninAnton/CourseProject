@@ -1,0 +1,300 @@
+Contributor
+IAlwaysBeCoding commented on Dec 15, 2016 •
+edited
+I don't know if this is the right place to post something like this, but this is driving me nuts.
+I'm testing out different cloud providers where I am planning on running a Scrapy cluster(with proxies) I'm building, and something has been pulling my hair trying to understand what is going on. I feel like I'm going in circles.
+The main points that I think are contributing to this weird bug is that: I have 4-7 depth request level, and that the tiny boxes am running Scrapy are maxing out at 99% CPU.
+Here is the code:
+# -*- coding: utf-8 -*-
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
+
+
+import datetime
+import json
+import urllib
+import re
+import time
+
+from scrapy import Spider
+from scrapy.http import Request
+from scrapy.selector import Selector
+from scrapy.loader import ItemLoader
+from scrapy.loader.processors import TakeFirst, MapCompose, Join, SelectJmes
+
+from novoaurum.items import ProductInfo
+
+
+class ProductInfo(Item):
+
+    title = Field()
+    brand = Field()
+    product_url = Field()
+    page_url = Field()
+    manufacturer = Field()
+    manufacturer_number = Field()
+    upc = Field()
+    sku = Field()
+    list_price = Field()
+    retail_price = Field()
+    is_out_of_stock = Field()
+    category = Field()
+    items_count = Field()
+    break_down_price = Field()
+    deal_title = Field()
+    is_clearance = Field()
+    scraped_date = Field()
+
+class NoneEmpty(object):
+    def __call__(self,values):
+        if values is None:
+            return ''
+        elif isinstance(values, (list, tuple)):
+            if len(values) == 1 and values[0] == '':
+                return ''
+        return TakeFirst()(values)
+
+def strip_spaces(raw_str):
+    if isinstance(raw_str, (unicode, str)):
+        clean = raw_str.strip()
+        return clean.replace('\n', ' ').replace('\t','')
+    else:
+        return raw_str
+
+
+def default_missing_keys(item, default_value, except_keys=[]):
+
+    missing_keys = list(set(item.fields.keys()) - set(item.keys()))
+    for missing_key in missing_keys:
+        if except_keys:
+            if missing_key not in except_keys:
+                item[missing_key] = default_value
+        else:
+            item[missing_key] = default_value
+
+class Toysrus(Spider):
+    name = "toysrus"
+    allowed_domains = ["toysrus.com"]
+    start_urls = (
+        'http://www.toysrus.com/products/tru-index.jsp',
+    )
+
+
+    def __init__(self, *args, **kwargs):
+        self.mode = kwargs.get('mode', 'normal')
+        self.jmesquery = kwargs.get('jmesquery',
+        "deals[?contains(title, 'buy') || contains(title, 'free')].[url, title]")
+        self.upcs = []
+
+    def parse(self, response):
+
+        if self.mode == 'normal':
+            brand_urls = response.xpath('//td[@class="idxColumn" and @style="padding-top: 0px"][1]//a/@href').extract()
+
+            for brand_url in brand_urls:
+                yield Request(response.urljoin(brand_url),
+                            callback=self.parse_browse_page)
+
+        elif self.mode == 'todaysdeals':
+            yield Request('http://www.toysrus.com/shop/index.jsp?categoryId=3395098#viewalldeals',
+                          callback=self.parse_todaysdeals)
+
+        elif self.mode == 'clearance':
+            yield Request('http://www.toysrus.com/family/index.jsp?categoryId=13131514',
+                          meta={
+                              'is_clearance' : True
+                          },
+                          callback=self.parse_browse_page)
+
+    def browse_page(self, response):
+
+        items_count = response.meta.get('items_count', '')
+        brand = response.meta.get('brand', '')
+        break_down_price = response.meta.get('break_down_price', '')
+        deal_title = response.meta.get('deal_title', '')
+        is_clearance = response.meta.get('is_clearance', False)
+
+        for p in response.xpath('//div[@class="prodloop-thumbnail"]/a/@href').extract():
+
+            yield Request(response.urljoin(p),
+                            meta={
+                                'page_url' : response.url,
+                                'break_down_price' : break_down_price,
+                                'items_count' : items_count,
+                                'deal_title': deal_title,
+                                'is_clearance': is_clearance,
+                                'brand' : brand
+                            },
+                            callback=self.parse_product_page)
+
+    def parse_todaysdeals(self, response):
+
+        found_json_url = response.meta.get('found_json_url', False)
+
+        def extract_todays_deals(html):
+            find_json_url = re.search(r"(?<=jsonURL = ')(.*?)(?=')", html)
+            if find_json_url:
+                return find_json_url.group(0)
+
+        if not found_json_url:
+            url = extract_todays_deals(response.body)
+
+            if url:
+                yield Request(url,
+                              meta={'found_json_url' : True},
+                              callback=self.parse_todaysdeals)
+        else:
+            if self.jmesquery:
+                get_deals = SelectJmes(self.jmesquery)
+                for deal in get_deals(json.loads(response.body)):
+                    yield Request(
+                        response.urljoin(deal[0].replace('&amp;','&')),
+                        meta={
+                            'deal_title' : deal[1]
+                        },
+                        callback=self.parse_browse_page)
+
+    def parse_browse_page_less_500(self, response):
+        category_id = response.xpath('//input[@name="categoryId"]/@value').extract_first()
+        brand = response.xpath('//h1[@id="TRUFamilyBrandTitle"]/text()').extract_first()
+        deal_title = response.meta.get('deal_title', '')
+        total_count = response.meta.get('total_count', '')
+        is_clearance = response.meta.get('is_clearance', False)
+
+        query = {
+                's' : 'A-UnitRank',
+                'searchSort' : 'TRUE',
+                'categoryId' : category_id,
+                'ppg' : 500
+        }
+
+        url = '{}?{}'.format('http://www.toysrus.com/family/index.jsp',urllib.urlencode(query))
+        yield Request(url,
+                        meta={
+                            'page_url' : response.url,
+                            'break_down_price' : '',
+                            'items_count' : total_count,
+                            'deal_title': deal_title,
+                            'is_clearance': is_clearance,
+                            'brand' : brand,
+                        },
+                        callback=self.browse_page)
+
+    def parse_browse_page_break_down_prices(self, response):
+        break_down_prices = response.xpath('//div[@id="module_Price"]//*[@class="filter_multiselectAttrib"]').extract()
+        brand = response.meta.get('brand', '')
+        deal_title = response.meta.get('deal_title', '')
+        is_clearance = response.meta.get('is_clearance', False)
+
+        for b in break_down_prices:
+            div_sel = Selector(text=b)
+            url = div_sel.xpath('//a[not(contains(text(),"more..."))]/@href').extract_first()
+            url = '{}ppg=500'.format(response.urljoin(url[2:]))
+            b_text = div_sel.xpath('//a[not(contains(text(),"more..."))]/text()').extract_first()
+            items_count = div_sel.xpath('//span[@class="count"]/text()').extract_first()
+            if items_count:
+                items_count = items_count.replace(')','').replace('(','')
+
+            yield Request(url,
+                            meta={
+                                'break_down_price' : b_text,
+                                'items_count' : items_count,
+                                'deal_title': deal_title,
+                                'is_clearance': is_clearance,
+                                'brand' : brand
+                            },
+                            callback=self.browse_page)
+
+    def parse_browse_page_featured_categories(self, response):
+        featured_categories = response.xpath('//div[@id="featured-category"]//a[@class="featured-category-link"]/@href').extract()
+
+        for featured_category in featured_categories:
+            yield Request(response.urljoin(featured_category),
+                          callback=self.parse_browse_page)
+
+    def parse_browse_page(self, response):
+
+        deal_title = response.meta.get('deal_title', '')
+        is_clearance = response.meta.get('is_clearance', False)
+        has_featured_categories = response.xpath('//div[@id="featured-category"]')
+        brand = response.xpath('//h1[@id="TRUFamilyBrandTitle"]/text()').extract_first()
+        total_results = response.xpath('//div[@class="showingText"]/text()').extract_first()
+
+        if total_results:
+            get_total_results = re.search(r'\s*(?<=of)\s*(.*?)\s*(?=results)', total_results.strip())
+
+            if get_total_results:
+
+                total_count = int(get_total_results.group(0))
+
+                if total_count >= 499:
+                    response.meta['brand'] = brand
+                    for item_or_request in self.parse_browse_page_break_down_prices(response):
+                        yield item_or_request
+                else:
+                    response.meta['total_count'] = total_count
+                    for item_or_request in self.parse_browse_page_less_500(response):
+                        yield item_or_request
+
+        elif has_featured_categories:
+            for item_or_request in self.parse_browse_page_featured_categories(response):
+                yield item_or_request
+
+    def parse_product_page(self, response):
+
+        page_url = response.meta.get('page_url', None)
+        break_down_price = response.meta.get('break_down_price', '')
+        items_count = response.meta.get('items_count', None)
+        is_clearance = response.meta.get('is_clearance', False)
+        brand = response.meta.get('brand', '')
+        deal_title = response.meta.get('deal_title', '')
+        loader = ItemLoader(ProductInfo(), Selector(response))
+        loader.default_input_processor = MapCompose(strip_spaces)
+        loader.default_output_processor = NoneEmpty()
+        loader.add_xpath('title', '//div[@id="lTitle"]/h1/text()')
+        loader.add_value('product_url', response.url)
+        loader.add_value('page_url', page_url)
+        loader.add_value('brand', brand)
+        loader.add_xpath('manufacturer','//div[@id="lTitle"]//li[@class="first"]/h3/label/text()')
+        loader.add_xpath('manufacturer_number', '//div[@id="AddnInfo"]//p[//label[contains(text(),"Manufacturer")]]/text()')
+        loader.add_xpath('upc', '//div[@id="AddnInfo"]//p[@class="upc" or @class="upc hidden"]//span/text()')
+        loader.add_xpath('sku', '//div[@id="AddnInfo"]//p[@class="skuText" or @class="skuText hidden"]//span/text()')
+        loader.add_xpath('retail_price', '//div[@id="price"]//li[@class="retail fl "]//span/text()', Join(''))
+        loader.add_xpath('retail_price', '//div[@id="price"]//li[@class="retail fl withLP"]//span/text()', Join(''))
+        loader.add_xpath('list_price', '//div[@id="price"]//li[@class="list fl"]/span/text()')
+        loader.add_xpath('list_price', '//div[@id="price"]//li[@class="list"]/span/text()')
+        loader.add_xpath('is_out_of_stock', '//div[@id="productOOS"]')
+        loader.add_xpath('category','//div[@id="breadCrumbs"]/a[@class="breadcrumb"]/text()', TakeN(1))
+        loader.add_value('items_count', items_count)
+        loader.add_value('break_down_price', break_down_price)
+        loader.add_value('deal_title', deal_title)
+        loader.add_value('is_clearance', is_clearance)
+        loader.add_value(
+            'scraped_date',
+            datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+        )
+
+        item = loader.load_item()
+
+        if 'is_out_of_stock' in item:
+            item['is_out_of_stock'] = 'out of stock'
+        else:
+            item['is_out_of_stock'] = 'in stock'
+
+        default_missing_keys(item=item, default_value='')
+
+        if 'upc' in item:
+            if item['upc'] not in self.upcs:
+                self.upcs.append(item['upc'])
+                yield item
+I tested running this same spider code 2 different cloud providers:
+Scaleway dedicated 2.99 euro a month a 2gb and 4 core but ARM based, and DigitalOcean 512mb x86_64 droplet.
+I'm getting vastly different results of items scraped compared if I ran the same scraper on ScrapingHub.
+Scaleway gives me around 300-900ish items from doing 24k requests, DigitalOcean gives me between 9k-15k while Scrapinghub gives me 15kish.
+Here is the catch, all of them have 10-20+/- of the same requests count running the same scraper on mode="normal" so basically just a simple scrapy crawl toysrus.
+The bug that I have noticed is that once it gets up to 99% CPU , there will be NO MORE ITEMS scraped even if its at 20% of the current scrape, even though all of the requests will actually get scraped and yielded as well.
+The main difference between this spider and the others I have built on the past is the request depth. I can't figure out why Scrapy is literally stopping processing items after 10-20% of the scrape. It LITERALLY STOPS. I have logged into the telnet console and watched with my own eyes every 15 seconds the counts on stats._stats and it scrapes all of the items at the beginning and then it stops around 10-20% of the current scrape. As soon as the cpu is pegged at 99%, Scrapy will start having this weird effect of basically dropping everything on the pipeline. This is a huge bug, that should be documented. Also, my scraper produces absolutely 0 exceptions, and I've gone through the nohup.out log to see anything weird and all I can see is that the items stop appearing after 10-20% of the scrape. It just shows me a bunch of product urls that it went too, but no items are shown.
+The count difference makes me wonder that Scrapy might have a huge bug when pushed to its limits.
+I get noticeable less items scraped on Scaleway 2.99 dedicated server than DigitalOcean if I run it with this command:scrapy crawl toysrus -o items.csv -t csv, as in like 30-60% less items.
+Something is going on, and I think something inside Scrapy is dropping items, because I'm using absolutely no custom middlewares, pipelines just the defaults.

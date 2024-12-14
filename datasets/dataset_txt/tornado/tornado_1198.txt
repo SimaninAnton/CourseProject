@@ -1,0 +1,26 @@
+riskable commented on 10 Feb 2011
+In Tornado 1.1 and 1.1.1, secure WebSocket URLs (wss://) do not work correctly due to the fact that websocket.py has a hard-coded "Sec-WebSocket-Location" response header (ws://). In the development branch this is fixed (it has an entirely different websocket.py) but the dev branch has too many other issues at the moment (with SSL anyway) for it to be usable. Fortunately, there's a quick fix:
+--- websocket.py-orig   2011-02-10 12:19:45.000000000 -0500
++++ websocket.py        2011-02-10 12:20:05.405287003 -0500
+@@ -93,16 +93,19 @@
+        self._write_response(challenge_response)
+
+    def _write_response(self, challenge):
++       scheme = "wss" if self.request.headers['Origin'].startswith('https') \
++           else "ws"
+        self.stream.write(
+            "HTTP/1.1 101 Web Socket Protocol Handshake\r\n"
+            "Upgrade: WebSocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Server: TornadoServer/%(version)s\r\n"
+            "Sec-WebSocket-Origin: %(origin)s\r\n"
+-            "Sec-WebSocket-Location: ws://%(host)s%(path)s\r\n"
++            "Sec-WebSocket-Location: %(scheme)s://%(host)s%(path)s\r\n"
+            "\r\n%(challenge)s" % (dict(
+                    version=tornado.version,
+                    origin=self.request.headers["Origin"],
++                   scheme=scheme,
+                    host=self.request.host,
+                    path=self.request.path,
+                    challenge=challenge)))
+By using the 'Origin' request header we can (reliably) determine the protocol being used to connect (Note: self.request.protocol is always "http" for some reason) and adjust the "Sec-WebSocket-Location" header accordingly. This should always work since all browsers that support WebSockets also support (and use) the 'Origin' header.

@@ -1,0 +1,9 @@
+OleLaursen commented on 16 Dec 2010
+Hi!
+I was trying to use the timeouts to time out clients that don't close the connection after a while. This means I get quite a bunch of timeouts (they're on the order of 5-10 minutes each), which in turn completely killed the server under load.
+A big part of this load appears to be because the timeouts are handled inefficiently. Long story below, in short I have a simple patch that helped me a lot. I don't think it's perfect, but it's at least much better.
+Here are the problems:
+When adding a timeout, bisect.insort is used on an array. If a timeout ends up in the middle of the array, Python has to move each element from that position and onwards one place to the right. With n insertions, this is O(n2) I believe - of course new timeouts are probably more likely to end up at the end, so it's not as bad as it could be but still.
+When removing a timeout, remove is called on the array. Same story, every element after it now has to be shifted one place to the left.
+When actually using a timeout, .pop(0) is used to remove it from the array. This removes the first element, so each and every element after it has to be shifted one place to the left.
+While the last item can be solved by sorting the array backwards (why this wasn't done in the first place is beyond me :), we can use a heap instead, the implementation is bundled with Python and it turns inserting and popping into O(log n) operations. Removing an arbitrary element is harder, in my patch I search the array with .index() (which is hopefully using a native implementation) and then just clear the callback. When popping elements, we can then skip those with empty callbacks.

@@ -1,0 +1,157 @@
+rylanchiu commented on 23 Aug 2016
+I am trying to implement the layer normalization in a standard fully connected neural network with keras, by writing a new layer. I copy nearly all the code of Dense layer and add a function of layer normalization and corresponding parameters. My code is as below:
+class DenseLN(Layer):
+   def __init__(self, output_dim, init='glorot_uniform', activation='linear', weights=None,
+                 W_regularizer=None, b_regularizer=None, activity_regularizer=None,
+                 W_constraint=None, b_constraint=None, bias=True, input_dim=None, gamma_init=1., **kwargs):
+        self.init = initializations.get(init)
+        self.activation = activations.get(activation)
+        self.output_dim = output_dim
+        self.input_dim = input_dim
+
+        def gamma_init_func(shape, c=gamma_init):
+            if c == 1.:
+                return initializations.get('one')(shape)
+            return K.variable(np.ones(shape) * c, **kwargs)
+        self.gamma_init = gamma_init_func
+        self.beta_init = initializations.get('zero')
+        self.epsilon = 1e-5       
+
+        self.W_regularizer = regularizers.get(W_regularizer)
+        self.b_regularizer = regularizers.get(b_regularizer)
+        self.activity_regularizer = regularizers.get(activity_regularizer)
+
+        self.W_constraint = constraints.get(W_constraint)
+        self.b_constraint = constraints.get(b_constraint)
+
+        self.bias = bias
+        self.initial_weights = weights
+        self.input_spec = [InputSpec(ndim=2)]
+
+        if self.input_dim:
+            kwargs['input_shape'] = (self.input_dim,)
+        super(DenseLN, self).__init__(**kwargs)
+
+    def ln(self, x):
+        m = K.mean(x, axis=-1, keepdims=True)
+        std = K.sqrt(K.var(x, axis=-1, keepdims=True) + self.epsilon)
+        x_normed = (x - m) / (std + self.epsilon)
+        x_normed = self.gamma * x_normed + self.beta
+        return x_normed
+
+    def build(self, input_shape):
+        assert len(input_shape) == 2
+        input_dim = input_shape[1]
+        self.input_spec = [InputSpec(dtype=K.floatx(),
+                                     shape=(None, input_dim))]
+
+        self.gamma = self.gamma_init(input_dim)
+        self.beta = self.beta_init(input_dim)
+
+        self.W = self.init((input_dim, self.output_dim),
+                           name='{}_W'.format(self.name))
+        if self.bias:
+            self.b = K.zeros((self.output_dim,),
+                             name='{}_b'.format(self.name))
+            self.trainable_weights = [self.W, self.gamma, self.beta, self.b]
+        else:
+            self.trainable_weights = [self.W, self.gamma, self.beta]
+        self.regularizers = []
+        if self.W_regularizer:
+            self.W_regularizer.set_param(self.W)
+            self.regularizers.append(self.W_regularizer)
+
+        if self.bias and self.b_regularizer:
+            self.b_regularizer.set_param(self.b)
+            self.regularizers.append(self.b_regularizer)
+
+        if self.activity_regularizer:
+            self.activity_regularizer.set_layer(self)
+            self.regularizers.append(self.activity_regularizer)
+
+        self.constraints = {}
+        if self.W_constraint:
+            self.constraints[self.W] = self.W_constraint
+        if self.bias and self.b_constraint:
+            self.constraints[self.b] = self.b_constraint
+
+        if self.initial_weights is not None:
+            self.set_weights(self.initial_weights)
+            del self.initial_weights
+
+    def call(self, x, mask=None):
+        output = K.dot(x, self.W)
+        #output = self.ln(output)
+        if self.bias:
+            output += self.b
+        return self.activation(output)
+
+    def get_output_shape_for(self, input_shape):
+        assert input_shape and len(input_shape) == 2
+        return (input_shape[0], self.output_dim)
+But during fit, it got an TypeError: unorderable types: NoneType() < NoneType(). According to the log message, seems that the reason is the trainable_weights:
+    TypeError                                 Traceback (most recent call last)
+<ipython-input-429-3ab01558ab51> in <module>()
+      3           batch_size=3000,
+      4           callbacks=[history],
+----> 5           nb_epoch=300)
+
+/home/lcc/anaconda3/envs/sensequant/lib/python3.5/site-packages/keras/models.py in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, **kwargs)
+    427                               shuffle=shuffle,
+    428                               class_weight=class_weight,
+--> 429                               sample_weight=sample_weight)
+    430
+    431     def evaluate(self, x, y, batch_size=32, verbose=1,
+
+/home/lcc/anaconda3/envs/sensequant/lib/python3.5/site-packages/keras/engine/training.py in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight)
+   1079         else:
+   1080             ins = x + y + sample_weights
+-> 1081         self._make_train_function()
+   1082         f = self.train_function
+   1083
+
+/home/lcc/anaconda3/envs/sensequant/lib/python3.5/site-packages/keras/engine/training.py in _make_train_function(self)
+    695
+    696             # get trainable weights
+--> 697             trainable_weights = collect_trainable_weights(self)
+    698             training_updates = self.optimizer.get_updates(trainable_weights, self.constraints, self.total_loss)
+    699             updates = self.updates + training_updates
+
+/home/lcc/anaconda3/envs/sensequant/lib/python3.5/site-packages/keras/engine/training.py in collect_trainable_weights(layer)
+    248     elif layer.__class__.__name__ == 'Model':
+    249         for sublayer in layer.layers:
+--> 250             weights += collect_trainable_weights(sublayer)
+    251     elif layer.__class__.__name__ == 'Graph':
+    252         for sublayer in layer._graph_nodes.values():
+
+/home/lcc/anaconda3/envs/sensequant/lib/python3.5/site-packages/keras/engine/training.py in collect_trainable_weights(layer)
+    256     # dedupe weights
+    257     weights = list(set(weights))
+--> 258     weights.sort(key=lambda x: x.name)
+    259     return weights
+    260
+
+TypeError: unorderable types: NoneType() < NoneType()
+Here is the code building the model and fit it:
+model = Sequential()
+model.add(DenseLN(12, input_dim=12))
+model.add(Activation('relu'))
+#model.add(Dropout(0.5))
+model.add(DenseLN(108))
+model.add(Activation('relu'))
+model.add(DenseLN(108))
+model.add(Activation('relu'))
+model.add(Dense(1))
+model.add(Activation('relu'))
+adadelta = Adadelta(lr=0.1, rho=0.95, epsilon=1e-08)
+adagrad = Adagrad(lr=0.003, epsilon=1e-08)
+
+model.compile(loss='poisson',
+             optimizer=adagrad,
+             metrics=['accuracy'])
+
+model.fit(X_train_scale,
+          Y_train,
+          batch_size=3000,
+          nb_epoch=300)
+Could you please tell me what have I done wrong and how should I fix it? Thank you in advance!

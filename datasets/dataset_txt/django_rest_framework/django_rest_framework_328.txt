@@ -1,0 +1,74 @@
+whitehathackersree commented on 16 Sep 2018
+I have two models as:
+class Book(AppModel):
+    title = models.CharField(max_length=255)
+
+class Link(AppModel):
+    link = models.CharField(max_length=255)
+
+class Page(AppModel):
+    book= models.ForeignKey("Book",related_name="pages",on_delete=models.CASCADE)
+    link = models.ForeignKey("Link", related_name="pages", on_delete=models.CASCADE)
+    page_no = models.IntegerField()
+    text = models.TextField()
+and serializers
+class LinkSerializer(serializers.ModelSerializer):
+    class Meta:
+       model = Link
+       fields = ['link']
+
+class PageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Comment
+        fields = ('link','text','page_no')
+
+    def validate_text(self, value):
+        #some validation is done here.
+
+    def validate_link(self, value):
+        #some validation is done here.
+
+class BookSerializer(serializers.ModelSerializer):
+    pages = PageSerializer(many=True)
+    class Meta:
+        model = Book
+        fields = ('title','pages')
+
+    @transaction.atomic
+    def create(self, validated_data):
+        pages_data= validated_data.pop('pages')
+        book = self.Meta.model.objects.create(**validated_data)
+        for page_data in pages_data:
+            Page.objects.create(book=book, **page_data)
+        return book
+There is a validate_text method in PageSerializer. The create method will never call the PageSerializer and the page_data is never validated.
+So I tried another approach as:
+@transaction.atomic
+def create(self, validated_data):
+    pages_data = validated_data.pop('pages')
+    book= self.Meta.model.objects.create(**validated_data)
+    for page_data in pages_data:
+        page = Page(book=book)
+        page_serializer = PageSerializer(page, data = page_data)
+        if page_serializer.is_valid():
+            page_serializer.save()
+        else:
+            raise serializers.ValidationError(page_serializer.errors)
+    return book
+Posted data:
+{
+"title": "Book Title",
+"pages": [{
+"link":1,"page_no":52, "text":"sometext"}]
+}
+Expected behavior
+The BookSerializer must create a Book instance and as well its pages only after each page is validated through the PageSerializer.
+Actual behavior
+But the above approach throws error:
+{
+"link": [
+    "Incorrect type. Expected pk value, received Link."
+    ]
+}
+I also found why this error is caused: Though I am posting data with pk value 1 of a Link, the data when passed to the PageSerializer from the BookSerializer appears as such: {"link": "/go_to_link/", "page_no":52, "text": "sometext"}
+Why is an Instance of Link passed to the PageSerializer whereas what I sent is pk of Link? NEED hELP HERE.

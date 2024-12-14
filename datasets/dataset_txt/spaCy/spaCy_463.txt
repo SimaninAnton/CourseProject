@@ -1,0 +1,48 @@
+prashantbudania commented on 1 Aug 2019
+How to reproduce the behaviour
+I am using the filter_spans util function to take care of the overlapping spans. But the filter_spans prefers longer spans and sometimes entity information gets destroyed as a result of this. For ex:
+import spacy 
+from spacy import displacy
+from spacy.util import filter_spans
+
+nlp = spacy.load('en_2.1.0_md')
+doc = nlp("This market improvement drove a $4 billion decline in Asset Backed Finance.")
+
+print(doc.ents)
+# ($4 billion, Asset Backed Finance)
+
+spans = list(doc.ents) + list(doc.noun_chunks)
+spans = filter_spans(spans)
+
+with doc.retokenize() as retokenizer:
+    for span in spans:
+        retokenizer.merge(span)
+
+print(doc.ents)
+# (Asset Backed Finance,)
+Manually editing the filter_spans function and setting reverse=False doesn't work for this example.
+Using merge_ents and merge_noun_chunks pipelines doesn't work either.
+For relation extraction, it's important to merge noun chunks but also not destroy entity information. Can we add support for merging noun chunks only when there are no entity tokens present in the noun chunk (while still keeping the default behavior i.e. merge all noun chunks)? For ex:
+nlp = spacy.load("en_2.1.0_md")
+
+# first merge all entities
+merge_ents = nlp.create_pipe("merge_entities")
+nlp.add_pipe(merge_ents)
+
+doc = nlp("This market improvement drove a $4 billion decline in Asset Backed Finance.")
+
+def merge_noun_chunks(doc, exclude_entities=False):
+    with doc.retokenize() as re:
+        for span in doc.noun_chunks:
+            if not (exclude_entities and any([t for t in span if t.ent_type_])):
+                re.merge(span, attrs={"POS": span.root.pos_, "TAG": span.root.tag_})
+    return doc
+
+# now merge all noun phrases which do not overlap with entities:
+doc = merge_noun_chunks(doc, exclude_entities=True)
+
+print(doc.ents)
+Your Environment
+Operating System: MacOS
+Python Version Used: 3.6
+spaCy Version Used: 2.1

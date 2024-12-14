@@ -1,0 +1,54 @@
+Contributor
+map222 commented on May 11, 2018
+Description
+When applying an NMF model using .transform(), the model calls the function non_negative_factorization() (which is also called during .fit()). non_negative_factorization has a parameter, max_iter, that determines how many iterations to go through during fitting. When using transform, this means that the model actually fits the W matrix, which can be time consuming during applies. You can avoid this problem, and directly apply without fitting, by setting max_iter= 1 (see example below). I would like to add the max_iter parameter to the transform() call so that you can directly apply without refitting.
+Steps/Code to Reproduce
+from sklearn.decomposition import NMF, LatentDirichletAllocation
+from sklearn.datasets import fetch_20newsgroups
+
+n_samples = 2000
+n_features = 1000
+n_topics = 10
+n_top_words = 20
+
+print("Loading dataset...")
+dataset = fetch_20newsgroups(shuffle=True, random_state=1,
+                             remove=('headers', 'footers', 'quotes'))
+data_samples = dataset.data[:n_samples]
+
+# Use tf-idf features for NMF.
+print("Extracting tf-idf features for NMF...")
+tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2,
+                                   max_features=n_features,
+                                   stop_words='english')
+tfidf = tfidf_vectorizer.fit_transform(data_samples)
+
+# Fit the NMF model
+print("Fitting the NMF model with tf-idf features, "
+      "n_samples=%d and n_features=%d..."
+      % (n_samples, n_features))
+nmf = NMF(n_components=n_topics, random_state=1, solver = 'mu',
+          alpha=.1, l1_ratio=.5, verbose = 1).fit(tfidf)
+
+print('\nApplying trained NMF without setting n_iter=1')
+nmf.transform(tfidf);
+
+print('\nApplying trained NMF after setting n_iter=1')
+nmf.set_params(max_iter =1)
+nmf.transform(tfidf);
+Results of above
+Extracting tf-idf features for NMF...
+Fitting the NMF model with tf-idf features, n_samples=2000 and n_features=1000...
+Epoch 10 reached after 0.015 seconds, error: 42.184755
+Epoch 20 reached after 0.033 seconds, error: 42.184140
+
+Applying trained NMF without setting n_iter=1
+Epoch 10 reached after 0.003 seconds, error: 42.163076
+Epoch 20 reached after 0.006 seconds, error: 42.163858
+
+Applying trained NMF after setting n_iter=1
+Epoch 01 reached after 0.001 seconds.
+Versions
+Scikit-Learn 0.19.0
+Proposed solution
+Add max_iter parameter to the transform function, and pass it to non_negative_factorization.

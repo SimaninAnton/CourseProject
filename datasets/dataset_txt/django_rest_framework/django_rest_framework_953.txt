@@ -1,0 +1,39 @@
+Contributor
+sbchisholm commented on 3 Dec 2016
+As of #4379 the .choices property for derivatives of RelatedField doesn't work for fields where the to_representation method returns a dict (perhaps the fact to_representation returning a dict is the real problem here, however this was working prior to #4379).
+Here's a test which works without the changes from #4379 however on master raises a TypeError: unhashable type: 'dict'.
+diff --git a/tests/test_model_serializer.py b/tests/test_model_serializer.py
+index b839f56..a9be114 100644
+--- a/tests/test_model_serializer.py
++++ b/tests/test_model_serializer.py
+@@ -9,6 +9,7 @@ from __future__ import unicode_literals
+ 
+ import decimal
+ from collections import OrderedDict
++import pytest
+ 
+ from django.core.exceptions import ImproperlyConfigured
+ from django.core.validators import (
+@@ -642,6 +643,22 @@ class TestRelationalFieldDisplayValue(TestCase):
+         expected = OrderedDict([(1, 'My Red Color'), (2, 'My Yellow Color'), (3, 'My Green Color')])
+         self.assertEqual(serializer.fields['color'].choices, expected)
+ 
++    def test_to_representation_returns_dict_type(self):
++        class TestField(serializers.RelatedField):
++            def to_representation(self, value):
++                return {'id': value.id}
++
++        class TestSerializer(serializers.ModelSerializer):
++            color = TestField(queryset=DisplayValueTargetModel.objects.all())
++
++            class Meta:
++                model = DisplayValueModel
++                fields = '__all__'
++
++        serializer = TestSerializer()
++        expected = OrderedDict([("{'id': 1}", 'Red Color'), ("{'id': 2}", 'Yellow Color'), ("{'id': 3}", 'Green Color')])
++        self.assertEqual(serializer.fields['color'].choices, expected)
++
+ 
+ class TestIntegration(TestCase):
+     def setUp(self):

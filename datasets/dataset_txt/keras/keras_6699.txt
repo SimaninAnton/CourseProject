@@ -1,0 +1,27 @@
+harpone commented on 1 Sep 2015
+Is this being worked on? It would be pretty important for predictions, I think it's the main reason why e.g. the lstm_text_generation example (and other cases) produce such horrible "predictions"...
+Also the current way of producing just one timestep pred at a time is pretty slow.
+Anyway, here's how I'd probably do it:
+    timesteps = T.iscalar('Timesteps')
+
+    # Initial data:
+    x0 = T.fmatrix('Initial x')
+
+    # pass through initial data:
+    [h_gen, _], _ = theano.scan(fn=self.recurrence,
+                               sequences=x0,
+                               outputs_info=[self.h0, None])
+
+    # assign initial h and x:
+    h_init = h_gen[-2, :, :]  # shape (times, 1, nh) 
+    x_init = T.reshape(x0[-1], (1, ni))
+
+    # generate prediction:
+    [h_gen, x_gen], _ = theano.scan(fn=self.recurrence_sim,
+                                    outputs_info=[h_init, T.unbroadcast(x_init, 0)],
+                                    n_steps=timesteps)
+
+    # theano functions
+    self.simulate = theano.function(inputs=[x0, timesteps],
+                                    outputs=[h_gen, x_gen],
+                                    updates=[(self.h0, h_gen[-1, :, :])])

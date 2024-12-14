@@ -1,0 +1,175 @@
+bbogart commented on 11 Jan 2017
+I have a very large number of dimensions in my training data (5.4e06), which is very sparse. I wanted to try using the data raw as I could not find any embedding examples for continuous non-NLP tasks. For background on the problem see this question.
+I've modified the code for my toy case (#4870), to use a subset of my real data as follows. The 10 sample npy training data is available here (~50MB).
+#!/usr/bin/python
+# This program leans to model sequences using an RNN (LSTM network)
+
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import LSTM
+
+# Input sequence
+wholeSequence = np.load("ML_data/clusterProbability.npy")
+
+# Preprocess Data:
+data = wholeSequence[:-1] # all but last
+target = wholeSequence[1:] # all but first
+
+# Data Params
+numDims = data.shape[1]
+numSamples = data.shape[0]
+
+# Reshape training data for Keras LSTM model
+# The training data needs to be (batchIndex, timeStepIndex, dimentionIndex)
+data = data.reshape((1, numSamples, numDims))
+target = target.reshape((1, numSamples, numDims))
+
+# Build Model
+model = Sequential()  
+model.add(LSTM(numDims, input_shape=(numSamples, numDims), unroll=True, return_sequences=True)) 
+model.add(Dense(numDims))
+model.add(Dense(numDims))
+model.compile(loss='mean_absolute_error', optimizer='adam', metrics=['mean_squared_error'])
+model.fit(data, target, nb_epoch=10, batch_size=1, verbose=2)
+
+# Save model to disk.
+model.save("sequenceModel.h5")
+Unfortunately I'm unable to fit the model because of the following error:
+Using TensorFlow backend.
+I tensorflow/stream_executor/dso_loader.cc:111] successfully opened CUDA library libcublas.so locally
+I tensorflow/stream_executor/dso_loader.cc:111] successfully opened CUDA library libcudnn.so locally
+I tensorflow/stream_executor/dso_loader.cc:111] successfully opened CUDA library libcufft.so locally
+I tensorflow/stream_executor/dso_loader.cc:111] successfully opened CUDA library libcuda.so.1 locally
+I tensorflow/stream_executor/dso_loader.cc:111] successfully opened CUDA library libcurand.so locally
+I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:925] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:951] Found device 0 with properties: 
+name: GeForce GTX 780
+major: 3 minor: 5 memoryClockRate (GHz) 0.941
+pciBusID 0000:01:00.0
+Total memory: 2.95GiB
+Free memory: 2.85GiB
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:972] DMA: 0 
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:982] 0:   Y 
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:1041] Creating TensorFlow device (/gpu:0) -> (device: 0, name: GeForce GTX 780, pci bus id: 0000:01:00.0)
+W tensorflow/core/framework/op_kernel.cc:958] Invalid argument: Cannot parse tensor from proto: dtype: DT_FLOAT
+tensor_shape {
+  dim {
+    size: 5400000
+  }
+  dim {
+    size: 5400000
+  }
+}
+float_val: 0
+
+E tensorflow/core/common_runtime/executor.cc:334] Executor failed to create kernel. Invalid argument: Cannot parse tensor from proto: dtype: DT_FLOAT
+tensor_shape {
+  dim {
+    size: 5400000
+  }
+  dim {
+    size: 5400000
+  }
+}
+float_val: 0
+
+  [[Node: Const_92 = Const[dtype=DT_FLOAT, value=<Invalid TensorProto: dtype: DT_FLOAT tensor_shape { dim { size: 5400000 } dim { size: 5400000 } } float_val: 0>, _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+W tensorflow/core/framework/op_kernel.cc:958] Invalid argument: Cannot parse tensor from proto: dtype: DT_FLOAT
+tensor_shape {
+  dim {
+    size: 5400000
+  }
+  dim {
+    size: 5400000
+  }
+}
+float_val: 0
+
+E tensorflow/core/common_runtime/executor.cc:334] Executor failed to create kernel. Invalid argument: Cannot parse tensor from proto: dtype: DT_FLOAT
+tensor_shape {
+  dim {
+    size: 5400000
+  }
+  dim {
+    size: 5400000
+  }
+}
+float_val: 0
+
+  [[Node: Const_65 = Const[dtype=DT_FLOAT, value=<Invalid TensorProto: dtype: DT_FLOAT tensor_shape { dim { size: 5400000 } dim { size: 5400000 } } float_val: 0>, _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+W tensorflow/core/framework/op_kernel.cc:958] Invalid argument: Shape [5400000,5400000] is too large (more than 1099511627776 entries)
+E tensorflow/core/framework/op_segment.cc:53] Create kernel failed: Invalid argument: Shape [5400000,5400000] is too large (more than 1099511627776 entries)
+E tensorflow/core/common_runtime/executor.cc:334] Executor failed to create kernel. Invalid argument: Shape [5400000,5400000] is too large (more than 1099511627776 entries)
+  [[Node: lstm_1_W_i = Variable[container="", dtype=DT_FLOAT, shape=[5400000,5400000], shared_name="", _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+Traceback (most recent call last):
+  File "./learnClusterProbability.py", line 41, in <module>
+    model.fit(data, target, nb_epoch=10, batch_size=1, verbose=2)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/models.py", line 671, in fit
+    initial_epoch=initial_epoch)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/engine/training.py", line 1144, in fit
+    initial_epoch=initial_epoch)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/engine/training.py", line 844, in _fit_loop
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 1601, in __call__
+    session = get_session()
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 119, in get_session
+    _initialize_variables()
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 273, in _initialize_variables
+    sess.run(tf.initialize_variables(uninitialized_variables))
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 717, in run
+    run_metadata_ptr)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 915, in _run
+    feed_dict_string, options, run_metadata)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 965, in _do_run
+    target_list, options, run_metadata)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 985, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors.InvalidArgumentError: Shape [5400000,5400000] is too large (more than 1099511627776 entries)
+  [[Node: lstm_1_W_i = Variable[container="", dtype=DT_FLOAT, shape=[5400000,5400000], shared_name="", _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+
+Caused by op u'lstm_1_W_i', defined at:
+  File "./learnClusterProbability.py", line 36, in <module>
+    model.add(LSTM(numDims, input_shape=(numSamples, numDims), unroll=True, return_sequences=True))
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/models.py", line 298, in add
+    layer.create_input_layer(batch_input_shape, input_dtype)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/engine/topology.py", line 398, in create_input_layer
+    self(x)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/engine/topology.py", line 543, in __call__
+    self.build(input_shapes[0])
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/layers/recurrent.py", line 713, in build
+    regularizer=self.W_regularizer)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/engine/topology.py", line 415, in add_weight
+    weight = initializer(shape, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/initializations.py", line 60, in glorot_uniform
+    return uniform(shape, s, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/initializations.py", line 33, in uniform
+    return K.random_uniform_variable(shape, -scale, scale, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 620, in random_uniform_variable
+    return variable(value, dtype=dtype, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 248, in variable
+    v = tf.Variable(value, dtype=_convert_string_dtype(dtype), name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/variables.py", line 215, in __init__
+    dtype=dtype)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/variables.py", line 300, in _init_from_args
+    name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/state_ops.py", line 146, in variable_op
+    container=container, shared_name=shared_name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/gen_state_ops.py", line 490, in _variable
+    name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/op_def_library.py", line 749, in apply_op
+    op_def=op_def)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 2380, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 1298, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): Shape [5400000,5400000] is too large (more than 1099511627776 entries)
+  [[Node: lstm_1_W_i = Variable[container="", dtype=DT_FLOAT, shape=[5400000,5400000], shared_name="", _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+Is this a keras, tensorflow or hardware limitation?
+Some ideas for solutions:
+Reduce the dimensionality of my data; If 1099511627776 max entries is a hard limit, I could rerun my K-means with 38800 clusters (rather than 200,000) but that is a significant reduction of my 30e06 raw samples.
+Create a dense representation of my sparse data (i.e. embedding); I have no idea how to do this as this is not an NLP task. I don't know what the "vocab size" would be for this data. The data is the probability that each cluster will be in a 2D position for each time-step. Position is represented by a histogram (19 bins for X and 8 bins for Y) for each cluster. There is no meaning in the order of clusters, but there is meaning in the order of the values corresponding to each cluster (e.g. for shape (cluster, position): [[0,1,2], [3, 0, 0]] and [[3, 0, 0], [0,1,2]] are equivalent, but [[1,2,0], [3, 0, 0]] and [[0,1,2], [3, 0, 0]] differ.)
+Reshape my data? As the probabilities are spatial, they could be represented as (19,8) shaped tensors. Would it be any help to organize my data into a 200000 * (19,8) tensors?
+Any advice appreciated.

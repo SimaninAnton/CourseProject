@@ -1,0 +1,109 @@
+ugurunver commented on 4 Apr 2016
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Python 2 virtual environment:
+# requirements
+Django==1.9.5
+argparse==1.2.1
+djangorestframework==3.3.3  # i checked metadata.py on master already, it is same
+wsgiref==0.1.2
+# myapp.models
+from django.db import models
+
+
+class SampleSubModel(models.Model):
+    name = models.CharField(max_length=100)
+
+
+class SampleModel(models.Model):
+    subs = models.ManyToManyField(SampleSubModel)
+# myapp.serializers
+from rest_framework import serializers
+from myapp import models
+
+class SampleModelSerializer(serializers.ModelSerializer):
+     class Meta:
+        model = models.SampleModel
+# myapp.views
+from rest_framework import viewsets
+from myapp import models
+from myapp import serializers
+
+class SampleViewset(viewsets.ModelViewSet):
+    serializer_class = serializers.SampleModelSerializer
+    queryset = models.SampleModel.objects.all()
+
+    def post(self):
+        # i don't know why this is necessary, but tests need this
+        pass
+# myapp.tests
+
+from django.test import TestCase
+
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
+
+from rest_framework import serializers
+from rest_framework.metadata import SimpleMetadata
+
+from myapp.views import SampleViewset
+
+
+request = Request(APIRequestFactory().options('/?format=api'))
+
+class TestSampleOptions(TestCase):
+
+    def test_options(self):
+
+        view = SampleViewset.as_view({'options': 'options'})
+        response = view(request)
+        subs_type = response.data["actions"]["POST"]["subs"]["type"]
+        self.assertEqual(subs_type, "multiple choice")  # fails because returns "field"
+
+    def test_options_with_custom_metadata(self):
+        class CustomMetadata(SimpleMetadata):
+            custom_label_lookup = SimpleMetadata.label_lookup
+            custom_label_lookup[serializers.ManyRelatedField] = 'multiple choice'
+            label_lookup = custom_label_lookup
+
+        class NewSampleViewset(SampleViewset):
+            metadata_class = CustomMetadata
+
+        view = NewSampleViewset.as_view({'options': 'options'})
+        response = view(request)
+        subs_type = response.data["actions"]["POST"]["subs"]["type"]
+        self.assertEqual(subs_type, "multiple choice")
+Expected behavior
+ManyToMany fields must be represented as multiple selectbox fields on frontend, so field type should be "multiple choice", and i guess you missed this because you are rendering data on backend in BrowsableApiRenderer and you didn't notice what we need on frontend.
+(venv)ugur@pcpc:~/workspace/test/drftest$ ./manage.py  test myapp.tests.TestSampleOptions.test_options_with_custom_metadata
+Creating test database for alias 'default'...
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+OK
+Destroying test database for alias 'default'...
+Actual behavior
+It returns "field" for manytomany fields because SimpleMetadata.label_lookup doesn't handle serializers.ManyRelatedField
+(venv)ugur@pcpc:~/workspace/test/drftest$ ./manage.py  test myapp.tests.TestSampleOptions.test_options
+Creating test database for alias 'default'...
+F
+======================================================================
+FAIL: test_options (myapp.tests.TestSampleOptions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ugur/workspace/test/drftest/myapp/tests.py", line 22, in test_options
+    self.assertEqual(subs_type, "multiple choice")  # fails because returns "field"
+AssertionError: u'field' != 'multiple choice'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+FAILED (failures=1)
+Destroying test database for alias 'default'...

@@ -1,0 +1,86 @@
+emiel commented on 19 Jun 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+We're seeing a regression in the string representation of a ValidationError raised by a serializer.
+{'errors': {
+     'phones': [ErrorDetail(string=u'This field is required.', code=u'required')],
+     'emails': {0: [ErrorDetail(string=u'Enter a valid email address.', code='invalid')]}
+}, 'type': 'Validation Error'}
+As you can see "ErrorDetail" is now showing up instead of just the string value.
+Steps to reproduce
+I've put together the following test case (place it in tests/test_serializer.py).
+The following tests passes for 3.7.7. As you can see the expected failure is the string representation of the validator error (without code).
+#
+# 3.7.7 
+#
+
+class TestValidationErrorRegression:
+    def setup(self):
+
+        class TestSerializer(serializers.Serializer):
+            one = serializers.ListField(child=serializers.CharField(max_length=4))
+            two = serializers.ListField(child=serializers.CharField())
+
+        self.Serializer = TestSerializer
+
+    def test_validate(self):
+        input_data = {
+            'one': ["exceed_max", "exceed_max_again"],
+        }
+
+        serializer = self.Serializer(data=input_data)
+        assert not serializer.is_valid()
+        assert serializer.errors == {
+            'one': ['Ensure this field has no more than 4 characters.'],
+            'two': ['This field is required.']
+        }
+However in 3.8 we're seeing that instead of a string representation we're seeing the ErrorDetail class show up. See 'actual behaviour below'.
+Note: The test is adapted a bit for 3.8.x because of #5655. (Perhaps also the source of the regression)
+#
+# 3.8.x (master)
+#
+
+class TestValidationErrorRegression:
+    def setup(self):
+
+        class TestSerializer(serializers.Serializer):
+            one = serializers.ListField(child=serializers.CharField(max_length=4))
+            two = serializers.ListField(child=serializers.CharField())
+
+        self.Serializer = TestSerializer
+
+    def test_validate(self):
+        input_data = {
+            'one': ["exceed_max", "exceed_max_again"],
+        }
+
+        serializer = self.Serializer(data=input_data)
+        assert not serializer.is_valid()
+        assert serializer.errors == {
+            'one': {
+                0: 'Ensure this field has no more than 4 characters.',
+                1: 'Ensure this field has no more than 4 characters.'
+            },
+            'two': ['This field is required.']
+        }
+Expected behavior
+This is a good question. Not sure if ErrorDetails is supposed to be exposed via serializer.errors. I know it is propagated to ValidationError and that ValidationError.detail happily returns a string representation including "ErrorDetail(...)".
+Actual behavior
+________________________________________________________________________________________________________________ TestValidationErrorRegression.test_validate _________________________________________________________________________________________________________________
+tests/test_serializer.py:634: in test_validate
+    assert serializer.errors == {
+E   AssertionError: assert {'two': [Erro...ax_length')]}} == {'one': {0: 'E...s required.']}
+E     Common items:
+E     {u'two': [ErrorDetail(string=u'This field is required.', code=u'required')]}
+E     Differing items:
+E     {'one': {0: [ErrorDetail(string=u'Ensure this field has no more than 4 characters.', code=u'max_length')], 1: [ErrorDetail(string=u'Ensure this field has no more than 4 characters.', code=u'max_length')]}} != {'one': {0: 'Ensure this field has no more than 4 characters.', 1: 'Ensure this field has no more than 4 characters.'}}
+E     Full diff:
+E     - {'two': [ErrorDetail(string=u'This field is required.', code=u'required')], 'one': {0: [ErrorDetail(string=u'Ensure this field has no more than 4 characters.', code=u'max_length')], 1: [ErrorDetail(string=u'Ensure this field has no more than 4 characters.', code=u'max_length')]}}
+E     + {u'one': {0: u'Ensure this field has no more than 4 characters.',
+E     +           1: u'Ensure this field has no more than 4 characters.'},
+E     +  u'two': [u'This field is required.']}

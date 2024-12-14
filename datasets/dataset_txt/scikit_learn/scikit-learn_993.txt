@@ -1,0 +1,55 @@
+sidps commented on Oct 14, 2018
+Description
+MultiLabelBinarizer requires calling the fit method even if classes is provided during initialization. This may be the expected behavior, but then:
+(a) It would be redundant because the fit method logic still uses the classes attribute supplied during initialization to set the classes_ attribute https://github.com/scikit-learn/scikit-learn/blob/51a765a/sklearn/preprocessing/label.py#L695
+(b) It runs contrary to documentation that states classes_ is "A copy of the classes parameter where provided", as accessing the classes_ attribute before calling fit raises AttributeError
+Steps/Code to Reproduce
+For (a)
+import numpy as np
+from sklearn.preprocessing import MultiLabelBinarizer
+
+with_classes = MultiLabelBinarizer(classes=np.arange(2))
+without_classes = MultiLabelBinarizer()
+y = np.array([[0, 1, 2]])
+with_classes.fit(y)
+without_classes.fit(y)
+print(f'`classes_` when initialized with `classes=np.arange(2)` and fit with {y}: {with_classes.classes_}')
+print(f'`classes_` when not initialized with `classes` and fit with {y}: {without_classes.classes_}')
+For (b):
+import numpy as np
+from sklearn.preprocessing import MultiLabelBinarizer
+
+b = MultiLabelBinarizer(classes=np.arange(2))
+b.classes_     # This raises, while it should return `classes` according to the docs
+Calling transform without calling fit, despite initializing with classes raises NotFittedError:
+import numpy as np
+from sklearn.preprocessing import MultiLabelBinarizer
+
+b = MultiLabelBinarizer(classes=np.arange(2))
+b.transform([[1, 0]])     # This raises
+Expected Results
+As discussed earlier, this may be the expected behavior, but I think we shouldn't need to call fit if classes is provided, that classes_ should return a copy of classes, and transform should use this.
+Actual Results
+Contrary to documentation, accessing classes_ without calling fit raises instead of returning a copy of classes.
+Versions
+System
+------
+    python: 3.6.6 |Anaconda, Inc.| (default, Jun 28 2018, 11:07:29)  [GCC 4.2.1 Compatible Clang 4.0.1 (tags/RELEASE_401/final)]
+executable: /Users/sid/miniconda3/bin/python
+   machine: Darwin-17.4.0-x86_64-i386-64bit
+
+BLAS
+----
+    macros: SCIPY_MKL_H=None, HAVE_CBLAS=None
+  lib_dirs: /Users/sid/miniconda3/lib
+cblas_libs: mkl_rt, pthread
+
+Python deps
+-----------
+       pip: 18.0
+setuptools: 40.0.0
+   sklearn: 0.20.0
+     numpy: 1.15.0
+     scipy: 1.1.0
+    Cython: None
+    pandas: None

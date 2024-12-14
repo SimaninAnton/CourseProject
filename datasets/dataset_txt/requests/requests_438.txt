@@ -1,0 +1,268 @@
+datar-ai commented on Nov 28, 2017
+Summary.
+I try requests in site https://www.digitimes.com.tw, but it failed.
+I had tried the other similar recommendations but not works solution.
+Please advise, thanks.
+The site SSL Server Test Report (here)
+Expected Result
+Successful connect and get result expected.
+Actual Result
+$ python test.py
+***  HTTPSConnectionPool(host='www.digitimes.com.tw', port=443): Max retries exceeded with url: 
+/ (Caused by SSLError(SSLError("bad handshake: SysCallError(-1, 'Unexpected EOF')",),))
+
+Traceback (most recent call last):
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/contrib/pyopenssl.py", line 441, in wrap_socket
+    cnx.do_handshake()
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/OpenSSL/SSL.py", line 1716, in do_handshake
+    self._raise_ssl_error(self._ssl, result)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/OpenSSL/SSL.py", line 1449, in _raise_ssl_error
+    raise SysCallError(-1, "Unexpected EOF")
+OpenSSL.SSL.SysCallError: (-1, 'Unexpected EOF')
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/connectionpool.py", line 601, in urlopen
+    chunked=chunked)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/connectionpool.py", line 346, in _make_request
+    self._validate_conn(conn)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/connectionpool.py", line 850, in _validate_conn
+    conn.connect()
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/connection.py", line 326, in connect
+    ssl_context=context)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/util/ssl_.py", line 329, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/contrib/pyopenssl.py", line 448, in wrap_socket
+    raise ssl.SSLError('bad handshake: %r' % e)
+ssl.SSLError: ("bad handshake: SysCallError(-1, 'Unexpected EOF')",)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/requests/adapters.py", line 440, in send
+    timeout=timeout
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/connectionpool.py", line 639, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/urllib3/util/retry.py", line 388, in increment
+    raise MaxRetryError(_pool, url, error or ResponseError(cause))
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='www.digitimes.com.tw', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLError("bad handshake: SysCallError(-1, 'Unexpected EOF')",),))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "test.py", line 51, in <module>
+    r = requests.get("https://www.digitimes.com.tw")
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/requests/api.py", line 72, in get
+    return request('get', url, params=params, **kwargs)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/requests/api.py", line 58, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/requests/sessions.py", line 508, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/requests/sessions.py", line 618, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/Roger/Virtualenv/BizMI/lib/python3.6/site-packages/requests/adapters.py", line 506, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: HTTPSConnectionPool(host='www.digitimes.com.tw', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLError("bad handshake: SysCallError(-1, 'Unexpected EOF')",),))`
+Reproduction Steps
+import sys, traceback
+import ssl
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.ssl_ import create_urllib3_context
+from requests.packages.urllib3.poolmanager import PoolManager
+import requests
+
+
+# This is the 2.11 Requests cipher string, containing 3DES.
+CIPHERS = (
+    'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+HIGH:'
+    'DH+HIGH:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+HIGH:RSA+3DES:!aNULL:'
+    '!eNULL:!MD5'
+)
+
+
+class DESAdapter(HTTPAdapter):
+    """
+    A TransportAdapter that re-enables 3DES support in Requests.
+    """
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context(ciphers=CIPHERS)
+        kwargs['ssl_context'] = context
+        return super(DESAdapter, self).init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        context = create_urllib3_context(ciphers=CIPHERS)
+        kwargs['ssl_context'] = context
+        return super(DESAdapter, self).proxy_manager_for(*args, **kwargs)
+
+
+class SSLAdapter(HTTPAdapter):
+    '''An HTTPS Transport Adapter that uses an arbitrary SSL version.'''
+    def __init__(self, ssl_version=None, **kwargs):
+        self.ssl_version = ssl_version
+
+        super(SSLAdapter, self).__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = PoolManager(num_pools=connections,
+                                       maxsize=maxsize,
+                                       block=block,
+                                       ssl_version=self.ssl_version)
+
+
+# Main Function
+if __name__ == "__main__":
+    try:
+        s = requests.Session()
+        s.mount("https://www.digitimes.com.tw", SSLAdapter(ssl_version=ssl.PROTOCOL_TLSv1))
+        r = requests.get("https://www.digitimes.com.tw")
+        print(r.text)
+    except Exception as e:
+        print('*** ', e)
+        traceback.print_exc(file=sys.stdout)
+
+    sys.exit()
+Openssl Test
+$ openssl s_client -connect www.digitimes.com.tw:443
+CONNECTED(00000003)
+140735617835912:error:140790E5:SSL routines:ssl23_write:ssl handshake failure:s23_lib.c:177:
+---
+no peer certificate available
+---
+No client certificate CA names sent
+---
+SSL handshake has read 0 bytes and written 308 bytes
+---
+New, (NONE), Cipher is (NONE)
+Secure Renegotiation IS NOT supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1.2
+    Cipher    : 0000
+    Session-ID:
+    Session-ID-ctx:
+    Master-Key:
+    Key-Arg   : None
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    Start Time: 1511860095
+    Timeout   : 300 (sec)
+    Verify return code: 0 (ok)
+---
+$ openssl s_client -tls1 -connect www.digitimes.com.tw:443CONNECTED(00000003)
+depth=0 OU = Domain Control Validated, OU = PositiveSSL Wildcard, CN = *.digitimes.com.tw
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 OU = Domain Control Validated, OU = PositiveSSL Wildcard, CN = *.digitimes.com.tw
+verify error:num=21:unable to verify the first certificate
+verify return:1
+---
+Certificate chain
+ 0 s:/OU=Domain Control Validated/OU=PositiveSSL Wildcard/CN=*.digitimes.com.tw
+   i:/C=GB/ST=Greater Manchester/L=Salford/O=COMODO CA Limited/CN=COMODO RSA Domain Validation Secure Server CA
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIFXjCCBEagAwIBAgIRALqqTCTEbaUa69+U7geazxUwDQYJKoZIhvcNAQELBQAw
+gZAxCzAJBgNVBAYTAkdCMRswGQYDVQQIExJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAO
+BgNVBAcTB1NhbGZvcmQxGjAYBgNVBAoTEUNPTU9ETyBDQSBMaW1pdGVkMTYwNAYD
+VQQDEy1DT01PRE8gUlNBIERvbWFpbiBWYWxpZGF0aW9uIFNlY3VyZSBTZXJ2ZXIg
+Q0EwHhcNMTcwNTA0MDAwMDAwWhcNMTgwNTAzMjM1OTU5WjBfMSEwHwYDVQQLExhE
+b21haW4gQ29udHJvbCBWYWxpZGF0ZWQxHTAbBgNVBAsTFFBvc2l0aXZlU1NMIFdp
+bGRjYXJkMRswGQYDVQQDDBIqLmRpZ2l0aW1lcy5jb20udHcwggEiMA0GCSqGSIb3
+DQEBAQUAA4IBDwAwggEKAoIBAQC203XaoQxrqSjAXjdob2uQ6msnnXfBNufNiofI
+v5fmzH7FcHCfW5ER7FSHv7bp5lAviNj4Lcg/UTkmR6MdBJDJF3xP2YpYNug5ZxGo
+MuucSwh0J8d1YrqIOvcDtU8S2hnXaISuNn+HTd5n8xPI/mjHPI10DJzASq4fwzg9
+0IMKU72JpHLH6oquJLXkrgugF3ILIKQhEAUsMtHYmw13iSVCVnyRPfcnInBo9soY
+7pfqaUhxJ4p9prCtRXOvYnT0feQvxchNsyxUnii9/E/Ut0/sQd8Pni5912/X9Tk3
+rFb5F2lOdCnXnAqE+yOXm9Mgk4XRbMotZE5eyrH9onwg7OujAgMBAAGjggHhMIIB
+3TAfBgNVHSMEGDAWgBSQr2o6lFoL2JDqElZz30O0Oija5zAdBgNVHQ4EFgQU5Edj
+aePc5bmyT6s9KXgDjAPqkkAwDgYDVR0PAQH/BAQDAgWgMAwGA1UdEwEB/wQCMAAw
+HQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCME8GA1UdIARIMEYwOgYLKwYB
+BAGyMQECAgcwKzApBggrBgEFBQcCARYdaHR0cHM6Ly9zZWN1cmUuY29tb2RvLmNv
+bS9DUFMwCAYGZ4EMAQIBMFQGA1UdHwRNMEswSaBHoEWGQ2h0dHA6Ly9jcmwuY29t
+b2RvY2EuY29tL0NPTU9ET1JTQURvbWFpblZhbGlkYXRpb25TZWN1cmVTZXJ2ZXJD
+QS5jcmwwgYUGCCsGAQUFBwEBBHkwdzBPBggrBgEFBQcwAoZDaHR0cDovL2NydC5j
+b21vZG9jYS5jb20vQ09NT0RPUlNBRG9tYWluVmFsaWRhdGlvblNlY3VyZVNlcnZl
+ckNBLmNydDAkBggrBgEFBQcwAYYYaHR0cDovL29jc3AuY29tb2RvY2EuY29tMC8G
+A1UdEQQoMCaCEiouZGlnaXRpbWVzLmNvbS50d4IQZGlnaXRpbWVzLmNvbS50dzAN
+BgkqhkiG9w0BAQsFAAOCAQEAKvWwwiUFq1ZiK0dBh8w0HqGZ+lcoyFavU3xlQw+Z
+uJjia6qzwT4jGfdexeM1lOAPPPZOS2/gc6fz6MXQJmLN0B2iMOHo65H2KJnvR+Uy
+X/WMgiM6IKnw83c71kqZyjotf6DGTNOvxmfU48Ewc+jaJkCm2dzqejF6kzBtQNXS
+U2Inf1okmhcfEV5DaN+CQh71NcBabtsDTY2QFo+iKoj/Gi+7NdA4Az53fFgf2dOp
+IfDMtz5n/fL5f0JExs0+WWu7zDeepCqHkRSco0EBpkEIr9B439+dQ9MaeRkAFFcz
+JVbSLGRttz/lbgoljcUmPNbd8tK3039gHKCSO38ZZihIew==
+-----END CERTIFICATE-----
+subject=/OU=Domain Control Validated/OU=PositiveSSL Wildcard/CN=*.digitimes.com.tw
+issuer=/C=GB/ST=Greater Manchester/L=Salford/O=COMODO CA Limited/CN=COMODO RSA Domain Validation Secure Server CA
+---
+No client certificate CA names sent
+---
+SSL handshake has read 1521 bytes and written 510 bytes
+---
+New, TLSv1/SSLv3, Cipher is RC4-MD5
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1
+    Cipher    : RC4-MD5
+    Session-ID: BA240000CAEE7F2860C3B98B84171478DF72EC936376BB52FB109907363FFBE8
+    Session-ID-ctx:
+    Master-Key: 7D183B074FCFB5B412D272C248A15BA725CFF5C651F656DBA17DE2D4ACBFF726938A5DB92850C918E08591017450D65E
+    Key-Arg   : None
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    Start Time: 1511860297
+    Timeout   : 7200 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+---
+^C
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.1.3"
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.1"
+  },
+  "platform": {
+    "release": "17.2.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "1010007f",
+    "version": "17.4.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020bf"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}
+Env:
+MacOS 10.13.1
+Python 3.6.1
+requests==2.18.4
+urllib3==1.22
+openssl version
+OpenSSL 1.0.2m 2 Nov 2017

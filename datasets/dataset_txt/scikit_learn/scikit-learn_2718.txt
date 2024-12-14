@@ -1,0 +1,44 @@
+JohnNapier commented on Sep 30, 2016
+When running sklearn.model_selection.cross_val_score in multiprocessing, the following warning appears:
+sklearn\externals\joblib\parallel.py:540: UserWarning: Multiprocessing-backed parallel loops cannot be nested, setting n_jobs=1
+This warning occurs even for n_jobs=1 in version 0.18. This warning did not appear in version 0.17.
+sklearn:'0.18', mp:'0.70a1', np:'1.10.4'
+You can use this code to reproduce this issue:
+import multiprocessing as mp
+import numpy as np
+from sklearn.svm import LinearSVC
+from sklearn.model_selection import cross_val_score
+#------------------------------------------------------------------------------
+def expandCall(kargs):
+    # Expand the arguments of a callback function, kargs['func']
+    func=kargs['func']
+    del kargs['func']
+    out=func(**kargs)
+    return out
+#------------------------------------------------------------------------------
+def main():
+    #1) prepare jobs
+    jobs=[]
+    for i in range(10):
+        X=np.random.normal(size=[100,2])
+        y=np.random.binomial(1,.5,size=100)
+        clf=LinearSVC()
+        job={'func':cross_val_score,'estimator':clf,'X':X,'y':y,'cv':10, \
+            'n_jobs':1}
+        jobs.append(job.copy())
+    #2) run parallel jobs
+    pool=mp.Pool(processes=10)
+    outputs=pool.imap_unordered(expandCall,jobs)
+    for i,out_ in enumerate(outputs,1):
+        print i,out_
+
+    '''
+    produces this warning, even though n_jobs=1:
+    sklearn\externals\joblib\parallel.py:540: UserWarning: Multiprocessing-backed 
+    parallel loops cannot be nested, setting n_jobs=1
+    '''        
+
+    pool.close();pool.join()
+    return
+#------------------------------------------------------------------------------
+if __name__=='__main__':main()

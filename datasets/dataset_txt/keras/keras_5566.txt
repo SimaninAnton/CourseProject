@@ -1,0 +1,55 @@
+myhussien commented on 7 Apr 2016
+@fchollet @wxs @EderSantana @amitbeka
+I was trying to run a simple example that counts how many 1's in a sequence of {0's,1's}. I made the examples of a fixed length, and everything worked fine. Then I wanted to used Masking to allow different lengths. But to check what I'm doing, I kept the length fixed as before and I added the masking layer. So far, the lengths are the same for both cases, and only a masking layer is added. Using the same random seed, I get different accuracies after the same number of Epochs.
+I looked into the output of the masking layer using masking value of (12345), to avoid masking the 0's. It looked correct since the all values were masked with 1's.
+from keras import backend as K
+
+get_the_mask_output = K.function([model.layers[0].input], [model.layers[0].get_output_mask(train=None)]) 
+
+layer_output = get_the_mask_output([X[:,:,:]])[0]
+Shouldn't it with and without masking in this case produce the same accuracy after the same number of epochs and with the same random seed? just commenting out the masking layer I go back to the original values, so it is clearly something is happening with Masking. I tried to look into the source code, but nothing is alarming!
+Below is the full code~~
+import numpy as np
+np.random.seed(1337)  # **for reproducibility**
+
+# **Create dataset of lists of 1's and zeros**
+nb_of_samples = 5500
+sequence_len = 10
+
+# **Create the sequences**
+X = np.zeros((nb_of_samples, sequence_len,1))
+for row_idx in range(nb_of_samples):
+    X[row_idx,:,0] = np.around(np.random.rand(sequence_len)*1)
+
+# **Create the targets for each sequence, the # of 1's is the sum of the list**
+t = np.sum(X, axis=1)
+
+#--------- Import Keras-----------
+#**Just to make sure** 
+np.random.seed(1337)
+
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation, TimeDistributedDense, Masking
+from keras.layers.recurrent import LSTM, SimpleRNN, GRU
+from keras.optimizers import rmsprop, sgd, Adagrad
+
+#--------- Create the Model -----------
+#**Just to make sure** 
+np.random.seed(1337)
+
+in_out_neurons = 1
+hidden_neurons = 10
+
+model = Sequential()
+
+#------ Uncomment This -------
+#model.add(Masking(mask_value=12345,input_shape=(X.shape[1], X.shape[2]))) 
+
+model.add(SimpleRNN(hidden_neurons, input_dim=in_out_neurons, return_sequences=False,activation='linear'))
+model.add(Dense(in_out_neurons, input_dim=hidden_neurons))
+model.add(Activation("linear"))
+
+_rmsprop = rmsprop(lr=0.0005, rho=0.9, epsilon=1e-06)
+model.compile(loss="mean_squared_error", optimizer=_rmsprop)
+model.fit(X, t, batch_size=256, nb_epoch=10, validation_split=0.1,show_accuracy=True)
+I'm using the latest Theano -dev with CuDNN running on Titan X.

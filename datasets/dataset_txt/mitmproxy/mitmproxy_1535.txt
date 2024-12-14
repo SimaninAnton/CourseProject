@@ -1,0 +1,32 @@
+gowthamsadasivam commented on 27 Jan 2015
+I'm trying to setup a simple proxy server using MITM-Proxy, in such a way that a machine from the network can connect to the proxy and utilize the internet connection through it. This as simple as how a normal proxy server behaves. But I'm not able to get this working.
+_I'm using iptables because, my requirement is to enforce any traffic originated in the client system (Including any software running inside the system like browser also) MUST use the proxy server as the only choice to communicate to the outside world._ The current configuration is like as follows,
+I have two Linux machines (Ubuntu) as follows, (Both are in the same network, Both of them have access to internet. Gateway is _172.17.42.1_)
+1.) MITM-Proxy Machine: _172.17.0.4_ --> running proxy on port _8080_
+2.) Client Machine: _172.17.0.6_
+I need to accomplish that the client machine always send and receive any web traffic (80 and 443) through the MITM-Proxy only. To get this working I made "IPTABLES" configuration in the client machine. In such a way that,
+A.) All the originating traffic for port 80 and port 443 from the client machine will be DNAT to MITM-Proxy (i.e. 172.17.0.4:8080)
+!# sudo iptables -I OUTPUT -o eth0 -d 0.0.0.0/0 -j ACCEPT
+!# sudo iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination 172.17.0.4:8080
+!# sudo iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination 172.17.0.4:8080
+B.) All the ESTABLISHED, RELATED traffic will be allowed in the machine.
+!# sudo iptables -I INPUT -i eth0 -m state --state ESTABLISHED,RELATED -j ACCEPT
+C.) After I made the above settings in the client machine and now MITM-Proxy runs in the normal mode "mitmproxy" and waits for connections in port 8080.
+Now, I tried "wget http://google.com" in the client machine. It failed and shows the ERROR as follows,
+_HTTP request sent, awaiting response... 400 Bad Request_
+Screenshot: Browser terminal is the client machine and terminal window is the MITM Proxy
+_Is there way that I can install the http://mitm.it certificate to the Linux system?_
+On the other hand if I try "wget https://google.com" in the client machine, it failed with different ERROR as follows,
+_OpenSSL: error:140770FC:SSL routines:SSL23_GET_SERVER_HELLO:unknown protocol
+Unable to establish SSL connection._
+Now, In the MITM-Proxy Machine if invoke the mitmproxy with -T --host (i.e. mitmproxy -T --host) I got a different problem. While the client was waiting for the response, MITM-Proxy screen _it is flooding with requests and hangs. I have to broke it down using "Ctrl+C"._
+Screenshot: Browser terminal is the client machine and terminal window is the MITM Proxy
+I have also tried using a different iptables rules like below,
+!# sudo iptables -I OUTPUT -o eth0 -d 0.0.0.0/0 -j ACCEPT
+!# sudo iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination 172.17.0.4:80
+!# sudo iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination 172.17.0.4:80
+In the above case I made transparent proxy configuration in the MITM-Proxy Machine using iptables as specified in this official documentation page. But still nothing changes all the same ERRORs are repeating like the above ones except, the "wget http://google.com" shows _502 Bad Gateway, instead of 400 Bad Request._ The "wget https://google.com" returns the same error as the previous one.
+I also made a TCPDUMP of the requests in the MITM Machine.
+Screenshot: Browser terminal is the client machine and terminal window is the MITM Proxy
+All I required is just a simple proxy server which another machine can use for (tcp) web traffic (both http and https).
+P.S: Without iptables change if I ran MITM in one machine and If i use the proxy settings as IP:172.17.0.4:8080 in the browser of the Client Machine it works very well.

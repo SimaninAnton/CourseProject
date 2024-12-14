@@ -1,0 +1,101 @@
+0-jake-0 commented on 26 Sep 2016
+I've been looking at this example usage https://github.com/fchollet/keras/blob/master/examples/stateful_lstm.py
+Is it really learning how to predict the time series or is it just learning the identity function? Because the increments on the x-axis are so small, it's not immediately obvious.
+I've also looked at this example http://machinelearningmastery.com/time-series-prediction-lstm-recurrent-neural-networks-python-keras/ but as Peter Ostrowski mentions in the comments, that also seems to be learning the identity function.
+I am somewhat confused about what batch_size means in the context of keras stateful LSTM network. I am also confused why, in your example you look ahead half a step "np.mean(cos[i + 1:i + lahead + 1])" instead of just a simple one step ahead.
+I've started on a a simpler, hopefully more meaningful example for stateful LSTM usage.
+'''Example script showing how to use stateful RNNs
+to model long sequences efficiently.
+'''
+from __future__ import print_function
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas
+from keras.models import Sequential
+from keras.layers import Dense, LSTM
+from sklearn.preprocessing import MinMaxScaler
+from pylab import rcParams
+
+def generateData():
+    print('Generating Data')
+    n = 37
+    rtn = np.zeros(n)
+    val = 500
+    for i in range(n):
+        if i % 3 == 0:
+            val = -val
+        rtn[i]= val
+    return rtn
+
+def createModel():
+    print('Creating Model')
+    model = Sequential()
+    model.add(
+        LSTM(
+            10,
+            #input_dim = 1,
+            batch_input_shape = (1, 1, 1),
+            return_sequences=False,
+            stateful=True
+        )
+    )
+    model.add(Dense(1))
+    model.compile(loss='mse', optimizer='rmsprop')
+    return model
+
+def trainModel(model, batch_size, x, target):
+    for i in range(epochs):
+        if i % 10 == 0:
+            print('Epoch', i, '/', epochs)
+        model.fit(
+            np.reshape(x, (len(x), 1, 1)),
+            np.reshape(target, (len(target), 1)),
+            batch_size = batch_size,
+            verbose = 0,
+            nb_epoch = 1,
+            shuffle = False
+        )
+        model.reset_states()
+
+def generateOutput(model, seed, n):
+    # generate output without sight of target, feeding predict back in as input.
+    rtn = []
+    res = np.array([[[seed]]])
+    for i in range(n):
+        res = model.predict(res).reshape((1, 1, 1))
+        rtn.append(res[0, 0, 0])
+    return rtn
+
+def displayResults(model, x, target, scaler):
+    # predicate t+1 with state built up using target up to t.    
+    predicted = model.predict(
+        np.reshape(x, (len(x), 1, 1)), 
+        batch_size = batch_size
+    )
+    model.reset_states()
+    generated = generateOutput(model, x[0], int(len(x)*1.2))
+    for series in target, generated, predicted:
+        plt.plot(scaler.inverse_transform(series), '-o')
+    plt.show()
+
+rcParams['figure.figsize'] = 15, 10
+np.random.seed(0)
+scaler = MinMaxScaler(feature_range=(-0.8, 0.8))
+rawData = generateData()
+scaledData = scaler.fit_transform(rawData)
+x = scaledData[:-1] # drop last
+target = scaledData[1:] # drop first (i.e. look-ahead 1)
+model = createModel()
+epochs = 1000
+batch_size = 1
+trainModel(model, batch_size, x, target)
+displayResults(model, x, target, scaler)
+Example output looks like this.
+blue is target
+red is predicted using previous target as seed
+green is predicted using previous output as seed
+In your example, if you zoom in, like this, you can see that predicted lags behind expected, which would be consistent with the network having learned the identity function rather than anything meaningful.
+for series in expected_output, predicted_output:
+    plt.plot(series[1000:3000], '-o')
+Please let me know your thoughts.
+Thanks!

@@ -1,0 +1,58 @@
+hodossy commented on Jun 14, 2017 •
+edited
+Summary
+When determining whether proxies should be bypassed or not, netloc is considered, however it contains the username and password separated by a colon, thus proxy settings cannot be applied, as the either username or host[:port] is checked among the no_proxy hosts.
+Expected Result
+Proxy settings are respected
+Actual Result
+Following errors are thrown:
+OSError: Tunnel connection failed: 504 Gateway Timeout
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='localhost', port=8080): Max retries exceeded with url: / (Caused by ProxyError('Cannot connect to proxy.', OSError('Tunnel connection failed: 504 Gateway Timeout',)))
+Reproduction Steps
+import requests
+import os
+
+os.environ['https_proxy'] = #insert your proxy here
+os.environ['no_proxy'] = 'localhost,127.0.0.1'
+
+requests.get('https://username:password@localhost:8080/')
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.3"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.0"
+  },
+  "platform": {
+    "release": "3.16.0-4-amd64",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.17.3"
+  },
+  "system_ssl": {
+    "version": "1000114f"
+  },
+  "urllib3": {
+    "version": "1.21.1"
+  },
+  "using_pyopenssl": false
+}
+Workaround
+proxies kwarg can be used to bypass this issue, e.g. by setting {'https': None}. Should be used with caution.
+Problem in my opinion:
+should_bypass_proxies(url, no_proxy) function in utils.py:
+network location is used, which matches the following pattern: [user[:password]@]host[:port]
+ip is determined based on ':' position, which is not valid in this case, as ip will be the username: ip = netloc.split(':')[0]
+when checking if proxy should be applied, two things are checked: if netloc.endswith(host) or netloc.split(':')[0].endswith(host):, neither of which will be true, as host may not contain port, and username surely does not end with the host.
+I propose to use domain = urlparse(url).hostname instead of netloc = urlparse(url).netloc when checking against the no_proxy environment variable.

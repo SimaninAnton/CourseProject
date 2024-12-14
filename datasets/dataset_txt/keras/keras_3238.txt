@@ -1,0 +1,37 @@
+Contributor
+alexander-rakhlin commented on 12 Feb 2017 •
+edited
+Hello all,
+Consider 2-input model that makes use of a shared submodel
+def get_sub_net(input_shape):
+    img_input = Input(shape=input_shape, name='original input')
+    x = Convolution2D(16, 3, 3, activation='relu', name='conv')(img_input )
+    out = Flatten()(x)    
+    return Model(img_input, out)
+
+input_shape = (3, 32, 28)  # Theano
+sub_net= get_sub_net(input_shape)
+
+input_left  = Input(shape=input_shape)
+input_right = Input(shape=input_shape)
+
+processed_left  = sub_net(input_left)
+processed_right = sub_net(input_right)
+x = merge([processed_left, processed_right], mode='concat')
+x = Dense(16, activation='relu', name='fc')(x)
+x = Dense(1, activation='sigmoid')(x)
+
+model = Model(input=[input_left, input_right], output=x)
+model.compile(loss='binary_crossentropy', optimizer='sgd')
+this works:
+batch_size = 5
+X = [np.random.random((batch_size, )+input_shape) for _ in range(2)]
+
+intermediate_layer_model = Model(input=model.input, output=model.get_layer('fc').output)   
+Now I want to get activation of Convolution layer in the shared sub-net with respect to main model input:
+intermediate_layer_model = Model(input=model.input,
+                                 output=sub_net.get_layer('conv').output)  
+
+RuntimeError: Graph disconnected: cannot obtain value for tensor original input at layer "original input". The following previous layers were accessed without issue: []
+Maybe someone has an answer to related question. How does backpropagation in shared models work? Consider a model shared across 2 different inputs. It has 2 output nodes, and during backward pass receives two gradients. Do these two gradients propagate successively towards input nodes, and weights get updated successively too? - as opposed to 1) averaging 2 gradients before propagating through sub-net; 2) successive propagation 2 gradients with same weights, and averaging weight updates after that
+1

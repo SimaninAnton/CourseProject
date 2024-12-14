@@ -1,0 +1,29 @@
+dgillis commented on Jul 23, 2017 •
+edited
+A simple way to place a timeout on the entire request duration would be very useful. I see this was discussed previously but workarounds involved using additional libraries, signals, etc.
+Can this not be fixed by simply modifying Response.iter_content() and checking the time after each chunk is read, raising an exception after some "complete_timeout" is surpassed?
+I've used a function like this to do something similar by hijacking the stream parameter but it would be nice if this could be built right into Session and/or Response.
+from time import time
+import requests
+
+class CompleteTimeout(requests.exceptions.Timeout):
+    pass
+
+def request_with_complete_timeout(method, url, complete_timeout, **kwargs):
+    """
+    Call requests.request() but raise an Exception if the total time exceeds
+    complete_timeout seconds.
+    """
+    kwargs['timeout'] = complete_timeout
+    kwargs['stream'] = True
+    timeout_time = time() + complete_timeout
+    response = requests.request(method, url, **kwargs)
+    content_barr = bytearray()
+    for chnk in response.iter_content():
+        if time() > timeout_time:
+            raise CompleteTimeout(
+                "Request exceeded complete timeout of {} seconds: {}"
+                .format(complete_timeout, url))
+        content_barr.extend(chnk)
+    response._content = bytes(content_barr)
+    return response

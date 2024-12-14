@@ -1,0 +1,39 @@
+klem4 commented on 29 Jan 2013
+Hi, does rest_framework correctly support work with django proxy models:
+models.py
+class Person(models.Model):
+    first_name = models.CharField(max_length=30)
+    last_name = models.CharField(max_length=30)
+
+class MyPerson(Person):
+    class Meta:
+        proxy = True
+
+    @property
+    def custom_proxy_propery_field(self):
+        return 1
+serializers.py
+FIELDS = ("first_name", "last_name", "custom_proxy_propery_field",)
+
+class MySerializer(serializers.ModelSerializer):
+    class Meta:
+        depth = 1
+        model = MyPerson
+        fields = FIELDS
+views.py
+class MyView(APIView):
+    def get(self, request, format=None):
+        # ...
+        serializer = MySerializer(obj) # obj is MyPerson object !
+        return Response(serializer.data)
+And we'll got this:
+KeyError at /path/to/api/
+'custom_proxy_propery_field'
+It seems that problem in rest_framework/compat.py
+def get_concrete_model(model_cls):
+    try:
+        return model_cls._meta.concrete_model
+    except AttributeError:
+        #1.3 does not include concrete model
+        return model_cls
+This functions returns 'Person' class for 'MyPerson' object from get_default_fields method(serializers.py)

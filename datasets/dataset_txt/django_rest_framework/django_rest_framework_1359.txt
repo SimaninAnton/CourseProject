@@ -1,0 +1,73 @@
+awbacker commented on 28 Dec 2015
+I get a sql compiler error from deep in the bowels when running of of queries after upgrading to Django 1.9 from 1.8.5.
+AttributeError: 'SQLCompiler' object has no attribute 'col_count'
+This is the viewset, nothing unusual
+class ProductHist(generics.ListAPIView):
+    model = Product
+    serializer_class = ProducHitSerializer
+    lookup_field = 'uuid'
+
+    def get_queryset(self, *args, **kwargs):
+        qs = Hit.objects \
+            .prefetch_related('user', 'product', 'def', '...') \
+            .filter(product__uuid=...)
+            .values('id', 'uuid', 'creation_date', ...)
+        return qs
+Removing the call to .values() fixes it
+Can't reproduce with django built-in Paginator class
+Additional Info:
+Using standard PageNumberPagination, page_size=100 (in 3.3.2)
+Happens on DRF 3.2.[4,5], 3.3.[1,2]
+Downgrading to Django 1.8.5 fixes it
+The stacktrace that comes out is this:
+======================================================================
+ERROR: test_one (TestMyListOfStuff)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "...test_dashboard_product_scans.py", line 18, in test_one
+    resp = self.api.get(self.url)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/test.py", line 162, in get
+    response = super(APIClient, self).get(path, data=data, **extra)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/test.py", line 88, in get
+    return self.generic('GET', path, **r)
+  File "~/venv/lib/python2.7/site-packages/django/test/client.py", line 380, in generic
+    return self.request(**r)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/test.py", line 159, in request
+    return super(APIClient, self).request(**kwargs)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/test.py", line 111, in request
+    request = super(APIRequestFactory, self).request(**kwargs)
+  File "~/venv/lib/python2.7/site-packages/django/test/client.py", line 467, in request
+    six.reraise(*exc_info)
+  File "~/venv/lib/python2.7/site-packages/django/core/handlers/base.py", line 149, in get_response
+    response = self.process_exception_by_middleware(e, request)
+  File "~/venv/lib/python2.7/site-packages/django/core/handlers/base.py", line 147, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "~/venv/lib/python2.7/site-packages/django/views/decorators/csrf.py", line 58, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "~/venv/lib/python2.7/site-packages/django/views/generic/base.py", line 68, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/views.py", line 466, in dispatch
+    response = self.handle_exception(exc)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/views.py", line 463, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/generics.py", line 201, in get
+    return self.list(request, *args, **kwargs)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/mixins.py", line 42, in list
+    page = self.paginate_queryset(queryset)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/generics.py", line 172, in paginate_queryset
+    return self.paginator.paginate_queryset(queryset, self.request, view=self)
+  File "~/venv/lib/python2.7/site-packages/rest_framework/pagination.py", line 273, in paginate_queryset
+    return list(self.page)
+  File "~/venv/bin/../lib/python2.7/_abcoll.py", line 602, in __iter__
+    v = self[i]
+  File "~/venv/lib/python2.7/site-packages/django/core/paginator.py", line 125, in __getitem__
+    self.object_list = list(self.object_list)
+  File "~/venv/lib/python2.7/site-packages/django/db/models/query.py", line 258, in __iter__
+    self._fetch_all()
+  File "~/venv/lib/python2.7/site-packages/django/db/models/query.py", line 1074, in _fetch_all
+    self._result_cache = list(self.iterator())
+  File "~/venv/lib/python2.7/site-packages/django/db/models/query.py", line 112, in __iter__
+    for row in compiler.results_iter():
+  File "~/venv/lib/python2.7/site-packages/django/db/models/sql/compiler.py", line 807, in results_iter
+    fields = [s[0] for s in self.select[0:self.col_count]]
+AttributeError: 'SQLCompiler' object has no attribute 'col_count'

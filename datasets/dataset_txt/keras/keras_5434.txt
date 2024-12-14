@@ -1,0 +1,190 @@
+Contributor
+lukovkin commented on 18 Apr 2016
+Hi,
+We are trying to implement Convolution Transpose (Deconvolution) layer in Keras using TensorFlow conv2d_transpose (https://www.tensorflow.org/versions/r0.8/api_docs/python/nn.html#conv2d_transpose) basing on #2106 , but for arbitrary input sizes (without requirement to pass deconv_shape and filter shape as parameters).
+conv2d_transpose requires explicit setting of output_shape, so we have to calculate it during runtime.
+We've implemented it (see https://gist.github.com/lukovkin/610e18590f3d6138aa0bc6a6af414450), it compiles OK, but fails on training.
+I've added some print statements for debugging (see below).
+Probably we don't get tensors' shapes inference right.
+input_lenght: Tensor("Squeeze_13:0", shape=(), dtype=int32), filter_size: 2, border_mode: valid, stride: 2
+Output width: Tensor("add_20:0", shape=(), dtype=int32)
+Input shape: Tensor("Shape_34:0", shape=(3,), dtype=int32)
+Input shape after expand: Tensor("Shape_35:0", shape=(4,), dtype=int32)
+Input shape after permute: Tensor("Shape_36:0", shape=(4,), dtype=int32)
+Deconv shape: Tensor("pack_4:0", shape=(4,), dtype=int32)
+Output shape: Tensor("Shape_37:0", shape=(4,), dtype=int32)
+Output shape after permute: Tensor("Shape_38:0", shape=(4,), dtype=int32)
+Output shape after squeeze: Tensor("Shape_39:0", shape=(3,), dtype=int32)
+input_lenght: 5, filter_size: 2, border_mode: valid, stride: 2
+Output length: 9
+input_lenght: Tensor("Squeeze_16:0", shape=(), dtype=int32), filter_size: 2, border_mode: valid, stride: 2
+Output width: Tensor("add_22:0", shape=(), dtype=int32)
+Input shape: Tensor("Shape_42:0", shape=(3,), dtype=int32)
+Input shape after expand: Tensor("Shape_43:0", shape=(4,), dtype=int32)
+Input shape after permute: Tensor("Shape_44:0", shape=(4,), dtype=int32)
+Deconv shape: Tensor("pack_5:0", shape=(4,), dtype=int32)
+Output shape: Tensor("Shape_45:0", shape=(4,), dtype=int32)
+Output shape after permute: Tensor("Shape_46:0", shape=(4,), dtype=int32)
+Output shape after squeeze: Tensor("Shape_47:0", shape=(3,), dtype=int32)
+input_lenght: 9, filter_size: 2, border_mode: valid, stride: 2
+Output length: 17
+input_lenght: Tensor("Squeeze_19:0", shape=(), dtype=int32), filter_size: 2, border_mode: valid, stride: 2
+Output width: Tensor("add_24:0", shape=(), dtype=int32)
+Input shape: Tensor("Shape_50:0", shape=(3,), dtype=int32)
+Input shape after expand: Tensor("Shape_51:0", shape=(4,), dtype=int32)
+Input shape after permute: Tensor("Shape_52:0", shape=(4,), dtype=int32)
+Deconv shape: Tensor("pack_6:0", shape=(4,), dtype=int32)
+Output shape: Tensor("Shape_53:0", shape=(4,), dtype=int32)
+Output shape after permute: Tensor("Shape_54:0", shape=(4,), dtype=int32)
+Output shape after squeeze: Tensor("Shape_55:0", shape=(3,), dtype=int32)
+input_lenght: 17, filter_size: 2, border_mode: valid, stride: 2
+Output length: 33
+input_lenght: Tensor("Squeeze_22:0", shape=(), dtype=int32), filter_size: 2, border_mode: valid, stride: 2
+Output width: Tensor("add_26:0", shape=(), dtype=int32)
+Input shape: Tensor("Shape_58:0", shape=(3,), dtype=int32)
+Input shape after expand: Tensor("Shape_59:0", shape=(4,), dtype=int32)
+Input shape after permute: Tensor("Shape_60:0", shape=(4,), dtype=int32)
+Deconv shape: Tensor("pack_7:0", shape=(4,), dtype=int32)
+Output shape: Tensor("Shape_61:0", shape=(4,), dtype=int32)
+Output shape after permute: Tensor("Shape_62:0", shape=(4,), dtype=int32)
+Output shape after squeeze: Tensor("Shape_63:0", shape=(3,), dtype=int32)
+input_lenght: 33, filter_size: 2, border_mode: valid, stride: 2
+Output length: 65
+Before FIT
+Epoch 1/500
+StatusNotOK Traceback (most recent call last)
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/client/session.py in _do_call(self, fn, _args)
+643 try:
+--> 644 return fn(_args)
+645 except tf_session.StatusNotOK as e:
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/client/session.py in _run_fn(session, feed_dict, fetch_list, target_list, options, run_metadata)
+627 return tf_session.TF_Run(
+--> 628 session, None, feed_dict, fetch_list, target_list, None)
+629
+StatusNotOK: Invalid argument: Conv2DBackpropInput: Number of cols of out_backprop doesn't match computed: actual = 5, computed = 4
+[[Node: conv2d_transpose = Conv2DBackpropInput[T=DT_FLOAT, data_format="NHWC", padding="VALID", strides=[1, 1, 2, 1], use_cudnn_on_gpu=true, _device="/job:localhost/replica:0/task:0/cpu:0"](pack, convolution1d_transpose_arbitrary_1_W/read, transpose_18)]]
+During handling of the above exception, another exception occurred:
+InvalidArgumentError Traceback (most recent call last)
+in ()
+2 print("Before FIT")
+3
+----> 4 model.fit(X_train, Y_train, batch_size=batch_size, nb_epoch=nb_epoch, verbose=1)
+5
+6 score = model.evaluate(X_test, Y_test, verbose=0, batch_size=batch_size)
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/models.py in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, **kwargs)
+400 shuffle=shuffle,
+401 class_weight=class_weight,
+--> 402 sample_weight=sample_weight)
+403
+404 def evaluate(self, x, y, batch_size=32, verbose=1,
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/engine/training.py in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight)
+1028 verbose=verbose, callbacks=callbacks,
+1029 val_f=val_f, val_ins=val_ins, shuffle=shuffle,
+-> 1030 callback_metrics=callback_metrics)
+1031
+1032 def evaluate(self, x, y, batch_size=32, verbose=1, sample_weight=None):
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/engine/training.py in _fit_loop(self, f, ins, out_labels, batch_size, nb_epoch, verbose, callbacks, val_f, val_ins, shuffle, callback_metrics)
+766 batch_logs['size'] = len(batch_ids)
+767 callbacks.on_batch_begin(batch_index, batch_logs)
+--> 768 outs = f(ins_batch)
+769 if type(outs) != list:
+770 outs = [outs]
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/backend/tensorflow_backend.py in call(self, inputs)
+595 feed_dict = dict(zip(names, inputs))
+596 session = get_session()
+--> 597 updated = session.run(self.outputs + self.updates, feed_dict=feed_dict)
+598 return updated[:len(self.outputs)]
+599
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/client/session.py in run(self, fetches, feed_dict, options, run_metadata)
+338 try:
+339 result = self._run(None, fetches, feed_dict, options_ptr,
+--> 340 run_metadata_ptr)
+341 if run_metadata:
+342 proto_data = tf_session.TF_GetBuffer(run_metadata_ptr)
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/client/session.py in _run(self, handle, fetches, feed_dict, options, run_metadata)
+562 try:
+563 results = self._do_run(handle, target_list, unique_fetches,
+--> 564 feed_dict_string, options, run_metadata)
+565 finally:
+566 # The movers are no longer used. Delete them.
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/client/session.py in _do_run(self, handle, target_list, fetch_list, feed_dict, options, run_metadata)
+635 if handle is None:
+636 return self._do_call(_run_fn, self._session, feed_dict, fetch_list,
+--> 637 target_list, options, run_metadata)
+638 else:
+639 return self._do_call(_prun_fn, self._session, handle, feed_dict,
+/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/client/session.py in _do_call(self, fn, *args)
+657 # pylint: disable=protected-access
+658 raise errors._make_specific_exception(node_def, op, error_message,
+--> 659 e.code)
+660 # pylint: enable=protected-access
+661
+InvalidArgumentError: Conv2DBackpropInput: Number of cols of out_backprop doesn't match computed: actual = 5, computed = 4
+[[Node: conv2d_transpose = Conv2DBackpropInput[T=DT_FLOAT, data_format="NHWC", padding="VALID", strides=[1, 1, 2, 1], use_cudnn_on_gpu=true, _device="/job:localhost/replica:0/task:0/cpu:0"](pack, convolution1d_transpose_arbitrary_1_W/read, transpose_18)]]
+Caused by op 'conv2d_transpose', defined at:
+File "/root/miniconda2/envs/tf/lib/python3.4/runpy.py", line 170, in _run_module_as_main
+"main", mod_spec)
+File "/root/miniconda2/envs/tf/lib/python3.4/runpy.py", line 85, in _run_code
+exec(code, run_globals)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/ipykernel/main.py", line 3, in
+app.launch_new_instance()
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/traitlets/config/application.py", line 596, in launch_instance
+app.start()
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/ipykernel/kernelapp.py", line 442, in start
+ioloop.IOLoop.instance().start()
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/zmq/eventloop/ioloop.py", line 162, in start
+super(ZMQIOLoop, self).start()
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tornado/ioloop.py", line 883, in start
+handler_func(fd_obj, events)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tornado/stack_context.py", line 275, in null_wrapper
+return fn(_args, *_kwargs)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/zmq/eventloop/zmqstream.py", line 440, in _handle_events
+self._handle_recv()
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/zmq/eventloop/zmqstream.py", line 472, in _handle_recv
+self._run_callback(callback, msg)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/zmq/eventloop/zmqstream.py", line 414, in _run_callback
+callback(_args, *_kwargs)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tornado/stack_context.py", line 275, in null_wrapper
+return fn(_args, *_kwargs)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/ipykernel/kernelbase.py", line 276, in dispatcher
+return self.dispatch_shell(stream, msg)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/ipykernel/kernelbase.py", line 228, in dispatch_shell
+handler(stream, idents, msg)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/ipykernel/kernelbase.py", line 391, in execute_request
+user_expressions, allow_stdin)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/ipykernel/ipkernel.py", line 199, in do_execute
+shell.run_cell(code, store_history=store_history, silent=silent)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/IPython/core/interactiveshell.py", line 2723, in run_cell
+interactivity=interactivity, compiler=compiler, result=result)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/IPython/core/interactiveshell.py", line 2825, in run_ast_nodes
+if self.run_code(code, result):
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/IPython/core/interactiveshell.py", line 2885, in run_code
+exec(code_obj, self.user_global_ns, self.user_ns)
+File "", line 97, in
+model.add(Convolution1D_Transpose_Arbitrary(5, 2, strides=strides, padding=padding))
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/models.py", line 139, in add
+output_tensor = layer(self.outputs[0])
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/engine/topology.py", line 485, in call
+self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/engine/topology.py", line 543, in add_inbound_node
+Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/Keras-1.0.1-py3.4.egg/keras/engine/topology.py", line 148, in create_node
+output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+File "../models/convolutional_transpose.py", line 478, in call
+output_shape=deconv_shape)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/ops/nn_ops.py", line 104, in conv2d_transpose
+name=name)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/ops/gen_nn_ops.py", line 379, in conv2d_backprop_input
+data_format=data_format, name=name)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/ops/op_def_library.py", line 655, in apply_op
+op_def=op_def)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/framework/ops.py", line 2154, in create_op
+original_op=self._default_original_op, op_def=op_def)
+File "/root/miniconda2/envs/tf/lib/python3.4/site-packages/tensorflow/python/framework/ops.py", line 1154, in init
+self._traceback = _extract_stack()
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

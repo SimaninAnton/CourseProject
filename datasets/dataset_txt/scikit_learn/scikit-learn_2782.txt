@@ -1,0 +1,13 @@
+Contributor
+nelson-liu commented on Sep 4, 2016 •
+edited
+Description
+I've been working on #7301, and I found some seemingly duplicate logic in the decision tree code. At the least, it's something that requires more documentation; at the most, it's a bug.
+So I was poking around, trying to figure out why I couldn't get equal trees for uniform sample weights when i set min_weight_fraction_leaf and min_samples_leaf to the same float value. I saw that the two built trees actually had radically different values of min_samples_split, despite me not setting this value at all. In the code (https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/tree/tree.py#L229), it shows that min_samples_split is set to the max(min_samples_split, 2 * min_samples_leaf). This isn't documented at all, and should be if we decide to keep this statement.
+Now this logic makes sense to me, as you can't make a split if there's no way to split it in such a manner that each leaf has the minimum number of samples. However, isn't this sort of logic encapsulated when we're building the tree? Namely, I'm thinking of the is_leaf conditional, which determines whether to split on a node or not (https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/tree/_tree.pyx#L219):
+is_leaf = ((depth >= max_depth) or
+  (n_node_samples < min_samples_split) or
+  (n_node_samples < 2 * min_samples_leaf) or
+   (weighted_n_node_samples < min_weight_leaf))
+I think the statement (n_node_samples < 2 * min_samples_leaf) has the same effect as setting min_samples_split explicitly to the max of itself or 2*min_samples_leaf. Indeed, removing the max call does not cause any tests to fail.
+Should we be removing the explicit call to max? It seems like a piece of duplicate logic, but maybe I'm missing something. ping @glouppe @raghavrv @jmschrei / anyone else.

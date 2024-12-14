@@ -1,0 +1,18 @@
+danielhers commented on 2 Sep 2016 •
+edited
+This is not the same as #1747 - the output_shape of my Lambda layer is fine, but during training the layer seems to be leaving the input unchanged: https://github.com/danielhers/ucca/blob/lstm/parsing/classifiers/nn/lstm.py#L124
+This network is supposed to be slicing the inputs to (*, self._output_max_len, *) (first dimension is the batch size, of course, and the last varies per input but it should be OK for concatenation).
+When running it, I am getting the following:
+ValueError: all the input array dimensions except for the concatenation axis must match exactly
+Apply node that caused the error: Join(TensorConstant{2}, Reshape{3}.0, Reshape{3}.0, Subtensor{int64::}.0)
+Toposort index: 102
+Inputs types: [TensorType(int8, scalar), TensorType(float32, 3D), TensorType(float32, 3D), TensorType(float32, 3D)]
+Inputs shapes: [(), (0, 1000, 20), (0, 1000, 100), (0, 1500, 6)]
+Inputs strides: [(), (80000, 80, 4), (400000, 400, 4), (36000, 24, 4)]
+Inputs values: [array(2, dtype=int8), array([], shape=(0, 1000, 20), dtype=float32), array([], shape=(0, 1000, 100), dtype=float32), array([], shape=(0, 1500, 6), dtype=float32)]
+Outputs clients: [[Elemwise{Composite{Switch(i0, (i1 * i2 * i3), i2)}}[(0, 2)](InplaceDimShuffle{x,x,x}.0, TensorConstant{(1, 1, 1) of 2.0}, Join.0, Elemwise{Composite{Cast{float32}(LT(i0, i1))}}[(0, 0)].0)]]
+Here 1000 is self._output_max_len, 1500 is self._max_len, and I have 3 inputs to the network (batch size, self._max_len, param.num shown here):
+numeric: (10, 1500, 6)
+e: (10, 1500, 4)
+w: (10, 1500, 1)
+So the concatenation at line 130 is throwing an error because not all inputs are the same modulo the last dimension, namely the input corresponding to the numeric input is still (10, 1500, 6), as if the slicer layer did nothing. How can that be?

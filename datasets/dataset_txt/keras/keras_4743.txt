@@ -1,0 +1,33 @@
+Contributor
+linxihui commented on 20 Jul 2016
+At https://github.com/fchollet/keras/blob/master/keras/engine/training.py#L317
+There is a division by K.mean(mask) and K.mean(K.cast(K.not_equal(weights, 0), K.floatx())). If batch size if small, one may have mask or weights all equal to 0, which can lead to NaN issue. I ran into issue, and fixed it by wrapping them with K.clip. Should this be fixed?
+Here is the code of weighted_objective.
+def weighted_objective(fn):
+    '''Transforms an objective function `fn(y_true, y_pred)`
+    into a sample-weighted, cost-masked objective function
+    `fn(y_true, y_pred, weights, mask)`.
+    '''
+    def weighted(y_true, y_pred, weights, mask=None):
+        # score_array has ndim >= 2
+        score_array = fn(y_true, y_pred)
+        if mask is not None:
+            # Cast the mask to floatX to avoid float64 upcasting in theano
+            mask = K.cast(mask, K.floatx())
+            # mask should have the same shape as score_array
+            score_array *= mask
+            #  the loss per batch should be proportional
+            #  to the number of unmasked samples.
+            score_array /= K.mean(mask)
+
+        # reduce score_array to same ndim as weight array
+        ndim = K.ndim(score_array)
+        weight_ndim = K.ndim(weights)
+        score_array = K.mean(score_array, axis=list(range(weight_ndim, ndim)))
+
+        # apply sample weighting
+        if weights is not None:
+            score_array *= weights
+            score_array /= K.mean(K.cast(K.not_equal(weights, 0), K.floatx()))
+        return K.mean(score_array)
+return weighted

@@ -1,0 +1,97 @@
+Member
+mhils commented on 7 Nov 2017
+Steps to reproduce the problem:
+Use arrow keys to navigate to random option, e.g. ciphers_client. The help string now is "Set supported ciphers for client connections using OpenSSL syntax."
+Press enter twice to start and finish edit.
+The help box now shows the help text of the first option ("Add all certificates of the upstream server to the certificate chain that will be served to the proxy client, as extras.")
+Any other comments? What have you tried so far?
+The problem is that we have two OptionList instances, which in combination with blinker send conflicting signals to OptionHelp.
+The following patch helps with debugging:
+diff --git a/mitmproxy/tools/console/options.py b/mitmproxy/tools/console/options.py
+index 4d55aee..9787343 100644
+--- a/mitmproxy/tools/console/options.py
++++ b/mitmproxy/tools/console/options.py
+@@ -93,10 +93,17 @@ class OptionItem(urwid.WidgetWrap):
+
+
+ class OptionListWalker(urwid.ListWalker):
++    instances = []
++
+     def __init__(self, master):
+         self.master = master
+
+-        self.index = 0
++        import traceback; traceback.print_stack()
++        input("Initialization of " + repr(self))
++
++        self.changes = []
++        self.instances.append(self)
++        self._index = 0
+         self.focusobj = None
+
+         self.opts = sorted(master.options.keys())
+@@ -105,6 +112,16 @@ class OptionListWalker(urwid.ListWalker):
+         self.set_focus(0)
+         self.master.options.changed.connect(self.sig_mod)
+
++    @property
++    def index(self):
++        return self._index
++
++    @index.setter
++    def index(self, val):
++        self.changes.append(val)
++        self._index = val
++        print(self, {i: i.changes for i in self.instances})
++
+     def sig_mod(self, *args, **kwargs):
+         self._modified()
+         self.set_focus(self.index)
+(
+The initial output of running mitmproxy with this looks as follows:
+λ mitmproxy
+  File "/home/user/venv/bin/mitmproxy", line 11, in <module>
+    load_entry_point('mitmproxy', 'console_scripts', 'mitmproxy')()
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/main.py", line 137, in mitmproxy
+    run(console.master.ConsoleMaster, cmdline.mitmproxy, args)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/main.py", line 119, in run
+    master.run()
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/master.py", line 192, in run
+    self.window = window.Window(self)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/window.py", line 126, in __init__
+    WindowStack(master, "flowlist"),
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/window.py", line 37, in __init__
+    options = options.Options(master),
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/options.py", line 269, in __init__
+    self.optionslist = OptionsList(master)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/options.py", line 176, in __init__
+    self.walker = OptionListWalker(master)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/options.py", line 101, in __init__
+    import traceback; traceback.print_stack()
+Initialization of <mitmproxy.tools.console.options.OptionListWalker object at 0x7f0f9f19e048>
+<mitmproxy.tools.console.options.OptionListWalker object at 0x7f0f9f19e048> {<mitmproxy.tools.console.options.OptionListWalker object at 0x7f0f9f19e048>: [0]}
+  File "/home/user/venv/bin/mitmproxy", line 11, in <module>
+    load_entry_point('mitmproxy', 'console_scripts', 'mitmproxy')()
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/main.py", line 137, in mitmproxy
+    run(console.master.ConsoleMaster, cmdline.mitmproxy, args)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/main.py", line 119, in run
+    master.run()
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/master.py", line 192, in run
+    self.window = window.Window(self)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/window.py", line 127, in __init__
+    WindowStack(master, "eventlog")
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/window.py", line 37, in __init__
+    options = options.Options(master),
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/options.py", line 269, in __init__
+    self.optionslist = OptionsList(master)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/options.py", line 176, in __init__
+    self.walker = OptionListWalker(master)
+  File "/mnt/c/Users/user/git/mitmproxy/mitmproxy/tools/console/options.py", line 101, in __init__
+    import traceback; traceback.print_stack()
+Initialization of <mitmproxy.tools.console.options.OptionListWalker object at 0x7f0f9f1d5710>
+@cortesi: I'm not really into WindowStack, what is happening here?
+System information
+Mitmproxy: 3.0.0dev0958 (4cb96de)
+Python:    3.5.2
+OpenSSL:   OpenSSL 1.0.2g  1 Mar 2016
+Platform:  Linux-4.4.0-43-Microsoft-x86_64-with-Ubuntu-16.04-xenial

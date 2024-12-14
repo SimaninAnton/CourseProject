@@ -1,0 +1,26 @@
+Contributor
+onlywade commented on 25 Oct 2014
+Since the addition of the --replay-ignore-param option in revision 81f5636, mitmproxy/mitmdump crashes with the following error when started in server replay mode without specifying at least one parameter to ignore:
+  $ ./mitmdump -S traffic.dat
+  File "./mitmdump", line 3, in <module>
+    mitmdump()
+  File "/Users/u524/work/open/mitmproxy/libmproxy/main.py", line 153, in mitmdump
+    master = dump.DumpMaster(server, dump_options)
+  File "/Users/u524/work/open/mitmproxy/libmproxy/dump.py", line 115, in __init__
+    options.replay_ignore_content
+  File "/Users/u524/work/open/mitmproxy/libmproxy/flow.py", line 574, in start_server_playback
+    self.server_playback = ServerPlaybackState(headers, flows, exit, nopop, ignore_params, ignore_content)
+  File "/Users/u524/work/open/mitmproxy/libmproxy/flow.py", line 206, in __init__
+    l = self.fmap.setdefault(self._hash(i), [])
+  File "/Users/u524/work/open/mitmproxy/libmproxy/flow.py", line 223, in _hash
+    if p[0] not in self.ignore_params:
+TypeError: argument of type 'NoneType' is not iterable
+The reason is that all option values, if not explicitly set, default to None -- but the ServerPlaybackState _hash() method expects the replay_ignore_params option value to be iterable.
+To reproduce the problem:
+Start mitmdump in record mode: mitmdump -w traffic.dat
+Use a client to make some requests via the proxy
+Shut down the proxy
+Try starting mitmdump in replay mode: mitmdump -S traffic.dat
+Expected result: the proxy runs sucessfully
+Actual results: the proxy crashes within a second, when it tries to prepare the server playback state
+Suggested fix: update ServerPlaybackState._hash() to attempt iteration on the value only after ensuring that it isn't None.

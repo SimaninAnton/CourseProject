@@ -1,0 +1,74 @@
+Contributor
+waleedka commented on 29 Jul 2017
+I verified this on the master branch (as of today), and the issue is also discussed in length in the keras-rcnn repo broadinstitute/keras-rcnn#42. When BatchNormaliztion is wrapped with TimeDistributed, it does not update the mean and variance variables. As a result, the BN seems to be working fine during training, but in inference mode it produces the wrong output (the mean and variance are used in inference mode only). This code reproduces the issue:
+Without TimeDistributed (this works fine)
+import keras
+import keras.backend as K
+import keras.layers as KL
+import keras.models as KM
+
+# Simple model with one BN layer
+inputs = KL.Input(shape=[2])
+outputs = KL.BatchNormalization(center=True, scale=True, name="bn")(inputs)
+model = KM.Model(inputs, outputs)
+
+# Generate random inputs with mean = 2 and standard deviation = 2
+x = np.random.normal(loc=2, scale=2, size=(num_samples, 2))
+
+# Output fixed to [0, 1]. Model should overfit to this output.
+y = np.broadcast_to(np.array([0, 1]), (num_samples, 2))
+
+# Train
+model.compile(optimizer="sgd", loss="mse")
+model.fit(x, y, epochs=100, verbose=0)
+
+# Predict
+p = model.predict(x)
+print("shape: {}. Mean: {}".format(p.shape, np.mean(p.reshape(num_samples, 2), axis=0)))
+Output:
+shape: (1000, 2). Mean: [ 2.14744806e-17 9.99999762e-01]
+# Print learned variables
+gamma, beta, mean, variance = model.get_layer("bn").get_weights()
+print("gamma: ", gamma)
+print("beta: ", beta)
+print("mean: ", mean)
+print("STD: ", np.sqrt(variance))
+Output:
+gamma: [ 1.08916180e-14 6.56345378e-09]
+beta: [ 6.62068365e-22 9.99997079e-01]
+mean: [ 1.90420938 1.97779751]
+STD: [ 1.83883619 1.93283391]
+Note that the mean and standard deviation got updated to ~2, which matches the input distribution.
+With TimeDistributed (does not update mean/variance)
+# Simple model with one BN layer
+inputs = KL.Input(shape=[num_samples, 2])
+outputs = KL.TimeDistributed(KL.BatchNormalization(center=True, scale=True), name="bn")(inputs)
+model = KM.Model(inputs, outputs)
+
+# Generate random inputs with mean = 2 and standard deviation = 2
+x = np.random.normal(loc=2, scale=2, size=(1, num_samples, 2))
+
+# Output fixed to [0, 1]. Model should overfit to this output.
+y = np.broadcast_to(np.array([0, 1]), (1, num_samples, 2))
+
+# Train
+model.compile(optimizer="sgd", loss="mse")
+model.fit(x, y, epochs=1000, verbose=0)
+
+# Predict
+p = model.predict(x)
+print("shape: {}. Mean: {}".format(p.shape, np.mean(p.reshape(num_samples, 2), axis=0)))
+Output:
+shape: (1, 1000, 2). Mean: [ 8.31366633e-05 1.00004113e+00]
+# Print learned variables
+gamma, beta, mean, variance = model.get_layer("bn").get_weights()
+print("gamma: ", gamma)
+print("beta: ", beta)
+print("mean: ", mean)
+print("STD: ", np.sqrt(variance))
+Output:
+gamma: [ 4.32773231e-05 4.32775269e-05]
+beta: [ 2.50025976e-12 9.99956787e-01]
+mean: [ 0. 0.]
+STD: [ 1. 1.]
+This time mean and std did not update from their default values.

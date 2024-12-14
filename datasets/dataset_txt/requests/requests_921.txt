@@ -1,0 +1,27 @@
+Contributor
+bbamsch commented on Sep 25, 2016
+Issue is specific to Python3
+An incorrect assumption is made in requests.cookies.MockRequest on Python3, see here:
+class MockRequest(object):
+    ...
+    def get_full_url(self):
+        # Only return the response's URL if the user hadn't set the Host
+        # header
+        if not self._r.headers.get('Host'):
+            return self._r.url
+        # If they did set it, retrieve it and reconstruct the expected domain
+        host = self._r.headers['Host']
+        parsed = urlparse(self._r.url)
+        # Reconstruct the URL as we expect it
+        return urlunparse([
+            parsed.scheme, host, parsed.path, parsed.params, parsed.query,
+            parsed.fragment
+        ])
+    ...
+In Python2 this works fine where str and unicode objects are allowed interchangeably in urlunparse.
+In Python3 this is an issue because host = self._r.headers['Host'] may return a bytestring and parsed = urlparse(self._r.url) returns a ParseResult with str objects. Combining these two causes urlunparse to throw a fit.
+Steps to reproduce:
+>>> import requests
+>>> a = requests.Request('GET', 'http://www.google.com', headers={'Host': b'www.google.com'})
+>>> b = requests.cookies.MockRequest(a)
+>>> b.get_full_url()

@@ -1,0 +1,55 @@
+Contributor
+s3rvac commented on 27 May 2019
+Since Flask 1.0.3 (more specifically since b92b2e6), routing exceptions are no longer handled via application error handlers. This breaks our project, which has been using this feature to change the body and headers of redirections. In short, we want to be able to return HTML responses for web endpoints and JSON responses for API endpoints, including redirections. What is the idiomatic way of doing this in Flask 1.0.3?
+Minimal working example
+# test.py
+import flask
+import werkzeug
+
+class App(flask.Flask):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        @self.errorhandler(Exception)
+        def handle_exception(e):
+            return self._handle_error(e)
+
+    def _handle_error(self, e):
+        if isinstance(e, werkzeug.routing.RequestRedirect):
+            return 'redirection\n', 308
+        return 'error\n', 500
+
+app = App(__name__)
+
+@app.route('/test/')
+def test():
+    return 'test\n'
+Run it via FLASK_APP=test:app flask run.
+Expected behavior
+$ curl http://127.0.0.1:5000/test
+redirection
+This is what happens in Flask 1.0.2 and earlier.
+Actual behavior
+$ curl http://127.0.0.1:5000/test
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<title>Redirecting...</title>
+<h1>Redirecting...</h1>
+* Closing connection 0
+<p>You should be redirected automatically to target URL: <a href="http://127.0.0.1:5000/test/">http://127.0.0.1:5000/test/</a>.  If not click the link.
+This is what happens in Flask 1.0.3.
+Question
+What is the idiomatic way of changing the body and headers of redirections in Flask 1.0.3? We could do the following to get the original behavior, but it feels like a hack:
+class App(flask.Flask):
+    # ...
+
+    def handle_http_exception(self, e):
+        if isinstance(e, werkzeug.routing.RoutingException):
+            return self._handle_error(e)
+
+        return super().handle_http_exception(e)
+Is there a better way?
+Environment
+Python version: 3.7.3 (Linux)
+Flask version: 1.0.2 and 1.0.3 (see above)
+Werkzeug version: 0.15.4
+2

@@ -1,0 +1,69 @@
+Contributor
+nyov commented on Jul 12, 2019 •
+edited
+Possible Regression. See explanation beneath spider.
+MWE Testcode:
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+import logging
+import scrapy
+
+logger = logging.getLogger(__name__)
+
+
+class Spider(scrapy.Spider):
+
+    name = 'Spidy'
+
+    def start_requests(self):
+        yield scrapy.Request('https://scrapy.org/')
+
+    def parse(self, response):
+        logger.info('Here I fetched %s for you. [%s]' % (response.url, response.status))
+        return {
+            'status': response.status,
+            'url': response.url,
+            'test': 'item',
+        }
+
+
+class LogPipeline(object):
+
+    def process_item(self, item, spider):
+        logger.warning('HIT ME PLEASE')
+        logger.info('Got hit by:\n %r' % item)
+        return item
+
+
+if __name__ == "__main__":
+    from scrapy.settings import Settings
+    from scrapy.crawler import CrawlerProcess
+
+    settings = Settings(values={
+        'TELNETCONSOLE_ENABLED': False, # necessary evil :(
+        'EXTENSIONS': {
+            'scrapy.extensions.telnet.TelnetConsole': None,
+        },
+        'ITEM_PIPELINES': {
+            '__main__.LogPipeline': 800,
+        },
+    })
+
+    spider = Spider()
+
+    process = CrawlerProcess(settings=settings)
+    process.crawl(spider)
+    process.start()
+I just tried this functional (with Scrapy 1.5.1) example script on current master codebase and I got this error:
+2019-07-12 13:54:16 [scrapy.utils.log] INFO: Scrapy 1.6.0 started (bot: scrapybot)
+2019-07-12 13:54:16 [scrapy.utils.log] INFO: Versions: lxml 4.3.2.0, libxml2 2.9.4, cssselect 1.0.3, parsel 1.5.0, w3lib 1.20.0, Twisted 18.9.0, Python 3.7.3 (default, Apr  3 2019, 05:39:12) - [GCC 8.3.0], pyOpenSSL 19.0.0 (OpenSSL 1.1.1c  28 May 2019), cryptography 2.6.1, Platform Linux-4.9.0-8-amd64-x86_64-with-debian-10.0
+Traceback (most recent call last):
+  File "./test.py", line 60, in <module>
+    process.crawl(spider)
+  File "[...]/scrapy.git/scrapy/crawler.py", line 180, in crawl
+    'The crawler_or_spidercls argument cannot be a spider object, '
+ValueError: The crawler_or_spidercls argument cannot be a spider object, it must be a spider class (or a Crawler object)
+Looking at the codebase, blame blames this change: #3610
+But that procedure (passing a spider instance as process.crawl(spider)) is taken pretty much verbatim from the (latest) docs, so it should continue to work, or first get deprecated?: https://docs.scrapy.org/en/latest/topics/practices.html#run-scrapy-from-a-script
+edit:/ to clarify, I don't mind the functionality getting removed without deprecation, if it was never documented, as it seems it wasn't.

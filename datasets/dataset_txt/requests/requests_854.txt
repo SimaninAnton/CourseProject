@@ -1,0 +1,93 @@
+kevgliss commented on Nov 29, 2016
+Seeing the following errors when attempting to upgrade to 2.12.1. This most likely has to do with the underlying upgrade to urllib3. If that is deemed the case I can move this issue.
+2.11.1 does not exhibit any issues. Requests was installed with pip and running under python3.5.
+Stacktrace:
+Traceback (most recent call last):
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/contrib/pyopenssl.py", line 417, in wrap_socket
+    cnx.do_handshake()
+  File "/apps/lemur/lib/python3.5/site-packages/OpenSSL/SSL.py", line 1424, in do_handshake
+    self._raise_ssl_error(self._ssl, result)
+  File "/apps/lemur/lib/python3.5/site-packages/OpenSSL/SSL.py", line 1172, in _raise_ssl_error
+    _raise_current_error()
+  File "/apps/lemur/lib/python3.5/site-packages/OpenSSL/_util.py", line 48, in exception_from_error_queue
+    raise exception_type(errors)
+OpenSSL.SSL.Error: [('SSL routines', 'SSL3_READ_BYTES', 'tlsv1 alert unknown ca')]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 594, in urlopen
+    chunked=chunked)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 350, in _make_request
+    self._validate_conn(conn)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 835, in _validate_conn
+    conn.connect()
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connection.py", line 323, in connect
+    ssl_context=context)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/util/ssl_.py", line 324, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/contrib/pyopenssl.py", line 424, in wrap_socket
+    raise ssl.SSLError('bad handshake: %r' % e)
+ssl.SSLError: ("bad handshake: Error([('SSL routines', 'SSL3_READ_BYTES', 'tlsv1 alert unknown ca')],)",)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/apps/lemur/lib/python3.5/site-packages/requests/adapters.py", line 423, in send
+    timeout=timeout
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 624, in urlopen
+    raise SSLError(e)
+requests.packages.urllib3.exceptions.SSLError: ("bad handshake: Error([('SSL routines', 'SSL3_READ_BYTES', 'tlsv1 alert unknown ca')],)",)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/apps/lemur/lemur/common/schema.py", line 147, in decorated_function
+    resp = f(*args, **kwargs)
+  File "/apps/lemur/lemur/certificates/views.py", line 271, in post
+    return service.create(**data)
+  File "/apps/lemur/lemur/certificates/service.py", line 218, in create
+    cert_body, private_key, cert_chain = mint(**kwargs)
+  File "/apps/lemur/lemur/certificates/service.py", line 167, in mint
+    cert_body, cert_chain = issuer.create_certificate(csr, kwargs)
+  File "/apps/lemur/lemur-cloudca/lemur_cloudca/plugin.py", line 332, in create_certificate
+    response = self.post(endpoint, cloudca_options)
+  File "/apps/lemur/lemur-cloudca/lemur_cloudca/plugin.py", line 163, in post
+    response = self.session.post(self.url + endpoint, data=dumps(data), timeout=10, verify=self.ca_bundle)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/sessions.py", line 535, in post
+    return self.request('POST', url, data=data, json=json, **kwargs)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/sessions.py", line 488, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/sessions.py", line 609, in send
+    r = adapter.send(request, **kwargs)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/adapters.py", line 497, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: ("bad handshake: Error([('SSL routines', 'SSL3_READ_BYTES', 'tlsv1 alert unknown ca')],)",)
+
+Traceback (most recent call last):
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 594, in urlopen
+    chunked=chunked)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 350, in _make_request
+    self._validate_conn(conn)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connectionpool.py", line 835, in _validate_conn
+    conn.connect()
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/connection.py", line 323, in connect
+    ssl_context=context)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/util/ssl_.py", line 324, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/apps/lemur/lib/python3.5/site-packages/requests/packages/urllib3/contrib/pyopenssl.py", line 424, in wrap_socket
+    raise ssl.SSLError('bad handshake: %r' % e)
+ssl.SSLError: ("bad handshake: Error([('SSL routines', 'SSL3_READ_BYTES', 'tlsv1 alert unknown ca')],)",)
+Reproduce with:
+import requests
+
+class HostNameCheckingAdapter(HTTPAdapter):
+    def cert_verify(self, conn, url, verify, cert):
+        super(HostNameCheckingAdapter, self).cert_verify(conn, url, verify, cert)
+        conn.assert_hostname = False
+
+s = requests.Session()
+s.mount('https://', HostNameCheckingAdapter())
+s.cert = 'path-to-pem'
+
+s.get('https://example.com', verify='path-to-ca-bundle')

@@ -1,0 +1,51 @@
+Contributor
+mfeurer commented on Jul 8, 2016 •
+edited by TomDLT
+Currently, the Imputer works on columns. Let's assume I have a dataset with mixed categorical and numerical data points and missing values and I want to use the pipeline object:
+import numpy as np
+import scipy.stats
+import sklearn.pipeline
+import sklearn.preprocessing
+import sklearn.ensemble
+
+categorical_data = np.random.randint(0, 5, size=(10, 4))
+numerical_data = np.random.randn(10, 4)
+data = np.hstack((categorical_data, numerical_data))
+
+# Add missing values
+data[0, 1] = np.NaN
+data[1, 5] = np.NaN
+
+X = data
+y = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
+If I now try to use imputation, I can only choose a single strategy for both data types:
+pipeline = sklearn.pipeline.Pipeline((('imp',
+                                       sklearn.preprocessing.Imputer(
+                                           strategy='most_frequent')),
+                                      ('ohe',
+                                       sklearn.preprocessing.OneHotEncoder(
+                                           categorical_features=[0, 1, 2, 3])),
+                                      ('rf',
+                                       sklearn.ensemble.RandomForestClassifier())))
+which would result in a more or less random value being picked for the missing value of the continuous feature:
+Xt, _ = pipeline._pre_transform(X, y)
+# Now uses the return value of scipy.stats.mode which makes only very little
+# sense for a continuous value
+print(scipy.stats.mode(data)[5])
+print(Xt.toarray()[1])
+To overcome this, I propose to add a new attribute to the Imputer which allows to specify the columns to be imputed in order to allow something like this:
+pipeline = sklearn.pipeline.Pipeline((('imp_cat',
+                                       sklearn.preprocessing.Imputer(
+                                           strategy='most_frequent', 
+                                           columns=[0, 1, 2, 3])),
+                                      ('imp_num',
+                                       sklearn.preprocessing.Imputer(
+                                           strategy='median',
+                                           columns=[4, 5, 6, 7])),
+                                      ('ohe',
+                                       sklearn.preprocessing.OneHotEncoder(
+                                           categorical_features=[0, 1, 2, 3])),
+                                      ('rf',
+                                       sklearn.ensemble.RandomForestClassifier())))
+I could not find a related issue and am willing to work on this if this is considered worth adding to scikit-learn.
+👍 10

@@ -1,0 +1,43 @@
+olegpidsadnyi commented on 16 Oct 2013
+Could it be the case that instantiating the flask application opens some file and doesn't close it?
+I have tests with py.test and I didn't specify the scope of the flask application fixture to be 'sesson' so the flask application was instantiated basically for every test that needs it (we are using url map actively).
+At some point I get the traceback related to the limit of the files open etc.
+I understand that probably you don't have to instantiate more than one app per process, but it might be also interesting to clean up the resources. At least if you test the app creation with different configurations. Maybe I could call something in the fixture finalizer to release the resources?
+self = <Application 'httpapi.server'>
+def auto_find_instance_path(self):
+    """Tries to locate the instance path if it was not provided to the
+        constructor of the application class.  It will basically calculate
+        the path to a folder named ``instance`` next to your main file or
+        the package.
+
+        .. versionadded:: 0.8
+        """
+  prefix, package_path = find_package(self.import_name)
+../.virtualenvs/my/lib/python2.6/site-packages/Flask-0.10.1-py2.6.egg/flask/app.py:622:
+import_name = 'httpapi.server'
+def find_package(import_name):
+    """Finds a package and returns the prefix (or None if the package is
+    not installed) as well as the folder that contains the package or
+    module as a tuple.  The package path returned is the module that would
+    have to be added to the pythonpath in order to make it possible to
+    import the module.  The prefix is the path below which a UNIX like
+    folder structure exists (lib, share etc.).
+    """
+    root_mod_name = import_name.split('.')[0]
+    loader = pkgutil.get_loader(root_mod_name)
+    if loader is None or import_name == '__main__':
+        # import name is not found, or interactive/main module
+        package_path = os.getcwd()
+    else:
+        # For .egg, zipimporter does not have get_filename until Python 2.7.
+        if hasattr(loader, 'get_filename'):
+          filename = loader.get_filename(root_mod_name)
+../.virtualenvs/my/lib/python2.6/site-packages/Flask-0.10.1-py2.6.egg/flask/helpers.py:668:
+self = <pkgutil.ImpLoader instance at 0x10db70290>, fullname = 'httpapi'
+def get_filename(self, fullname=None):
+    fullname = self._fix_name(fullname)
+    mod_type = self.etc[2]
+    if self.etc[2]==imp.PKG_DIRECTORY:
+      return self._get_delegate().get_filename()
+E AttributeError: 'NoneType' object has no attribute 'get_filename'
+/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/pkgutil.py:313: AttributeError

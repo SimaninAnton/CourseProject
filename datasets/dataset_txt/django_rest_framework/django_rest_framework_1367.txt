@@ -1,0 +1,47 @@
+AbstractVisions commented on 21 Dec 2015
+With serializers mixin multiple-inheritance usage, fields and the methods corresponding to them become uncoordinated. For example:
+   1 from rest_framework import serializers                                                                                                                                                                                                                                       
+   2                                                                                                                                                                                                                                                                              
+   3 class A(serializers.Serializer):                                                                                                                                                                                                                                             
+   4     a = serializers.CharField()                                                                                                                                                                                                                                              
+   5                                                                                                                                                                                                                                                                              
+   6     def f(self):                                                                                                                                                                                                                                                             
+   7         print('It is "a" without read_only')                                                                                                                                                                                                                                
+   8                                                                                                                                                                                                                                                                              
+   9                                                                                                                                                                                                                                                                              
+  10 class B(serializers.Serializer):                                                                                                                                                                                                                                             
+  11     a = serializers.CharField(read_only=True)                                                                                                                                                                                                                                
+  12                                                                                                                                                                                                                                                                              
+  13     def f(self):                                                                                                                                                                                                                                                             
+  14         print('It is "a" with !!! read_only')                                                                                                                                                                                                                                    
+  15                                                                                                                                                                                                                                                                              
+  16                                                                                                                                                                                                                                                                              
+  17 class C(B, A):                                                                                                                                                                                                                                                               
+  18     pass      
+
+>>> c = C()                                                                                                                                                                                                                                                                  
+>>> a = A()                                                                                                                                                                                                                                                                  
+>>> b = B()
+
+>>> a                                                                                                                    
+  A():                                                                                           
+      a = CharField()                                                                                                                    
+>>> b                                                                                                                   
+  B():                                                                                                                
+      a = CharField(read_only=True)  
+>>> c   
+  C():                                                                                                                             
+      a = CharField()                                                                                                                                >>> c.f()                     
+  It is "a" with !!! read_only                                                                                                                                
+>>> b.f()                                                                                                                        
+  It is "a" with !!! read_only                                                                                                                               
+>>> a.f()                                                                                                                      
+  It is "a" without read_only       
+The reason of a problem is as follows (SerializerMetaclass in rest_framework/serializers.py)
+in this code:
+        for base in reversed(bases):
+            if hasattr(base, '_declared_fields'):
+                fields = list(base._declared_fields.items()) + fields
+
+        return OrderedDict(fields)
+I think it is necessary to insert check of mro multiple inheritance rules if override the field

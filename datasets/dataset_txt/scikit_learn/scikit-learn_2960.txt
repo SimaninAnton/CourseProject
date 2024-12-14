@@ -1,0 +1,28 @@
+Contributor
+staubda commented on Jun 11, 2016 •
+edited
+Description
+I've noticed that the size both on disk (via pickle) and in memory of an iforest model increases linearly with both the number of samples and trees. For example using default params (n_estimators=100) and fitting on an [n_samples, 10] array of randomly generated floats:
+n_samples size in memory (MB) size on disk (MB)
+10,000 3 8
+100,000 7 43
+1,000,000 103 386
+This is kind of unfortunate since otherwise iforest scales very well with number of samples. The culprit is the estimators_samples_ attribute it inherits from BaseBagging, which is used for calculating OOB scores. In estimators_samples_, for each tree, a vector of booleans indicating the samples the tree was trained on is recorded, resulting in a matrix with size [n_samples x n_estimators]. However, as iforest is unsupervised there is no real meaning for an OOB score, and indeed it is not implemented.
+My current fix is to set trained_iforest_model.estimators_samples_= None after fitting, after which model size on disk/memory is reduced to 2.5/4.5 MB for all sample sizes. I was wondering if a new optional parameter save_space (or some better name) could be introduced to tell iforest to throw away the estimators_samples_ data.
+Steps/Code to Reproduce
+import pickle
+import numpy as np
+from sklearn.ensemble import IsolationForest
+
+data_size = [1000000, 10]
+filepath = './iforest_test.pkl'
+save_space = False
+
+data_array = np.random.random(data_size)
+iforest = IsolationForest(bootstrap=True).fit(data_array)
+if save_space:
+    iforest.estimators_samples_ = None  # Don't store these values to make model smaller
+
+with open(filepath, 'w') as fp:
+    pickle.dump(iforest, fp)
+👍 1

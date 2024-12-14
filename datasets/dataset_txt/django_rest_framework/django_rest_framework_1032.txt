@@ -1,0 +1,51 @@
+hacknaked commented on 5 Oct 2016 •
+edited
+Given a model
+# models.py
+
+class User(AbstractBaseUser):
+    email = EmailField("email", null=True, blank=False, default=None)
+    ...
+and a ModelSerializer:
+# serializers.py
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('username', 'password', 'email',)
+        extra_kwargs = {'email': {'required': True}}
+the extra kwarg {'email': {'required': True}} will be ignored.
+The problem seems to be in rest_framework/fields.py
+class Field(object):
+     ...
+
+    def validate_empty_values(self, data):
+        """
+        Validate empty values, and either:
+
+        * Raise `ValidationError`, indicating invalid data.
+        * Raise `SkipField`, indicating that the field should be ignored.
+        * Return (True, data), indicating an empty value that should be
+          returned without any further validation being applied.
+        * Return (False, data), indicating a non-empty value, that should
+          have validation applied as normal.
+        """
+
+        ## data is None
+
+        if self.read_only:
+            return (True, self.get_default())
+
+        if data is empty:    ## THIS EVALUATES TO FALSE AND NEVER CHECK self.required.
+            if getattr(self.root, 'partial', False):
+                raise SkipField()
+            if self.required:
+                self.fail('required')
+            return (True, self.get_default())
+
+        if data is None:     ## MAY BE self.requeired SHOULD BE CHECKED HERE.
+            if not self.allow_null:
+                self.fail('null')
+            return (True, None)
+
+       return (False, data)

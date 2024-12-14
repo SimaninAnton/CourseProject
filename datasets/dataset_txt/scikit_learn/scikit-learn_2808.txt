@@ -1,0 +1,30 @@
+Member
+rth commented on Aug 29, 2016
+Problem statement
+In Scikit Learn 0.17, the Latent Semantic Analysis (LSA) implementation (aka Latent Semantic Indexing (LSI) in the context of Information Retrieval (IR) ) does not seem to be fully consistant with the LSA formulation in the book chapter cited as reference in the LSA documentation section (the same formulation is used on the LSA wikipedia page for what it's worth).
+I think LSA, as defined in this book chapter, computes a truncated SVD decomposition of the tf-idf matrix X (n_features, n_samples),
+  X ≈ U @ Sigma @ V.T
+and then for a document vector d, the projection is computed as,
+  d_proj = d.T @ U @ Sigma⁻¹
+The documentation currently states,
+When truncated SVD is applied to term-document matrices (as returned by CountVectorizer or TfidfVectorizer), this transformation is known as latent semantic analysis (LSA), because it transforms such matrices to a “semantic” space of low dimensionality.
+while the TruncatedSVD.fit_transform operation only computes,
+  d_proj = d.T @ U
+and the TruncatedSVD does not store the singular values diagonal matrix (Sigma) so it cannot be later applied.
+This is an additional and unrelated operation to the L2 normalisation, usually applied after the LSA so that the cosine_similarity between the document vector (d_proj) and the query vector (q_proj) can simply be replaced by a dot product (i.e. just a convenient way of computing cosine similarity).
+Steps to reproduce
+As illustrated in this example notebook, one cannot reproduce the LSI example from the literature, unless this additional normalisation by the Sigma matrix is a applied.
+Possible impact
+In my limited testing of this issue, it looked like,
+this has a moderate impact on results when using LSA for retrieving most relevant document from a collection
+very small impact on the clustering scores in the LSA + K-mean example
+Proposed solution
+A solution could consist of,
+add a public attribute: TruncatedSVD.singular_values_ : array, shape (n_components)
+add an optional parameter: svd_normalization=False to TruncatedSVD.transform and TruncatedSVD.fit_transform which adds this normalisation. The naming is open to discussion: whitening seem to be more associated with the covariance matrix which might not be ideal when talking about document term matrix of text documents.
+update documentation here and here either to mention that LSA should use this option (or that it's a possibility).
+adapt the LSA example from the Information Retrieval, Algorithms and Heuristics (2004) book in the notebook above as a non regression test.
+Would these changes to the API be acceptable?
+I would also appreciate somebody double checking whether,
+this normalisation is indeed used by default in the literature with LSA.
+the linear algebra above: the notations are a bit confusing because scikit learn, uses the transpose of the X matrix with respect to what is used in the Information Retrieval literature, which results in the SVD equation being transposed and the names of V and U.T are effectively exchanged (and vice versa) as far as I can tell.

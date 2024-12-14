@@ -1,0 +1,38 @@
+Contributor
+trippingtarballs commented on 2 Jul 2013
+As outlined in Issue #376, the partial=True flag is an API requirement for serializer to support PATCH. However, I think something might have been overlooked in the validation.
+I have a view that inherits from, generics.RetrieveUpdateDestroyAPIView. The serializer for my view has two fields, one of which is of type, serializers.PrimaryKeyRelatedField(). The PKRF is required on a GET, but not on a PATCH. Each of my two fields has a custom validate_method() in the serializer.
+When the REST code gets to function, rest_framework.serializers.BaseSerializer.perform_validation() there is no test of partial to check if the field's corresponding validate_method() should or should not be called.
+As it stands, the function BaseSerializer.perform_validation() looks like this:
+    def perform_validation(self, attrs):
+        for field_name, field in self.fields.items():
+            if field_name in self._errors:
+                continue
+            try:
+                validate_method = getattr(self, 'validate_%s' % field_name, None)
+                if validate_method:
+                    source = field.source or field_name
+                    attrs = validate_method(attrs, source)
+            except ValidationError as err:
+                self._errors[field_name] = self._errors.get(field_name, []) + list(err.messages)
+        ...
+        ...
+        return attrs
+I propose a small change to the code, as such:
+    def perform_validation(self, attrs):
+        for field_name, field in self.fields.items():
+            if field_name in self._errors:
+                continue
+            try:
+                validate_method = getattr(self, 'validate_%s' % field_name, None)
+                if validate_method and not self.partial:
+                    source = field.source or field_name
+                    attrs = validate_method(attrs, source)
+            except ValidationError as err:
+                self._errors[field_name] = self._errors.get(field_name, []) + list(err.messages)
+        ...
+        ...
+        return attrs
+As things stand, on a PATCH, a KeyError exception is raised when my custom validate_method() is called (because the 'required' field is not in DATA).
+Of course, it's quiet possible I'm overlooking something rather fundamental. Clarification on this point would be welcomed.
+Many thanks.

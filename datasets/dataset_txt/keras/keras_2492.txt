@@ -1,0 +1,307 @@
+kutoga commented on 2 May 2017
+Hello
+I copied and modified a code and started to play around with it. I created a model which uses some other models inside itself. This new model is called "discriminator_on_autoencoder".
+It returns tweo values: An image and also a binary value. For the image I use the mean squared error and for the binary value the binary crossentropy.
+It has the following loss-function:
+def ae_gan_loss(y_true, y_pred):
+    ay_true = y_true[0]
+    dy_true = y_true[1]
+    ay_pred = y_pred[0]
+    dy_pred = y_pred[1]
+
+    loss = 0
+    loss += mean_squared_error(ay_true, ay_pred)
+    loss += binary_crossentropy(dy_true, dy_pred)
+    return loss
+Unfortunately the final loss is negative:
+    11s - loss: -4.4241e+00 - generator_loss: -5.3198e+00 - discriminator_loss: 0.8956
+If I remove the binary crossentropy summand, the loss is positive:
+def ae_gan_loss(y_true, y_pred):
+    # ay_pred, dy_pred = y_pred[0], y_pred[1]
+    # ay_true, dy_true = y_true[0], y_true[1]
+    ay_true = y_true[0]
+    dy_true = y_true[1]
+    ay_pred = y_pred[0]
+    dy_pred = y_pred[1]
+
+    loss = 0
+    loss += mean_squared_error(ay_true, ay_pred)
+    #loss += binary_crossentropy(dy_true, dy_pred)
+    return loss
+Loss:
+    11s - loss: 1.5531 - generator_loss: 1.2597 - discriminator_loss: 0.2933
+I do not see what I am doing wrong, maybe someone has an idea? As I understood the loss cannot be negative for the binary crossentropy and also the mean squared error. I added the (running) code which loads MNIST and just starts to train:
+# The code is based on:
+# https://github.com/jacobgil/keras-dcgan/blob/master/dcgan.py
+
+# To be tested: Use same filters for the discriminator and the encoders (but do not share the FC-layers)
+#
+#
+import os
+
+#os.environ['KERAS_BACKEND'] = 'theano'
+
+from keras.models import Sequential, Model
+from keras.layers import Dense, Input
+from keras.layers import Reshape
+from keras.layers.core import Activation, Lambda
+from keras.layers.normalization import BatchNormalization
+from keras.layers.convolutional import UpSampling2D
+from keras.layers.convolutional import Convolution2D, MaxPooling2D
+from keras.layers.core import Flatten
+from keras.layers.noise import GaussianNoise
+from keras.optimizers import SGD
+from keras.datasets import mnist
+from keras.objectives import binary_crossentropy, mean_squared_error
+import numpy as np
+from PIL import Image
+import argparse
+import math
+
+data_format = "channels_first"
+
+def encoder_model():
+    input_layer = Input((1, 28, 28))
+
+    nw = BatchNormalization()(input_layer)
+    nw = GaussianNoise(0.5)(nw)
+
+    nw = Convolution2D(
+                        64, (5, 5),
+                        padding='same',
+                        data_format=data_format)(nw)
+    nw = Activation('tanh')(nw)
+    nw = MaxPooling2D(pool_size=(2, 2), data_format=data_format)(nw)
+    nw = Convolution2D(128, (5, 5), data_format=data_format)(nw)
+    nw = Activation('tanh')(nw)
+    nw = MaxPooling2D(pool_size=(2, 2), data_format=data_format)(nw)
+    nw = Flatten()(nw)
+    nw = Dense(1024)(nw)
+    nw = Activation('tanh')(nw)
+    nw = Dense(100)(nw)
+    nw = Activation('tanh')(nw)
+    model = Model([input_layer], [nw], name="encoder")
+    return model
+
+
+def generator_model():
+    input_layer = Input((100,))
+    nw = Dense(input_dim=100, units=1024)(input_layer)
+    nw = Activation('tanh')(nw)
+    nw = Dense(128*7*7)(nw)
+    nw = BatchNormalization()(nw)
+    nw = Activation('tanh')(nw)
+    nw = Reshape((128, 7, 7), input_shape=(128*7*7,))(nw)
+    nw = UpSampling2D(size=(2, 2), data_format=data_format)(nw)
+    nw = Convolution2D(64, (5, 5), padding='same', data_format=data_format)(nw)
+    nw = Activation('tanh')(nw)
+    nw = UpSampling2D(size=(2, 2), data_format=data_format)(nw)
+    nw = Convolution2D(1, (5, 5), padding='same', data_format=data_format)(nw)
+    nw = Activation('tanh')(nw)
+    model = Model([input_layer], [nw], name="generator")
+    return model
+
+
+def discriminator_model():
+    input_layer = Input((1, 28, 28))
+    nw = Convolution2D(
+                        64, (5, 5),
+                        data_format=data_format,
+                        padding='same')(input_layer)
+    nw = Activation('tanh')(nw)
+    nw = MaxPooling2D(pool_size=(2, 2), data_format=data_format)(nw)
+    nw = Convolution2D(128, (5, 5), data_format=data_format)(nw)
+    nw = Activation('tanh')(nw)
+    nw = MaxPooling2D(pool_size=(2, 2), data_format=data_format)(nw)
+    nw = Flatten()(nw)
+    nw = Dense(1024)(nw)
+    nw = Activation('tanh')(nw)
+    nw = Dense(1)(nw)
+    nw = Activation('sigmoid')(nw)
+    model = Model([input_layer], [nw], name="discriminator")
+    return model
+
+
+def generator_containing_discriminator(generator, discriminator):
+    input_layer = Input((100,))
+    nw = generator(input_layer)
+    discriminator.trainable = False
+    nw = discriminator(nw)
+    model = Model([input_layer], [nw], name="generator_containing_discriminator")
+    return model
+
+
+def autoencoder_containing_discriminator(encoder, generator, discriminator):
+    input_layer = Input((1, 28, 28))
+    nw = encoder(input_layer)
+    nw = generator(nw)
+    gen_out = nw
+    nw = discriminator(nw)
+    model = Model([input_layer], [gen_out, nw], name="autoencoder_containing_discriminator")
+    return model
+
+
+def combine_images(generated_images):
+    num = generated_images.shape[0]
+    width = int(math.sqrt(num))
+    height = int(math.ceil(float(num)/width))
+    shape = generated_images.shape[2:]
+    image = np.zeros((height*shape[0], width*shape[1]),
+                     dtype=generated_images.dtype)
+    for index, img in enumerate(generated_images):
+        i = int(index/width)
+        j = index % width
+        image[i*shape[0]:(i+1)*shape[0], j*shape[1]:(j+1)*shape[1]] = \
+            img[0, :, :]
+    return image
+
+
+def train_ae_gan(BATCH_SIZE):
+    (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    X_train = (X_train.astype(np.float32) - 127.5)/127.5
+    X_train = X_train.reshape((X_train.shape[0], 1) + X_train.shape[1:])
+    print(np.min(X_train))
+    print(np.max(X_train))
+
+    # Generate our 3 "core" models
+    discriminator = discriminator_model()
+    generator = generator_model()
+    encoder = encoder_model()
+
+    # Autoencoder discriminator
+    discriminator_on_autoencoder = autoencoder_containing_discriminator(encoder, generator, discriminator)
+
+    # Generator discriminator
+    discriminator_on_generator = generator_containing_discriminator(generator, discriminator)
+
+    d_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
+    g_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
+    a_optim = SGD(lr=0.0005, momentum=0.9, nesterov=True)
+
+    discriminator_on_generator.compile(loss='binary_crossentropy', optimizer=g_optim, metrics=['binary_accuracy'])
+    discriminator.compile(loss='binary_crossentropy', optimizer=d_optim, metrics=['binary_accuracy'])
+
+    def ae_gan_loss(y_true, y_pred):
+        # ay_pred, dy_pred = y_pred[0], y_pred[1]
+        # ay_true, dy_true = y_true[0], y_true[1]
+        ay_true = y_true[0]
+        dy_true = y_true[1]
+        ay_pred = y_pred[0]
+        dy_pred = y_pred[1]
+
+        loss = 0
+        loss += mean_squared_error(ay_true, ay_pred)
+        #loss += binary_crossentropy(dy_true, dy_pred)
+        return loss
+
+        return mean_squared_error(ay_true, ay_pred)# + binary_crossentropy(dy_true, dy_pred)
+
+    discriminator_on_autoencoder.compile(loss=ae_gan_loss, optimizer=a_optim)#'mean_squared_error', optimizer=a_optim)
+    # discriminator_on_autoencoder.compile(loss='mean_squared_error', optimizer=a_optim, metrics=['mean_squared_error'])
+    noise = np.zeros((BATCH_SIZE, 100))
+
+    # To be changed
+    generator.trainable = False
+    encoder.trainable = False
+    for epoch in range(100):
+
+        print("Epoch is", epoch)
+        print("Number of batches", int(X_train.shape[0] / BATCH_SIZE))
+        for index in range(int(X_train.shape[0] / BATCH_SIZE)):
+
+            for i in range(BATCH_SIZE):
+                noise[i, :] = np.random.uniform(-1, 1, 100)
+            image_batch = X_train[index * BATCH_SIZE:(index + 1) * BATCH_SIZE]
+            generated_images = generator.predict(noise, verbose=0)
+
+            print("Epoch {}".format(index))
+            if index % 20 == 0:
+                image = combine_images(generated_images)
+                image = image * 127.5 + 127.5
+                Image.fromarray(image.astype(np.uint8)).save(
+                    str(epoch) + "_" + str(index) + ".png")
+
+            # Train discriminator
+            X = np.concatenate((image_batch, generated_images))
+            y = [1] * BATCH_SIZE + [0] * BATCH_SIZE
+            print("Train discriminator")
+            d_loss = discriminator.fit(X, y, verbose=2)
+            #d_loss = discriminator.train_on_batch(X, y)
+            # print("batch %d d_loss : %f" % (index, d_loss))
+
+
+            for i in range(BATCH_SIZE):
+                noise[i, :] = np.random.uniform(-1, 1, 100)
+
+            # Train Generator
+            discriminator.trainable = False
+            print("Train generator")
+            g_loss = discriminator_on_generator.fit(
+                noise, [1] * BATCH_SIZE, verbose=2)
+            discriminator.trainable = True
+            # print("batch %d g_loss : %f" % (index, g_loss))
+            if index % 10 == 9:
+                generator.save_weights('generator', True)
+                discriminator.save_weights('discriminator', True)
+
+            # Train autoencoder
+            discriminator.trainable = False
+            X = image_batch
+            y = [X,
+                 np.asarray([1] * BATCH_SIZE)
+                 ]
+            print("Train autoencoder")
+            discriminator_on_autoencoder.fit(X, y, verbose=2)
+            discriminator.trainable = True
+
+def generate(BATCH_SIZE, nice=False):
+    generator = generator_model()
+    generator.compile(loss='binary_crossentropy', optimizer="SGD")
+    generator.load_weights('generator')
+    if nice:
+        discriminator = discriminator_model()
+        discriminator.compile(loss='binary_crossentropy', optimizer="SGD")
+        discriminator.load_weights('discriminator')
+        noise = np.zeros((BATCH_SIZE*20, 100))
+        for i in range(BATCH_SIZE*20):
+            noise[i, :] = np.random.uniform(-1, 1, 100)
+        generated_images = generator.predict(noise, verbose=1)
+        d_pret = discriminator.predict(generated_images, verbose=1)
+        index = np.arange(0, BATCH_SIZE*20)
+        index.resize((BATCH_SIZE*20, 1))
+        pre_with_index = list(np.append(d_pret, index, axis=1))
+        pre_with_index.sort(key=lambda x: x[0], reverse=True)
+        nice_images = np.zeros((BATCH_SIZE, 1) +
+                               (generated_images.shape[2:]), dtype=np.float32)
+        for i in range(int(BATCH_SIZE)):
+            idx = int(pre_with_index[i][1])
+            nice_images[i, 0, :, :] = generated_images[idx, 0, :, :]
+        image = combine_images(nice_images)
+    else:
+        noise = np.zeros((BATCH_SIZE, 100))
+        for i in range(BATCH_SIZE):
+            noise[i, :] = np.random.uniform(-1, 1, 100)
+        generated_images = generator.predict(noise, verbose=1)
+        image = combine_images(generated_images)
+    image = image*127.5+127.5
+    Image.fromarray(image.astype(np.uint8)).save(
+        "generated_image.png")
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--nice", dest="nice", action="store_true")
+    parser.set_defaults(nice=False)
+    args = parser.parse_args()
+    return args
+
+if __name__ == "__main__":
+    train_ae_gan(BATCH_SIZE=256)
+    # args = get_args()
+    # if args.mode == "train":
+    #     train_ae_gan(BATCH_SIZE=args.batch_size)
+    # elif args.mode == "generate":
+    #     generate(BATCH_SIZE=args.batch_size, nice=args.nice)
+Thank you very much

@@ -1,0 +1,72 @@
+ArionMiles commented on Sep 23, 2017
+Ok so I've given it a lot of try, asked most pythonistas I know, even on stackoverflow here: https://stackoverflow.com/questions/46346863/twisted-reactor-not-restarting-in-scrapy
+But I cannot for the life of me figure this out. I'm trying to execute the spider via a telegram bot, using the python-telegram-bot API wrapper.
+I'm running Python 2.7 on Windows 10.
+This is my code:
+from twisted.internet import reactor
+from scrapy import cmdline
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, RegexHandler
+import logging
+import os
+import ConfigParser
+import json
+import textwrap
+from MIS.spiders.moodle_spider import MySpider
+from scrapy.utils.project import get_project_settings
+from scrapy.crawler import CrawlerRunner, CrawlerProcess
+from scrapy.utils.log import configure_logging
+
+
+# Read settings from config file
+config = ConfigParser.RawConfigParser()
+config.read('./spiders/creds.ini')
+TOKEN = config.get('BOT', 'TOKEN')
+#APP_NAME = config.get('BOT', 'APP_NAME')
+#PORT = int(os.environ.get('PORT', '5000'))
+updater = Updater(TOKEN)
+
+# Setting Webhook
+#updater.start_webhook(listen="0.0.0.0",
+#                      port=PORT,
+#                      url_path=TOKEN)
+#updater.bot.setWebhook(APP_NAME + TOKEN)
+
+logging.basicConfig(format='%(asctime)s -# %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
+
+dispatcher = updater.dispatcher
+
+def doesntRun(bot, update):
+    configure_logging({'LOG_FORMAT': '%(levelname)s: %(message)s'})
+    runner = CrawlerRunner({
+        'FEED_FORMAT' : 'json',
+        'FEED_URI' : 'output.json'
+        })
+
+    d = runner.crawl(MySpider)
+    d.addBoth(lambda _: reactor.stop()) # this line is supposed to restart the reactor, right?
+    reactor.run(installSignalHandlers=0) # the script will block here until the crawling is finished
+
+    with open("./output.json", 'r') as file:
+        contents = file.read()
+        a_r = json.loads(contents)
+        AM = a_r[0]['AM']
+        ...
+        ...
+
+        message_template = textwrap.dedent("""
+                AM: {AM}
+                ...
+                """)
+        messageContent = message_template.format(AM=AM, ...)
+        bot.sendMessage(chat_id=update.message.chat_id, text=messageContent)
+
+
+# Handlers
+test_handler = CommandHandler('doesntRun', doesntRun)
+
+# Dispatchers
+dispatcher.add_handler(test_handler)
+
+updater.start_polling()
+updater.idle()
+Please provide insight on how I can restart the reactor, this is bugging me from a couple of days.

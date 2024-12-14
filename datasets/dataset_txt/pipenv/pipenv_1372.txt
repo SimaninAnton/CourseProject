@@ -1,0 +1,217 @@
+abulka commented on 13 Mar 2018
+I'm getting regular occurrences where sub-dependencies of packages are not being installed and the error "Could not find a version that matches" - even for a simple test case of e.g. one package e.g. requests. I'm on a Mac, High Sierra, pipenv, version 11.6.1, Python 3 via brew.
+I've had better success with pipenv on another machine, so am excited about what it does - but I do get irregular results and am also finding that different versions of pipenv seem to be coming down depending on whether I use brew to install pipenv, or use pip to install pipenv - and on top of that pipenv seems to be evolving a lot. Anway, let's consider python3 with pipenv installed via pip3 today.
+I'll uninstall all my brew Pythons so that we start from the beginning:
+brew uninstall python3
+brew uninstall python2
+brew install python3
+pip3 install pipenv
+then let's test out pipenv with the most simple situation
+mkdir proj1
+cd proj1
+pipenv install requests
+
+$ pipenv graph
+requests==2.18.4
+  - certifi [required: >=2017.4.17, installed: 2018.1.18]
+  - chardet [required: <3.1.0,>=3.0.2, installed: 3.0.4]
+  - idna [required: >=2.5,<2.7, installed: 2.6]
+  - urllib3 [required: >=1.21.1,<1.23, installed: 1.22]
+Ok so far. But no Pipfile.lock was created for some reason.
+And look what happens when I remove the virtual environment and recreate it.
+pipenv --rm
+pipenv install
+pipenv graph
+
+requests==2.18.4
+  - certifi [required: >=2017.4.17, installed: ?]
+  - chardet [required: >=3.0.2,<3.1.0, installed: ?]
+  - idna [required: >=2.5,<2.7, installed: ?]
+  - urllib3 [required: >=1.21.1,<1.23, installed: ?]
+The sub-dependencies have ? marks and have not been installed. I get this a lot. See my comments to #1580.
+The other thing I get a lot of is "Could not find a version that matches" errors. And of pipenv asking me to use the --skip-lock option. Even when my Pipfile contains a single reference to 'requests' ?!
+pipenv update
+Running $ pipenv lock then $ pipenv sync.
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+
+Warning: Your dependencies could not be resolved. You likely have a mismatch in your sub-dependencies.
+  You can use $ pipenv install --skip-lock to bypass this mechanism, then run $ pipenv graph to inspect the situation.
+Could not find a version that matches requests
+Tried: (no version found at all)
+
+$ pipenv install --skip-lock
+Installing dependencies from Pipfile…
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 1/1 — 00:00:03
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+
+Andys-MacBook-Air:proj1 Andy$ pipenv graph
+requests==2.18.4
+  - certifi [required: >=2017.4.17, installed: 2018.1.18]
+  - chardet [required: >=3.0.2,<3.1.0, installed: 3.0.4]
+  - idna [required: <2.7,>=2.5, installed: 2.6]
+  - urllib3 [required: <1.23,>=1.21.1, installed: 1.22]
+
+$ pipenv lock
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+Updated Pipfile.lock (7b8df8)!
+So I've managed to get the Pipfile.lock created. So let's remove the virtual environment and recreate it. My understanding is that pipenv should create the virtual environment and install what has been specified in the Pipfile.lock
+Andys-MacBook-Air:proj1 Andy$ pipenv --rm
+Removing virtualenv (/Users/Andy/.local/share/virtualenvs/proj1-ZuVNy-5E)…
+
+Andys-MacBook-Air:proj1 Andy$ pipenv install
+Creating a virtualenv for this project…
+Using /usr/local/bin/python3.6m (3.6.4) to create virtualenv…
+⠋Running virtualenv with interpreter /usr/local/bin/python3.6m
+Using base prefix '/usr/local/Cellar/python/3.6.4_4/Frameworks/Python.framework/Versions/3.6'
+New python executable in /Users/Andy/.local/share/virtualenvs/proj1-ZuVNy-5E/bin/python3.6
+Also creating executable in /Users/Andy/.local/share/virtualenvs/proj1-ZuVNy-5E/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /Users/Andy/.local/share/virtualenvs/proj1-ZuVNy-5E
+Installing dependencies from Pipfile.lock (7b8df8)…
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 1/1 — 00:00:01
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+
+Andys-MacBook-Air:proj1 Andy$ pipenv graph
+requests==2.18.4
+  - certifi [required: >=2017.4.17, installed: ?]
+  - chardet [required: <3.1.0,>=3.0.2, installed: ?]
+  - idna [required: >=2.5,<2.7, installed: ?]
+  - urllib3 [required: <1.23,>=1.21.1, installed: ?]
+Missing sub-dependencies again.
+Diagnostic info python3 -m pipenv.help
+Pipenv version: `'11.6.1'`
+
+Pipenv location: `'/usr/local/lib/python3.6/site-packages/pipenv'`
+
+Python location: `'/usr/local/opt/python/bin/python3.6'`
+
+Other Python installations in `PATH`:
+
+  - `2.7`: `/usr/bin/python2.7`
+  - `2.7`: `/usr/bin/python2.7`
+  - `3.6`: `/usr/local/bin/python3.6m`
+  - `3.6`: `/usr/local/bin/python3.6`
+  - `3.6`: `/usr/local/bin/python3.6`
+
+  - `2.7.10`: `/usr/bin/python`
+  - `3.6.4`: `/usr/local/bin/python3`
+  - `3.6.4`: `/usr/local/bin/python3`
+
+PEP 508 Information:
+{'implementation_name': 'cpython',
+'implementation_version': '3.6.4',
+'os_name': 'posix',
+'platform_machine': 'x86_64',
+'platform_python_implementation': 'CPython',
+'platform_release': '17.4.0',
+'platform_system': 'Darwin',
+'platform_version': 'Darwin Kernel Version 17.4.0: Sun Dec 17 09:19:54 PST '
+'2017; root:xnu-4570.41.2~1/RELEASE_X86_64',
+'python_full_version': '3.6.4',
+'python_version': '3.6',
+'sys_platform': 'darwin'}
+System environment variables:
+
+  - `TERM_PROGRAM`
+  - `TERM`
+  - `SHELL`
+  - `TMPDIR`
+  - `PERL5LIB`
+  - `Apple_PubSub_Socket_Render`
+  - `TERM_PROGRAM_VERSION`
+  - `OLDPWD`
+  - `PERL_MB_OPT`
+  - `TERM_SESSION_ID`
+  - `USER`
+  - `SSH_AUTH_SOCK`
+  - `PATH`
+  - `ENV_ROLE`
+  - `PLANTUML_JAR`
+  - `PWD`
+  - `JAVA_HOME`
+  - `LANG`
+  - `GRAPHVIZ_DOT`
+  - `XPC_FLAGS`
+  - `XPC_SERVICE_NAME`
+  - `HOME`
+  - `SHLVL`
+  - `PERL_LOCAL_LIB_ROOT`
+  - `SLIMERJSLAUNCHER`
+  - `LOGNAME`
+  - `ARCHFLAGS`
+  - `DISPLAY`
+  - `PERL_MM_OPT`
+  - `_`
+  - `__CF_USER_TEXT_ENCODING`
+  - `PIP_PYTHON_PATH`
+  - `PYTHONUNBUFFERED`
+
+Pipenv–specific environment variables:
+
+
+Debug–specific environment variables:
+
+  - `PATH`: `/Users/Andy/perl5/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Applications/VMware Fusion.app/Contents/Public:/Library/TeX/texbin:/opt/X11/bin:/Library/PostgreSQL/9.5/bin:/Users/Andy/scripts`
+  - `SHELL`: `/bin/bash`
+  - `LANG`: `en_AU.UTF-8`
+  - `PWD`: `/Users/Andy/Devel/test_pipenv/proj1`
+
+
+---------------------------
+
+Contents of `Pipfile` ('/Users/Andy/Devel/test_pipenv/proj1/Pipfile'):
+
+```toml
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[packages]
+
+requests = "*"
+
+
+[dev-packages]
+
+
+
+[requires]
+
+python_version = "3.6"
+Contents of Pipfile.lock ('/Users/Andy/Devel/test_pipenv/proj1/Pipfile.lock'):
+{
+    "_meta": {
+        "hash": {
+            "sha256": "33a0ec7c8e3bae6f62dd618f847de92ece20e2bd4efb496927e2524b9c7b8df8"
+        },
+        "pipfile-spec": 6,
+        "requires": {
+            "python_version": "3.6"
+        },
+        "sources": [
+            {
+                "name": "pypi",
+                "url": "https://pypi.python.org/simple",
+                "verify_ssl": true
+            }
+        ]
+    },
+    "default": {
+        "requests": {
+            "hashes": [
+                "sha256:6a1b267aa90cac58ac3a765d067950e7dbbf75b1da07e895d1f594193a40a38b",
+                "sha256:9c443e7324ba5b85070c4a818ade28bfabedf16ea10206da1132edaa6dda237e"
+            ],
+            "version": "==2.18.4"
+        }
+    },
+    "develop": {}
+}

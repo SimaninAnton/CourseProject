@@ -1,0 +1,72 @@
+Ao-Lee commented on 7 Nov 2019 •
+edited
+Does multi-gpu env supports self-defined lambda layers
+I use tf.image.resize_bilinear in a segmentation network, It seems this function does not support by multi-gpu model. The following code shows the simplified situation: (which can be run directly)
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
+from keras.backend.tensorflow_backend import set_session
+from keras import backend as K
+from keras.utils import multi_gpu_model
+from keras.applications.mobilenet_v2 import preprocess_input
+import tensorflow as tf
+import numpy as np
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True  
+config.allow_soft_placement = True         
+sess = tf.Session(config=config)
+set_session(sess)
+
+batch = 4
+num_classes = 2
+size = 128
+K.clear_session()
+
+def _GetRandomImg():
+    shape = (batch, size, size, 3)
+    img = np.random.randint(low=0, high=256, size=shape)
+    return preprocess_input(img)
+
+def _GetRandomLabel():
+    shape = (batch, size, size, num_classes)
+    label = np.random.randint(low=0, high=num_classes, size=shape)
+    label = np.exp(label)
+    label = label/ np.sum(label, axis=-1, keepdims=True)
+    return label
+
+def DataGen():
+    while True:
+        x = _GetRandomImg()
+        y = _GetRandomLabel()
+        yield x, y
+  
+from keras.layers import Input, Conv2D, Lambda
+from keras import Model
+
+def GetModel():
+    inputs = Input(shape=(size, size, 3))
+    f = lambda x: tf.image.resize_bilinear(inputs, (size, size), align_corners=True)
+    x = Lambda(f, output_shape=(size, size, 3))(inputs)
+    outputs = Conv2D(num_classes, kernel_size=3, padding='same')(x)
+    model = Model(inputs=[inputs], outputs=[outputs])
+    return model
+ 
+gen = DataGen()
+with tf.device('/cpu:0'):
+    model = GetModel() 
+model = multi_gpu_model(model, gpus=2)
+model.compile(loss='categorical_crossentropy', optimizer='sgd')
+result = model.fit_generator(gen, epochs=2, verbose = 1, steps_per_epoch = 100)
+it works fine with single gpu environment, but in multi-gpu environment, I got the following error:
+InvalidArgumentError: Incompatible shapes: [4,128,128,2] vs. [8,128,128,2]
+  [[{{node loss/conv2d_1_loss/categorical_crossentropy/mul}}]]
+  [[{{node training/SGD/gradients/conv2d_1_1/concat_grad/Slice_1}}]]
+by the way, my environment is:
+my environment is:
+keras version: '2.3.1'
+tensorflow version: '1.13.1'
+number of gpus: Geforce1080 * 4
+os version: Ubuntu 16.04
+Python version: 3.7
+GPU memory: 10G * 4
+TensorFlow backend: yes

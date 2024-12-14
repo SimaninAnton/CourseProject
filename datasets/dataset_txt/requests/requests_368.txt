@@ -1,0 +1,57 @@
+tribals commented on Feb 8, 2018 •
+edited
+I'm trying to better understand how retry machinery works, and how (and when) to use it in production environments. Some of my experiments leads me to realize the fact that involving retry machinery causes requests to hide actual cause of problem occurred when retrying some request. I think, it is important to distinguish between not to sending request at all (ConnectionError) and sending request but not to receiving response (ReadTimeout, for example).
+Expected Result
+When I retrying request with retry machinery involved, I expect it to raise appropriate exception when retrying is also failed.
+Actual Result
+Seems like in such case the exception which will be raised is always ConnectionError.
+Reproduction Steps
+import logging
+
+import requests
+from urllib3.util import Retry
+
+logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s - %(message)s')
+logging.getLogger().setLevel(logging.DEBUG)
+
+adapter = requests.adapters.HTTPAdapter(max_retries=Retry(total=3))
+session = requests.Session()
+session.mount('https://', adapter)
+
+session.get('https://httpbin.org/delay/3', timeout=2)
+Received exception is ConnectionError, but actual cause of problem is ReadTimeot, see retry.log
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.1.4"
+  },
+  "idna": {
+    "version": ""
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.4"
+  },
+  "platform": {
+    "release": "4.14.17-50.current",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "100020ef",
+    "version": "17.5.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020ef"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}

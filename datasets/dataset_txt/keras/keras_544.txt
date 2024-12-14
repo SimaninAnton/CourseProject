@@ -1,0 +1,60 @@
+MarcelBeining commented on 11 Dec 2018 •
+edited
+Please make sure that the boxes below are checked before you submit your issue.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+Check that your version of TensorFlow is up-to-date. The installation instructions can be found here.
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Hi,
+I am using keras and wanted to created a callback subclass that writes one sample of my raw image, labeled image and predicted image to be viewed in tensorboard.
+Below is the class that I have written for that problem and which is added to the callbacks list of the keras model.fit method. However on running model.fit I get the error
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'predictedImage' with dtype float
+which I do not understand, since, as far as I understand, model.outputs[0] (which I fed the first entry to the placeholder tensor 'predictedImage') should contain all the outputs of the last epoch.
+Any idea what is going on?
+import tensorflow as tf
+
+class VisImages(tf.keras.callbacks.Callback):        
+    def __init__(self, log_dir):
+        super()
+        self.log_dir = log_dir
+        self.session = tf.keras.backend.get_session()
+    
+        self.var_x = tf.placeholder(shape=(), dtype=tf.uint8, name='rawImage') #tf.Variable(0., validate_shape=False)
+        tf.summary.image('var_x',self.var_x)
+        
+        self.var_y_target = tf.placeholder(shape=(), dtype=tf.uint8, name='labeledImage') #tf.Variable(0., validate_shape=False)
+        tf.summary.image('var_y_target',self.var_y_target)
+
+        self.var_y_pred = tf.placeholder(dtype=tf.float32, shape=(),  name='predictedImage') # tf.Variable(0., validate_shape=False) 
+        tf.summary.image('var_y_pred',self.var_y_pred)
+        
+        
+        self.merged = tf.summary.merge_all()
+        self.writer = tf.summary.FileWriter(self.log_dir)
+
+  
+    def on_epoch_end(self, epoch, logs):
+        summary = self.session.run(self.merged,
+                                   feed_dict={self.var_y_target: self.model.targets[0][0],
+                                              self.var_y_pred: self.model.outputs[0][0],
+                                              self.var_x: self.model.inputs[0][0],
+                                              })
+        self.writer.add_summary(summary, epoch)
+        self.writer.flush()
+Background Info: I use the keras Sequential Model with 25 Conv3D layers (ReLU activation) and the last layer having sigmoid activation function. Model is compiled in this line in the main script:
+run_opts = tf.RunOptions(report_tensor_allocations_upon_oom = True)
+model.compile(loss=tf.keras.losses.binary_crossentropy,
+              optimizer=tf.keras.optimizers.SGD(lr=learning_rate, momentum=1, decay=0, nesterov=False),
+              metrics=['accuracy'],options = run_opts)
+and run with these lines
+vi = VisImages(log_dir)   
+tb = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, batch_size=dataPar['batchSize'], write_graph=True, write_grads=True, write_images=True)
+ton = tf.keras.callbacks.TerminateOnNaN()
+tmc = tf.keras.callbacks.ModelCheckpoint('./models/%s_%s_weights.{epoch:02d}-{val_loss:.2f}.hdf5'%(datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),cnntype), monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=True, mode='auto', period=1)
+history = model.fit(raw_train_normalized, label_train, validation_split=dataPar['amountValidation']/(1-dataPar['amountTest']),
+              batch_size=dataPar['batchSize'],
+              epochs=dataPar['epochs'],
+              verbose=1,callbacks=[tb,ton,tmc,vi])
+Thank you so much!

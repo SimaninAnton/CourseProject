@@ -1,0 +1,47 @@
+masyagin1998 commented on 25 Nov 2018
+Hello!
+I am using latest tensorflow with GPU support and latest Keras.
+I am trying to write parallel data augmentation using keras.utils.Sequence, but have two problems:
+fit_generator creates too many workers (I have parameter workers=2, but it generates 4 additional workers);
+Using Sequence is extremely slow (with generator and a lot of augmentations I spend two minutes on epoch, with multiprocessing and Sequence - more than 10 minutes.
+Here is my Sequence and fit_generator:
+`class ParallelDataGenerator(Sequence):
+"""Generate images for training/validation/testing (parallel version)."""
+def __init__(self, dname: str, start: int, stop: int, batch_size: int, augmentate: bool):
+    self.batch_size = batch_size
+    self.augmentate = augmentate
+    self.idxs = [i for i in range(start, stop)]
+    self.imgs_in = [cv2.imread(os.path.join(dname, 'in', str(i) + '_in.png'),
+                               cv2.IMREAD_GRAYSCALE).astype(np.float32) for i in range(start, stop)]
+    self.imgs_gt = [cv2.imread(os.path.join(dname, 'gt', str(i) + '_in.png'),
+                               cv2.IMREAD_GRAYSCALE).astype(np.float32) for i in range(start, stop)]
+    self.idxs = [i for i in range(0, stop - start)]
+
+def __len__(self):
+    return int(np.ceil(float(len(self.idxs)) / float(self.batch_size)))
+
+def on_epoch_end(self):
+    shuffle(self.idxs)
+
+def __getitem__(self, idx):
+    print(idx, os.getpid())
+    start = idx * self.batch_size
+    stop = start + self.batch_size
+    if stop >= len(self.idxs):
+        stop = len(self.idxs)
+
+    imgs_in = []
+    imgs_gt = []
+    for i in range(start, stop):
+        img_in = np.copy(self.imgs_in[self.idxs[i]])
+        img_gt = np.copy(self.imgs_gt[self.idxs[i]])
+        if self.augmentate:
+            img_in, img_gt = random_effect_img(img_in, img_gt)
+        imgs_in.append(normalize_in(img_in))
+        imgs_gt.append(normalize_gt(img_gt))
+    imgs_in = np.array(imgs_in)
+    imgs_in.shape = (imgs_in.shape[0], imgs_in.shape[1], imgs_in.shape[2], 1)
+    imgs_gt = np.array(imgs_gt)
+    imgs_gt.shape = imgs_in.shape
+    return imgs_in, imgs_gt`
+model.fit_generator( train_generator, steps_per_epoch=(train_stop - train_start) / args.batchsize, epochs=args.epochs, validation_data=validation_generator, validation_steps=(validation_stop - validation_start) / args.batchsize, callbacks=callbacks, use_multiprocessing=True, workers=2, max_queue_size=10 )

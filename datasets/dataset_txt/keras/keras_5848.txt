@@ -1,0 +1,50 @@
+shyamupa commented on 1 Mar 2016
+I am training the following model (code is here),
+I have a input sequence (X) and its corresponding sequence (Y). You can think of X being a question and Y being its correct answer. I am trying to learn a similarity function F such that F(X,Y)=1 and F(X,Y')=0.
+My training input is X concatenated with Y and my target output is 1/0 (0 is for negative examples). I generate k negative examples by picking a random Y' to concat with X (with a delimiter separating them). So my input looks something like (I pre-pad X with 0s and post-pad Y with 0s to ensure length = xmaxlen + ymaxlen + 1 for all examples),
+[...0 0 0 0 634.  1759.   890.  1289.   255.  ... 1.  2164.  1746. 0 0 0 ..]--> [1.0]
+[...0 0 0 0 634.  1759.   890.  1289.   255.  ... 1.  2141.  1733. 0 0 0 ..]--> [0.0]
+[...0 0 0 0 634.  1759.   890.  1289.   255.  ... 1.  2111.  1033. 0 0 0 ..]--> [0.0]
+...
+[...0 0 0 64.  179.   89.  128.   25.  ... 1.  216.  174....0 0 0 ]--> [1.0]
+[...0 0 0 64.  179.   89.  128.   25.  ... 1.  210.  118....0 0 0 ]--> [0.0]
+...
+I plug in both sequences into a bidirectional LSTM and get its last state's output to a softmax which predicts the label.
+    def get_H_n(X):
+        ans=X[:, -1, :]  # get last element from time dim
+        return ans
+
+    model.add_input(name='input', input_shape=(N,), dtype=int)
+    model.add_node(Embedding(options.max_features, options.wx_emb, input_length=N), name='emb',
+                   input='input')
+    model.add_node(LSTM(options.lstm_units, return_sequences=True), name='forward', input='emb')
+    model.add_node(LSTM(options.lstm_units, return_sequences=True, go_backwards=True), name='backward', input='emb')
+
+    model.add_node(Dropout(0.5), name='dropout', inputs=['forward','backward'])
+    model.add_node(Lambda(get_H_n, output_shape=(k,)), name='h_n', input='dropout')
+    model.add_node(Dense(1, activation='softmax'), name='out', input='h_n')
+    model.add_output(name='output', input='out')
+The model compiles and trains, but nothing changes at all!
+Epoch 1/10
+1094/1094 [==============================] - 3s - loss: 14.4560 - val_loss: 14.4409
+Epoch 2/10
+1094/1094 [==============================] - 3s - loss: 14.4560 - val_loss: 14.4409
+Epoch 3/10
+1094/1094 [==============================] - 4s - loss: 14.4560 - val_loss: 14.4409
+Epoch 4/10
+1094/1094 [==============================] - 3s - loss: 14.4560 - val_loss: 14.4409
+Epoch 5/10
+Things I have tried to debug,
+Lower learning rate.
+Check if data manipulation is sane.
+Chop input to avg xlen and avg ylen
+Print the output of embedding layers (look alright).
+Tried custom embedding layer which drives 0 to 0-vector (from #1800).
+Print softmax weights (bias is always 0, but the W is non-zero).
+Why is this happening? Any suggestion is welcome!
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

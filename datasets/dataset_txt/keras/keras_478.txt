@@ -1,0 +1,91 @@
+FriendOfFatBeagle commented on 8 Jan 2019 •
+edited
+Hi:
+Below are code fragments:
+... ....
+X_out shape after 1st Conv2D: (?, 2, 128, 32)
+X_out reshaped to one channel: (?, 64, 128, 1)
+X_in = Input(input_shape)    # is of shape (none, 2, 128)
+print("X_in.shape: {}".format(X_in.shape))     
+# X_in.shape: (?, 2, 128, 1)
+#************* 1 of .....
+#1st of several stages
+kernel_size = (1, 3) # Change to reflect 2x128 input shape.
+filters_count = 32
+strides = (1, 1)
+X_out = Conv2D( filters_count,
+kernel_size=kernel_size,
+strides = strides,
+padding='same',
+name = 'conv2d_stack1',
+kernel_initializer = glorot_uniform(seed=0))(X_in)
+print("X_out shape after 1st Conv2D: {}".format(X_out.shape))
+#X_out shape after 1st Conv2D: (?, 2, 128, 32)
+batch_size, rows, cols, channels= X_out.shape
+new_channels = 1
+X_out = Reshape((rows*channels, cols, new_channels) )(X_out)
+print("X_out reshaped to one channel: {}".format(X_out.shape))
+#X_out reshaped to one channel: (?, 64, 128, 1)
+X_out = ZeroPadding2D(padding=(1, 1))(X_out)
+print("X_out shape after zeropadding: {}".format(X_out.shape))
+#X_out shape after zeropadding: (?, 66, 130, 1)
+... ...
+print("X_out before Flatten() : {}".format(X_out.shape))
+#X_out before Flatten() : (?, 64, 1, 1)
+X_out = Flatten()(X_out)
+print("X_out shape after Flatten(): {}".format(X_out.shape))
+#X_out shape after Flatten(): (?, ?)
+#Why is Flatten()'s output shape be (?,?)
+#Next line is this:
+fc_selu_output_dimension = 32
+X_out = Dense(fc_selu_output_dimension,
+activation='selu',
+name='1st_of_2_FC_SeLU',
+kernel_initializer = glorot_uniform(seed=0))(X_out)
+#which has this error:
+TypeError: float() argument must be a string or a number, not 'Dimension'
+... ...
+.....more code later.....
+... ...
+#At the end, I have a fully connected / softmax layer:
+X_out = Dense(classes, activation='softmax',
+name='fc_softmax' + str(classes),
+kernel_initializer = glorot_uniform(seed=0))(X_out)
+print("X_out shape after Dense Softmax: {}".format(X_out.shape))
+#X_out shape after Dense Softmax: (?, 64, 11)
+But after compilation, the printed table for Layer(type), 0utput shape, and Param looks like this:
+Layer (type) Output Shape Param #
+input_14 (InputLayer) (None, 2, 128, 1) 0
+conv2d_stack1 (Conv2D) (None, 2, 128, 32) 128
+reshape_23 (Reshape) (None, Dimension(64), Dim 0
+zero_padding2d_92 (ZeroPaddi (None, Dimension(66), Dim 0
+... ... ...
+fc_softmax11 (Dense) (None, Dimension(64), 11) 363
+Note some Output Shape column values has been occluded automatically by the Param column.
+Error I got:
+185 ##*************************************
+--> 186 X_out = Dense(fc_selu_output_dimension, activation='selu', name='1st_of_2_FC_SeLU', kernel_initializer = glorot_uniform(seed=0))(X_out)
+187     print("X_out shape after 1st Dense: {}".format(X_out.shape))
+188     X_out = AlphaDropout(0.1, noise_shape=None, seed=None)(X_out
+TypeError: float() argument must be a string or a number, not 'Dimension'
+Comments:
+Issue 1: TypeError: float() argument must be a string or a number, not 'Dimension'
+I notice once Reshape() happens, the output shape
+printed by the compiler is "reshape_23 (Reshape) (None, Dimension(64), Dim 0.... "
+instead of the usual shape of this form (None, 64, 128, 1).
+I do not know why we have Dimension(64) instead of just the number "64".
+Looks like Dimension() is an object.
+After the Reshape function call, all output shape has the Dimension() object!
+In the past, the Reshape() give a tuple like of this form: (None, 64, 128, 1).
+How to I prevent this problem?
+What did I missed this time?
+Issue 2:
+print("X_out before Flatten() : {}".format(X_out.shape))
+#X_out before Flatten() : (?, 64, 1, 1)
+X_out = Flatten()(X_out)
+print("X_out shape after Flatten(): {}".format(X_out.shape))
+#X_out shape after Flatten(): (?, ?)
+** Why is Flatten()'s output shape be (?,?) ?**
+Why is Flatten() giving (?,?) instead of (?, 64)?
+Is there a work around for this?
+Thank you.

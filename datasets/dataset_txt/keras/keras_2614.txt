@@ -1,0 +1,43 @@
+blondon commented on 19 Apr 2017
+Is it possible to write a training data generator that interacts with a training callback? For example, suppose I have a callback that updates the sampling distribution after each batch; each time callback.on_batch_end() is called, it updates a distribution over examples, which is used by the generator to sample the next batch. (I'm not interested in using the sample_weights argument to model.fit(); I'm talking about something different.)
+I realize that this dependency prohibits asynchronous data generation, since the generator needs to synchronize with training. I'm willing to forego multi-threading, but there doesn't appear to be a way to turn it off with model.fit_generator(); the number of workers must be at least 1.
+Here's some code that doesn't seem to work. It hangs after training.
+class WeightedSampler(Callback):
+
+    def __init__(self, dataset):
+        self.X, self.y = dataset
+        self.num_examples = self.y.shape[0]
+        self.training = True
+        self.updating = False
+
+    def on_train_begin(self, logs=None):
+        self.probs = np.ones(self.num_examples) / float(self.num_examples)
+        self.training = True
+        self.updating = False
+
+    def on_train_end(self, logs=None):
+        self.training = False
+
+    def on_batch_end(self, batch, logs=None):
+        # Update the sampling distribution.
+        self.probs = dist_update_function(...)
+        self.updating = False
+
+    def get_minibatch(self, batch_size):
+        while self.training:
+            if self.updating:
+                continue
+            idx = numpy.random.choice(self.num_examples, batch_size, p=self.probs)
+            self.updating = True
+            yield self.X[idx,:], self.y[idx,:]
+
+sampler = WeightedSampler(dataset=(X_train, y_train))
+model.fit_generator(
+    sampler.get_minibatch(batch_size=1000),
+    steps_per_epoch=int(num_train_examples / 1000),
+    epochs=1,
+    validation_data=(X_test, y_test),
+    callbacks=[sampler],
+    workers=1, verbose=1)
+When I remove the inner loop in get_minibatch(), if self.updating: continue, then it doesn't hang after training, but the generator thread tries to grab data before the training thread has finished processing the batch.
+What is the correct way to accomplish what I'd like to do?

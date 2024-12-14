@@ -1,0 +1,26 @@
+Contributor
+tonybaloney commented on Apr 2, 2017
+I've just finished porting a large project from httplib to requests, it talks to over 50 APIs with pretty much every weird and obtuse spec you could think of.
+The only one I got slightly stuck on was the OpenStack Identity, Azure Management (classic) APIs and Docker when TLS is enabled. All require certificate based authentication.
+In httplib we would use the std library and access SSLContext to wrap the connection with a signed payload. I spent a few hours researching the correct way to do this in requests, found that I could access them via urllib3 and create an ssl context through a utility method https://github.com/kennethreitz/requests/blob/master/requests/packages/urllib3/util/ssl_.py#L321-L324 but didn't want to couple myself directly to the internals of a 3rd party package.
+The PoolManager initializer has a kwarg for both key_file and cert_file, it doesn't expose those in the Session API in any way that I could see without having to write a custom adapter like this:
+class SignedHTTPSAdapter(HTTPAdapter):
+    def __init__(self, cert_file, key_file):
+        self.cert_file = cert_file
+        self.key_file = key_file
+        super(SignedHTTPSAdapter, self).__init__()
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block,
+            cert_file=self.cert_file,
+            key_file=self.key_file)
+
+session = requests.Session()
+session.mount('https://', SignedHTTPSAdapter(cert_file, key_file))
+I'd like to help the next person and save them the 3 hours it took me to figure this out by either making it easier, documenting the solution or the scenario.
+Happy to raise PR for either
+Lift access to set the cert_file and key_file higher up in the API so it doesn't require a custom adapter.
+Leave it as is, document this in the advanced section, happy to contribute docs on how to make a signed request.
+Nothing needs to change and this issue can be a reference for the next person!

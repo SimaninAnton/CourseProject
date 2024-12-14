@@ -1,0 +1,55 @@
+zhangcx93 commented on 17 Mar 2016
+I have a model like this:
+model = Sequential()
+model.add(Convolution1D(nb_filter=80, filter_length=3, border_mode='valid', input_dim=3, input_length=200))
+model.add(Activation('relu'))
+model.add(Convolution1D(nb_filter=80, filter_length=3, border_mode='valid'))
+model.add(Activation('relu'))
+model.add(AveragePooling1D(pool_length=196))
+model.add(Dropout(0.4))
+model.add(Flatten())
+model.add(Dense(100))
+model.add(Activation('relu'))
+model.add(Dense(2, activation='tanh', activity_regularizer=CertainRegularizer(0.2)))
+model.add(Activation('softmax'))
+
+rms = RMSprop(0.002)
+model.compile(rms, loss='categorical_crossentropy')
+which use a custom regulizer:
+class CertainRegularizer(Regularizer):
+    def init(self, l):
+    self.l = l
+
+    def set_layer(self, layer):
+        self.layer = layer
+
+    def __call__(self, loss):
+        output = self.layer.get_output(True)
+        loss -= self.l * T.mean(T.var(output, axis=-1))
+        return loss
+
+    def get_config(self):
+        return {"name": self.__class__.__name__,
+                "l": self.l}
+I noticed the model.to_json() will output that layer like:
+{u'W_constraint': None, u'W_regularizer': None, u'activation': u'tanh', u'activity_regularizer': {u'l': 0.2, u'name': u'CertainRegularizer'}, u'b_constraint': None, u'b_regularizer': None, u'cache_enabled': True, u'custom_name': u'dense', u'init': u'glorot_uniform', u'input_dim': None, u'name': u'Dense', u'output_dim': 2, u'trainable': True} 
+The activity_regularizer is a dict with name CertainRegularizer and param l: 0.2
+But the model_from_json won't load it, report this:
+  File "/usr/local/lib/python2.7/site-packages/keras/models.py", line 166, in model_from_json
+    return model_from_config(config, custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/site-packages/keras/models.py", line 177, in model_from_config
+    model = container_from_config(config, custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/site-packages/keras/utils/layer_utils.py", line 45, in container_from_config
+    seq_layer = containers.Sequential(layer_list)
+  File "/usr/local/lib/python2.7/site-packages/keras/layers/containers.py", line 25, in __init__
+    self.add(layer)
+  File "/usr/local/lib/python2.7/site-packages/keras/layers/containers.py", line 68, in add
+    self.layers[-1].set_previous(self.layers[-2])
+  File "/usr/local/lib/python2.7/site-packages/keras/layers/core.py", line 105, in set_previous
+    self.build()
+  File "/usr/local/lib/python2.7/site-packages/keras/layers/core.py", line 958, in build
+    self.activity_regularizer.set_layer(self)
+AttributeError: 'dict' object has no attribute 'set_layer'
+The custom_objects param of model_from_json just put the object in globals(), but loading regularizers would only load things from default regularizers unlike custom loss.(things would also happen like this for custom constraints)
+I think it should check the globals() after checking default regularizers to get custom regularizers.
+Or any workaround suggestions?

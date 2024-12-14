@@ -1,0 +1,29 @@
+dtheodor commented on 21 Jan 2016
+Hello!
+I am having a hard time factoring out common functionality with ApiViews. For each request going through my endpoint, I want to do something like this:
+def get(request):
+  try:
+    data = prepare_data(request)
+    result = handle_call(request, data) # this is the actual endpoint-specific work
+    response = prepare_response(result)
+    return response
+  except MyException as e:
+    handle_exc(e) # catches app-specific exceptions, re-raises as APIExceptions
+Keep in mind that these calls do application-specific stuff, not the generic stuff that django rest framework already does such as json deserialization or APIException turned into a proper Response.
+All this "wrapper" functionality is common among a collection of end points and across different HTTP verbs (GET and POST), so I am trying to implement a base class that will take care of performing them. A subclass would then only have to implement their endpoint-specific functionality through get or post, while common stuff are taken care of outside of these methods.
+Ideally, I wanted a single place where I can just wrap with this code. The following line inside APIView.dispatch() looks ideal: it is at the place where all django rest framework wrapping has taken place and the user code starts, and it can take care of all HTTP verbs as well.
+def dispatch():
+  # ...
+  response = handler(request, *args, **kwargs)
+  # ...
+However there is no hook that allows to override behavior at that point. I also don't want to copy the whole dispatch into my base class in order to stay compatible with django rest framework updates. The only alternative I have is sprinkling bits of this code in self.initial(), self.finalize_response() and the worst of all self.handle_exception() which is tied to an application-wide exception_handler. Doing this results in a really ugly and hacky base class.
+With a small change inside dispatch(), factoring out common functionality becomes a piece of cake:
+def dispatch():
+  # ...
+  response = self.handle_request(handler, request, *args, **kwargs)
+  # ...
+
+def handle_request(handler, request, *args, **kwargs):
+  # this can be overriden
+  return handler(request, *args, **kwargs)
+Thoughts?

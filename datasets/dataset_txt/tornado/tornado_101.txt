@@ -1,0 +1,73 @@
+heybuddy commented on 12 Jan 2019
+I tested the following app with version 5.1.1 of tornado:
+import tornado
+import tornado.websocket
+import tornado.ioloop
+from tornado import gen
+
+
+class MySocket(tornado.websocket.WebSocketHandler):
+    def open(self):
+        print 'socket opened'
+        raise Exception('bad')
+
+    @gen.coroutine
+    def on_message(self, message):
+        print message
+
+    def on_close(self):
+        print 'closed'
+
+
+def create_application():
+    return tornado.web.Application([
+        (r"^/?$", MySocket),
+    ])
+
+
+application = create_application()
+application.listen(8000)
+tornado.ioloop.IOLoop.current().start()
+If I connect with a client, I get the following (correct) output on the server side:
+socket opened
+ERROR:tornado.application:Uncaught exception GET / (127.0.0.1)
+HTTPServerRequest(protocol='http', host='localhost:8000', method='GET', uri='/', version='HTTP/1.1', remote_ip='127.0.0.1')
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/site-packages/tornado/websocket.py", line 546, in _run_callback
+    result = callback(*args, **kwargs)
+  File "./test.py", line 10, in open
+    raise Exception('bad')
+Exception: bad
+closed
+However, if I add the gen.coroutine annotation to open and run the same test, I get this output instead:
+socket opened
+ERROR:tornado.application:Exception in callback <functools.partial object at 0x7fea30c31c00>
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/site-packages/tornado/ioloop.py", line 758, in _run_callback
+    ret = callback()
+  File "/usr/local/lib/python2.7/site-packages/tornado/stack_context.py", line 300, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/usr/local/lib/python2.7/site-packages/tornado/websocket.py", line 553, in <lambda>
+    self.stream.io_loop.add_future(result, lambda f: f.result())
+  File "/usr/local/lib/python2.7/site-packages/tornado/concurrent.py", line 261, in result
+    raise_exc_info(self._exc_info)
+  File "/usr/local/lib/python2.7/site-packages/tornado/gen.py", line 307, in wrapper
+    result = func(*args, **kwargs)
+  File "./test.py", line 11, in open
+    raise Exception('bad')
+Exception: bad
+ERROR:tornado.application:Future exception was never retrieved: Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/site-packages/tornado/gen.py", line 1141, in run
+    yielded = self.gen.throw(*exc_info)
+  File "/usr/local/lib/python2.7/site-packages/tornado/websocket.py", line 757, in _accept_connection
+    yield open_result
+  File "/usr/local/lib/python2.7/site-packages/tornado/gen.py", line 1133, in run
+    value = future.result()
+  File "/usr/local/lib/python2.7/site-packages/tornado/concurrent.py", line 261, in result
+    raise_exc_info(self._exc_info)
+  File "/usr/local/lib/python2.7/site-packages/tornado/gen.py", line 307, in wrapper
+    result = func(*args, **kwargs)
+  File "./test.py", line 11, in open
+    raise Exception('bad')
+Exception: bad
+Note that there is no "closed" message. On the client side, the client still thinks the connection is still open and I can send messages without error. Without the coroutine, the client gets a broken pipe error the next time it tries to send a message.

@@ -1,0 +1,51 @@
+chiyuan-goh commented on Jan 2, 2015
+Have been trying to register my function to the signal spider_closed either from within my middleware or from the main function. So far, only spider_opened works. Scrapy==0.24.4 twisted==14.0.2
+def abc():
+    print 'works!'
+class IgnoreDuplicatesMiddleware(object):
+    @classmethod
+    def from_crawler(cls, crawler):
+        crawler.signals.connect(abc, signal=signals.spider_closed)
+        crawler.signals.connect(abc, signal=signals.spider_opened)
+
+    def on_spider_closed(self):
+        self.conn.executemany("insert into crawled_urls(url) VALUES(?)", [(url) for url in self.fresh_meat])
+        self.conn.close()
+        print("Spider closed. Saving %s new urls to already-crawled db."%len(self.fresh_meat))
+
+    def __init__(self):
+        self.crawled_urls = set()
+        self.fresh_meat = set()
+
+        db = os.path.join(os.path.dirname(os.path.abspath(__file__)),  'scrapy.db')
+        print db
+
+        self.conn= sqlite3.connect(db)
+        cur = self.conn.cursor()
+        cur.execute("""SELECT url from crawled_urls;""")
+        self.crawled_urls.update(i[0] for i in cur.fetchall())
+
+        log.msg("There are %s already-crawled links." %len(self.crawled_urls), level=log.INFO)
+        SignalManager(dispatcher.Any).connect(abc, signals.spider_closed)
+
+    def process_request(self, request, spider):
+        if request.url in self.crawled_urls:
+            raise IgnoreRequest()
+        else:
+            self.crawled_urls.add(request.url)
+            self.fresh_meat.add(request.url)
+if __name__ == '__main__':
+        spider = AlphaSpider()
+        from scrapy.conf import settings
+        settings.set('DOWNLOADER_MIDDLEWARES', {'download.healthscraper.middlewares.IgnoreDuplicatesMiddleware': 543,},
+                        'cmdline')
+
+        crawler = Crawler(settings)
+        crawler.signals.connect(abc, signal=signals.spider_closed)
+        crawler.configure()
+        crawler.crawl(spider)
+        crawler.start()
+
+        py_observer = PythonLoggingObserver()
+        py_observer.start()
+        reactor.run()

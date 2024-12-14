@@ -1,0 +1,83 @@
+mdesnoyer-neon commented on 18 Apr 2014
+Hi,
+I'm running tornado 3.1.1 on Ubuntu 12.04 and it looks like run_sync is leaking file descriptors. Any help figuring out why would be much appreciated. I came across this because I was trying to make a function decorator that would wrap coroutines so that the resulting functions can be called either asynchronously or synchronously. I'm using run_sync on a new io_loop in order to force the coroutine to run synchronously from the point of view of the caller. That code looks like:
+def optional_sync(func):
+    '''A decorator that makes an asyncronous function optionally synchronous.
+
+    If you have an asynchronous function that has a special "callback"
+    argument, this decorator will change "callback" so that it's
+    optional. If callback is None, then the function will be
+    synchronous. If it is not None, the function will be asyncronous.
+
+    To use it, make sure this decorator is on the outside. For example
+    @optional_sync
+    @tornado.gen.coroutine
+    def do_something_async(url):
+      response = yield tornado.httpclient.AsyncHTTPClient().fetch(url)
+      raise tornado.gen.Return(random.shuffle(response))
+
+    Then, a synchronous call would look like:
+    weird_response = do_something_async('http://hi.com')
+
+    And an asynchronous call would be:
+    do_something_async('http://hi.com', callback=process_response)
+
+    or if it is in a @tornado.gen.coroutine, 
+
+    weird_response = yield tornado.gen.Task(do_something_async,
+    'http://hi.com')
+
+    Note that inside the function, you must use
+    tornado.ioloop.IOLoop.current() to get the current io
+    loop. Otherwise it will hang.
+    '''
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if 'callback' in kwargs:
+            if kwargs['callback'] is not None:
+                return func(*args, **kwargs)
+            kwargs.pop('callback')
+
+        with bounded_io_loop() as io_loop:
+            return io_loop.run_sync(lambda : func(*args, **kwargs))
+
+    return wrapper
+
+
+@contextlib.contextmanager
+def bounded_io_loop():
+    '''This context manager allows you to have a new ioloop set as the
+    current one.
+
+    When the context manager is done, the last current io_loop is returned.
+
+    Example:
+    with bounded_io_loop() as ioloop:
+      ioloop.run_sync()
+    '''
+    old_ioloop = tornado.ioloop.IOLoop.current()
+
+    temp_ioloop = tornado.ioloop.IOLoop()
+    temp_ioloop.make_current()
+
+    try:
+        yield temp_ioloop
+
+    finally:
+        old_ioloop.make_current()
+Then, I have a test case that will cause the leak. It's not a fully automated test case yet, but it does exercise the issue:
+@utils.sync.optional_sync
+@tornado.gen.coroutine
+def call_google():
+    client = tornado.httpclient.AsyncHTTPClient()
+    response = yield tornado.gen.Task(
+        client.fetch,
+        tornado.httpclient.HTTPRequest('http://www.google.com'))
+    raise tornado.gen.Return(response)
+
+def test_file_descriptors_leaking(self):
+    for i in range(10):
+        call_google()
+If I run pdb and break on the self._call_google() line and then used lsof -p to look at the file descriptors opened by the process. The number of file descriptors open will keep increasing, even if I force a garbage collection to happen in pdb.
+On a side note, if I can get this leak plugged, do you want the optional_sync functionality to be submitted to tornado? If so, what module would you prefer it in? tornado.gen?. I'd be happy to submit it

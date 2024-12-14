@@ -1,0 +1,74 @@
+apirobot commented on 6 Jul 2017
+My problem is accurately described by the comment I found here https://groups.google.com/forum/#!topic/django-rest-framework/M5q6pI8vcZQ:
+I have been using DjangoObjectPermissions which inherits from DjangoModelPermissions. DjangoModelPermissions has a method has_permission which checks for Model level permissions. However, if you are working with object level permissions, usually the model level permissions evaluate to false. Consequently DjangoObjectPermissions raises a permission denied.
+I have easily fixed that issue be overwriting the has_permission method of DjangoObjectPermissions, but again I am wondering, have I missed anything or should that not be the default behavior of DjangoObjectPermissions.
+I have a code like this:
+# rules.py
+
+import rules  # django-rules third party library
+
+
+############################
+# Predicates
+############################
+
+@rules.predicate
+def is_tweet_owner(user, tweet):
+    if not tweet:
+        return False
+    return tweet.owner == user
+
+
+############################
+# Permissions
+############################
+
+rules.add_perm('tweets.add_tweet', rules.is_authenticated)
+rules.add_perm('tweets.change_tweet', is_tweet_owner)
+rules.add_perm('tweets.delete_tweet', is_tweet_owner)
+
+
+# views.py
+
+
+from rest_framework import viewsets, mixins
+
+from .models import Tweet
+from .permissions import TweetPermission
+from .serializers import TweetSerializer
+
+
+class TweetViewSet(mixins.CreateModelMixin,
+                   mixins.DestroyModelMixin,
+                   mixins.RetrieveModelMixin,
+                   mixins.UpdateModelMixin,
+                   viewsets.GenericViewSet):
+    queryset = Tweet.objects.all()
+    serializer_class = TweetSerializer
+    permission_classes = (TweetPermission, )
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
+# permissions.py
+
+
+from rest_framework import permissions
+
+
+class TweetPermission(permissions.DjangoObjectPermissions):
+    authenticated_users_only = False
+
+    def has_permission(self, request, view):
+        """
+        WTF?!
+        """
+        return True
+I want the tweet can be updated or deleted only by the user that owns this tweet. But user.has_perms method will always return false, because django calls has_permission method before has_object_permission.
+So, django will call this:
+>>> user.has_perms(['tweets.change_tweet'])
+False
+But I want this:
+>>> user.has_perms(['tweets.change_tweet'], tweet)
+True

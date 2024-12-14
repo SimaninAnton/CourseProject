@@ -1,0 +1,9 @@
+maciej-gol commented on 8 Oct 2015
+I've been recently debugging weird slowdowns in my app, and I've found that when using SearchFilter the queryset gets always duplicated filtered out (that's a change from 3.1.x). That's cool, but I think this is too optimistic, and it should be the users that should apply that particular filter.
+Why? The PR #2535 has fixed duplicate results of M2M fields, but it doesn't check if any of these fields are used! This results in SELECT DISTINCT queries in situations when the user knows the queryset can't produce duplicates, and this leads to huge performance loss when paginating - there are two queries ran:
+When getting the total objects count from the queryset
+SELECT COUNT('*') FROM (SELECT DISTINCT ...)
+When obtaining a page
+SELECT DISTINCT ... LIMIT 10
+What these queries do (on PostgreSQL) is getting all items, removing duplicates and then applying either COUNT or LIMIT. If the data we are working with is huge, this leads to deduplicating lots of data leading to huge performance loss.
+I think that the best solution would be for users to manually apply such filter when needed, or detect whether any M2M field is being filtered on (and mention about it in the docs as, for me, this is pretty important that SearchFilter deduplicates the queryset).

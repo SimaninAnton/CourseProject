@@ -1,0 +1,135 @@
+ghost commented on Oct 11, 2018
+I am finding the optimal value of hyperparameter alpha for my Multinpmial Naive Bayes model which uses cross validation and neg_log_loss as metric. I wrote this code:
+alphas = list(range(1, 500))
+
+#perform k fold cross validation for different metrics
+def cross_val(metric):
+
+    MSE = []
+    cv_scores = []
+    training_scores = []
+
+    for alpha in alphas:
+        naive_bayes = MultinomialNB(alpha=alpha)
+        scores = cross_val_score(naive_bayes, x_train_counts, y_train, cv=20, scoring='neg_log_loss')                           
+
+        #score() returns the mean accuracy on the given test data and labels
+        scores_training = naive_bayes.fit(x_train_counts, y_train).score(x_train_counts, y_train)
+
+        cv_scores.append(scores.mean())
+        training_scores.append(scores_training)
+
+
+    #changing to misclassification error
+    MSE = [1 - x for x in cv_scores]  
+
+    #determining best alpha
+    optimal_alpha = alphas[MSE.index(min(MSE))]
+    print('\nThe optimal value of alpha for %s is %f' % (metric, optimal_alpha))
+    return optimal_alpha
+
+
+optimal_alpha = cross_val('neg_log_loss')  
+
+The above code was initially working. Now it's throwing following error:
+-```
+--------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-43-facbaa3537ca> in <module>()
+----> 1 optimal_alpha = cross_val('neg_log_loss')
+      2 prediction(optimal_alpha, 'neg_log_loss')
+
+<ipython-input-41-ff0a9191d45c> in cross_val(metric)
+     13     for alpha in alphas:
+     14         naive_bayes = MultinomialNB(alpha=alpha)
+---> 15         scores = cross_val_score(naive_bayes, x_train_counts, y_train, cv=20, scoring='neg_log_loss')
+     16 
+     17         #score() returns the mean accuracy on the given test data and labels
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/cross_validation.py in cross_val_score(estimator, X, y, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch)
+   1579                                               train, test, verbose, None,
+   1580                                               fit_params)
+-> 1581                       for train, test in cv)
+   1582     return np.array(scores)[:, 0]
+   1583 
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/parallel.py in __call__(self, iterable)
+    777             # was dispatched. In particular this covers the edge
+    778             # case of Parallel used with an exhausted iterator.
+--> 779             while self.dispatch_one_batch(iterator):
+    780                 self._iterating = True
+    781             else:
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/parallel.py in dispatch_one_batch(self, iterator)
+    623                 return False
+    624             else:
+--> 625                 self._dispatch(tasks)
+    626                 return True
+    627 
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/parallel.py in _dispatch(self, batch)
+    586         dispatch_timestamp = time.time()
+    587         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+--> 588         job = self._backend.apply_async(batch, callback=cb)
+    589         self._jobs.append(job)
+    590 
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/_parallel_backends.py in apply_async(self, func, callback)
+    109     def apply_async(self, func, callback=None):
+    110         """Schedule a func to be run"""
+--> 111         result = ImmediateResult(func)
+    112         if callback:
+    113             callback(result)
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/_parallel_backends.py in __init__(self, batch)
+    330         # Don't delay the application, to avoid keeping the input
+    331         # arguments in memory
+--> 332         self.results = batch()
+    333 
+    334     def get(self):
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/parallel.py in __call__(self)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/externals/joblib/parallel.py in <listcomp>(.0)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/cross_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, error_score)
+   1692 
+   1693     else:
+-> 1694         test_score = _score(estimator, X_test, y_test, scorer)
+   1695         if return_train_score:
+   1696             train_score = _score(estimator, X_train, y_train, scorer)
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/cross_validation.py in _score(estimator, X_test, y_test, scorer)
+   1749         score = scorer(estimator, X_test)
+   1750     else:
+-> 1751         score = scorer(estimator, X_test, y_test)
+   1752     if hasattr(score, 'item'):
+   1753         try:
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/metrics/scorer.py in __call__(self, clf, X, y, sample_weight)
+    142                                                  **self._kwargs)
+    143         else:
+--> 144             return self._sign * self._score_func(y, y_pred, **self._kwargs)
+    145 
+    146     def _factory_args(self):
+
+~/anaconda3/envs/tensorflow/lib/python3.5/site-packages/sklearn/metrics/classification.py in log_loss(y_true, y_pred, eps, normalize, sample_weight, labels)
+   1684                              "y_true: {2}".format(transformed_labels.shape[1],
+   1685                                                   y_pred.shape[1],
+-> 1686                                                   lb.classes_))
+   1687         else:
+   1688             raise ValueError('The number of classes in labels is different '
+
+ValueError: y_true and y_pred contain different number of classes 26, 27. Please provide the true labels explicitly through the labels argument. Classes found in y_true: [ 2  4  5  6  7  8  9 10 11 12 14 15 16 17 19 21 22 23 24 27 29 30 31 32
+ 33 35]
+How can I make it work?

@@ -1,0 +1,33 @@
+Contributor
+jslang commented on 23 Feb 2016
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create model with a string field as primary key, using django docs recommendation of not using null=True
+Create a new model with foreign key to model above
+Create serializer, define a HyperlinkedRelatedField field for the added relation
+Attempt to get data from serializer instantiated with an unsaved instance of the first model
+Example:
+...
+class Foo(models.Model):
+  id = models.CharField(max_length=8, primary_key=True)
+
+class Bar(models.Model):
+  foo = models.ForeignKey(Foo, related_name='bars')
+
+class FooSerializer(ModelSerializer):
+  bars = HyperlinkedIdentityField(view_name='bar-list', lookup_url_kwarg='foo_id')
+Expected behavior
+>> FooSerializer(Foo(), context={'request': request}).data
+{'id': '', 'bars': None}
+Actual behavior
+>> FooSerializer(Foo(), context={'request': request}).data
+...
+ImproperlyConfigured: Could not resolve URL for hyperlinked relationship using view name "bar-list". You may have failed to include the related model in your API, or incorrectly configured the `lookup_field` attribute on this field.
+The reason is because this code checks for existence of None instead of handling the case where null value might be empty string, ''. Django docs recommend using empty string vs None for empty string values to avoid having more than one null case for those fields (see here: https://docs.djangoproject.com/es/1.9/ref/models/fields/#null)
+I wanted to confirm that this is undesired behavior before creating a proper PR. If you agree this is a bug and should be changed I can submit the appropriate changes as PR.

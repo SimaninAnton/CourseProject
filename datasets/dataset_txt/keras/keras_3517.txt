@@ -1,0 +1,43 @@
+LukeMathWalker commented on 9 Jan 2017
+I'm trying to implement the following architecture with Keras (Theano backend).
+I have a first Sequential network (say S1) which takes an image as input and has 4 linear output, which do correspond to the upper-left and the bottom-right coordinates of a rectangular "window" in the input image which is supposed to contain the object I want to identify.
+Once I have those four outputs... I'd like to actually crop the image!
+So I thought to take again my image as input in a new Sequential network (say S2) and merge these two networks using a Merge Layer with function mode.
+I turned out to be a bit more complicated than I expected and I'm stuck with some Theano errors I can't get rid of.
+Here's the relevant part of the code:
+model1 = Sequential()
+model1.add(Convolution2D(64, 3, 3, border_mode='same', input_shape=(1280, 720, 3), activation='relu'))
+# now model.output_shape == (None, 1280, 720, 64)
+
+# add a 3x3 convolution on top, with 32 output filters:
+model1.add(Convolution2D(32, 3, 3, border_mode='same',activation='relu'))
+# now model.output_shape == (None, 1280, 720, 32)
+model1.add(Flatten())
+model1.add(Dense(4, activation='linear'))
+
+model2 = Sequential()
+# How can I create a simple "input" net?
+model2.add(Reshape((1280, 720, 3), input_shape=(1280, 720, 3)))
+
+def merger(l):
+    image = l[1]
+    indexes = l[0]
+    index_0 = indexes[:][0]
+    index_1 = indexes[:,1]
+    index_2 = indexes[:,2]
+    index_3 = indexes[:,3]
+    cropped_image = image[:,index_0:index_1+1, index_2:index_3+1,:]
+    return cropped_image
+
+merged_model = Sequential()
+merged_model.add(Merge([model1, model2], mode=merger))
+And here you have the error:
+ <ipython-input-25-3b844142556c> in merger(l)
+      11     index_2 = indexes[:,2]
+      12     index_3 = indexes[:,3]
+ ---> 13     cropped_image = image[:,index_0:index_1+1, index_2:index_3+1,:]
+
+ [...]
+
+ValueError: ('TensorType could not be cast to have 0 dimensions', TensorType(float32, vector))
+What's going on?

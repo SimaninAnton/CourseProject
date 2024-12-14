@@ -1,0 +1,86 @@
+Contributor
+zackw commented on Mar 14, 2014
+If you get redirected to a syntactically invalid URL, most of the time it is the send() for the next outgoing request that will fail, and with a reasonably plausible exception. For instance:
+>>> import requests
+>>> requests.get("http://httpbin.org/redirect-to?url=htto://example.com/")
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File ".../requests/api.py", line 55, in get
+    return request('get', url, **kwargs)
+  File ".../requests/api.py", line 44, in request
+    return session.request(method=method, url=url, **kwargs)
+  File ".../requests/sessions.py", line 382, in request
+    resp = self.send(prep, **send_kwargs)
+  File ".../requests/sessions.py", line 505, in send
+    history = [resp for resp in gen] if allow_redirects else []
+  File ".../requests/sessions.py", line 505, in <listcomp>
+    history = [resp for resp in gen] if allow_redirects else []
+  File ".../requests/sessions.py", line 167, in resolve_redirects
+    allow_redirects=False,
+  File ".../requests/sessions.py", line 480, in send
+    adapter = self.get_adapter(url=request.url)
+  File ".../requests/sessions.py", line 525, in get_adapter
+    raise InvalidSchema("No connection adapters were found for '%s'" % url)
+requests.exceptions.InvalidSchema:
+    No connection adapters were found for 'htto://example.com/'
+But a sufficiently mangled URL can produce exceptions that don't make nearly as much sense:
+>>> requests.get("http://httpbin.org/redirect-to?url=http://@")
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File ".../requests/api.py", line 55, in get
+    return request('get', url, **kwargs)
+  File ".../requests/api.py", line 44, in request
+    return session.request(method=method, url=url, **kwargs)
+  File ".../requests/sessions.py", line 383, in request
+    resp = self.send(prep, **send_kwargs)
+  File ".../requests/sessions.py", line 506, in send
+    history = [resp for resp in gen] if allow_redirects else []
+  File ".../requests/sessions.py", line 506, in <listcomp>
+    history = [resp for resp in gen] if allow_redirects else []
+  File ".../requests/sessions.py", line 168, in resolve_redirects
+    allow_redirects=False,
+  File ".../requests/sessions.py", line 486, in send
+    r = adapter.send(request, **kwargs)
+  File ".../requests/adapters.py", line 305, in send
+    conn = self.get_connection(request.url, proxies)
+  File ".../requests/adapters.py", line 222, in get_connection
+    conn = self.poolmanager.connection_from_url(url)
+  File ".../urllib3/poolmanager.py", line 133, in connection_from_url
+    return self.connection_from_host(u.host, port=u.port, scheme=u.scheme)
+  File ".../urllib3/poolmanager.py", line 119, in connection_from_host
+    pool = self._new_pool(scheme, host, port)
+  File ".../urllib3/poolmanager.py", line 86, in _new_pool
+    return pool_cls(host, port, **kwargs)
+  File ".../urllib3/connectionpool.py", line 226, in __init__
+    ConnectionPool.__init__(self, host, port)
+  File ".../urllib3/connectionpool.py", line 156, in __init__
+    host = host.strip('[]')
+AttributeError: 'NoneType' object has no attribute 'strip'
+(This one is arguably a bug in urllib3.) Or you can get an exception from the guts of urlsplit:
+>>> requests.get("http://httpbin.org/redirect-to?url=http://example[.com/")
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File ".../requests/api.py", line 55, in get
+    return request('get', url, **kwargs)
+  File ".../requests/api.py", line 44, in request
+    return session.request(method=method, url=url, **kwargs)
+  File ".../requests/sessions.py", line 383, in request
+    resp = self.send(prep, **send_kwargs)
+  File ".../requests/sessions.py", line 506, in send
+    history = [resp for resp in gen] if allow_redirects else []
+  File ".../requests/sessions.py", line 506, in <listcomp>
+    history = [resp for resp in gen] if allow_redirects else []
+  File ".../requests/sessions.py", line 113, in resolve_redirects
+    parsed = urlparse(url)
+  File ".../urllib/parse.py", line 293, in urlparse
+    splitresult = urlsplit(url, scheme, allow_fragments)
+  File ".../urllib/parse.py", line 343, in urlsplit
+    raise ValueError("Invalid IPv6 URL")
+ValueError: Invalid IPv6 URL
+(The current urllib.parse module appears only to throw exceptions, as used in Requests, when the netloc part of an URL contains an unmatched square bracket, but perhaps it might get pickier in the future.)
+I'm pretty agnostic about what the actual fix should be here, but I do think that it should entail a guarantee that
+try:
+    resp = requests.get("...")
+except requests.exceptions.RequestException as e:
+    # recover
+is sufficient to trap all exceptions that may occur as a result of Weird Shit coming off the network. (Getting TypeError, ValueError, AttributeError, etc. as a result of programming errors in the application is fine.)

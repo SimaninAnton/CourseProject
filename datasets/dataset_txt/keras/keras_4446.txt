@@ -1,0 +1,87 @@
+Contributor
+jrao1 commented on 4 Sep 2016
+Using latest Keras (1.0.8) and Theano (0.8.2), I'm trying to share the pre-trained keras.applications.resnet50 in an image comparison network:
+import numpy as np
+from keras.layers import Activation, Input, Dense, Flatten, Lambda, merge
+from keras.applications.resnet50 import ResNet50
+from keras.applications.vgg16 import VGG16
+from keras.layers.normalization import BatchNormalization
+from keras.models import Model, load_model
+from keras import backend as K
+from keras.engine.topology import Layer
+
+def get_cnn_model():
+    net = ResNet50()
+    net.layers.pop()
+    #net = VGG16()
+    #net.layers.pop()
+    #net.layers.pop()
+    #net.layers.pop()
+    for layer in net.layers:
+        layer.trainable = False
+        if isinstance(layer, BatchNormalization):
+            layer.mode = 2
+    net.layers[-1].outbound_nodes = []
+    net.outputs = [net.layers[-1].output]
+    net.built = False
+    return net
+
+image_input1 = Input(shape=(3, 224, 224))
+image_input2 = Input(shape=(3, 224, 224))
+net = get_cnn_model()
+encoded1 = net(image_input1)
+encoded2 = net(image_input2)
+output = merge([encoded1, encoded2], mode='concat', concat_axis=-1)
+output = Dense(512, activation='relu')(output)
+output = Dense(1, activation='sigmoid')(output)
+model = Model(input=[image_input1, image_input2], output=output)
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+images1 = np.random.rand(32, 3, 224, 224)
+images2 = np.random.rand(32, 3, 224, 224)
+results = np.random.rand(32)
+model.fit([images1, images2], results, nb_epoch=1)
+#prediction = model.predict([images1, images2])
+#print prediction.shape
+The error is:
+  File "test.py", line 59, in <module>
+    model.fit([images1, images2], results, nb_epoch=1)
+  File "D:\Programming\Anaconda\lib\site-packages\keras-1.0.8-py2.7.egg\keras\en
+gine\training.py", line 1077, in fit
+    self._make_train_function()
+  File "D:\Programming\Anaconda\lib\site-packages\keras-1.0.8-py2.7.egg\keras\en
+gine\training.py", line 701, in _make_train_function
+    **self._function_kwargs)
+  File "D:\Programming\Anaconda\lib\site-packages\keras-1.0.8-py2.7.egg\keras\ba
+ckend\theano_backend.py", line 685, in function
+    return Function(inputs, outputs, updates=updates, **kwargs)
+  File "D:\Programming\Anaconda\lib\site-packages\keras-1.0.8-py2.7.egg\keras\ba
+ckend\theano_backend.py", line 671, in __init__
+    **kwargs)
+  File "d:\programming\theano\theano\theano\compile\function.py", line 320, in f
+unction
+    output_keys=output_keys)
+  File "d:\programming\theano\theano\theano\compile\pfunc.py", line 479, in pfun
+c
+    output_keys=output_keys)
+  File "d:\programming\theano\theano\theano\compile\function_module.py", line 17
+76, in orig_function
+    output_keys=output_keys).create(
+  File "d:\programming\theano\theano\theano\compile\function_module.py", line 14
+28, in __init__
+    accept_inplace)
+  File "d:\programming\theano\theano\theano\compile\function_module.py", line 17
+7, in std_fgraph
+    update_mapping=update_mapping)
+  File "d:\programming\theano\theano\theano\gof\fg.py", line 171, in __init__
+    self.__import_r__(output, reason="init")
+  File "d:\programming\theano\theano\theano\gof\fg.py", line 360, in __import_r_
+_
+    self.__import__(variable.owner, reason=reason)
+  File "d:\programming\theano\theano\theano\gof\fg.py", line 474, in __import__
+    r)
+theano.gof.fg.MissingInputError: ("An input of the graph, used to compute Shape(
+input_3), was not provided and not given a value.Use the Theano flag exception_v
+erbosity='high',for more information on this error.", input_3)
+Interestingly, pretrained vgg16 doesn't have this problem. Based on some searches, it looks like this may have something to do with BatchNormalization, any ideas on how to get around this?

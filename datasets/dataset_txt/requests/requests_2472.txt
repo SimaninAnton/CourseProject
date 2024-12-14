@@ -1,0 +1,101 @@
+vlcinsky commented on May 22, 2012
+-- edit --
+This relates to finding of @lukas, who found, that hooks are not passed to a new request on redirect, which is not described elsewhere (yet?).
+As soon as this hook related problem is resolved, there seem to be solution using hook, removing problem making header Authorization from final redirecting request (as sigmavirus24 has found).
+-- end of edit --
+I use web app, which first asks user to authenticate (usign digest auth) and then redirects him to temporarily valid url at AWS s3 storage.
+Using requests fails to handle this correctly, it reports 401.
+Asking for easy pages does not make these problems.
+Using the app over web browser works well.
+I created test utility::
+import requests
+from requests.auth import HTTPDigestAuth
+
+def test_redirect_to_easypage():
+    url =  'http://localhost:8080/feed'
+    auth = HTTPDigestAuth("user", "password")
+    params = {"key": "easypage"}
+    r = requests.get(url, auth = auth, params = params)
+    assert r.status_code == 200
+    assert len(r.history) == 2
+    assert r.history[1].status_code == 401
+    assert r.history[0].status_code == 302
+    return
+
+def test_redirect_to_awspage():
+    url =  'http://localhost:8080/feed'
+    auth = HTTPDigestAuth("user", "password")
+    params = {"key": "awsredir"}
+    r = requests.get(url, auth = auth, params = params)
+    assert r.status_code == 200
+    assert len(r.history) == 2
+    assert r.history[1].status_code == 401
+    assert r.history[0].status_code == 302
+    return 
+test_redirect_to_awspage fails by 401.
+And here is simple web app, written in cherrypy::
+"""Test cherrypy web server for "requests" test redirection to AWS S3 temporary url.
+
+2012-05-22 by jan.vlcinsky@gmail.com
+"""
+import cherrypy
+from cherrypy.lib import auth_digest
+
+class DigestForwarder(object):
+    """Server, serving only authorized users ("user", "password") by redirecting to some secret destination url
+
+    Home page (gives you instructions and links to use)
+        http://localhost:8080/
+    Easy page redirection:
+        http://localhost:8080/feed?key=easypage
+    Redirection to tmp AWS page (valid till end 2012):
+        http://localhost:8080/feed?key=awsredir
+    """
+
+    targets=dict(
+                easypage= "http://docs.python-requests.org/en/latest/index.html",
+                awsredir= "http://janvlcinsky.s3.amazonaws.com/files.basex.org/xml/xmark.xml?AWSAccessKeyId=AKIAJBXTB3W6TPH7OEQA&Expires=1356908390&Signature=t6HE4oEdTVx4Mi9Q7TrDbe6%2FQxs%3D"
+            )
+    @cherrypy.expose
+    def index(self):
+        login = cherrypy.request.login
+        lines = ""
+        for key, value in self.targets.items():
+            request_url = "/feed?key=" + key
+            lines += """<li>Key: %(key)s: <a href="%(request_url)s">%(request_url)s</a></li>""" % locals()
+
+        return """\
+        <html>
+            <body>
+                <h1>Digest based redirector</h1>
+                <p>Your user account <b>%(login)s</b> has access to following feeds:</p>
+                <ul>
+                    %(lines)s
+                </ul>
+            </body>
+        </html>""" % locals()
+
+    @cherrypy.expose
+    def feed(self, key):
+        if key in self.targets.keys():
+          url = self.targets[key]
+          raise cherrypy.HTTPRedirect(url, 302)
+        else:
+          raise cherrypy.HTTPError(400, "Unexpected value of feed key: %s." % key)
+
+        return "You asked for key %(key)s and are redirected to %(ulr)s" % locals()
+
+conf =  {"/": {
+            "log.error_file":            "digestforwarder.error.log",
+            "log.access_file":           "digestforwarder.logaccess.log",
+            "tools.auth_digest.on":      True,
+            "tools.auth_digest.realm":   'localhost',
+            "tools.auth_digest.get_ha1": cherrypy.lib.auth_digest.get_ha1_dict_plain({'user': 'password'}),
+            "tools.auth_digest.key":     'abcd12345efgh',
+            "tools.auth_digest.debug":    True
+            }
+        }
+controller = DigestForwarder()
+print controller.__doc__
+cherrypy.quickstart(controller, config = conf)
+Assuming you have cherrypy installed, just run the script which will provide what is needed for testing locally.

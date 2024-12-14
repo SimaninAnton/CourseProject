@@ -1,0 +1,93 @@
+ryanhalabi commented on 2 Mar 2018 •
+edited
+Below is code where I remove the last dense layer of the Inception network. I then attempt to recreate the model but the output of the 2 models differs.
+I have checked and the weights I apply are the ones being used in the final dot product.
+The error seems to be restricted to get_weights() returning the wrong weights.
+from keras.applications.inception_v3 import InceptionV3
+import keras
+import numpy as np
+
+inception = InceptionV3(include_top=True, weights='imagenet', input_tensor=None, input_shape =None, pooling=None, classes=1000)
+
+##############
+#recreate network
+##############
+
+inceptionCopy = keras.models.clone_model( inception )
+
+weights, bias = inception.layers[-1].get_weights()
+
+inceptionCopy.layers.pop()
+inceptionCopy.layers[-1].outbound_nodes = []
+inceptionCopy.outputs = [inceptionCopy.layers[-1].output]
+output = inceptionCopy.layers[-1].output
+
+output = keras.layers.Dense( 1000 ,weights = [weights, bias], activation= "softmax" )(output)
+inceptionCopy = keras.models.Model(inceptionCopy.input, output)
+
+##############
+#create a network that only outputs the 2nd to last layers 2048 output, directly compute the predictions from this and the weights
+##############
+
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
+
+stopShort = keras.models.clone_model( inception )
+stopShort.layers.pop()
+stopShort.layers[-1].outbound_nodes = []
+stopShort.outputs = [inceptionCopy.layers[-1].output]
+output = stopShort.layers[-1].output
+
+stopShort = keras.models.Model(stopShort.input, output)
+
+##############
+#test
+##############
+
+#create random image to test
+img = np.random.rand(1,360,640,3)
+
+#original network
+origPredict =inception.predict(img)
+#clone network
+copyPredict =inceptionCopy.predict(img)
+#directly compute the predictions from the last layer and weights
+shortPredict = stopShort.predict(img)
+shortPredict = softmax( np.dot(shortPredict, weights) + bias )
+the prediction of the original model does not match the others, the only explanation seems that the get_weights() is returning a wrong output.
+In [39]: print(origPredict[0,0:50])
+    ...: 
+[ 0.00022644  0.00060859  0.00113221  0.00061626  0.00101463  0.00041192
+  0.00071979  0.00128929  0.00065607  0.00144226  0.00429728  0.00750348
+  0.01112122  0.00544929  0.00653603  0.00545277  0.0105559   0.00251622
+  0.01056833  0.00596811  0.00226971  0.02395024  0.01094057  0.00554777
+  0.00206243  0.00035635  0.00044674  0.00054583  0.0005072   0.00026509
+  0.00039405  0.00085747  0.00033281  0.00044268  0.00048084  0.00033909
+  0.00047306  0.00036282  0.00044744  0.0008109   0.00132927  0.00064334
+  0.00210503  0.00082026  0.00053716  0.00060851  0.00254359  0.00050532
+  0.00043607  0.00089082]
+
+In [40]: print(copyPredict[0,0:50])
+    ...: 
+[ 0.00077001  0.00061626  0.00093342  0.00106283  0.00164168  0.00101248
+  0.00107814  0.00060848  0.00060714  0.00079214  0.00085172  0.00078033
+  0.00057026  0.00088912  0.00098144  0.00085461  0.00089999  0.00067611
+  0.00151711  0.00066162  0.00153407  0.00238749  0.00123385  0.00121002
+  0.00093177  0.0011285   0.00124484  0.00118591  0.00097408  0.00047998
+  0.00063131  0.00084316  0.00092425  0.00072873  0.00092189  0.00078423
+  0.00060293  0.00076559  0.00100641  0.00061806  0.0010518   0.00115169
+  0.00150103  0.00054271  0.0013795   0.00109588  0.00148963  0.00054031
+  0.00104539  0.00113665]
+
+In [41]: print(shortPredict[0,0:50])
+    ...: 
+[ 0.00076955  0.00061595  0.00093298  0.00106259  0.00164748  0.00101411
+  0.00107864  0.00060972  0.00060603  0.0007912   0.00085152  0.00078139
+  0.00057016  0.00089053  0.00098314  0.00085276  0.00090038  0.00067758
+  0.00151781  0.0006632   0.00153893  0.00239254  0.0012317   0.00120916
+  0.00093203  0.00112957  0.00124636  0.00118799  0.00097561  0.00047969
+  0.00063028  0.00084299  0.0009239   0.00072722  0.00092058  0.00078491
+  0.00060153  0.00076358  0.00100434  0.00061689  0.00105117  0.00115122
+  0.00150165  0.00054143  0.00137854  0.00109559  0.00148902  0.00053861
+  0.00104316  0.00113607]

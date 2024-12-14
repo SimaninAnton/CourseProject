@@ -1,0 +1,48 @@
+Arfrever commented on May 9, 2012
+$ nosetests-2.6 tests/test_requests_ext.py
+...E.......
+======================================================================
+ERROR: Test interaction between cookie handling and redirection.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/requests-0.12.1/tests/test_requests_ext.py", line 113, in test_cookies_on_redirects
+    self.assertIn('preview', s.cookies)
+AttributeError: 'RequestsTestSuite' object has no attribute 'assertIn'
+-------------------- >> begin captured logging << --------------------
+requests.packages.urllib3.connectionpool: INFO: Starting new HTTP connection (1): tinyurl.com
+requests.packages.urllib3.connectionpool: DEBUG: "GET /preview.php?disable=1 ('HTTP/1.1',)" 200 None
+--------------------- >> end captured logging << ---------------------
+
+----------------------------------------------------------------------
+Ran 11 tests in 7.449s
+
+FAILED (errors=1)
+The fix:
+--- tests/test_requests_ext.py
++++ tests/test_requests_ext.py
+@@ -110,7 +110,7 @@
+         s = requests.session()
+         s.get(url='http://tinyurl.com/preview.php?disable=1')
+         # we should have set a cookie for tinyurl: preview=0
+-        self.assertIn('preview', s.cookies)
++        self.assertTrue('preview' in s.cookies)
+         self.assertEqual(s.cookies['preview'], '0')
+         self.assertEqual(list(s.cookies)[0].name, 'preview')
+         self.assertEqual(list(s.cookies)[0].domain, 'tinyurl.com')
+@@ -118,13 +118,13 @@
+         # get cookies on another domain
+         r2 = s.get(url='http://httpbin.org/cookies')
+         # the cookie is not there
+-        self.assertNotIn('preview', json.loads(r2.text)['cookies'])
++        self.assertTrue('preview' not in json.loads(r2.text)['cookies'])                                                                                    
+
+         # this redirects to another domain, httpbin.org                                                                                                     
+         # cookies of the first domain should NOT be sent to the next one                                                                                    
+         r3 = s.get(url='http://tinyurl.com/7zp3jnr')                                                                                                        
+         assert r3.url == 'http://httpbin.org/cookies'                                                                                                       
+-        self.assertNotIn('preview', json.loads(r2.text)['cookies'])
++        self.assertTrue('preview' not in json.loads(r3.text)['cookies'])
+
+ if __name__ == '__main__':
+     unittest.main()
+I have changed r2.text to r3.text in the last changed line.

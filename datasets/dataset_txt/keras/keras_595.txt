@@ -1,0 +1,69 @@
+AwasthiMaddy commented on 26 Nov 2018 •
+edited
+Hi .. I tried to create a keras.utils.Sequence class which I can use for multi gpus in keras. See below for my implementation
+class quickdrawSequence(Sequence):
+    def __init__(self, size, batch_size, total_len):
+        self.size = size
+        self.total_len = total_len
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return self.total_len//self.batch_size
+
+    def __draw(raw_strokes, size=256, lw=6, time_color=True):
+        img = np.zeros((BASE_SIZE, BASE_SIZE), np.uint8)
+        for t, stroke in enumerate(raw_strokes):
+            for i in range(len(stroke[0]) - 1):
+                color = 255 - min(t, 10) * 13 if time_color else 255
+                _ = cv2.line(img, (stroke[0][i], stroke[1][i]),
+                             (stroke[0][i + 1], stroke[1][i + 1]), color, lw)
+        if size != BASE_SIZE:
+            return cv2.resize(img, (self.size, self.size))
+        else:
+            return img
+
+    def __data_generation(self, skiprows):
+        train_filename = os.path.join(BASE_DIR, 'data', 'train.csv')
+        df = pd.read_csv(train_filename, 
+                         header=None, 
+                         skiprows=skiprows, 
+                         nrows=self.batch_size)
+        df[1] = df[1].apply(ast.literal_eval)
+        x = np.zeros((len(df), self.size, self.size, 1))
+        for i, raw_strokes in enumerate(df[1].values):
+          x[i, :, :, 0] = self.__draw(raw_strokes)
+        print('After rawstrokes processing:', x.shape)
+        x = preprocess_input(x).astype(np.float32)
+        y = keras.utils.to_categorical(df.y, num_classes=NCATS)
+        print(x.shape, y.shape)
+        return x,y
+
+    def __getitem__(self, idx):
+        skiprows = 1+(idx*self.batch_size)
+        print(idx, skiprows)
+        x,y = self.__data_generation(skiprows)
+        return x, y
+This is the fit_generator step
+hist = model.fit_generator(generator=quickdrawSequence(128, 512, 49673597),
+                           steps_per_epoch=2000,
+                           epochs=5,
+                           verbose=1,
+                           validation_data=(x_valid, y_valid),
+                           callbacks=callbacks,
+                           max_queue_size=2,
+                           workers=2,
+                           use_multiprocessing=True,
+                           shuffle=True,
+                           )
+While running this with 2 gpus..The training doesn't start..and generator keeps on sending idx=0 indefinitely. I have printed idx for debugging purposes inside __getitem__. Below is what it prints.
+Epoch 1/1
+74133 37956097
+36175 18521601
+0 1
+0 1
+0 1
+Any idea what lacks in my code.
+There is a single train.csv that has all the data and I am trying to read each batch from this file using pandas pd.read_csv with skiprows & nrows.
+Is there anything wrong that I am doing.
+I am on keras 2.2.4, TF 1.8 & Python 3.6.
+Also I have set workers=2 and max_queue_size=2 then shouldn't it stop after passing 2 indexes and wait for them to complete. While here it keeps on sending 0 and none of the batch gets completed and send for training.

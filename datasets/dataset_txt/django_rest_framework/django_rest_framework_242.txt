@@ -1,0 +1,46 @@
+stockersky commented on 17 Jan 2019
+Checklist
+[*] I have verified that that issue exists against the master branch of Django REST framework.
+[] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+[*] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[*] I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Very classical use-case : A user is the owner of a parent objects. Child objects linked through ForeignKey. When creating a new child object through the DRF GUI, for example, the select box will list all parent objects available, whatever the logged in use is the owner.
+But the real problem comes from the fact that - indeed, whatever perm you set up - you can just select a parent object you do not own as a FK and it will be created.
+The problem is that a malicious user could create child objects linked to parent objects owner by someone else (especially if PK are incremented integer, it's easy to guess that object 999 exists if you just created object 1000). Then some user would have prank objects on their dashboard.
+There are many POST on Stackoverflow about this :
+https://stackoverflow.com/questions/38204553/django-rest-framework-permission-to-creat
+https://stackoverflow.com/questions/35879857/check-permissions-on-a-related-object-in-django-rest-framework
+even here :
+#1985
+#6082
+Every solution goes in all directions... scary...
+When created new objects, 'has_object_permission' seems to be executed (from the doc, it should not) but it's not enforced.
+class IsOwner(permissions.BasePermission):
+    """
+    Object-level permission to only allow owners of an object to edit it.
+    """
+    def has_object_permission(self, request, view, obj):
+        print("has_object_permission !!!! {} - {} - {}".format(obj.myobj.id, obj.myobj.owner, request.user))
+        # return obj.myobj.owner == request.user
+        return False 
+While creating an object, this would print out in the console but obviously it's not enforced at all...
+On the other side, "has_permission" is not properly enforced as the object does not exist yet...
+Solution found
+Do the validation in the serializers.ModelSerializer :
+class MyClassSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MyClass
+        fields = '__all__'
+
+    def validate(self, data):
+        linkedObj = data['parent']
+        # print(linkedObj.owner)
+        # print(self.context['request'].user)
+        if linkedObj.owner == self.context['request'].user:
+            return data
+        else:
+            raise NotAuthenticated(detail=None, code=None)
+I did not realize this security issue at first. I know it's not really a bug but more or less something that felt out in the darkness of DRF design. But, it could be a great idea to document how to do so, because I guess there are apps around that could suffer from this...

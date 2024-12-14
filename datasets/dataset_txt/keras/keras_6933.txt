@@ -1,0 +1,47 @@
+kofd commented on 23 Jun 2015
+As you can see by the code below, the behavior of batch normalization seems to be dependent on the batch of samples. Any given sample should always be classified exactly the same (in mode 0 at least). Note that for the single item batch, the output of model.predict(arr1[:1]) is identical to the output of model.predict(arr1[1:]).
+>>> import numpy
+>>> 
+>>> from keras.models import Sequential
+>>> from keras.layers.core import Dense, Activation
+>>> from keras.layers.normalization import BatchNormalization
+>>> from keras.optimizers import SGD
+>>> 
+>>> model = Sequential()
+>>> model.add(Dense(200,5))
+>>> model.add(BatchNormalization(5))
+>>> model.add(Activation('softmax'))
+>>> sgd = SGD(lr=0.01, decay=3e-6, momentum=0.9, nesterov=False)
+>>> model.compile(loss='categorical_crossentropy', optimizer=sgd)
+>>> arr1 = numpy.random.rand(2,200)
+>>> y1 = numpy.random.rand(2,5)
+>>> model.train(arr1,y1)
+array(3.693775110217432)
+>>> model.predict(arr1)
+2/2 [==============================] - 0s
+array([[ 0.21000414,  0.20690492,  0.19180691,  0.19093657,  0.20034746],
+       [ 0.1894262 ,  0.19338509,  0.20825628,  0.20882832,  0.2001041 ]])
+>>> model.predict(arr1[:1])
+1/1 [==============================] - 0s
+array([[ 0.19959944,  0.20018073,  0.20001223,  0.1998318 ,  0.2003758 ]])
+>>> model.predict(arr1[1:])
+1/1 [==============================] - 0s
+array([[ 0.19959944,  0.20018073,  0.20001223,  0.1998318 ,  0.2003758 ]])
+I've read the source code a thousand times and cannot find a reason for this to happen. I've got a working theory that there is an issue with running mean and running std being mutable within get_output(). Those values are also not inspectable as they are not stored as a tensor value:
+>>> import theano
+>>> theano.printing.debugprint(model.layers[1].running_mean)
+Elemwise{true_div,no_inplace} [@A] ''   
+ |Sum{axis=[0], acc_dtype=float64} [@B] ''   
+ | |Elemwise{add,no_inplace} [@C] ''   
+ |   |dot [@D] ''   
+ |   | |<TensorType(float64, matrix)> [@E]
+ |   | |<TensorType(float64, matrix)> [@F]
+ |   |DimShuffle{x,0} [@G] ''   
+ |     |<TensorType(float64, vector)> [@H]
+ |DimShuffle{x} [@I] ''   
+   |Subtensor{int64} [@J] ''   
+     |Elemwise{Cast{float64}} [@K] ''   
+     | |Shape [@L] ''   
+     |   |Elemwise{add,no_inplace} [@C] ''   
+     |Constant{0} [@M]
+This issue makes batch normalization fairly useless to me as I cannot guarantee that a sample will always generate the same prediction.

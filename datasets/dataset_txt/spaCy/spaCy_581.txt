@@ -1,0 +1,114 @@
+neongreen13 commented on 27 Jun 2019
+This is my first time trying to train a SpaCy POS model to update some incorrectly tagged verbs in the Spanish model. I can't seem to get it to work. Specifically, compound verbs in the command (imperative) form with an attached indirect object are being tagged as nouns or adjectives. Example: 'Dimelo!' is 'Give me it, or Give it to me'. Any help would be appreciated. Here is my code:
+import spacy
+nlp = spacy.load('es')
+
+from __future__ import unicode_literals, print_function
+
+import plac
+import random
+from pathlib import Path
+import spacy
+from spacy.util import minibatch, compounding
+
+from spacy.lang.es.tag_map import TAG_MAP
+from spacy.symbols import POS, PUNCT, SYM, ADJ, NUM, DET, ADV, ADP, X, VERB, NOUN
+from spacy.symbols import PROPN, PART, INTJ, PRON, SCONJ, AUX, CCONJ
+
+TAG_MAP = {"V": {"pos": "VERB"}}
+TRAIN_DATA = [
+    ("almuerza", {"tags": ["V"]}),
+    ("no almuerces", {"tags": ["V"]}),
+    ("come", {"tags": ["V"]}),
+    ("no comas", {"tags": ["V"]}),
+    ("escribe", {"tags": ["V"]}),
+    ("no escribas", {"tags": ["V"]}),
+    ("habla", {"tags": ["V"]}),
+    ("no hables", {"tags": ["V"]}),
+    ("juega", {"tags": ["V"]}),
+    ("no juegues", {"tags": ["V"]}),
+    ("miente", {"tags": ["V"]}),
+    ("no mientas", {"tags": ["V"]}),
+    ("pide", {"tags": ["V"]}),
+    ("no pidas", {"tags": ["V"]}),
+    ("toca", {"tags": ["V"]}),
+    ("no toques", {"tags": ["V"]}),
+    ("lávate", {"tags": ["V"]}),
+    ("no te laves", {"tags": ["V"]}),
+    ("cáete", {"tags": ["V"]}),
+    ("no te caigas", {"tags": ["V"]}),
+    ("siéntate", {"tags": ["V"]}),
+    ("no te sientes", {"tags": ["V"]}),
+    ("duérmete", {"tags": ["V"]}),
+    ("no te duermas", {"tags": ["V"]}),
+    ("léalo", {"tags": ["V"]}),
+    ("sácala", {"tags": ["V"]}),
+    ("estúdialo", {"tags": ["V"]}),
+    ("compre", {"tags": ["V"]}),
+    ("cómprelo", {"tags": ["V"]}),
+    ("cómpremelo", {"tags": ["V"]}),
+    ("cómprelos", {"tags": ["V"]}),
+    ("cómpremelos", {"tags": ["V"]}),
+    ("hazlo", {"tags": ["V"]}),
+    ("hazmelo", {"tags": ["V"]}),
+    ("hazlos", {"tags": ["V"]}), 
+]
+
+import os
+os.getcwd()
+output_dir = os.getcwd() 
+
+def main(lang="es", output_dir=output_dir, n_iter=84):
+    """Create a new model, set up the pipeline and train the tagger. In order to
+    train the tagger with a custom tag map, we're creating a new Language
+    instance with a custom vocab.
+    """
+    nlp = spacy.blank(lang)
+    # add the tagger to the pipeline
+    # nlp.create_pipe works for built-ins that are registered with spaCy
+    tagger = nlp.create_pipe("tagger")
+    # Add the tags. This needs to be done before you start training.
+    for tag, values in TAG_MAP.items():
+        tagger.add_label(tag, values)
+    nlp.add_pipe(tagger)
+    
+    optimizer = nlp.begin_training()
+    for i in range(n_iter):
+        random.shuffle(TRAIN_DATA)
+        losses = {}
+        # batch up the examples using spaCy's minibatch
+        batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
+        for batch in batches:
+            texts, annotations = zip(*batch)
+            nlp.update(texts, annotations, sgd=optimizer, losses=losses)
+        print("Losses", losses)
+
+test_2 = "Préndelo y apágalo Ven dímelo ay yo ya vi Es obvio que tú mil cosas quieres hacer"
+doc = nlp(test_2)
+print("Tags", [(t.text, t.pos_) for t in doc])
+Output: 
+Tags [('Préndelo', 'NOUN'), ('y', 'CONJ'), ('apágalo', 'ADJ'), ('Ven', 'PROPN'), ('dímelo', 'ADJ'), ('ay', 'PROPN'), ('yo', 'PRON'), ('ya', 'ADV'), ('vi', 'VERB'), ('Es', 'AUX'), ('obvio', 'ADJ'), ('que', 'SCONJ'), ('tú', 'PRON'), ('mil', 'NUM'), ('cosas', 'NOUN'), ('quieres', 'ADJ'), ('hacer', 'VERB')]
+
+if output_dir is not None:
+    output_dir = Path(output_dir)
+    if not output_dir.exists():
+        output_dir.mkdir()
+    nlp.to_disk(output_dir)
+    print("Saved model to", output_dir)
+
+    # test the save model
+    print("Loading from", output_dir)
+    nlp2 = spacy.load(output_dir)
+    doc = nlp2(test_2)
+    print("Tags", [(t.text, t.pos_) for t in doc])
+
+Saved model to /home/ariggs/JupyterNotebooks/Spanish
+Loading from /home/ariggs/JupyterNotebooks/Spanish
+Tags [('Préndelo', 'NOUN'), ('y', 'CONJ'), ('apágalo', 'ADJ'), ('Ven', 'PROPN'), ('dímelo', 'ADJ'), ('ay', 'PROPN'), ('yo', 'PRON'), ('ya', 'ADV'), ('vi', 'VERB'), ('Es', 'AUX'), ('obvio', 'ADJ'), ('que', 'SCONJ'), ('tú', 'PRON'), ('mil', 'NUM'), ('cosas', 'NOUN'), ('quieres', 'ADJ'), ('hacer', 'VERB')]
+The output for the test_2 is largely incorrect:
+Préndelo, apágalo, dímelo, and quieres are all verbs but tagged as other parts of speech.
+Thanks!
+Operating System: Windows X
+Python Version Used: 3.5.2
+spaCy Version Used: 2.1.3, model es
+Environment Information:

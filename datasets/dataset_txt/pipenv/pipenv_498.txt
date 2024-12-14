@@ -1,0 +1,78 @@
+zymergen-luke commented on 30 Oct 2018
+Issue description
+Previously we could use a version of python installed via pyenv simply by setting the PYENV_HOME environment variable.
+I started noticing this morning that builds were failing because pipenv was using the wrong version:
+export PYENV_ROOT="~/.pyenv"
+export PIPENV_VENV_IN_PROJECT="1"
+$ pipenv install --dev
+Warning: Your Pipfile requires python_version 3.7.0, but you are using 2.7.12 (/data/j/w/d/.venv/bin/python).
+  $ pipenv --rm and rebuilding the virtual environment may resolve the issue.
+  $ pipenv check will surely fail.
+It is then running inside python2 (and crashing as such).
+The version is successfully installed and can be found using the shims.
+$ ${PYENV_ROOT}/bin/pyenv versions
+* system (set by /data/jenkins/.pyenv/version)
+  2.7.12
+  3.6.4
+  3.7.0
+
+$ PYENV_VERSION=3.7.0 ${PYENV_ROOT}/shims/python --version
+Python 3.7.0
+Expected result
+Pipenv should find the version installed by pyenv without any additional environment parameters
+Actual result
+Pipenv did not find the pyenv installed with the PYENV_ROOT environment variable set.
+We were able to work around the issue by adding pyenv to PATH explicitly:
+$ PATH="${PYENV_ROOT}/bin:${PATH}" pipenv install --dev
+Installing dependencies from Pipfile.lock (104e24)…
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 46/46 — 00:00:31
+To activate this project's virtualenv, run pipenv shell.
+Alternatively, run a command inside the virtualenv with pipenv run.
+This was not previously required, however, and the documentation still claims that PYENV_ROOT is all that is needed.
+Steps to replicate
+Start with a blank environment that does not have pyenv added to PATH (or any PYENV_* environment variables)
+Set PYENV_ROOT: export PYENV_ROOT="~/.pyenv"
+Install python via pyenv: ${PYENV_ROOT}/bin/pyenv update && ${PYENV_ROOT}/bin/pyenv install 3.7.0
+Run pipenv install on a Pipfile containing a 3.7.0 requirements:
+[requires]
+python_version = "3.7.0"
+Notice that it warns that 3.7.0 was not found and will use the system python instead.
+$ pipenv --support
+<details><summary>$ pipenv --support</summary>
+
+Pipenv version: `'2018.10.13'`
+
+Pipenv location: `'/usr/local/lib/python2.7/dist-packages/pipenv'`
+
+Python location: `'/usr/bin/python'`
+
+Python installations found:
+
+Traceback (most recent call last):
+  File "/usr/local/bin/pipenv", line 11, in <module>
+    sys.exit(cli())
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 764, in __call__
+    return self.main(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 717, in main
+    rv = self.invoke(ctx)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 1114, in invoke
+    return Command.invoke(self, ctx)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 956, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 555, in invoke
+    return callback(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/decorators.py", line 64, in new_func
+    return ctx.invoke(f, obj, *args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/core.py", line 555, in invoke
+    return callback(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/click/decorators.py", line 17, in new_func
+    return f(get_current_context(), *args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/cli/command.py", line 142, in cli
+    get_pipenv_diagnostics()
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/help.py", line 33, in get_pipenv_diagnostics
+    python_paths = finder.find_all_python_versions()
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/pythonfinder/pythonfinder.py", line 112, in find_all_python_versions
+    major=major, minor=minor, patch=patch, pre=pre, dev=dev, arch=arch
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/pythonfinder/models/path.py", line 222, in find_all_python_versions
+    return [c for c in sorted(path_filter, key=version_sort, reverse=True)]
+AttributeError: 'list' object has no attribute 'as_python'

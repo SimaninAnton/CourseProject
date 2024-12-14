@@ -1,0 +1,223 @@
+tolandwehr commented on Aug 5, 2019
+Aim is to optimize hyperparameters for a Keras LSTM via gridsearchCV. A dimension error is produced after the first training. RNN-LSTM needs 3D input. Does a dimension conflict exist with gridsearchCV? Here the code:
+def createLSTMModel(dropout_rate=0.1, optimizer='Nadam', learning_rate=0.015, activation='relu', loss='mae', n_jobs=1):
+    
+    K.clear_session()
+    
+    model = Sequential()
+    model.add(Bidirectional(LSTM(250, return_sequences=True),input_shape=(Train_Num,1)))
+    model.add(Dropout(dropout_rate))
+    model.add(Bidirectional(LSTM(170, return_sequences=True)))
+    model.add(Dropout(dropout_rate))
+    model.add(Bidirectional(LSTM(25, return_sequences=True)))
+    model.add(Dropout(dropout_rate))
+    #model.add(Flatten())
+    model.add(Dense(1))
+    model.compile(optimizer=optimizer,loss=loss)
+    return model
+
+grid_param_LSTM = {
+    'batch_size': [348,256,200,128],
+    'epochs': [15,30],   
+    'learning_rate':[0.001,0.01,0.1,0.0001],
+    'optimizer': ['Nadam', 'Adam', 'RMSProp'],
+    'loss': ['logcosh', 'mae', 'mse', 'hinge','squared_hinge'],
+    'activation': ['relu', 'linear','sigmoid','hard_sigmoid', 'tanh'],
+    'dropout_rate':[0.1,0.2,0.4,0.6]
+}
+
+model_LSTM=KerasRegressor(build_fn=createLSTMModel)
+
+GridLSTM = GridSearchCV(estimator=model_LSTM,
+                     param_grid=grid_param_LSTM,
+                     scoring={'neg_mean_squared_error','r2','explained_variance','max_error','neg_mean_absolute_error','neg_median_absolute_error'},
+                     refit='neg_median_absolute_error',
+                     cv=2)
+
+X_train_R_Grid=X_train_smallLSTM.reshape(4,Train_Num,1)
+y_train_R_Grid=y_train_smallLSTM.reshape(4,Train_Num,1)
+
+GridLSTM.fit(X_train_R_Grid, y_train_R_Grid)
+The following error is produced:
+Epoch 1/15
+1/1 [==============================] - 17s 17s/step - loss: 1.4543
+Epoch 2/15
+1/1 [==============================] - 15s 15s/step - loss: 1.4568
+Epoch 3/15
+1/1 [==============================] - 13s 13s/step - loss: 1.3417
+Epoch 4/15
+1/1 [==============================] - 13s 13s/step - loss: 1.2683
+Epoch 5/15
+1/1 [==============================] - 14s 14s/step - loss: 1.2689
+Epoch 6/15
+1/1 [==============================] - 13s 13s/step - loss: 1.2692
+Epoch 7/15
+1/1 [==============================] - 12s 12s/step - loss: 1.2667
+Epoch 8/15
+1/1 [==============================] - 12s 12s/step - loss: 1.2663
+Epoch 9/15
+1/1 [==============================] - 12s 12s/step - loss: 1.2685
+Epoch 10/15
+1/1 [==============================] - 12s 12s/step - loss: 1.2660
+Epoch 11/15
+1/1 [==============================] - 12s 12s/step - loss: 1.2628
+Epoch 12/15
+1/1 [==============================] - 14s 14s/step - loss: 1.2666
+Epoch 13/15
+1/1 [==============================] - 13s 13s/step - loss: 1.2662
+Epoch 14/15
+1/1 [==============================] - 13s 13s/step - loss: 1.2656
+Epoch 15/15
+1/1 [==============================] - 13s 13s/step - loss: 1.2644
+
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-251-ec253ff8a2db> in <module>
+----> 1 GridLSTM.fit(X_train_R_Grid, y_train_R_Grid)
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\model_selection\_search.py in fit(self, X, y, groups, **fit_params)
+    685                 return results
+    686 
+--> 687             self._run_search(evaluate_candidates)
+    688 
+    689         # For multi-metric evaluation, store the best_index_, best_params_ and
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\model_selection\_search.py in _run_search(self, evaluate_candidates)
+   1146     def _run_search(self, evaluate_candidates):
+   1147         """Search all candidates in param_grid"""
+-> 1148         evaluate_candidates(ParameterGrid(self.param_grid))
+   1149 
+   1150 
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\model_selection\_search.py in evaluate_candidates(candidate_params)
+    664                                for parameters, (train, test)
+    665                                in product(candidate_params,
+--> 666                                           cv.split(X, y, groups)))
+    667 
+    668                 if len(out) < 1:
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\parallel.py in __call__(self, iterable)
+    919             # remaining jobs.
+    920             self._iterating = False
+--> 921             if self.dispatch_one_batch(iterator):
+    922                 self._iterating = self._original_iterator is not None
+    923 
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\parallel.py in dispatch_one_batch(self, iterator)
+    757                 return False
+    758             else:
+--> 759                 self._dispatch(tasks)
+    760                 return True
+    761 
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\parallel.py in _dispatch(self, batch)
+    714         with self._lock:
+    715             job_idx = len(self._jobs)
+--> 716             job = self._backend.apply_async(batch, callback=cb)
+    717             # A job can complete so quickly than its callback is
+    718             # called before we get here, causing self._jobs to
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\_parallel_backends.py in apply_async(self, func, callback)
+    180     def apply_async(self, func, callback=None):
+    181         """Schedule a func to be run"""
+--> 182         result = ImmediateResult(func)
+    183         if callback:
+    184             callback(result)
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\_parallel_backends.py in __init__(self, batch)
+    547         # Don't delay the application, to avoid keeping the input
+    548         # arguments in memory
+--> 549         self.results = batch()
+    550 
+    551     def get(self):
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\parallel.py in __call__(self)
+    223         with parallel_backend(self._backend, n_jobs=self._n_jobs):
+    224             return [func(*args, **kwargs)
+--> 225                     for func, args, kwargs in self.items]
+    226 
+    227     def __len__(self):
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\joblib\parallel.py in <listcomp>(.0)
+    223         with parallel_backend(self._backend, n_jobs=self._n_jobs):
+    224             return [func(*args, **kwargs)
+--> 225                     for func, args, kwargs in self.items]
+    226 
+    227     def __len__(self):
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\model_selection\_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, return_n_test_samples, return_times, return_estimator, error_score)
+    552         fit_time = time.time() - start_time
+    553         # _score will return dict if is_multimetric is True
+--> 554         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
+    555         score_time = time.time() - start_time - fit_time
+    556         if return_train_score:
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\model_selection\_validation.py in _score(estimator, X_test, y_test, scorer, is_multimetric)
+    595     """
+    596     if is_multimetric:
+--> 597         return _multimetric_score(estimator, X_test, y_test, scorer)
+    598     else:
+    599         if y_test is None:
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\model_selection\_validation.py in _multimetric_score(estimator, X_test, y_test, scorers)
+    625             score = scorer(estimator, X_test)
+    626         else:
+--> 627             score = scorer(estimator, X_test, y_test)
+    628 
+    629         if hasattr(score, 'item'):
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\metrics\scorer.py in __call__(self, estimator, X, y_true, sample_weight)
+     95         else:
+     96             return self._sign * self._score_func(y_true, y_pred,
+---> 97                                                  **self._kwargs)
+     98 
+     99 
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\metrics\regression.py in explained_variance_score(y_true, y_pred, sample_weight, multioutput)
+    413     """
+    414     y_type, y_true, y_pred, multioutput = _check_reg_targets(
+--> 415         y_true, y_pred, multioutput)
+    416     check_consistent_length(y_true, y_pred, sample_weight)
+    417 
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\metrics\regression.py in _check_reg_targets(y_true, y_pred, multioutput)
+     75 
+     76     """
+---> 77     check_consistent_length(y_true, y_pred)
+     78     y_true = check_array(y_true, ensure_2d=False)
+     79     y_pred = check_array(y_pred, ensure_2d=False)
+
+~\Anaconda3\envs\Tensorflow\lib\site-packages\sklearn\utils\validation.py in check_consistent_length(*arrays)
+    203     if len(uniques) > 1:
+    204         raise ValueError("Found input variables with inconsistent numbers of"
+--> 205                          " samples: %r" % [int(l) for l in lengths])
+    206 
+    207 
+
+ValueError: Found input variables with inconsistent numbers of samples: [1, 1396]
+Package versions
+System:
+    python: 3.6.9 |Anaconda, Inc.| (default, Jul 30 2019, 14:00:49) [MSC v.1915 64 bit (AMD64)]
+executable: C:\Users\alias\Anaconda3\envs\Tensorflow\python.exe
+   machine: Windows-10-10.0.18362-SP0
+
+BLAS:
+    macros: 
+  lib_dirs: 
+cblas_libs: cblas
+
+Python deps:
+       pip: 19.1.1
+setuptools: 39.1.0
+   sklearn: 0.21.2
+     numpy: 1.15.0
+     scipy: 1.2.1
+    Cython: 0.28.4
+    pandas: 0.24.2
+keras: 2.1.6
+tensorflow:1.9.0
+keras, numpy and tensorflow version are chosen on purpose to implement K.clear_session(), which produces in combination with gridsearchCV OOM issues on up-to-date versions.
+Is gridsearchCV not suited for RNN usage or is there a workaround?
+Lots of thanks in advance already. Hope, this is an issue for you and does not waste your time.
+Best regards,
+Tobias

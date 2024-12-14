@@ -1,0 +1,82 @@
+flamoedo commented on 29 Jun 2017 •
+edited
+I implemented a generator to feed the training process, but the fit_generator raises the error:
+Error when checking target: expected lambda_2 to have 4 dimensions, but got array with shape (200, 1)
+It seems that the function is switching X and y at some point, because (200,1) is "y" shape, not "X" shape.
+If I test the generator with the code below it works fine:
+for i in range(32):    
+    train = next(train_generator)
+    print(train[0].shape)
+But with the fit_generator a error is rised.
+Follows the code:
+import os
+import csv
+
+samples = []
+with open('data/driving_log.csv') as csvfile:
+    reader = csv.reader(csvfile)
+    for line in reader:
+        samples.append(line)
+
+from sklearn.model_selection import train_test_split
+train_samples, validation_samples = train_test_split(samples, test_size=0.2)
+
+import cv2
+import numpy as np
+import sklearn
+
+def generator(samples, batch_size=32):
+    num_samples = len(samples)
+    while 1: # Loop forever so the generator never terminates
+        sklearn.utils.shuffle(samples)
+        for offset in range(0, num_samples, batch_size):
+            batch_samples = samples[offset:offset+batch_size]
+
+            images = []
+            angles = []
+            for batch_sample in batch_samples:
+                name = 'data\\'+batch_sample[0].split('\\')[-1]
+                center_image = cv2.imread(name)
+                center_angle = float(batch_sample[3])
+                
+                if not center_image is None:
+                    images.append(center_image)
+                    angles.append(center_angle)
+                    
+            
+
+            # trim image to only see section with road
+            X_train = np.array(images)
+            y_train = np.array(angles)
+            
+            yield sklearn.utils.shuffle(X_train, y_train)
+
+# compile and train the model using the generator function
+train_generator = generator(train_samples, batch_size=int(len(train_samples)/32))
+validation_generator = generator(validation_samples, batch_size=int(len(validation_samples)/32))
+
+ch, row, col = 3, 160, 320  # Trimmed image format
+
+from keras.models import Sequential
+from keras.layers import Lambda
+
+
+model = Sequential()
+# Preprocess incoming data, centered around zero with small standard deviation 
+model.add(Lambda(lambda x: x/127.5 - 1.,
+        input_shape=(row, col, ch),
+        output_shape=(row, col, ch)))
+#model.add(... finish defining the rest of your model architecture here ...)
+
+model.compile(loss='mse', optimizer='adam')
+
+model.fit_generator(train_generator,
+                    steps_per_epoch=len(train_samples) / 32, validation_data=validation_generator,
+                    validation_steps=len(validation_samples)/32, epochs=3)
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+2

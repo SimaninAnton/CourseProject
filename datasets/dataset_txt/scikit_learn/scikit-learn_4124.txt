@@ -1,0 +1,46 @@
+dominiqu commented on Dec 4, 2014
+In PLSRegression(), pls.transform(X,Y) on the training data should yield the same scores for X as returned by pls.x_scores_ (see example below). It does when the matrix X is full rank (none of the columns are of constant value). However, when adding a constant column to X, this stops being true, which appears to be a bug. Another way to think of this is that adding extraneous dimensions to X (basically embedding its data in a higher dimensional space while retaining its orginal true dimensionality) shouldn't affect the directions obtained by PLS (i.e. the coefficients in the original dimensions should remain the same). This is true in the PLS implementation in Matlab (I checked), but not in the implementation in ScikitLearn.
+Thoughts/questions?
+I am copying an example below so you can reproduce it.
+Thanks!
+Dominique
+Example:
+### generate data
+from pylab import *
+x = 2*linspace(0, 10, 100)
+y = 5*linspace(0, 10, 100)
+X,Y = meshgrid(y, x)
+Z = X+Y
+
+### transform data 
+add_extraneous_dimension_to_X=False
+if add_extraneous_dimension_to_X:
+    XX = hstack([X.reshape((prod(X.shape),1)), Y.reshape((prod(Y.shape),1)), np.zeros((prod(X.shape),1))])
+else:
+    XX = hstack([X.reshape((prod(X.shape),1)), Y.reshape((prod(Y.shape),1))])
+YY = reshape(Z,[10000,1])
+
+### zero mean and normalize the data
+means = mean(XX,axis=0)
+stds = std(XX,axis=0)
+
+for ix in range(XX.shape[1]):
+    XX[:,ix] = XX[:,ix] - means[ix]
+
+### normalize the data
+for ix in range(XX.shape[1]):
+    stdDev = stds[ix]
+    if stdDev > 1e-10:
+        XX[:,ix] = XX[:,ix]/stdDev
+    else:
+        XX[:,ix] = np.zeros(XX[:,ix].shape)
+
+### now learn the pls axes
+pls = PLSRegression(n_components=XX.shape[1])
+pls.fit(XX, YY)
+
+### do a transform of sample rows in the training data 
+XX_PLS, YY_PLS = pls.transform(XX[0:10,:],YY[:10])
+
+### compare the transform to the loadings
+print XX_PLS[0:10,:] - pls.x_scores_[0:10,:]   # there should be no difference between these two

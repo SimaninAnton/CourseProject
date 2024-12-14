@@ -1,0 +1,34 @@
+ypxie commented on 18 Feb 2016
+with dropout support. Currently only runs on theano.
+Inputs to the model are of size (Nsample, rowsize, colsize, input_dim)
+https://github.com/shampool/Multi-Dimensional-RNN
+Any suggestions are welcome.
+model can be created like this:
+def buildmodel(input_dim, output_dim):
+    hiddenDim = 128
+    model = Graph()
+    model.add_input(name='input', input_shape=(None,None,input_dim), dtype= 'float')
+    #model.add_node(TwoDimRecurrentBatchNormalization(), name='bn1', input='input')
+    model.add_node(TwoDimMasking(),
+                   name='masked', input='input')
+
+    model.add_node(TwoDimGRU(hiddenDim,droprate =  [0.25],init = 'glorot_normal',inner_init='orthogonal',
+                                    activation='tanh', return_sequences = True,
+                                    go_backwards=[False,False]), name='upperleft', input='masked')
+
+    model.add_node(TwoDimGRU(hiddenDim,droprate = [0.25],
+                                    init = 'glorot_normal',inner_init='orthogonal',
+                                    activation='tanh', return_sequences = True,
+                                    go_backwards=[True,True]), 
+                                    name='lowerright',input= 'upperleft')
+
+    model.add_node(TwoDimTimeDistributedDense(output_dim = output_dim,,droprate =  [0.25],init = 'glorot_normal',
+                                    activation='hard_sigmoid'), name = 'last_mask',
+                                    input= 'lowerright')
+
+    model.add_output(name='output_mask', input='last_mask')
+    opt = SGD(lr =1E-1, decay = 1E-7, momentum = 0.9, nesterov = True)
+    #opt = RMSprop(lr=0.0001, rho=0.9, epsilon=1e-6) # start with 0.0001 then with 0.001
+    model.compile(loss={'output_mask': 'mse' }, optimizer=opt)
+
+    return model

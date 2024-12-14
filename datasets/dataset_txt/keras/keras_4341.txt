@@ -1,0 +1,151 @@
+Contributor
+tboquet commented on 21 Sep 2016 •
+edited
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Hi all,
+I wonder if get_output_shape_for in Deconv2d is right in all cases.
+For some filter's shapes and border modes it differs from the true shape. I just started using deconvolution so my understanding of the arithmetic, the implementation in Theano\Tensorflow, and how the shape inference works in Keras is maybe wrong but it seems the behavior is not the same.
+#3540 is also related and maybe you guys @EderSantana, @lukovkin and @dolaameng can help!
+With theano:
+import os
+os.environ["THEANO_FLAGS"] = "mode=FAST_COMPILE,device=gpu,floatX=float32"
+import theano
+import numpy as np
+from keras.layers import Deconvolution2D
+from keras.layers import Input
+from keras.models import Model
+
+for f, shape, inpsize, sub, mode in [(3, 7, 8, 1, 'same'),
+                                    (4, 7, 8, 1, 'same'),
+                                    (4, 15, 8, 2, 'same'),
+                                    (4, 14, 15, 1, 'same'),
+                                    (4, 32, 15, 2, 'valid'),
+                                    (5, 32, 32, 1, 'same')]:
+    print('Filter size: {}, Output height/width shape: {}, Inp size: {}, Mode: {}'.format(f, shape, inpsize, mode))
+    deconv_test = Deconvolution2D(10, f, f, 
+                                (10, 10, shape, shape),
+                                subsample=(sub, sub),
+                                border_mode=mode)
+
+    batch_shape_1 = (10, 10, inpsize, inpsize)
+
+    inp = Input(batch_shape=batch_shape_1)
+    result = deconv_test(inp)
+    print('Shape inference: ', deconv_test.get_output_shape_for(batch_shape_1))
+    print('Modified Shape inference filter heigth\width: ', conv_input_length(inpsize, f, mode, sub))
+
+    matrix = np.ones(batch_shape_1, dtype=np.float32)
+
+    model = Model(inp, result)
+    results = model.predict(matrix)
+    print('True shape: ', results.shape)
+    print()
+Output GPU:
+Filter size: 3, Output height/width shape: 7, Inp size: 8, Mode: same
+Shape inference:  (10, 10, 8, 8)
+True shape:  (10, 10, 7, 7)
+
+Filter size: 4, Output height/width shape: 7, Inp size: 8, Mode: same
+Shape inference:  (10, 10, 7, 7)
+True shape:  (10, 10, 7, 7)
+
+Filter size: 4, Output height/width shape: 15, Inp size: 8, Mode: same
+Shape inference:  (10, 10, 14, 14)
+True shape:  (10, 10, 4, 4)
+
+Filter size: 4, Output height/width shape: 14, Inp size: 15, Mode: same
+Shape inference:  (10, 10, 14, 14)
+True shape:  (10, 10, 14, 14)
+
+Filter size: 4, Output height/width shape: 32, Inp size: 15, Mode: valid
+Shape inference:  (10, 10, 32, 32)
+True shape:  (10, 10, 32, 32)
+
+Filter size: 5, Output height/width shape: 32, Inp size: 32, Mode: same
+Shape inference:  (10, 10, 32, 32)
+True shape:  (10, 10, 32, 32)
+Output CPU:
+Filter size: 3, Output height/width shape: 7, Inp size: 8, Mode: same
+Shape inference:  (10, 10, 8, 8)
+True shape:  (10, 10, 8, 8)
+
+Filter size: 4, Output height/width shape: 7, Inp size: 8, Mode: same
+Shape inference:  (10, 10, 7, 7)
+True shape:  (10, 10, 7, 7)
+
+Filter size: 4, Output height/width shape: 15, Inp size: 8, Mode: same
+Shape inference:  (10, 10, 14, 14)
+True shape:  (10, 10, 4, 4)
+
+Filter size: 4, Output height/width shape: 14, Inp size: 15, Mode: same
+Shape inference:  (10, 10, 14, 14)
+True shape:  (10, 10, 14, 14)
+
+Filter size: 4, Output height/width shape: 32, Inp size: 15, Mode: valid
+Shape inference:  (10, 10, 32, 32)
+True shape:  (10, 10, 32, 32)
+
+Filter size: 5, Output height/width shape: 32, Inp size: 32, Mode: same
+Shape inference:  (10, 10, 32, 32)
+True shape:  (10, 10, 32, 32)
+With TensorFlow:
+import numpy as np
+from keras.layers import Deconvolution2D
+from keras.layers import Input
+from keras.models import Model
+
+for f, shape, inpsize, sub, mode in [(3, 8, 8, 1, 'same'),
+                                    (4, 8, 8, 1, 'same'),
+                                    (4, 15, 8, 2, 'same'),
+                                    (4, 15, 15, 1, 'same'),
+                                    (4, 32, 15, 2, 'valid'),
+                                    (5, 32, 32, 1, 'same')]:
+    print 'Filter size: {}, Output height/width shape: {}, Inp size: {}, Mode: {}'.format(f, shape, inpsize, mode)
+    deconv_test = Deconvolution2D(10, f, f, 
+                                (10, shape, shape, 10),
+                                subsample=(sub, sub),
+                                border_mode=mode)
+
+    batch_shape_1 = (10, inpsize, inpsize, 10)
+
+    inp = Input(batch_shape=batch_shape_1)
+    result = deconv_test(inp)
+    print 'Shape inference: ', deconv_test.get_output_shape_for(batch_shape_1)
+
+    matrix = np.ones(batch_shape_1, dtype=np.float32)
+
+    model = Model(inp, result)
+    results = model.predict(matrix)
+    print 'True shape: ', results.shape
+    print
+Output GPU:
+Filter size: 3, Output height/width shape: 8, Inp size: 8, Mode: same
+Shape inference:  (10, 8, 8, 10)
+True shape:  (10, 8, 8, 10)
+
+Filter size: 4, Output height/width shape: 8, Inp size: 8, Mode: same
+Shape inference:  (10, 7, 7, 10)
+True shape:  (10, 8, 8, 10)
+
+Filter size: 4, Output height/width shape: 15, Inp size: 8, Mode: same
+Shape inference:  (10, 14, 14, 10)
+True shape:  (10, 15, 15, 10)
+
+Filter size: 4, Output height/width shape: 15, Inp size: 15, Mode: same
+Shape inference:  (10, 14, 14, 10)
+True shape:  (10, 15, 15, 10)
+
+Filter size: 4, Output height/width shape: 32, Inp size: 15, Mode: valid
+Shape inference:  (10, 32, 32, 10)
+True shape:  (10, 32, 32, 10)
+
+Filter size: 5, Output height/width shape: 32, Inp size: 32, Mode: same
+Shape inference:  (10, 32, 32, 10)
+True shape:  (10, 32, 32, 10)
+I don't have a Tensorflow cpu setup so if someone is willing to test this on cpu it would be interesting to compare the results.
+Tx!
+1

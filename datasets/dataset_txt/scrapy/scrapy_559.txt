@@ -1,0 +1,40 @@
+apnewberry commented on Aug 18, 2017 •
+edited
+Thanks for all your great work on the Scrapy project -- I'm a huge fan!
+I have a remote database containing a job queue of URLs I want to scrape. In order to distribute the work efficiently, I want the Scrapy process to asynchronously query the database for the next URL to scrape.
+The approach I found most natural was to yield Deferred database queries from start_requests, as in the code below. I'm using alchimia, which combines sqlalchemy with Twisted. However, I get an exception indicating that start_requests can't yield a Deferred.
+"""Asynchronously get next url to request."""
+
+import os
+import scrapy
+import alchimia
+from sqlalchemy import create_engine
+from twisted.internet import reactor
+from twisted.internet.defer import Deferred
+
+
+db_url = os.environ['PGURL']
+engine = create_engine(
+    db_url, reactor=reactor, strategy=alchimia.TWISTED_STRATEGY
+)
+
+
+class JobQueueSpider(scrapy.Spider):
+
+    def start_requests(self):
+
+        while True:
+
+            d = Deferred()
+            d.addCallbacks(engine.execute, 'pop_next_url()')
+            d.addCallbacks(alchimia.engine.TwistedResultProxy.scalar)
+            d.addCallback(scrapy.Request)
+            yield d
+An alternative approach is
+yield fake requests to localhost from start_requests
+use a downloader middleware to intercept each fake request and replace it with a Deferred query to the database for the next URL
+add a callback to the database query to make a scrapy request from it
+this approach works, but it seems quite roundabout.
+Am I missing something? Is there a clean way to asynchronously, one-at-a-time query a database for the next URL to request? If not, might it be changed so start_requests can yield Deferreds?
+Thanks again!
+👍 1

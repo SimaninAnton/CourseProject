@@ -1,0 +1,126 @@
+Contributor
+berleon commented on 16 Jul 2016
+Proposal: A more dynamic way to incorporate losses
+Currently, there a two ways to control the loss of a model:
+Through model.compile('adam', {'output': 'mse'})
+Regularizers
+Problems with the current solution:
+the ActivityRegularization layer is not shareable by multiple models. The regularizer sums up the regularization loss of all outputs. If the outputs originate from different models with different inputs, the regularization loss cannot be computed. See this issue #2804.
+The expected behavior would be:
+ActivityRegularization layer is called n times for model A and m times for a different model B.
+Model A receives the loss of the activity regularization from the n calls.
+Model B receives the loss from the m different times.
+It is unnecessarily complicated to build models that incorporate loss between two network values, rather than a network value to a given label. In unsupervised models, a reconstruction loss is often measured between two internal network values. For example, the ladder networks have a reconstruction loss for every layer. Currently, one would implement this by adding some regularization, but this would make the whole model not shareable.
+I propose to add a compute_loss method to the Layer class. This would enable every layer
+to influence the final model loss. The loss would be propagated through the model graph similarly to the masks and shapes.
+The new Layer.compute_loss method:
+class Layer:
+    def compute_loss(input, output, masks=None, output_mask=None):
+        """
+        The returned loss  is added to the final model loss. If the layer is
+        called multiple times, the loss  is also added multiple times
+        to the final loss of the model.
+        """
+        return 0
+    [..]
+Example implementation of the compute_loss method:
+class MSE(Layer):
+    def output_shape_for():
+        return (1,)
+
+    def call(input, masks=None):
+        assert(len(input) == 2)
+        x, y = input
+        return K.mean(K.square(x - y), axis=-1)
+
+    def compute_loss(input, output, masks=None, output_mask=None):
+        return output
+Usage of MSE in a simple Autoencoder:
+X = get_data()
+input = Input(shape=(20,))
+x = Dense(10)(input)
+reconstruction = Dense(20)(x)
+loss = MSE(input, reconstruction)
+
+m = Model(input=input, output=[x, y], loss=loss)
+
+m.compile('adam')
+
+# will minimize the difference between `input` and `reconstruction`
+m.fit(X)
+
+# returns the representation x and the reconstruction y
+m.predict(X)
+Notice the new loss argument of the Model constructor. It allows one to separate models outputs from losses. In the Model.compile function the loss argument would become optional.
+Implementation
+I do not have that much experience with the inner working of keras. I came up with this implementation idea from reading the source code and I hope it makes sense.
+Add a _keras_loss attribute to every keras tensor as done for _keras_shape etc. In the _keras_loss attribute, we store a dictionary of a marker of the layer (layer name, layer id, node position, tensor position) to the actual loss tensor. Every time Node.create_node is called, we merge the _keras_loss dictionaries of the input tensors and add the return value of outbound_layer.loss(..) to the dictionary. The _keras_loss attribute of all output_tensors is set to the new dictionary.
+In the Model.compile method, we add the losses in the _keras_loss attribute of the output and loss tensors to the final loss.
+The Container.run_internal_graph method would handle the loss similar to the masks and shapes. It would return an additional output_losses list.
+The weight regularizers will not be changed.
+The only breaking change is the additional output of Container.run_internal_graph. And this would only break code if one calls this method directly.
+Review ActivityRegularization
+Lets review how this approach solves the problem if a ActivityRegularization layer is shared between multiple models.
+class ActivityRegularization(Layer):
+    [..]
+    def compute_loss(input, output, masks=None, output_mask=None):
+        regularized_loss = K.sum(K.abs(input)) * self.l1
+        regularized_loss += K.sum(K.square(input)) * self.l2
+        return K.in_train_phase(regularized_loss, loss)
+    def call(input, mask=None):
+        return input
+
+input1 = Input(shape=20)
+x1 = Dense(10)(input1)
+
+input2 = Input(shape=20)
+x2 = Dense(10)(input2)
+
+activity_reg = ActivityRegularization(l1=0.01)
+
+# this will invoke the ActivityRegularization.compute_loss method with input=x1
+y1 = activity_reg(x1)
+# y1._keras_loss  will now contain an item of (unique marker for activity_reg, loss on x1)
+
+# this will also invoke the ActivityRegularization.compute_loss method but with input=x2
+y2 = activity_reg(x2)
+# y2._keras_loss  will now contain an item of (unique marker for activity_reg, loss on x2)
+
+# looks up y1._keras_loss to extract the additional loss.
+Model(x1, y1)
+
+# looks up y2._keras_loss to extract the additional loss.
+Model(x2, y2)
+
+# This model will add the loss from both y1 and y2 to the final loss.
+Model([x1, x2], [y1, y2])
+Review ladder networks
+class Ladder(Layer):
+    def __init__(self, forward_layer, reconstruction_layer):
+        self.forward_layer = forward_layer
+        self.reconstruction_layer = reconstruction_layer
+
+    def compute_loss(input, output, masks=None, output_mask=None):
+        reconstruction = self.reconstruction_layer(output)
+        return K.mean(K.square(reconstruction - input), axis=-1)
+
+    def call(input, mask=None):
+        return self.forward_layer(input, mask)
+
+input =  Input(shape=(20,))
+x = Ladder(Dense(10), Dense(10))(input)
+x = Ladder(Dense(10), Dense(10))(x)
+output = Dense(1)(x)
+
+m = Model(input, output)
+m.compile('adam', 'mse')
+m.fit(X, y)
+The loss of the Ladder layers propagates through the _keras_loss dictionary to the Model.
+Open questions
+Is this the right way to implement it?
+How are metrics handled? <layer_name>: <loss from layer>? Should it be
+customizable?
+Conclusion
+This change would make ActivityRegularization shareable and furthermore simplify the construction of many unsupervised models.
+For my personal work, I have to call an activity regularization multiple times. Therefore I will start to implement a basic version of this proposal.
+6

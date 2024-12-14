@@ -1,0 +1,59 @@
+GauravBh1010tt commented on 6 Mar 2017 •
+edited
+I am working on transfer learning as described in the paper Correlational Neural Networks.
+The architecture of the DNN is
+
+The loss function corresponding to the network is given by
+
+Z = (X,Y), the concatenated vector. If only one representation is given then the other is set to 0. (See the figure below).
+Basically, I need my loss function to learn the representation from one view and be able to reconstruct the other view of the data. Here, X and Y are two representations of the data, let's say one is a textual feature and the other is the visual feature. I used functional API to design this architecture and with the help of #2121 and #2662 designed a custom loss function that works.
+The problem is that the functional API is computing the two output layers independently (as opposed to the sequential model where one loss function is used). According to the above loss equation, I need to share same loss function for both of the outputs(something like sequential models). Is it possible?
+My designed loss function converges smoothly and I am getting some results, which are inferior to the results given in the paper. I do not know what am I missing. In #386 (see the last comment) the results of autoencoder are not good. Does this problem has to do something with my implementation?
+Results from the paper (On MNIST dataset):
+
+Keras Result:
+Below is the snippet of custom loss function:
+def cornet_loss(params):
+    def loss(y_true,y_pred):
+        def cor(y1,y2,lamda):
+            y1_mean = K.mean(y1, axis=0)
+            y1_centered = y1 - y1_mean
+            y2_mean = K.mean(y2, axis=0)
+            y2_centered = y2 - y2_mean
+            corr_nr = K.sum(y1_centered * y2_centered, axis=0)
+            corr_dr1 = K.sqrt(T.sum(y1_centered * y1_centered, axis=0)+1e-8)
+            corr_dr2 = K.sqrt(T.sum(y2_centered * y2_centered, axis=0)+1e-8)
+            corr_dr = corr_dr1 * corr_dr2
+            corr = corr_nr/corr_dr
+            return K.sum(corr) * lamda
+
+        if params[5] == 'left_model':
+            input_l = y_true
+            input_r = params[0]
+            output_l = y_pred
+            output_r = params[1]
+        elif params[5] == 'right_model':
+            input_l = params[0]
+            input_r = y_true
+            output_l = params[1]
+            output_r = y_pred
+        hidden_l = params[2]
+        hidden_r = params[3]
+        L1_1 = K.mean(K.square(output_l-input_l), axis=-1)
+        L1_2 = K.mean(K.square(output_r-input_r), axis=-1)
+        L1 = (L1_1+L1_2)/2
+        L2_1 = K.mean(K.square(output_l-input_l), axis=-1)
+        L2_2 = K.mean(K.square(K.zeros_like(input_r)-input_r), axis=-1)
+        L2 = (L2_1+L2_2)/2
+        L3_1 = K.mean(K.square(K.zeros_like(input_l)-input_l), axis=-1)
+        L3_2 = K.mean(K.square(output_r-input_r), axis=-1)
+        L3 = (L3_1+L3_2)/2
+        L4 = cor(hidden_l,hidden_r,params[4])
+        return L1+L2+L3-L4
+    return loss
+Parameters as defined in the paper: - hidden_neurons = 50, inp_dim = 392, lamda = 2, l_reg = 0.01, optimizer = rmsprop.
+model.compile(loss=[cornet_loss([input_r,output_r,hidden_l,hidden_r,lamda,'left_model']),
+                        cornet_loss([input_l,output_l,hidden_l,hidden_r,lamda,'right_model'])],
+                  optimizer=rmsprop,
+                  metrics=['accuracy'])
+Because the loss function is being called two times for each output layer, I feel that might be causing inconsistency during backpropagating the weights. If this is the case what can be a possible remedy?

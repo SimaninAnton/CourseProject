@@ -1,0 +1,183 @@
+i-akbari commented on 18 Apr 2017 •
+edited
+This is my script. Finetuning is stopped after a few epochs. The number of last epoch is different in different runs.
+My configurations:
+Tensorflow 1.0.1
+Keres 2.0.3
+Kubuntu 14.04
+Python 3.4
+What is the problem? Why it occurs after a few epoch not in the first one?
+Is it possible one corrupted image file makes this problem? Why in the first epoch it didn't happened?
+from keras.applications.inception_v3 import InceptionV3
+from keras.models import Model
+from keras.layers import Dense, GlobalAveragePooling2D
+from keras.callbacks import ModelCheckpoint, TensorBoard, CSVLogger, Callback
+from keras.optimizers import SGD
+
+# create the base pre-trained model
+from keras.preprocessing.image import ImageDataGenerator
+
+base_model = InceptionV3(weights='imagenet', include_top=False)
+
+# add a global spatial average pooling layer
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+# let's add a fully-connected layer
+
+x = Dense(1024, activation='relu')(x)
+
+
+# and a logistic layer -- let's say we have 2 classes
+# predictions = Dense(1, activation='softmax')(x) #A
+predictions = Dense(2, activation='softmax')(x) #B
+
+# this is the model we will train
+model = Model(input=base_model.input, output=predictions)
+
+# first: train only the top layers (which were randomly initialized)
+# i.e. freeze all convolutional InceptionV3 layers
+for layer in base_model.layers:
+    # layer.trainable = False
+    layer.trainable = True
+
+model.compile(optimizer=SGD(lr=0.001, momentum=0.9), loss='sparse_categorical_crossentropy') #B
+
+# train the model on the new data for a few epochs
+train_datagen = ImageDataGenerator(
+    rescale=1. / 255,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True)
+
+# I changed flow_from_directory() a bit/
+train_generator = train_datagen.flow_from_directory(
+    '.../train/',
+    _mode='b-w',
+    classes=['white','black'],
+    follow_links=True,
+    shuffle=True,
+    target_size=(299, 299),
+    batch_size=16,
+    class_mode='binary')
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+# I changed flow_from_directory() a bit/
+validation_generator = test_datagen.flow_from_directory(
+    '.../val/',
+    _mode='train-val-test_b-w', _set='val',
+    classes=['white', 'black'],
+    target_size=(299, 299),
+    batch_size=16,
+    follow_links=True,
+    class_mode='binary')
+
+class LossHistory(Callback):
+    def on_train_begin(self, logs={}):
+        self.f = open('./history-log/log.txt', 'w')
+        self.f.write('batch' + ' , ' + 'loss\n')
+
+    def on_batch_end(self, batch, logs={}):
+        self.f.write(str(logs.get('batch')) + ' , ' + str(logs.get('loss')) + '\n')
+
+model_checkpoint = ModelCheckpoint('./saved_models/{epoch:02d}-{val_loss:.2f}.hdf5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)
+csv_logger = CSVLogger('./csv-log/log.csv', separator=',', append=False)
+history = LossHistory()
+
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+model.fit_generator(
+    train_generator,
+    steps_per_epoch=733,
+    epochs=1000,
+    callbacks=[model_checkpoint, csv_logger, history],
+    validation_data=validation_generator,
+    verbose=1,
+    validation_steps=706)
+Output:
+Using TensorFlow backend.
+I tensorflow/stream_executor/dso_loader.cc:135] successfully opened CUDA library libcublas.so.8.0 locally
+I tensorflow/stream_executor/dso_loader.cc:135] successfully opened CUDA library libcudnn.so.5 locally
+I tensorflow/stream_executor/dso_loader.cc:135] successfully opened CUDA library libcufft.so.8.0 locally
+I tensorflow/stream_executor/dso_loader.cc:135] successfully opened CUDA library libcuda.so.1 locally
+I tensorflow/stream_executor/dso_loader.cc:135] successfully opened CUDA library libcurand.so.8.0 locally
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE3 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.1 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:910] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:885] Found device 0 with properties:
+name: GeForce GTX TITAN
+major: 3 minor: 5 memoryClockRate (GHz) 0.8755
+pciBusID 0000:01:00.0
+Total memory: 5.94GiB
+Free memory: 5.75GiB
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:906] DMA: 0
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:916] 0: Y
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:975] Creating TensorFlow device (/gpu:0) -> (device: 0, name: GeForce GTX TITAN, pci bus id: 0000:01:00.0)
+/patna/patna-codes/python/tensorlow-keras-test/finetune.py:27: UserWarning: Update your Model call to the Keras 2 API: Model(inputs=Tensor("in..., outputs=Tensor("de...)
+model = Model(input=base_model.input, output=predictions)
+Found 93792 images belonging to 2 classes.
+Found 90260 images belonging to 2 classes.
+Epoch 1/1000
+I tensorflow/core/common_runtime/gpu/pool_allocator.cc:247] PoolAllocator: After 2278 get requests, put_count=2134 evicted_count=1000 eviction_rate=0.468604 and unsatisfied allocation rate=0.546093
+I tensorflow/core/common_runtime/gpu/pool_allocator.cc:259] Raising pool_size_limit_ from 100 to 110
+9/733 [..............................] - ETA: 869s - loss: 0.7533I tensorflow/core/common_runtime/gpu/pool_allocator.cc:247] PoolAllocator: After 2286 get requests, put_count=2222 evicted_count=1000 eviction_rate=0.450045 and unsatisfied allocation rate=0.474628
+I tensorflow/core/common_runtime/gpu/pool_allocator.cc:259] Raising pool_size_limit_ from 233 to 256
+21/733 [..............................] - ETA: 646s - loss: 0.6912I tensorflow/core/common_runtime/gpu/pool_allocator.cc:247] PoolAllocator: After 2419 get requests, put_count=2718 evicted_count=1000 eviction_rate=0.367918 and unsatisfied allocation rate=0.312112
+I tensorflow/core/common_runtime/gpu/pool_allocator.cc:259] Raising pool_size_limit_ from 596 to 655
+732/733 [============================>.] - ETA: 0s - loss: 0.4559/opt/keras-python3.4/lib/python3.4/site-packages/PIL/TiffImagePlugin.py:709: UserWarning: Corrupt EXIF data. Expecting to read 4 bytes but only got 0.
+warnings.warn(str(msg))
+/opt/keras-python3.4/lib/python3.4/site-packages/PIL/Image.py:885: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+'to RGBA images')
+733/733 [==============================] - 846s - loss: 0.4558 - val_loss: 0.2498
+Epoch 2/1000
+732/733 [============================>.] - ETA: 0s - loss: 0.3979/opt/keras-python3.4/lib/python3.4/site-packages/PIL/TiffImagePlugin.py:709: UserWarning: Corrupt EXIF data. Expecting to read 4 bytes but only got 2.
+warnings.warn(str(msg))
+733/733 [==============================] - 844s - loss: 0.3977 - val_loss: 0.1956
+Epoch 3/1000
+733/733 [==============================] - 820s - loss: 0.3665 - val_loss: 0.2093
+Epoch 4/1000
+733/733 [==============================] - 819s - loss: 0.3549 - val_loss: 0.1918
+Epoch 5/1000
+732/733 [============================>.] - ETA: 0s - loss: 0.3427Exception in thread Thread-6:
+Traceback (most recent call last):
+File "/usr/lib/python3.4/threading.py", line 920, in _bootstrap_inner
+self.run()
+File "/usr/lib/python3.4/threading.py", line 868, in run
+self._target(*self._args, **self._kwargs)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/engine/training.py", line 606, in data_generator_task
+generator_output = next(self._generator)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/preprocessing/image.py", line 756, in next
+return self.next(*args, **kwargs)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/preprocessing/image.py", line 1328, in next
+target_size=self.target_size)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/preprocessing/image.py", line 320, in load_img
+img = pil_image.open(path)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/PIL/Image.py", line 2439, in open
+im = _open_core(fp, filename, prefix)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/PIL/Image.py", line 2429, in _open_core
+im = factory(fp, filename)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/PIL/JpegImagePlugin.py", line 761, in jpeg_factory
+im = JpegImageFile(fp, filename)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/PIL/ImageFile.py", line 100, in init
+self._open()
+File "/opt/keras-python3.4/lib/python3.4/site-packages/PIL/JpegImagePlugin.py", line 332, in _open
+handler(self, i)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/PIL/JpegImagePlugin.py", line 126, in APP
+dpi = x_resolution[0] / x_resolution[1]
+ZeroDivisionError: division by zero
+Traceback (most recent call last):
+File "/patna/patna-codes/python/tensorlow-keras-test/finetune.py", line 105, in
+validation_steps=706)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/legacy/interfaces.py", line 88, in wrapper
+return func(*args, **kwargs)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/engine/training.py", line 1899, in fit_generator
+pickle_safe=pickle_safe)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/legacy/interfaces.py", line 88, in wrapper
+return func(*args, **kwargs)
+File "/opt/keras-python3.4/lib/python3.4/site-packages/keras/engine/training.py", line 1985, in evaluate_generator
+str(generator_output))
+ValueError: output of generator should be a tuple (x, y, sample_weight) or (x, y). Found: None
+Process finished with exit code 1

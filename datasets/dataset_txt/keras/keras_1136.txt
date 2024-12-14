@@ -1,0 +1,51 @@
+sekharvth commented on 29 Mar 2018 •
+edited
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+I'm new to Keras, and I was trying to implement the Multi-Instance-Multi-Output CNN (MIMLCNN) for relation extraction, shown in this research paper : http://www.aclweb.org/anthology/C16-1139
+It basically joins all the sentences containing a particular entity pair, and uses the info from all these sentences to make a prediction on the relation(s) between the entity pair. I concatenate all sentences having the same entity pair together, making a huge paragraph, and feed this, along with the corresponding position vectors into the model, as one instance. Then I use a for loop to go through each sentence in the instance ( huge paragraph), and pass each of these sentences and corresponding position vectors into the Embedding, Convolution and so on. Here's a snippet of the code:
+x1 = Input(shape = (max_num_of_sentences_for_an_entity_pair, ))
+x2 = Input(shape = (2 * max_num_of_sentences_for_an_entity_pair, ))
+
+# an empty list to store the outputs.
+outputs = []
+# loop through the concatenated sentences and select each sentence and its corresponing position 
+    vectors
+for i in range(int(max_num_of_sentences_for_an_entity_pair/maxlen_of_sentences)):
+    x1 = Lambda(lambda x: x[:, (i * maxlen_of_sentences) : ((i+1) * maxlen_of_sentences)])(x1)
+    x2 = Lambda(lambda x: x[:, (2 * i * maxlen_of_sentences) : (2 * (i+1) * maxlen_of_sentences)])(x2)
+
+    x2_pos_matrix_1 = Lambda(lambda x: x[:, :maxlen_of_sentences])(x2)
+    x2_pos_matrix_2 = Lambda(lambda x: x[:, maxlen_of_setences:])(x2)
+
+    # pass each input into the embedding layer to generate embeddings
+    input_embed = embed_layer(x1)
+    pos_embed_1 = position_layer_1(x2_pos_matrix_1)
+    pos_embed_2 = position_layer_2(x2_pos_matrix_2)
+
+    # now concatenate all the embeddings for each word in each sentence
+    merged = Concatenate(axis = -1)([input_embed, pos_embed_1, pos_embed_2])
+
+    # pass it through a 1D convolution, with 100 filters and relu activation. 
+    # Resulting shape is (20(maxlen) - 3(kernel_size) + 1, 100(num_filters))
+    conv = Conv1D(filters = 100, kernel_size = 3, strides = 1, padding = 'same', activation = 'relu' 
+    (merged)
+
+    # perform piece-wise max pooling. Resulting shape is (6, 100)
+    piece_pool = MaxPooling1D(pool_size = 3, strides = 3, padding = 'same')(conv)
+
+    # flatten the outputs and make it into the desired shape
+    piece_pool = Flatten()(piece_pool)
+    piece_pool = Reshape((600, 1))(piece_pool)
+
+    # append the outputs of each sentence to 'outputs' list
+    outputs.append(piece_pool)
+I did a course on Sequence Models, and in some assignments where they use a for loop to iterate through the different time steps in a sequence and pass each through an LSTM layer, they use global layers for trainable layers with weights, such as Dense( ) and LSTM( ). They say that it is required for the weights to not re-initialise themselves at each time step, and globally defining them makes the weights get shared across the time steps.
+I'm a bit confused right now. In my implementation of the MIMLCNN, I use a for loop to iterate through each sentence that has the same entity pair, but are the trainable layers such as Conv1D and Dense getting re-initialised for each new sentence in the paragraph? And if it is, would it wreck the model, as the model is expected to learn features from all these sentences that have a common entity pair, and thus re-initialisation would effectively 'forget' everything learned from the previous sentences? And finally, should I use global definitions for such layers?
+In more general terms, when does the need for global (shared) layers arise?

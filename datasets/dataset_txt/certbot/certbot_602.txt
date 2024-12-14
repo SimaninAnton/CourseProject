@@ -1,0 +1,25 @@
+wolfff commented on 14 Apr 2018 •
+edited
+Introduction
+When only hosting a sub-domain as zone on AWS Route53, e.g. auth.example.net, this could be used for DNS-01 challenges, when adding appropriate records like:
+; ACME authentication sub-domain hosted as ZONE on Amazon's Route 53
+
+auth            IN      NS              ns-1234.awsdns-01.org.
+auth            IN      NS              ns-768.awsdns-02.net.
+
+; Redirection via CNAME to Route 53 managed auth-zine
+
+_acme-challenge.int.example.net. IN CNAME  _acme-challenge.int.auth.example.net.
+in the master zone file (which might be hosted outside AWS).
+In the example above, certbot will be ask to request a certificate for int.example.net but the DNS-01 challenge should be created as _acme-challenge.int.auth.example.net so in the Route53 managed sub-zone.
+Issue
+At the moment, when running e.g.
+docker run -it --rm --name certbot -v "/root/route53awscredentials:/root/.aws/config" -v "/etc/letsencrypt:/etc/letsencrypt" -v "/var/lib/letsencrypt:/var/lib/letsencrypt" certbot/dns-route53 certonly --server https://acme-v02.api.letsencrypt.org/directory -n --agree-tos --email webmaster@example.net --dns-route53 -d int.example.net
+currently fails with
+PluginError: Unable to find a Route53 hosted zone for _acme-challenge.int.example.net
+As currently the certbot-dns-route53 plugin searches route53 for the requested domain(s)
+self._find_zone_id_for_domain(validation_domain_name)
+Solution
+So the idea would be to to add a new argument to the certbot-dns-route53 to allow passing an additional name of the auth-subdomain or the Route53 ZoneID. Or use DNS to figure out any defined CNAME alias automatically.
+References
+See also Allow _acme-challenge as a zone

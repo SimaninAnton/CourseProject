@@ -1,0 +1,74 @@
+DanielChu1994 commented on 13 Jan 2017
+I am working on a school project where I need to implement stack denoising autoencoder with mfcc input. The audio signal database is an4 and it is transmitted into mfcc feature by using the library python-speech-features.
+The network has 11 layers and each layer is pre-trained. After training, I get huge loss.
+Epoch 60/1000 36668/36668 [==============================] - 0s - loss: 54.1009 - val_loss: 57.0941
+(The loss is unchanged for many epoch)
+What can I do? It seems the network is learning nothing.
+Here is the main program:
+import data3
+from keras.layers import Input, Dense
+from keras.models import Model
+from keras import regularizers
+import numpy as np
+'''Loading Data'''
+(x_train, x_train_noise),(x_test,x_test_noise)= data3.loaddata()
+x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
+x_train_noise = x_train_noise.reshape((len(x_train_noise), np.prod(x_train_noise.shape[1:])))
+x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
+x_test_noise = x_test_noise.reshape((len(x_test_noise), np.prod(x_test_noise.shape[1:])))
+x_train=x_train
+x_train_noise=x_train_noise
+x_test=x_test
+x_test_noise=x_test_noise
+'''this is the size of our encoded representations'''
+nb_hidden_layers = [143, 64, 32, 16, 8, 4, 8, 16, 32, 64, 143]
+trained_weight = []
+X_train_tmp = x_train_noise
+for n_in, n_out in zip(nb_hidden_layers[:-1], nb_hidden_layers[1:]):
+print('Pre-training the layer: Input {} -> Output {}'.format(n_in, n_out))
+# Create AE and training
+pretrain_input = Input(shape=(n_in,))
+encoder = Dense(n_out, activation='sigmoid')(pretrain_input)
+decoder = Dense(n_in, activation='linear')(encoder)
+ae = Model(input=pretrain_input,output=decoder)
+encoder_temp = Model(input=pretrain_input, output=encoder)
+ae.compile(loss='mean_squared_error', optimizer='RMSprop')
+ae.fit(X_train_tmp, X_train_tmp, batch_size=256, nb_epoch=20)
+# Store trainined weight
+trained_weight = trained_weight + encoder_temp.get_weights()
+# Update training data
+X_train_tmp = encoder_temp.predict(X_train_tmp)
+print('Fine-tuning:')
+'''this is our input placeholder'''
+input_speech = Input(shape=(143,))
+''' "encoded" is the encoded representation of the input'''
+encoded = Dense(64, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(input_speech)
+encoded = Dense(32, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(encoded)
+encoded = Dense(16, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(encoded)
+encoded = Dense(8, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(encoded)
+encoded = Dense(4, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(encoded)
+''' "decoded" is the lossy reconstruction of the input'''
+decoded = Dense(8, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(encoded)
+decoded = Dense(16, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(decoded)
+decoded = Dense(32, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(decoded)
+decoded = Dense(64, activation='relu',
+W_regularizer=regularizers.l2(0.0002))(decoded)
+decoded = Dense(143, activation='linear')(decoded)
+''' this model maps an input to its reconstruction'''
+sae = Model(input=input_speech, output=decoded)
+sae.set_weights(trained_weight)
+sae.compile(optimizer='RMSprop', loss='mean_squared_error')
+sae.fit(x_train_noise, x_train,
+nb_epoch=100,
+shuffle=True,
+batch_size=256,
+verbose=1,
+validation_data=(x_test_noise, x_test))

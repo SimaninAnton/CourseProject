@@ -1,0 +1,83 @@
+rameshrpi commented on Aug 14, 2019
+Hi,
+I have created the spider as given below,scrap_urls has list of links which needs to downloded.
+My website has some authentication I have handled it and I can able to download some files.
+I just added the recursive download in the function
+def parse_httpbin(self, response):
+yield scrapy.Request(response.urljoin(href), self.parse_httpbin)
+After some time it shows the error message
+DEBUG: Retrying <GET https://xxxx.com> (failed 1 times): [<twisted.python.failure.Failure twisted.internet.error.ConnectionLost: Connection to the other side was lost in a non-clean fashion: Connection lost.>].
+I hope I am sending the mutiple Urls to server from def after_login(self, response): function and as well as inside def parse_httpbin(self, response): function.
+Could please help us how to resolve the issue?
+scrap_urls = [
+"http://www.google.com",
+"http://www.google.com",
+"http://www.google.com"
+]
+recursive_urls = []
+
+def __init__(self, *args, **kwargs):
+    super(WebSpider, self).__init__(*args, **kwargs)
+
+def start_requests(self):
+    for u in self.start_urls:
+        yield scrapy.Request(u, callback=self.parse,
+                             errback=self.errback_httpbin,
+                             dont_filter=True
+                             )
+
+def parse(self, response):
+    return FormRequest.from_response(response,
+                                     headers={"X-Requested-With": "XMLHttpRequest"},
+                                     formdata={'password': '',
+                                               'username': ''},
+                                     callback=self.after_login)
+
+def after_login(self, response):
+    # check login succeed before going on        
+    for url in self.scrap_urls:           
+  yield scrapy.Request(url, callback=self.parse_httpbin, errback=self.errback_httpbin, dont_filter=True)
+        
+
+def parse_httpbin(self, response):
+    image = ImageItem()
+    file = FileItem()
+    file_urls = []
+    image_urls = []
+    time.sleep(6)
+    page_str = response.url.split("page")
+    if len(page_str) < 2:
+        page_str = response.url.split("/")        
+    filename = 'downloads\\' + self.get_page_name(response.url,False) + ".html"
+    logging.info('filename:----->'+filename)
+    for href in response.xpath('//a/@href').getall():
+        if href != 'javascript:;':
+            if str(href).__contains__('.pdf') or str(href).__contains__('.wmv'):
+                if response.urljoin(href) not in file_urls:
+                    file_urls.append(response.urljoin(href))
+            for link in response.xpath('//link/@href').getall():
+                #print("Link=>"+response.urljoin(link))
+                if not str(link).__contains__('javascript:;'):
+                    if response.urljoin(link) not in file_urls:
+                        file_urls.append(response.urljoin(link))
+            for jslink in response.xpath('//script/@src').getall():
+                #print("jslink=>"+response.urljoin(jslink))
+                if not str(jslink).__contains__('javascript:;'):
+                    if response.urljoin(jslink) not in file_urls:
+                        file_urls.append(response.urljoin(jslink))
+            for imglink in response.xpath('//img/@src').getall():
+                #print("imglink=>"+response.urljoin(imglink))
+                if not str(imglink).__contains__('javascript:;'):
+                    if response.urljoin(imglink) not in image_urls:
+                        image_urls.append(response.urljoin(imglink))
+            with open(filename, 'w') as f:
+                f.write(self.update_response(response))
+                file['file_urls'] = file_urls
+                image['image_urls'] = image_urls
+                yield file
+                yield image
+                f.close();
+                logging.info('File downloaded :' + filename)
+                print("href=>"+response.urljoin(href))
+                logging.info("URL"+response.urljoin(href))                  
+                yield scrapy.Request(response.urljoin(href), self.parse_httpbin)

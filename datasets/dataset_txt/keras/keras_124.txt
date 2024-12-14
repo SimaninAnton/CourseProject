@@ -1,0 +1,40 @@
+shasut commented on 12 Jul 2019
+Hello,
+I posted this problem in Stackoverflow but no response, so, I post it here too.
+Sorry for the long description.
+I have a main_model defined as follows:
+input_layer=Input(shape=(896,896,3))
+new_layer = Conv2D(filters=32, kernel_size=(3,3), padding="same")(input_layer)
+new_layer = MaxPooling2D(pool_size=(2, 2), strides=(2,2), padding='same')(new_layer)
+new_layer = Conv2D(filters=100, kernel_size=(k,k), dilation_rate=4, padding="same", name="dilation_1")(new_layer)
+main_model = Model(input_layer, new_layer)
+The output layer shape is (448,448,100) and I don't have any target vector (Y_train) of that shape. I produce the target data in a tensor form from the input tensor and use it to calculate the loss using a custom loss function. The loss function uses another Keras model which has all constant kernels and applied to the same input tensor of the main_model to generate the target tensor.
+y=input_layer #same input tensor from the main_model
+y = Conv2D(filters=100, kernel_size=(3,3), padding="same", trainable=False, kernel_initializer='some_custom_method', name="non_trainable_layer")(y)
+y=MaxPooling2D(pool_size=(2, 2), strides=(2,2), padding='same')(y)
+constant_model=Model(input_layer, y)
+
+constant_model.trainable=False
+for l in constant_model.layers:
+    l.trainable=False
+And for the custom loss function, since I do not have the y_true data in the shape of (448,448,100), I generate y_true from the input_layer using the constant_model showed as follows:
+def custom_loss_wrapper(constant_model):
+    def custom_loss(y_true, y_pred):
+        eval_true=constant_model(y_true)
+        l= keras.losses.mean_absolute_error(eval_true, y_pred)
+        return d
+    return custom_loss
+Then I compile and fit the main_model:
+main_model.compile(optimizer='adam',
+          loss=custom_loss_wrapper(constant_model),
+          metrics=['accuracy'])
+
+history = model.fit(x=X_train, y=X_train, batch_size=2, ...)
+It is important that I need to provide y=X_train (which is actually the y_true in the loss function) since this X_train is actually being used to generate the main_model's labels of size (448,448,100)
+But, while training, I get the following error:
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Incompatible shapes: [2,896,896] vs. [2,448,448]
+     [[Node: metrics_1/acc/Equal = Equal[T=DT_INT64, _device="/job:localhost/replica:0/task:0/device:GPU:0"](metrics_1/acc/ArgMax, metrics_1/acc/ArgMax_1)]]
+     [[Node: loss_1/mul/_99 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_440_loss_1/mul", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]()]]
+I suppose there is a problem with the size mismatch in the y_true and y_pred.
+However, when I do not use any MaxPooling layers in the main_model and constant_model, i.e., the output layer shape is 896,896,100, then there is no error.
+Anyone could help me to find out where is the problem?

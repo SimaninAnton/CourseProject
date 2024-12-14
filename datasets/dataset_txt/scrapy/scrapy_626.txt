@@ -1,0 +1,60 @@
+jdxin0 commented on May 17, 2017 •
+edited
+Scrapy create a new TCP4ClientEndpoint for each request when using proxy in ScrapyAgent while ProxyAgent(twisted) use key = ("http-proxy", self._proxyEndpoint) as connection pool key.
+It causes creating new connection for each request when using proxy，
+will get errno99: cannot assign requested address when all ports has been used (socket TIME_WAIT).
+scrapy/core/downloader/handlers/http11.py
+class ScrapyAgent(object):
+    def _get_agent(self, request, timeout):
+        bindaddress = request.meta.get('bindaddress') or self._bindAddress
+        proxy = request.meta.get('proxy')
+        if proxy:
+            _, _, proxyHost, proxyPort, proxyParams = _parse(proxy)
+            scheme = _parse(request.url)[0]
+            proxyHost = to_unicode(proxyHost)
+            omitConnectTunnel = b'noconnect' in proxyParams
+            if  scheme == b'https' and not omitConnectTunnel:
+                proxyConf = (proxyHost, proxyPort,
+                             request.headers.get(b'Proxy-Authorization', None))
+                return self._TunnelingAgent(reactor, proxyConf,
+                    contextFactory=self._contextFactory, connectTimeout=timeout,
+                    bindAddress=bindaddress, pool=self._pool)
+            else:
+                endpoint = TCP4ClientEndpoint(reactor, proxyHost, proxyPort,
+                    timeout=timeout, bindAddress=bindaddress)
+                return self._ProxyAgent(endpoint)
+
+        return self._Agent(reactor, contextFactory=self._contextFactory,
+            connectTimeout=timeout, bindAddress=bindaddress, pool=self._pool)
+twisted/web/client.py
+@implementer(IAgent)
+class ProxyAgent(_AgentBase):
+    """
+    An HTTP agent able to cross HTTP proxies.
+
+    @ivar _proxyEndpoint: The endpoint used to connect to the proxy.
+
+    @since: 11.1
+    """
+
+    def __init__(self, endpoint, reactor=None, pool=None):
+        if reactor is None:
+            from twisted.internet import reactor
+        _AgentBase.__init__(self, reactor, pool)
+        self._proxyEndpoint = endpoint
+
+
+    def request(self, method, uri, headers=None, bodyProducer=None):
+        """
+        Issue a new request via the configured proxy.
+        """
+        # Cache *all* connections under the same key, since we are only
+        # connecting to a single destination, the proxy:
+        key = ("http-proxy", self._proxyEndpoint)
+
+        # To support proxying HTTPS via CONNECT, we will use key
+        # ("http-proxy-CONNECT", scheme, host, port), and an endpoint that
+        # wraps _proxyEndpoint with an additional callback to do the CONNECT.
+        return self._requestWithEndpoint(key, self._proxyEndpoint, method,
+                                         URI.fromBytes(uri), headers,
+                                         bodyProducer, uri)

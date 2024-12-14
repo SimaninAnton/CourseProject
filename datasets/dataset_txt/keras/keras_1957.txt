@@ -1,0 +1,47 @@
+stillbreeze commented on 10 Jul 2017
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+TL;DR: Does a TimeDistributed layer pass on the zero_mask when used with an Embedding and LSTM layer? (see the code snippet below)
+I wish to have 3 sentences of max_length=15, for each batch, being modelled by LSTMs.
+I use a TimedDistributed layer to pass all 3 together to an Embedding layer and subsequently an LSTM. My inputs are right padded as the sentence lengths are variable.
+With masking enabled for the embedding layer, the LSTM should copy the output of the last unmasked time step to every masked time step after it.
+eg. batch_size=1, vocab_size=6, input shape=(1,3,15)
+[[ [1,4,6,2,6,2,0,0,0,0,0,0,0,0,0], [3,5,1,0,0,0,0,0,0,0,0,0,0,0,0], [2,4,3,2,0,0,0,0,0,0,0,0,0,0,0] ]]
+With the above input, the LSTM output for the first sentence should produce a 10-d vector at each time step, with every vector from the 5th index being the same till the 15th.
+But that is not the behaviour that is observed. All timesteps output different values, which might mean that the TimeDistributed layer does not pass the zero_mask to the LSTM.
+If I use Embedding and LSTM layer without TimeDistributed, things work fine.
+Is this expected?
+Here's some code to quickly reproduce the issue:
+import numpy as np
+from keras.models import Model
+from keras.layers import Input, LSTM, TimeDistributed, Embedding
+
+inp_phrase = Input(shape=(3,15,))
+embedding = TimeDistributed(Embedding(7,10, mask_zero=True))(inp_phrase)
+lstm = TimeDistributed(LSTM(10, return_sequences=True))(embedding)
+model = Model(inputs=[inp_phrase], outputs=lstm)
+
+X = np.asarray([[ [1,4,6,2,6,2,0,0,0,0,0,0,0,0,0], [3,5,1,0,0,0,0,0,0,0,0,0,0,0,0], [2,4,3,2,0,0,0,0,0,0,0,0,0,0,0] ]])
+
+lstm_output = model.predict(X)
+
+print lstm_output.shape
+print lstm_output[0,0,5,:]
+print lstm_output[0,0,6,:]
+print lstm_output[0,0,7,:]
+Output:
+(1, 3, 15, 10)
+[-0.0026008   0.01733194  0.00354454 -0.00567009  0.0036342   0.00902751
+  0.0017447  -0.00063579  0.01321063  0.00351731]
+[-0.00292501  0.01772713 -0.001278    0.00356941  0.00919468  0.00576748
+ -0.00596442 -0.00062289  0.01144909 -0.00329369]
+[-0.0025132   0.01807742 -0.00426173  0.01010145  0.01235796  0.00440131
+ -0.01092011 -0.00097778  0.0099744  -0.00825211]
+The above outputs from the 5th, 6th and 7th time step should have been the same since the inputs are masked and only the previous state output should be passed forward in time.
+1

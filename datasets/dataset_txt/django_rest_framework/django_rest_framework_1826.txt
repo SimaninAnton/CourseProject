@@ -1,0 +1,87 @@
+GerardPaligot commented on 6 May 2015
+Hello,
+I got an UnicodeDecodeError when I used CharField in a serializer. This is the error:
+Traceback (most recent call last):
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/django/core/handlers/base.py", line 111, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/django/views/decorators/csrf.py", line 57, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/django/views/generic/base.py", line 69, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/views.py", line 452, in dispatch
+    response = self.handle_exception(exc)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/views.py", line 449, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/Users/Gerard/Documents/workspace-django/zds-site/zds/mp/api/views.py", line 332, in post
+    return self.create(request, *args, **kwargs)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/mixins.py", line 21, in create
+    headers = self.get_success_headers(serializer.data)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/serializers.py", line 466, in data
+    ret = super(Serializer, self).data
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/serializers.py", line 213, in data
+    self._data = self.to_representation(self.instance)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/serializers.py", line 435, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/Users/Gerard/.virtualenvs/zdsenv/lib/python2.7/site-packages/rest_framework/fields.py", line 593, in to_representation
+    return six.text_type(value)
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 8: ordinal not in range(128)
+This is my code simplify:
+views.py
+class PrivatePostListAPI(MarkPrivateTopicAsRead, ListCreateAPIView):
+    """
+    Private post resource to list of a member.
+    """
+
+    permission_classes = (IsAuthenticated, IsParticipantFromPrivatePost)
+    list_key_func = PagingPrivatePostListKeyConstructor()
+
+    @etag(list_key_func)
+    @cache_response(key_func=list_key_func)
+    def get(self, request, *args, **kwargs):
+        """
+        Documentation for Swagger
+        """
+        return self.list(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Documentation for Swagger
+        """
+        return self.create(request, *args, **kwargs) # This is the line 332 in the stacktrace
+
+    def get_serializer_class(self):
+        if self.request.method == 'GET':
+            return PrivatePostSerializer
+        elif self.request.method == 'POST':
+            return PrivatePostCreateSerializer
+serializers.py
+class PrivatePostCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer to update the last private post of a private topic.
+    """
+
+    class Meta:
+        model = PrivatePost
+        fields = ('privatetopic', 'author', 'text', 'text_html', 'pubdate', 'update', 'position_in_topic')
+        read_only_fields = ('privatetopic', 'author', 'text_html', 'pubdate', 'update', 'position_in_topic')
+
+    def create(self, validated_data):
+        # some stuff...
+        return instance
+
+    def validate_text(self, value):
+        """
+        Checks about text.
+
+        :param value: text value
+        :return: text value
+        """
+        msg = None
+        if value:
+            if value.strip() == '':
+                msg = _(u'Le champ text ne peut être vide')
+            if msg is not None:
+                serializers.ValidationError(message)
+        return value
+The bug appears when I would like to execute my post request with the value "Une réponse" in the field text of my model PrivatePost (text is a TextField in my model).
+I'm using DRF 3.1.1.

@@ -1,0 +1,41 @@
+radarsat1 commented on 3 Oct 2016
+I want a simple layer that calculates a 1D fft of the input, and outputs the magnitude in the same number of dimensions. In other words a computational layer with no variables, just a well-defined computation on the inputs.
+This is what I've got so far,
+class MyFFTLayer(keras.layers.Layer):
+    def __init__(self, output_dim, **kwargs):
+        super(MyFFTLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        input_dim = input_shape[1]
+        self.output_dim = input_shape[1]
+        self.trainable_weights = []
+
+    def call(self, x, mask=None):
+        return K.tf.complex_abs(K.tf.fft(
+            K.tf.complex(x, K.tf.zeros_like(x))))
+
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0], self.output_dim)
+However I get errors, e.g.,
+InvalidArgumentError: Cannot assign a device to node 'FFT_10': Node had no OpKernel registered to support this operation: Operation was FFT and inputs were complex64
+Colocation Debug Info:
+Colocation group had the following types and devices:
+Mul: CPU
+Complex: GPU
+CPU
+Cast: GPU CPU
+Size: GPU CPU
+IFFT: GPU
+FFT:
+Const: GPU CPU
+In other words it seems to think the FFT op is not possible, despite FFT being implemented for the GPU. For instance, the following program works fine for me:
+import tensorflow as tf
+
+x = tf.constant([1.0,2.0,3.0,2.0])
+f = tf.complex_abs(tf.fft(tf.complex(x, tf.zeros_like(x))))
+
+s = tf.Session()
+y = s.run(f)
+print(y)
+I think it may be because in keras, the shape of x in call() is only partially defined. How to get around this? I'm not 100% sure that's the problem.
+3

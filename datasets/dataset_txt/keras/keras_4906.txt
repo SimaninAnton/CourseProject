@@ -1,0 +1,39 @@
+Contributor
+codekansas commented on 25 Jun 2016
+This was pointed out in the PR thread after it was merged, I'm not sure what the best way to go about making another change would be so I'll put it here.
+Reference this commit.
+keras/engine/topology.py
+             masks = [K.expand_dims(m, 0) for m in mask if m is not None]
+              return K.all(K.concatenate(masks, axis=0), axis=0, keepdims=False)
+          elif self.mode == 'concat':
+ -            masks = [K.ones_like(inputs[i][:-1]) if m is None else m for i, m in zip(inputs, mask)]
+ -            expanded_dims = [K.expand_dims(m) for m in masks]
+ -            concatenated = K.concatenate(expanded_dims, axis=self.concat_axis)
+ +            masks = [K.ones_like(inputs[i]) if m is None else K.expand_dims(m) for i, m in enumerate(mask)]
+ +            concatenated = K.concatenate(masks, axis=self.concat_axis)
+              return K.all(concatenated, axis=-1, keepdims=False)
+          elif self.mode in ['cos', 'dot']:
+              return None
+tests/keras/layers/test_core.py
+     # two different types of merging
+      merged_sum = merge([masked_a, masked_b], mode='sum')
+      merged_concat = merge([masked_a, masked_b], mode='concat', concat_axis=1)
+ +    merged_concat_normal = merge([masked_a, input_b], mode='concat', concat_axis=1)
+
+      # test sum
+      model_sum = Model([input_a, input_b], [merged_sum])
+
+                          ...
+
+      model_concat.compile(loss='mse', optimizer='sgd')
+      model_concat.fit([rand(2,3), rand(2,3)], [rand(2,6)], nb_epoch=1)
+
+ +    # test concatenation with no mask
+ +    model_concat_normal = Model([input_a, input_b], [merged_concat_normal])
+ +    model_concat.compile(loss='mse', optimizer='sgd')
+ +    model_concat.fit([rand(2,3), rand(2,3)], [rand(2,6)], nb_epoch=1)
+ +
+
+  def test_merge_mask_3d():
+      from keras.layers import Input, merge, Embedding, SimpleRNN
+2

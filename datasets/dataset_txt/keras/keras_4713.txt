@@ -1,0 +1,87 @@
+Contributor
+jdespraz commented on 26 Jul 2016 •
+edited
+Hi,
+I have noticed that multiple calls to the set_weights() function cause the memory to overflow when using Keras with the Tensorflow backend. I noticed this issue when trying to set some filter weights to 0 in some layers of the VGG-16 architecture to cancel their contribution to the network.
+This a code that reproduces the issue (here all weights are set to 0 for the sake of the example):
+from keras.models import Sequential
+from keras.layers.core import Flatten, Dense, Dropout
+from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D
+from keras.optimizers import SGD
+
+def VGG_16(weights_path=None):
+    model = Sequential()
+    model.add(ZeroPadding2D((1,1),input_shape=(3,224,224)))
+    model.add(Convolution2D(64, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(64, 3, 3, activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(128, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(128, 3, 3, activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(256, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(256, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(256, 3, 3, activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(ZeroPadding2D((1,1)))
+    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(MaxPooling2D((2,2), strides=(2,2)))
+
+    model.add(Flatten())
+    model.add(Dense(4096, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(4096, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(1000, activation='softmax'))
+
+    if weights_path:
+        model.load_weights(weights_path)
+
+    return model
+
+def modif_weights(model):
+    for k, l in enumerate(model.layers):
+            weights = l.get_weights()
+            for i, w in enumerate(weights):
+                weights[i] = w*0.0
+            l.set_weights(weights)
+    return model
+
+# load model model with the corresponding
+# weights (available here:
+# https://drive.google.com/file/d/0Bz7KyqmuGsilT0J5dmRCM0ROVHc/view?usp=sharing)
+model = VGG_16('vgg16_weights.h5')
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(optimizer=sgd, loss='categorical_crossentropy')
+
+# modify the weights of the original model
+# this allocates unwanted new memory...
+model = modif_weights(model)
+
+# now this is going to overflow
+for k in range(100):
+    model = modif_weights(model)
+From this post , it seems that the issue comes from the call to tf.assign() that create a new instance to the graph each time it is executed (instead of directly altering the already existing graph), thus causing the memory overflow.
+I guess that this issue might be fixed in the set_value() and batch_set_value() of the Keras tensorflow backend, with a similar fix as the one proposed by mrry in the above post.
+Note:
+(This thread is linked to issue #2973 that remained unanswered)

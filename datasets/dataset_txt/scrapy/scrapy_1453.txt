@@ -1,0 +1,28 @@
+Member
+kmike commented on Jan 22, 2014
+I understand that this is a compromise: HTTP response shouldn't be tied to lxml. But combined with #548 and #494, it allows to reduce the ceremony even further. Instead of this:
+import urlparse
+from scrapy.spider impoty Spider
+from scrapy.selector import Selector
+from scrapy.http import Request
+
+class MySpider(Spider):
+    # ...
+    def parse(self, response):
+        sel = Selector(response)
+        for href in sel.xpath('//a/@href').extract():
+            url = urlparse.urljoin(response.url, href)
+            yield Request(url)
+we'll be able to write this:
+import scrapy
+
+class MySpider(scrapy.Spider):
+    # ...
+    def parse(self, response):
+        for href in response.xpath('//a/@href').extract():
+            yield scrapy.Request(url)
+The latter variant is 2x shorter, and readability is still fine (I'd say it is improved).
+I think that increased internal complexity is justified by better API here.
+In browser js document knows about css and xpath selectors, and they are doing just fine. The distinction between "response" and "document" is not very clear - document is the response js code works on. It doesn't provide raw http data though. But our TextResponse also doesn't work only on raw http data - it checks some headers an provides the decoded body.
+Also check ItemLoader class - it can be initialized with either response or selector; this tells us Selector and Response already can act similar.
+Implementation may involve renaming existing Response to something like RawResponse or HttpResponse, or adding xpath and css methods only for TextResponse. Selector could be created only on demand internally. We may also ditch LxmlDocument cache and store parsed tree as a response attribute.

@@ -1,0 +1,59 @@
+ayamnikov commented on 28 Jun 2018 •
+edited
+Code example:
+#!/usr/bin/env python
+# coding: utf-8
+
+from tornado import web, ioloop, gen
+from tornado.httpclient import AsyncHTTPClient
+
+
+class Target(web.RequestHandler):
+    @gen.coroutine
+    def get(self):
+        self.set_cookie('x', '1')
+        self.set_cookie('y', '2')
+        self.set_cookie('z', '3')
+
+
+class Proxy(web.RequestHandler):
+    @gen.coroutine
+    def get(self):
+        cli = AsyncHTTPClient()
+        response = yield cli.fetch(
+            'http://127.0.0.1:8080', method='GET',
+            request_timeout=1, connect_timeout=1)
+        for k, v in response.headers.items():
+            if k in ('Content-Length', 'Content-Encoding'):
+                continue
+            self.set_header(k, v)
+        self.finish(response.body)
+
+
+app1 = web.Application([
+    ('.*', Target)
+])
+app1.listen(8080)
+
+
+app2 = web.Application([
+    ('.*', Proxy)
+])
+app2.listen(8081)
+
+
+ioloop.IOLoop.current().start()
+Output:
+Making request directly to target server:
+$ curl -v http://127.0.0.1:8080/
+...
+< Set-Cookie: y=2; Path=/
+< Set-Cookie: x=1; Path=/
+< Set-Cookie: z=3; Path=/
+...
+Requesting via proxy:
+$ curl -v http://127.0.0.1:8081/
+...
+< Set-Cookie: y=2; Path=/,x=1; Path=/,z=3; Path=/
+...
+UPD: tested on Python 2.7, Tornado 5.0.2

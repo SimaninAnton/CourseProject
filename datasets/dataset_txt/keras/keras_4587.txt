@@ -1,0 +1,29 @@
+Contributor
+EderSantana commented on 16 Aug 2016 •
+edited
+Guys,
+I'd like to share some recent findings. My issue was the following:
+I wanted to use the functional API to write generalized recurrent models.
+For those familiar with Keras dev you will remember that this is the good old Recurrent API I've been toying with.
+Here is what I did recently.
+I defined the layers I wanted:
+X = Input(batch_input_shape=(32, 10, 100))
+rnn = LSTM(100, consume_less="gpu", batch_input_shape=(32, 10, 100*2)))  # default 
+consume_less won't work
+rnn.build((32, 10, 100*2))  # You will see why I have to do this by hand
+d = Dense(100)
+Here is the custom step, let us use stop_gradient backend op just to remember it exists and should be useful here when writing RNNs that consume their own outputs:
+def step(x, states):
+  o_tm1 = K.stop_gradient(states[0])  # we want to feed the previous output back as input, but we dont' want gradient flowing this way, this is just to illustrate
+  e_t = x - o_tm1
+  x_t = K.concatenate([x, o_tm1], axis=-1)
+  _, states_t = rnn.step(x_t, states[1:])  # see? no "call", we had to build this by hand
+  o_t = d(h_t)
+  return o_t, [o_t, ]+states_t
+Finally, we can use K.rnn
+# here we should loop through all the RNN steps we are using and collect initial states
+initial_states = [K.zeros((batch_size, 100)),] + rnn.get_initial_states(X)
+constants = rnn.get_constants(X)
+last_output, outputs, updates = K.rnn(step, initial_states, constants, ...)
+But here is the issue, we cannot build Model(X, Out) because Out is not of type keras_tensor, i.e. it does not have _keras_history attribute. Instead I collected by hand the weights I wanted to train and compiled my own function. Maybe if step could write to _keras_history somehow? I'm not totally familiar with all the details in the engine.
+Here is what I suggest, we could automate this last step and define last_output and outputs as a Keras tensor so people could go back to the comfort of compile, fit and save_weights. All that the user should be required to define by hand would be the custom step function and possibly custom get_intial_states and get_constants. We could collect the weights and compile the model as part of this new class. Does anybody know a better workaround?

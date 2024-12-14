@@ -1,0 +1,41 @@
+tsarvela commented on Jan 11, 2017
+I've hit a problematic behaviour with python3 and requests, stemming from urllib3. Consider the following example usage with tight read timeout.
+After getting the first exception, the connection is cleanly shut down from clientside. Serverside gets Broken pipe. I'd expected to be able to continue reading from the stream, without needing to reconnect.
+Reading the urllib3 explanation clarifies the issue somewhat, but is this wanted behaviour?
+#!/usr/bin/env python3
+import requests
+res = requests.get("http://localhost/stream", stream=True, timeout=(10.0, 1.0))
+reason = None
+while not reason:
+    try:
+        line = res.raw.readline()
+        print(line)
+    except Exception as e: print (e)
+Full traceback is
+Traceback (most recent call last):
+  File "/usr/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 228, in _error_catcher
+    yield
+  File "/usr/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 310, in read
+    data = self._fp.read(amt)
+  File "/usr/lib64/python3.5/http/client.py", line 448, in read
+    n = self.readinto(b)
+  File "/usr/lib64/python3.5/http/client.py", line 488, in readinto
+    n = self.fp.readinto(b)
+  File "/usr/lib64/python3.5/socket.py", line 575, in readinto
+    return self._sock.recv_into(b)
+socket.timeout: timed out
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "example.py", line 8, in <module>
+    except Exception as e: raise (e)
+  File "example.py", line 6, in <module>
+    line = res.raw.readline()
+  File "/usr/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 320, in read
+    flush_decoder = True
+  File "/usr/lib64/python3.5/contextlib.py", line 77, in __exit__
+    self.gen.throw(type, value, traceback)
+  File "/usr/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 233, in _error_catcher
+    raise ReadTimeoutError(self._pool, None, 'Read timed out.')
+requests.packages.urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='localhost'): Read timed out.

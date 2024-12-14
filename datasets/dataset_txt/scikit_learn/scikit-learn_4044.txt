@@ -1,0 +1,44 @@
+Contributor
+hbredin commented on Jan 29, 2015
+It seems to me that GMM.fit convergence check could benefit from some kind of normalization with regards to the number of samples in X.
+Here is the current status:
+            self.converged_ = False
+            for i in range(self.n_iter):
+                # Expectation step
+                curr_log_likelihood, responsibilities = self.score_samples(X)
+                log_likelihood.append(curr_log_likelihood.sum())
+
+                # Check for convergence.
+                if i > 0 and abs(log_likelihood[-1] - log_likelihood[-2]) < \
+                        self.thresh:
+                    self.converged_ = True
+                    break
+Yet, abs(log_likelihood[-1] - log_likelihood[-2]) strongly depends on the number of samples in X.
+>>> X1 = np.random.randn(1000)
+>>> X2 = 1 + np.random.randn(500)
+
+>>> X = np.hstack([X1, X2])   # 1500 samples drawn from a bi-gaussian distribution
+>>> gmm1 = GMM(n_components=2, n_iter=1)
+>>> gmm1.fit(X)
+>>> ll = gmm1.score_samples(X)[0].sum()
+>>> gmm1.init_params = ''
+>>> gmm1.fit(X)
+>>> print abs(ll - gmm1.score_samples(X)[0].sum())
+0.480217154031
+
+>>> X = np.hstack([X1, X1, X2, X2])  # 3000 samples drawn from the same bi-gaussian distribution
+>>> gmm2 = GMM(n_components=2, n_iter=1)
+>>> gmm2.fit(X)
+>>> ll = gmm2.score_samples(X)[0].sum()
+>>> gmm2.init_params = ''
+>>> gmm2.fit(X)
+>>> print abs(ll - gmm2.score_samples(X)[0].sum())
+0.960714700944
+
+>>> np.testing.assert_allclose(gmm1.means_, gmm2.means_, rtol=1e-3)
+>>> np.testing.assert_allclose(gmm1.weights_, gmm2.weights_, rtol=1e-3)
+>>> np.testing.assert_allclose(gmm1.covars_, gmm2.covars_, rtol=1e-3)
+Both mixtures have reached an identical state.
+However, in the current implementation, the mixture trained with 50% less samples is twice as likely to be marked as converged_ that the other one.
+Is this the intended behavior?
+Or should we use curr_log_likelihood.mean() in place of curr_log_likelihood.sum()?

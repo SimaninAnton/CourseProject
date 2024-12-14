@@ -1,0 +1,19 @@
+AskhatOmarov commented on 29 Jan 2018 •
+edited
+When I use proxy model for ModelViewSet and the name of the model is the same as concrete model, it checks permissions for this proxy model rather than for concrete model. If the model names are the same Django's permissions module doesn't create new permission objects, in fact it relies on the permissions for concrete class, and once they exist, it doesn't create permissions with content type of proxy model. The problem here is that when DjangoModelPermissions tries to obtain permission codename it uses app_label, but doesn't takes into account whether model is used as proxy or not. So it builds wrong permission string and as a result doesn't pass permission checking.
+Steps to reproduce
+General use case is creating proxy User model in custom app (lets say it is called myapp). Usually name of the model stays the same. In this case, it will be similar to this:
+from django.contrib.auth.models import User as ContribUser
+
+class User(ContribUser):
+    class Meta:
+        proxy = True
+
+    def some_method(self):
+        pass
+Then this model used in serializers and model views. When migrations are applied Django will create permissions for ContentType of concrete class User. Then creation permission will look like auth.add_user. However when you try to call API to create new user, it will build permission as myapp.add_user, and as long as this permission is not assigned authorization fails.
+Expected behavior
+Take into account permissions of concrete class if names are equal and check its permissions.
+Actual behavior
+Builds wrong permission string representation and fails authorization.
+Added solution and tests here #5780

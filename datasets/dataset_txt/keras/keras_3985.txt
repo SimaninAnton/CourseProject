@@ -1,0 +1,155 @@
+Jhhuangkay commented on 5 Nov 2016
+Run this first:
+#== Model definition
+First we define a model using keras/kraino
+from keras.layers.core import Activation
+from keras.layers.core import Dense
+from keras.layers.core import Dropout
+from keras.layers.core import TimeDistributedMerge
+from keras.layers.embeddings import Embedding
+from kraino.core.model_zoo import AbstractSequentialModel
+from kraino.core.model_zoo import AbstractSingleAnswer
+from kraino.core.model_zoo import AbstractSequentialMultiplewordAnswer
+from kraino.core.model_zoo import Config
+from kraino.core.keras_extensions import DropMask
+from kraino.core.keras_extensions import LambdaWithMask
+from kraino.core.keras_extensions import time_distributed_masked_ave
+This model inherits from AbstractSingleAnswer, and so it produces single answer words
+To use multiple answer words, you need to inherit from AbstractSequentialMultiplewordAnswer
+class BlindBOW(AbstractSequentialModel, AbstractSingleAnswer):
+"""
+BOW Language only model that produces single word answers.
+"""
+def create(self):
+self.add(Embedding(
+self._config.input_dim,
+self._config.textual_embedding_dim,
+mask_zero=True))
+self.add(LambdaWithMask(time_distributed_masked_ave, output_shape=[self.output_shape[2]]))
+self.add(DropMask())
+self.add(Dropout(0.5))
+self.add(Dense(self._config.output_dim))
+self.add(Activation('softmax'))
+Then run this:
+model_config = Config(
+textual_embedding_dim=500,
+input_dim=len(word2index_x.keys()),
+output_dim=len(word2index_y.keys()))
+model = BlindBOW(model_config)
+model.create()
+model.compile(
+loss='categorical_crossentropy',
+optimizer='adam')
+text_bow_model = model
+However, I got the following errors:
+TypeError Traceback (most recent call last)
+in ()
+8 model.compile(
+9 loss='categorical_crossentropy',
+---> 10 optimizer='adam')
+11 text_bow_model = model
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/models.pyc in compile(self, optimizer, loss, class_mode, sample_weight_mode, **kwargs)
+505 self.X_test = self.get_input(train=False)
+506
+--> 507 self.y_train = self.get_output(train=True)
+508 self.y_test = self.get_output(train=False)
+509
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/containers.pyc in get_output(self, train)
+128
+129 def get_output(self, train=False):
+--> 130 return self.layers[-1].get_output(train)
+131
+132 def set_input(self):
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_output(self, train)
+735
+736 def get_output(self, train=False):
+--> 737 X = self.get_input(train)
+738 return self.activation(X)
+739
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_input(self, train)
+239 if previous_layer_id in self.layer_cache:
+240 return self.layer_cache[previous_layer_id]
+--> 241 previous_output = self.previous.get_output(train=train)
+242 if self.layer_cache is not None and self.cache_enabled:
+243 previous_layer_id = '%s_%s' % (id(self.previous), train)
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_output(self, train)
+1028
+1029 def get_output(self, train=False):
+-> 1030 X = self.get_input(train)
+1031 output = self.activation(K.dot(X, self.W) + self.b)
+1032 return output
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_input(self, train)
+239 if previous_layer_id in self.layer_cache:
+240 return self.layer_cache[previous_layer_id]
+--> 241 previous_output = self.previous.get_output(train=train)
+242 if self.layer_cache is not None and self.cache_enabled:
+243 previous_layer_id = '%s_%s' % (id(self.previous), train)
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_output(self, train)
+701
+702 def get_output(self, train=False):
+--> 703 X = self.get_input(train)
+704 if self.p > 0.:
+705 if train:
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_input(self, train)
+239 if previous_layer_id in self.layer_cache:
+240 return self.layer_cache[previous_layer_id]
+--> 241 previous_output = self.previous.get_output(train=train)
+242 if self.layer_cache is not None and self.cache_enabled:
+243 previous_layer_id = '%s_%s' % (id(self.previous), train)
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_output(self, train)
+229
+230 def get_output(self, train=False):
+--> 231 return self.get_input(train)
+232
+233 def get_input(self, train=False):
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/layers/core.pyc in get_input(self, train)
+239 if previous_layer_id in self.layer_cache:
+240 return self.layer_cache[previous_layer_id]
+--> 241 previous_output = self.previous.get_output(train=train)
+242 if self.layer_cache is not None and self.cache_enabled:
+243 previous_layer_id = '%s_%s' % (id(self.previous), train)
+/home/jiahonghuang/visual_turing_test-tutorial/kraino/core/keras_extensions.pyc in get_output(self, train)
+111 if hasattr(self, 'previous'):
+112 return func(self.previous.get_output(train),
+--> 113 self.previous.get_output_mask(train))
+114 else:
+115 return func(self.input, self.get_output_mask(train))
+/home/jiahonghuang/visual_turing_test-tutorial/kraino/core/keras_extensions.pyc in time_distributed_masked_ave(x, m)
+51 """
+52 tmp = K.sum(x, axis=1)
+---> 53 nonzeros = K.sum(m, axis=-1)
+54 return tmp / K.expand_dims(K.cast(nonzeros, tmp.dtype))
+55
+/usr/local/lib/python2.7/dist-packages/Keras-0.3.3-py2.7.egg/keras/backend/tensorflow_backend.pyc in sum(x, axis, keepdims)
+149 '''
+150 axis = normalize_axis(axis, ndim(x))
+--> 151 return tf.reduce_sum(x, reduction_indices=axis, keep_dims=keepdims)
+152
+153
+/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/math_ops.pyc in reduce_sum(input_tensor, reduction_indices, keep_dims, name)
+1052 return gen_math_ops._sum(input_tensor, _ReductionDims(input_tensor,
+1053 reduction_indices),
+-> 1054 keep_dims, name=name)
+1055
+1056
+/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/gen_math_ops.pyc in _sum(input, reduction_indices, keep_dims, name)
+2395 result = _op_def_lib.apply_op("Sum", input=input,
+2396 reduction_indices=reduction_indices,
+-> 2397 keep_dims=keep_dims, name=name)
+2398 return result
+2399
+/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/op_def_library.pyc in apply_op(self, op_type_name, name, **keywords)
+571 for base_type in base_types:
+572 _SatisfiesTypeConstraint(base_type,
+--> 573 _Attr(op_def, input_arg.type_attr))
+574 attrs[input_arg.type_attr] = attr_value
+575 inferred_from[input_arg.type_attr] = input_name
+/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/op_def_library.pyc in _SatisfiesTypeConstraint(dtype, attr_def)
+58 "DataType %s for attr '%s' not in list of allowed values: %s" %
+59 (dtypes.as_dtype(dtype).name, attr_def.name,
+---> 60 ", ".join(dtypes.as_dtype(x).name for x in allowed_list)))
+61
+62
+TypeError: DataType bool for attr 'T' not in list of allowed values: float32, float64, int64, int32, uint8, uint16, int16, int8, complex64, complex128, qint8, quint8, qint32, float16
+Does anyone has the same problem? The code is from the Tutorial webpage.
+I also tried the other optimizers, but it also didn't work.

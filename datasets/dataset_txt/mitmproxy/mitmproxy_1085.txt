@@ -1,0 +1,58 @@
+Member
+cortesi commented on 21 May 2016 •
+edited
+Steps to reproduce the problem:
+Commit something
+Watch Travis build, and fail one time out of 5
+Rerun the build manually on the same commit. Watch Travis succeed 4 times out of 5.
+What is the expected behavior?
+Travis should consistently succeed.
+What went wrong?
+We see the following, sometimes, for the OSX test suite:
+=================================== FAILURES ===================================
+___________________ TestConnectionLost.test_connection_lost ____________________
+self = <test.mitmproxy.test_protocol_http2.TestConnectionLost object at 0x111717450>
+    def test_connection_lost(self):
+        client, h2_conn = self._setup_connection()
+
+        self._send_request(client.wfile, h2_conn, stream_id=1, headers=[
+            (':authority', "127.0.0.1:%s" % self.server.server.address.port),
+            (':method', 'GET'),
+            (':scheme', 'https'),
+            (':path', '/'),
+            ('foo', 'bar')
+        ])
+
+        done = False
+        ended_streams = 0
+        pushed_streams = 0
+        responses = 0
+        while not done:
+            try:
+                raw = b''.join(http2_read_raw_frame(client.rfile))
+                events = h2_conn.receive_data(raw)
+            except:0m
+                break
+>           client.wfile.write(h2_conn.data_to_send())
+test/mitmproxy/test_protocol_http2.py:480: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <netlib.tcp.Writer object at 0x111f25310>
+v = '\x00\x00\x00\x04\x01\x00\x00\x00\x00'
+    def write(self, v):
+        """
+                May raise TcpDisconnect
+            """
+        if v:
+            self.first_byte_timestamp = self.first_byte_timestamp or time.time()
+            try:
+                if hasattr(self.o, "sendall"):
+                    self.add_log(v)
+                    return self.o.sendall(v)
+                else:
+                    r = self.o.write(v)
+                    self.add_log(v[:r])
+                    return r
+            except (SSL.Error, socket.error) as e:
+>               raise TcpDisconnect(str(e))
+E               TcpDisconnect: (32, 'EPIPE')
+netlib/tcp.py:187: TcpDisconnect

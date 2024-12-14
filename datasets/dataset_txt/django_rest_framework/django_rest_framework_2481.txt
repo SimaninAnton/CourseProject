@@ -1,0 +1,73 @@
+adriaant commented on 2 Jul 2014
+I was working on a project were a client preferred to have XML output. The XML renderer in Django-Rest-Framework uses hardcoded labels 'root' and 'item', but sometimes it's better to have more semantic sensible labels. The following variation on the XMLRenderer does that:
+from django.utils.xmlutils import SimplerXMLGenerator
+from rest_framework.compat import StringIO
+from rest_framework.compat import six
+from rest_framework.compat import smart_text
+from rest_framework import renderers
+
+
+class SemanticXMLRenderer(renderers.BaseRenderer):
+    """
+    Renderer which serializes to XML but uses sensible root and item tags.
+    """
+
+    media_type = 'application/xml'
+    format = 'xml'
+    charset = 'utf-8'
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        """
+        Renders `data` into serialized XML.
+        """
+        if data is None:
+            return ''
+
+        root_elt_name = 'response'
+        item_elt_name = 'item'
+        if 'view' in renderer_context:
+            view = renderer_context['view']
+            if view.model:
+                try:
+                    root_elt_name = view.model._meta.verbose_name_plural
+                    item_elt_name = view.model._meta.verbose_name
+                except:
+                    pass
+
+        stream = StringIO()
+
+        xml = SimplerXMLGenerator(stream, self.charset)
+        xml.startDocument()
+        xml.startElement(root_elt_name, {})
+
+        self._to_xml(xml, data, item_elt_name)
+
+        xml.endElement(root_elt_name)
+        xml.endDocument()
+        return stream.getvalue()
+
+    def _to_xml(self, xml, data, item_elt_name):
+        if isinstance(data, (list, tuple)):
+            for item in data:
+                xml.startElement(item_elt_name, {})
+                self._to_xml(xml, item, item_elt_name)
+                xml.endElement(item_elt_name)
+
+        elif isinstance(data, dict):
+            for key, value in six.iteritems(data):
+                if isinstance(value, (list, tuple)):
+                    if key[-1] == 's':
+                        item_elt_name = key[:-1]
+                    else:
+                        item_elt_name = key + '_item'
+                xml.startElement(key, {})
+                self._to_xml(xml, value, item_elt_name)
+                xml.endElement(key)
+
+        elif data is None:
+            # Don't output any value
+            pass
+
+        else:
+            xml.characters(smart_text(data))
+This is not really suitable for a pull request, but maybe it's useful for someone else.

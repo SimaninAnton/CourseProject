@@ -1,0 +1,40 @@
+bhokaal2k commented on 25 Aug 2015
+Hi,
+Thanks a lot for making such a wonderful package. I would like to report that the weighted loss function implementation is wrong. Let us see with an example with categorical_crossentropy
+def categorical_crossentropy(y_true, y_pred):
+    '''Expects a binary class matrix instead of a vector of scalar classes
+    '''
+    y_pred = T.clip(y_pred, epsilon, 1.0 - epsilon)
+    # scale preds so that the class probas of each sample sum to 1
+    y_pred /= y_pred.sum(axis=-1, keepdims=True) 
+    cce = T.nnet.categorical_crossentropy(y_pred, y_true)
+    return cce
+The above loss returns the mean (i.e. a scalar) loss of the samples
+def weighted_objective(fn):
+    def weighted(y_true, y_pred, weights):
+        # it's important that 0 * Inf == 0, not NaN, so I need to mask first
+        masked_y_true = y_true[weights.nonzero()[:-1]]
+        masked_y_pred = y_pred[weights.nonzero()[:-1]]
+        masked_weights = weights[weights.nonzero()]
+        obj_output = fn(masked_y_true, masked_y_pred)
+        return (masked_weights.flatten() * obj_output.flatten()).mean()
+    return weighted
+Now, the weighted loss is simply multiplying the weights with the same scalar and then taking the mean, whereas, if should have done per sample weight*loss and then taken the mean
+So, the correct implementation should be
+def correct_weighted_objective(fn):
+    def weighted(y_true, y_pred, weights):
+        # it's important that 0 * Inf == 0, not NaN, so I need to mask first
+        masked_y_true = y_true[weights.nonzero()[:-1]]
+        masked_y_pred = y_pred[weights.nonzero()[:-1]]
+        masked_weights = weights[weights.nonzero()]
+        masked_y_true *= masked_weights
+        obj_output = fn(masked_y_true, masked_y_pred)
+        return obj_output
+    return weighted
+@fchollet please amend the code. FYI the simple correction will only work for cross-entropy style losses only and will not work for something say like Mean square error.
+Moreover, the convolutional.py layer with border_mode = 'same' breaks the GPU continuity of the data due to cropping that renders theano optimization ineffective. Here is the fix for that as well
+X = gpu_contiguous(X)
+        conv_out = theano.sandbox.cuda.blas.GpuCorrMM(border_mode=border_mode,\
+                subsample=self.subsample)\
+                (X, self.W)
+The fix only works with GpuCorrMM and not with CUDNN, but if you use CUDNN with the original code it will mess it up internally and you will not get the results because of this discontinuity and you would not even know what is screwing up, at least with CUDNN v3.0 rc

@@ -1,0 +1,14 @@
+ghost commented on 1 Mar 2015
+I don't have time to reproduce but I think worth letting you know. I think I have patch calls that end up racing each other to update the same instance with different fields and values. In my case, I have boolean fields with default=False and under Django 1.6.10 (Python 3.4) with the DRF 3.0.5 they were sometimes getting set to their default rather than the value they were set by another process moments ago.
+I'm assume some sort of race condition as my functional tests fail every other time and it can any number of the three boolean fields that gets set incorrectly even though it appeared everything worked correctly.
+In my case, I am overriding update so can change instance.save to specify updating only the fields that were changed (see below).
+class ModelSerializer(Serializer):
+    def update(self, instance, validated_data):
+        raise_errors_on_nested_writes('update', self, validated_data)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save(update_fields=validated_data.keys())
+
+        return instance
+Is it worth doing the same in DRF proper as it may save someone from some subtle issues? The change shouldn't cause an problems.

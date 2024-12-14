@@ -1,0 +1,148 @@
+max-yue commented on 22 Aug 2019
+def create_single_row_model(sequence_length, vocabulary_inv, font_vocabulary_inv, gaps_train_shape_1):
+print("Creating Model...")
+# 文本特征
+sentence_inputs, flatten1 = create_sentence_embedding(vocabulary_inv, sequence_length)
+
+# 字体特征
+sentence_font_inputs, flatten2 = create_sentence_font_embedding(font_vocabulary_inv, sequence_length)
+
+# 人工特征
+gap_dense_lst = []
+gap_inputs = Input(shape=(gaps_train_shape_1,), dtype="float32")
+for i in range(4):
+    gap_dense = Dense(32, activation="relu")(gap_inputs)
+    gap_dense_attr = Dense(32)(gap_inputs)
+    gap_dense_attr = softmax_layer(gap_dense_attr)
+    gap_dense = Multiply()([gap_dense, gap_dense_attr])
+    gap_dense_lst.append(gap_dense)
+gap_dense = Concatenate()(gap_dense_lst)
+
+# 坐标特征
+x_coor_dense_lst = []
+x_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+for i in range(4):
+    x_coor_dense = Dense(32, activation="relu")(x_coor_inputs)
+    x_coor_dense_attr = Dense(32)(x_coor_dense)
+    x_coor_dense_attr = softmax_layer(x_coor_dense_attr)
+    x_coor_dense = Multiply()([x_coor_dense, x_coor_dense_attr])
+    x_coor_dense_lst.append(x_coor_dense)
+x_coor_dense = Concatenate()(x_coor_dense_lst)
+
+# 坐标特征
+y_coor_dense_lst = []
+y_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+for i in range(4):
+    y_coor_dense = Dense(8, activation="relu")(y_coor_inputs)
+    y_coor_dense_attr = Dense(8)(y_coor_dense)
+    y_coor_dense_attr = softmax_layer(y_coor_dense_attr)
+    y_coor_dense = Multiply()([y_coor_dense, y_coor_dense_attr])
+    y_coor_dense_lst.append(y_coor_dense)
+y_coor_dense = Concatenate()(y_coor_dense_lst)
+
+flatten = Concatenate()([gap_dense, flatten1, flatten2, x_coor_dense, y_coor_dense])
+
+dropout = Dropout(0.5)(flatten)
+output = Dense(units=3)(dropout)
+output = Lambda(tf.nn.softmax)(output)
+
+single_row_model = Model(inputs=[gap_inputs, sentence_inputs, sentence_font_inputs,
+                                 x_coor_inputs, y_coor_inputs], outputs=output)
+print("single_row_model")
+single_row_model.summary()
+opt = Adam(lr=1e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+single_row_model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
+
+return single_row_model
+def create_multi_row_model(sequence_length, vocabulary_inv, font_vocabulary_inv, gaps_train_shape_1):
+single_row_model = create_single_row_model(sequence_length, vocabulary_inv,
+font_vocabulary_inv, gaps_train_shape_1)
+# load weights here
+# weight_file = "line_label/v47/checkpoints/weights.047-0.9702.hdf5"
+# single_row_model.load_weights(weight_file)
+# print("load weight_file: {}".format(weight_file))
+single_row_model = Model(input=single_row_model.input,
+output=[single_row_model.get_layer('concatenate_3').output,
+single_row_model.get_layer("dense_6").output,
+])
+# single_row_model.trainable = True
+# for layer in single_row_model.layers:
+#     print("layer: {}".format(layer))
+#     layer.trainable = True
+
+row_gap_inputs = Input(shape=(gaps_train_shape_1,), dtype="float32")
+row_sentence_inputs = Input(shape=(sequence_length,), dtype='int32')
+row_sentence_font_inputs = Input(shape=(sequence_length,), dtype='int32')
+row_x_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+row_y_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+
+context_left_gap_inputs = Input(shape=(gaps_train_shape_1,), dtype="float32")
+context_left_sentence_inputs = Input(shape=(sequence_length,), dtype='int32')
+context_left_sentence_font_inputs = Input(shape=(sequence_length,), dtype='int32')
+context_left_x_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+context_left_y_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+
+context_right_gap_inputs = Input(shape=(gaps_train_shape_1,), dtype="float32")
+context_right_sentence_inputs = Input(shape=(sequence_length,), dtype='int32')
+context_right_sentence_font_inputs = Input(shape=(sequence_length,), dtype='int32')
+context_right_x_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+context_right_y_coor_inputs = Input(shape=(sequence_length,), dtype='float32')
+
+row_output, row_dense_output = single_row_model([row_gap_inputs, row_sentence_inputs, row_sentence_font_inputs,
+                                                 row_x_coor_inputs, row_y_coor_inputs])
+
+context_left_output, context_left_dense_output = single_row_model(
+    [context_left_gap_inputs, context_left_sentence_inputs,
+     context_left_sentence_font_inputs, context_left_x_coor_inputs,
+     context_left_y_coor_inputs])
+
+context_right_output, context_right_dense_output = single_row_model(
+    [context_right_gap_inputs, context_right_sentence_inputs,
+     context_right_sentence_font_inputs, context_right_x_coor_inputs,
+     context_right_y_coor_inputs])
+
+flatten = Concatenate()([row_output, context_left_output, context_right_output,
+                         ])
+dropout = Dropout(0.5)(flatten)
+output = Dense(units=3)(dropout)
+output1 = Lambda(tf.nn.softmax)(output)
+
+flatten = Concatenate()([row_dense_output, context_left_dense_output, context_right_dense_output,
+                         ])
+dropout = Dropout(0.5)(flatten)
+output = Dense(units=3)(dropout)
+output2 = Lambda(tf.nn.softmax)(output)
+
+
+flatten = Concatenate()([output1, output2])
+dropout = Dropout(0.60)(flatten)
+output = Dense(units=3  # , activation='softmax'
+               )(dropout)
+output = Lambda(tf.nn.softmax)(output)
+
+multi_row_model = Model(inputs=[
+    row_gap_inputs, row_sentence_inputs, row_sentence_font_inputs,
+    row_x_coor_inputs, row_y_coor_inputs,
+    context_left_gap_inputs, context_left_sentence_inputs, context_left_sentence_font_inputs,
+    context_left_x_coor_inputs, context_left_y_coor_inputs,
+    context_right_gap_inputs, context_right_sentence_inputs, context_right_sentence_font_inputs,
+    context_right_x_coor_inputs, context_right_y_coor_inputs,
+], outputs=output)
+print("multi_row_model")
+# load weights here:
+# weight_file = ""
+# multi_row_model.load_weights(os.path.join(CHECKPOINT_DIR, weight_file))
+# print("load weight file: {}".format(weight_file))
+multi_row_model.summary()
+opt = Adam(lr=1e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+multi_row_model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
+return multi_row_model
+the single row model:
+Total params: 316,787
+Trainable params: 316,787
+Non-trainable params: 0
+the multi row model:
+Total params: 2,491
+Trainable params: 2,491
+Non-trainable params: 0
+why the multi row model have few parameters than the single row model?

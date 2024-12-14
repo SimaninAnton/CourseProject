@@ -1,0 +1,37 @@
+MInner commented on 23 Mar 2016
+If I replace graph.add_node(Embedding(.., input=input)) by graph.add_node(Embedding(.., input='%s_input'%name) - it would not work, because embedding_layer.previous would store str('token_input') (not the reference to input layer) that would cause an error in embeddings's get_output(): K.gather(..., string)).
+It might be an expected behavior rather then a bug (one must pass input layer as an object, not as a string), but I didn't find any place in docs where it was mentioned and it should probably fail if someone's trying to pass a string?
+def build_model2(vocab_size_dict, max_seq_len, embedding_dim_dict, hidden_dim, depth=1, drop_prob=0):
+    graph = Graph()
+    branch_names = ['token', 'type', 'command']
+    for name in branch_names:
+        # does NOT include batch_size
+        input = graph.add_input(input_shape=(max_seq_len, ), name='%s_input'%name)
+        graph.add_node(Embedding(input_dim=vocab_size_dict[name]+1, 
+                                 output_dim=embedding_dim_dict[name], 
+                                 input_length=max_seq_len, mask_zero=True),
+                       name='%s_embedding'%name, input=input)
+
+        ## add independant GRU for each before merge?
+
+    graph.add_node(Activation('linear'), name='linear_merge', merge_mode='concat',
+                   inputs=['%s_embedding'%name for name in branch_names])
+
+    for i in range(depth):
+        graph.add_node(GRU(output_dim=hidden_dim, return_sequences=True,
+                           dropout_W=drop_prob, dropout_U=drop_prob), 
+                       name='proc_gru%d'%i, input='linear_merge')
+
+    encoding_input_name = 'proc_gru%d'%i if depth > 0 else 'linear_merge'
+    graph.add_node(GRU(output_dim=hidden_dim), name='encoding', input=encoding_input_name)
+
+    for name in branch_names:
+        graph.add_node(Dense(output_dim=vocab_size_dict[name], activation='softmax'), 
+                       name='%s_dense'%name, input='encoding')
+        graph.add_output(name='%s_output'%name, input='%s_dense'%name)
+
+    graph.compile(loss=dict([('%s_output'%name, 'categorical_crossentropy') for name in branch_names]), 
+                  optimizer='rmsprop')
+
+    return model
+udp: and if I pass it by value, an error UnusedInputError occurs :(

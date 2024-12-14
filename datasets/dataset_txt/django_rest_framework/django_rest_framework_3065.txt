@@ -1,0 +1,50 @@
+Contributor
+phobologic commented on 19 Sep 2012
+Hi, I'm running into an issue where if I include a reverse relationship in a ModelResource it recurses repeatedly back and forth between the original object & the related object. Here's an example:
+# models.py
+from django.db import models
+
+class Host(models.Model):
+    name = models.CharField(max_length=16, unique=True)
+
+    def __unicode__(self):
+        return unicode(self.name)
+
+    @property
+    def extra(self):
+        related_name = self.__class__.__name__.lower() + 'extra'
+        return getattr(self, related_name)
+
+
+class HostExtra(models.Model):
+    host = models.OneToOneField(Host)
+    ip = models.IPAddressField()
+
+    def __unicode__(self):
+        return unicode("%s: %s" % (self.host.name, self.ip))
+# api.py
+from djangorestframework.resources import ModelResource
+from djangorestframework.reverse import reverse
+from apps.recursion.models import Host
+
+class HostResource(ModelResource):
+    model = Host
+    include = ('extra',)
+
+    def url(self, instance):
+        return reverse('host_resource', kwargs={'id': instance.id},
+                request=self.request)
+# creating the objects
+>>> x = Host(name='foo')
+>>> x.save()
+>>> e = HostExtra(host=x, ip='192.168.2.1')
+>>> e.save()
+Here's an example of the output that I get when I make the query:
+[{"name": "foo", "extra": {"ip": "192.168.2.1", "host": {"name": "foo", "extra": {"ip": "192.168.2.1", "host": {"name": "foo", "extra": {"ip": "192.168.2.1", "host": {"name": "foo", "extra": {"ip": "192.168.2.1", "host": {"name": "foo", "extra": {"ip": "192.168.2.1", "host": {"name": "foo", "extra": {"ip": "192.168.2.1", "host": {"name": "foo", "extra"
+...
+I took a look at the code, and this bit (in serializer.py, line 185) seems to be intended to stop this, but it fails:
+        if any([obj is elem for elem in self.stack]):
+            return self.serialize_recursion(obj)
+However, if I replace that if statement with the following it works fine:
+        if obj in self.stack:
+            return self.serialize_recursion(obj)

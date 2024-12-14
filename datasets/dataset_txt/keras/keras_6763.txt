@@ -1,0 +1,100 @@
+gsmafra commented on 17 Aug 2015
+Used this example as a starting point
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers.core import Dense, Flatten, Merge
+from keras.layers.convolutional import Convolution2D
+
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+
+X_train = X_train.reshape(X_train.shape[0], 1, 28, 28)
+X_train = X_train.astype("float32")
+
+left = Sequential()
+left.add(Convolution2D(5, 1, 3, 3))
+left.add(Flatten())
+left.add(Dense(3380, 10))
+
+right = Sequential()
+right.add(Convolution2D(5, 1, 3, 3))
+right.add(Flatten())
+right.add(Dense(3380, 10))
+
+left.compile(loss='categorical_crossentropy', optimizer='sgd')
+right.compile(loss='categorical_crossentropy', optimizer='sgd')
+
+prediction_left = left.predict(X_train)
+prediction_right = right.predict(X_train)
+
+print(prediction_left.shape)
+print(prediction_right.shape)
+
+model = Sequential()
+model.add(Merge([left, right], mode='sum'))
+model.add(Dense(10, 10))
+
+model.compile(loss='categorical_crossentropy', optimizer='sgd')
+prediction_model = model.predict(X_train)
+print(prediction_model.shape)
+This code is yielding the following error for me:
+     33
+     34 model.compile(loss='categorical_crossentropy', optimizer='sgd')
+---> 35 prediction_model = model.predict(X_train)
+     36 print(prediction_model.shape)
+
+/home/*/venv/lib/python2.7/site-packages/Keras-0.1.2-py2.7.egg/keras/models.pyc in predict(self, X, batch_size, verbose)
+    468     def predict(self, X, batch_size=128, verbose=0):
+    469         X = standardize_X(X)
+--> 470         return self._predict_loop(self._predict, X, batch_size, verbose)[0]
+    471
+    472     def predict_proba(self, X, batch_size=128, verbose=1):
+
+/home/*/venv/lib/python2.7/site-packages/Keras-0.1.2-py2.7.egg/keras/models.pyc in _predict_loop(self, f, ins, batch_size, verbose)
+    247             ins_batch = slice_X(ins, batch_ids)
+    248
+--> 249             batch_outs = f(*ins_batch)
+    250             if type(batch_outs) != list:
+    251                 batch_outs = [batch_outs]
+
+/home/*venv/lib/python2.7/site-packages/theano/compile/function_module.pyc in __call__(self, *args, **kwargs)
+    579                     raise TypeError("Missing required input: %s" %
+    580                                     getattr(self.inv_finder[c], 'variable',
+--> 581                                             self.inv_finder[c]))
+    582                 if c.provided > 1:
+    583                     raise TypeError("Multiple values for input: %s" %
+
+TypeError: Missing required input: <TensorType(float32, 4D)>
+The Merge layer is supposed to work with mode='sum'when using two input layers with the same dimension. The way I see this code only differs from the example shown here by having convolutional layers before the dense ones
+You can see with the prints that left and right sides of the network are working as expected and have exactly the same dimension
+Am I doing something wrong here?
+Edit: so the problem isn't even the convolutional layers, I literally copy-pasted the Merge example and this does not work
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers.core import Activation, Dense, Flatten, Merge
+
+(X_train, Y_train), (X_test, Y_test) = mnist.load_data()
+
+X_train = X_train.reshape(X_train.shape[0], 28*28)
+X_test = X_test.reshape(X_test.shape[0], 28*28)
+X_train = X_train.astype("float32")
+X_test = X_test.astype("float32")
+
+left = Sequential()
+left.add(Dense(784, 50))
+left.add(Activation('relu'))
+
+right = Sequential()
+right.add(Dense(784, 50))
+right.add(Activation('relu'))
+
+model = Sequential()
+model.add(Merge([left, right], mode='sum'))
+
+model.add(Dense(50, 10))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+model.predict(X_train)
+It is ok if I compile right and left alone so it is not a problem with the inputs I suppose
+Edit 2: Oops, just realized I'm not using a tuple of inputs

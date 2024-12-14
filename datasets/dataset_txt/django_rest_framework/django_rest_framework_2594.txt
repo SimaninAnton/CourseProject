@@ -1,0 +1,26 @@
+un33k commented on 23 Feb 2014
+Possible negative throttle value OR divide by zero bug:
+Scenario: (example: UserRateThrottle)
+Site is live and configured with let's say 2000/day
+You want to reduce the rate to let's say 200/day
+Negative Number Bug:
+Rate is reduced to 200/day but the outstanding requests are already greater or equal to 200 after Django restarts
+{"detail": "Request was throttled.Expected available in -28577 seconds."}
+Devide by zero Bug:
+Rate is reduced to 200/day but the outstanding requests happen to be exactly 199 after Django restarts
+ZeroDivisionError: float division by zero
+Offending lines: (throttling.py)
+(negative number) available_requests = self.num_requests - len(self.history) + 1
+(divide by zero) return remaining_duration / float(available_requests)
+This happens when your cache server persists the outstanding requests that no longer match the rates you just updated.
+Workaround: restart your cache server?
+Possible Fix:
+Store current rate in cache as well
+Check if current rate in settings is the same as that of the cache
+If same, then business as usual
+If different:
+a. Honor the rate in cache till the outstanding requests are less than the rate
+b. Flush the outstanding requests and start with a clean slate
+More work required if Django is being load-balanced as the settings on all servers will not be updated at the same time so the cache copy may be out of sync for a while.
+What do you think?
+Val

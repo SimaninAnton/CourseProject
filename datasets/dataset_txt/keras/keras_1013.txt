@@ -1,0 +1,24 @@
+aayushee commented on 25 May 2018
+I am using Keras OCR example: https://github.com/keras-team/keras/blob/master/examples/image_ocr.py for online handwriting recognition but facing a memory allocation problem after model training while using a theano function to get the softmax output. Shape of x_train: (1200,1586,4). I am feeding 1200 stroke sequences in batches of 12. Here's the code snippet:
+inputs = Input(name='the_input', shape=x_train.shape[1:], dtype='float32')
+rnn_encoded=Bidirectional(LSTM(64,return_sequences=True,kernel_initializer=init,bias_initializer=bias),name='bidirectional_1',merge_mode='concat',trainable=trainable)(inputs)
+birnn_encoded=Bidirectional(LSTM(32,return_sequences=True,kernel_initializer=init,bias_initializer=bias),name='bidirectional_2',merge_mode='concat',trainable=trainable)(rnn_encoded)
+trirnn_encoded=Bidirectional(LSTM(16,return_sequences=True,kernel_initializer=init,bias_initializer=bias),name='bidirectional_3',merge_mode='concat',trainable=trainable)(birnn_encoded)
+output = TimeDistributed(Dense(28, name='dense',kernel_initializer=init,bias_initializer=bias))(trirnn_encoded)
+y_pred = Activation('softmax', name='softmax')(output)
+model=Model(inputs=inputs,outputs=y_pred)
+labels = Input(name='the_labels', shape=[max_len], dtype='int32')
+input_length = Input(name='input_length', shape=[1], dtype='int64')
+label_length = Input(name='label_length', shape=[1], dtype='int64')
+loss_out = Lambda(ctc_lambda_func, output_shape=(1,), name='ctc')([y_pred, labels, input_length, label_length])
+model = Model(inputs=[inputs, labels, input_length, label_length], outputs=loss_out)
+opt=RMSprop(lr=0.001,clipnorm=1.)
+model.compile(loss={'ctc': lambda y_true, y_pred: y_pred}, optimizer=opt)
+gc.collect()
+my_generator = generator(x_train,y_train,batch_size)
+hist=model.fit_generator(my_generator,epochs=80,steps_per_epoch=100,shuffle=True,use_multiprocessing=False,workers=1)
+model.save(mfile)
+test_func = K.function([inputs], [y_pred])
+Model trains fine but a memory allocation error occurs at the last line. I am using a 32GB RAM machine with 8vCPUs on AWS. The error doesn't occur when I run the code for less number of epochs (around 30-40) but mostly when I run for large number of epochs like 80-100. I have attached a screenshot of the error also.
+
+Please suggest me if there is any solution to the problem other than reducing dataset size or number of epochs.

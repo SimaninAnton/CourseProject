@@ -1,0 +1,107 @@
+ashutoshsaboo commented on 27 Jul 2017 •
+edited
+I am trying to use the edit distance as a custom defined metric for my sequence to sequence labelling task (many to many). As the tf.edit_distance requires a SparseTensor as the input, I transform the y_true, and y_pred to sparse tensors here. y_true and y_pred are both tensors having value as numpy arrays of shape = (batch_len,1198,1).
+Using TensorFlow backend.
+Keras Version- 2.0.4
+This is the custom metric that I defined-:
+def create_sparse(ten):
+ n = len(ten)
+ ind = [[xi, 0, yi] for xi,x in enumerate(ten) for yi,y in enumerate(x)]
+ chars = list(''.join(ten))
+ return K.tf.SparseTensorValue(ind, chars, [n,1,1])
+
+def ed(y_true,y_pred):
+ return K.tf.edit_distance(create_sparse(K.eval(y_pred)), create_sparse(K.eval(y_true)), normalize=True)
+This is the model definition that I am using. I am using a many to many LSTM, followed by a Dropout and Activation layer-:
+import numpy as np
+from keras.models import Sequential
+from keras.layers import *
+from keras.layers.wrappers import *
+from keras.layers.embeddings import *
+from keras.preprocessing import sequence
+import midi_utils as m
+from keras.callbacks import *
+from keras.optimizers import *
+from keras import *
+from keras.regularizers import *
+import keras.backend as K
+import keras.losses as l
+import pickle
+
+batch_len=20
+model = Sequential()
+#model.add(Dense(maxlen, input_dim=maxlen))
+model.add(LSTM(maxlen, dropout=0.2, recurrent_dropout=0.2, use_bias=True, bias_initializer="ones", activation="tanh", return_sequences=True, batch_input_shape=(batch_len,maxlen,1), kernel_regularizer=l2(0.01)))
+model.add(Dropout(0.2))
+model.add(TimeDistributed(Dense(1)))
+model.add(Activation("linear"))
+
+csv_logger = CSVLogger('training5.log')
+ckpt_logger = ModelCheckpoint("5weights.{epoch:02d}-{val_loss:.2f}.ckpt")
+ad = Adam(lr=0.001)
+#loss = losses.kullback_leibler_divergence
+#model.load_weights("4weights.99-0.01.ckpt")
+model.compile(loss=l.mean_squared_error, optimizer=ad, metrics=['accuracy', ed])
+print(model.summary())
+model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=100, batch_size=batch_len, callbacks=[csv_logger, ckpt_logger])
+# Final evaluation of the model
+scores = model.evaluate(X_test, y_test, verbose=0)
+print("Accuracy: %.2f%%" % (scores[1]*100))
+res= model.predict(X_test,batch_size=batch_len)
+Unfortunately, here's the traceback that I get and it quits without beginning the training itself.
+Traceback (most recent call last):
+  File "model.py", line 94, in <module>
+    model.compile(loss=l.mean_squared_error, optimizer=ad, metrics=['accuracy', ed])
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 777, in compile
+    **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 968, in compile
+    metric_result = masked_metric_fn(y_true, y_pred, mask=masks[i])
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 485, in masked
+    score_array = fn(y_true, y_pred)
+  File "model.py", line 46, in ed
+    return K.tf.edit_distance(create_sparse(K.eval(y_pred)), create_sparse(K.eval(y_true)), normalize=True)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/tensorflow_backend.py", line 533, in eval
+    return to_dense(x).eval(session=get_session())
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 606, in eval
+    return _eval_using_default_session(self, feed_dict, self.graph, session)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 3928, in _eval_using_default_session
+    return session.run(tensors, feed_dict)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 789, in run
+    run_metadata_ptr)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 997, in _run
+    feed_dict_string, options, run_metadata)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 1132, in _do_run
+    target_list, options, run_metadata)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/client/session.py", line 1152, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'lstm_1_input' with dtype float and shape [20,1198,1]
+  [[Node: lstm_1_input = Placeholder[dtype=DT_FLOAT, shape=[20,1198,1], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+Caused by op u'lstm_1_input', defined at:
+  File "model.py", line 84, in <module>
+    model.add(LSTM(maxlen, dropout=0.2, recurrent_dropout=0.2, use_bias=True, bias_initializer="ones", activation="tanh", return_sequences=True, batch_input_shape=(batch_len,maxlen,1), kernel_regularizer=l2(0.01)))
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 429, in add
+    dtype=layer.dtype, name=layer.name + '_input')
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 1414, in Input
+    input_tensor=tensor)
+  File "/usr/local/lib/python2.7/dist-packages/keras/legacy/interfaces.py", line 88, in wrapper
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 1325, in __init__
+    name=self.name)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/tensorflow_backend.py", line 391, in placeholder
+    x = tf.placeholder(dtype, shape=shape, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/array_ops.py", line 1530, in placeholder
+    return gen_array_ops._placeholder(dtype=dtype, shape=shape, name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/ops/gen_array_ops.py", line 1954, in _placeholder
+    name=name)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/op_def_library.py", line 767, in apply_op
+    op_def=op_def)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 2506, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/usr/local/lib/python2.7/dist-packages/tensorflow/python/framework/ops.py", line 1269, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'lstm_1_input' with dtype float and shape [20,1198,1]
+  [[Node: lstm_1_input = Placeholder[dtype=DT_FLOAT, shape=[20,1198,1], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+Is this because of the K.eval() method that I am trying to use in my metric? I also confirmed the correctness of my implementation here.
+This seems to be a strange problem. Can someone please look into this.

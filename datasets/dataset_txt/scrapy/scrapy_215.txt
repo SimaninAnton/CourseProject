@@ -1,0 +1,92 @@
+nicoparsa commented on Jan 24, 2019 •
+edited
+I had a problem with AWS Lambda container and Scrapy.
+When I execute the code in local with SAM, it never fails but when execute the code in AWS Lambda containers two times in a short period of time, it produce this error:
+START RequestId: cbd8f1cf-a9a1-41eb-89e9-bedf5ba1a0f7 Version: $LATEST
+2019-01-24 12:02:01 [scrapy.utils.log] INFO: Scrapy 1.5.2 started (bot: scrapybot)
+2019-01-24 12:02:01 [scrapy.utils.log] INFO: Versions: lxml 4.3.0.0, libxml2 2.9.9, cssselect 1.0.3, parsel 1.5.1, w3lib 1.20.0, Twisted 18.9.0, Python 3.7.2 (default, Jan  4 2019, 13:56:51) - [GCC 4.8.3 20140911 (Red Hat 4.8.3-9)], pyOpenSSL 19.0.0 (OpenSSL 1.1.1a  20 Nov 2018), cryptography 2.5, Platform Linux-4.14.88-72.76.amzn1.x86_64-x86_64-with-glibc2.2.5
+2019-01-24 12:02:01 [scrapy.crawler] INFO: Overridden settings: {'FEED_EXPORT_ENCODING': 'utf-8', 'FEED_FORMAT': 'json', 'FEED_URI': '/tmp/result.json', 'USER_AGENT': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36'}
+2019-01-24 12:02:01 [scrapy.extensions.telnet] INFO: Telnet Password: 570e0d9ceee5e1d4
+2019-01-24 12:02:01 [scrapy.middleware] INFO: Enabled extensions:
+['scrapy.extensions.corestats.CoreStats',
+ 'scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.memusage.MemoryUsage',
+ 'scrapy.extensions.feedexport.FeedExporter',
+ 'scrapy.extensions.logstats.LogStats']
+2019-01-24 12:02:01 [scrapy.middleware] INFO: Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2019-01-24 12:02:01 [scrapy.middleware] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2019-01-24 12:02:01 [scrapy.middleware] INFO: Enabled item pipelines:
+[]
+2019-01-24 12:02:01 [scrapy.core.engine] INFO: Spider opened
+2019-01-24 12:02:01 [scrapy.extensions.logstats] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2019-01-24 12:02:01 [scrapy.extensions.telnet] DEBUG: Telnet console listening on 127.0.0.1:6023
+Traceback (most recent call last):
+  File "/var/runtime/bootstrap", line 12, in <module>
+    main()
+  File "/var/runtime/bootstrap.py", line 349, in main
+    event_request.deadline_time_in_ms)
+  File "/var/runtime/bootstrap.py", line 127, in handle_event_request
+    log_error(error_result)
+  File "/var/runtime/bootstrap.py", line 96, in log_error
+    error_message_lines = ["[ERROR] {}: {}".format(error_result['errorType'], error_result['errorMessage'])]
+KeyError: 'errorMessage'
+END RequestId: cbd8f1cf-a9a1-41eb-89e9-bedf5ba1a0f7
+REPORT RequestId: cbd8f1cf-a9a1-41eb-89e9-bedf5ba1a0f7  Duration: 2246.92 ms    Billed Duration: 2300 ms    Memory Size: 128 MB Max Memory Used: 60 MB  
+RequestId: cbd8f1cf-a9a1-41eb-89e9-bedf5ba1a0f7 Error: Runtime exited with error: exit status 1
+Runtime.ExitError
+My Lambda's code is:
+import os
+import logging
+import scrapy
+from scrapy.crawler import CrawlerProcess
+
+logging.getLogger().handlers = [] # Necessary to manage the Log Level of Scrapy in AWS Lambda 
+
+def handler(event, context):
+
+    # SPIDER
+
+    settings = {
+            'LOG_ENABLED': True,
+            'LOG_LEVEL': 'ERROR'
+            }
+
+    process = CrawlerProcess(settings=settings)    
+
+    process.crawl(QuotesSpider)
+    process.start()
+
+
+
+class QuotesSpider(scrapy.Spider):
+    name = "quotes"
+
+    def start_requests(self):
+        urls = [
+            'http://quotes.toscrape.com/page/1/',
+            'http://quotes.toscrape.com/page/2/',
+        ]
+        for url in urls:
+            yield scrapy.Request(url=url, callback=self.parse)
+
+    def parse(self, response):
+        page = response.url.split("/")[-2]
+
+        print ('Scrapped page nº', page)
+Is like Crawler Process is already running in the re-use container and fails (Or another Scrapy Process). Any help?

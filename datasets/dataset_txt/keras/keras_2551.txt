@@ -1,0 +1,35 @@
+rharang commented on 25 Apr 2017
+If a model is composed from a sub-model that uses dropout, while the "outer" model does not, the training phase flag is not added to the input list, resulting in an error. See the below code for a minimal working example.
+def test_case(make_it_work=False, seq_len=128, input_dim=64):
+    def inputmodel():
+        input_fv = Input(shape=(input_dim,))
+        middle = Dense(128, activation='relu')(input_fv)
+        # vvv This dropout layer requires learning_phase to be passed in, but 
+        #        model.compile() doesn't identify it
+        middle = Dropout(.5)(middle)
+        middle = Dense(128, activation='relu')(middle)
+        model = Model(input=input_fv, output=middle)
+        return model
+
+    input_list = Input(shape=(seq_len, input_dim))
+    stack = inputmodel()
+
+    middle = TimeDistributed(stack)(input_list)
+    #vvv This line is not sufficient to make it train properly
+    middle = TimeDistributed(Dropout(0.5))(middle)
+    middle = GlobalAveragePooling1D()(middle)
+    #vvv CRITICAL LINE
+    if make_it_work:middle = Dropout(0.5)(middle)
+    output = Dense(2,activation='softmax')(middle)
+
+    model = Model(input=input_list, output=output)
+    model.compile(loss='categorical_crossentropy',optimizer='adam')
+    return model
+If called with make_it_work=False (thus not applying a dropout layer in the 'outer' model), the following error results:
+>> In [4]: model.predict_on_batch(x)
+
+{full traceback removed}
+
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'dropout_1/keras_learning_phase' with dtype bool
+         [[Node: dropout_1/keras_learning_phase = Placeholder[dtype=DT_BOOL, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+If called with make_it_work=True, which adds a dropout layer to the outer model, then the learning_phase tensor is added to the inputs and the model operates correctly.

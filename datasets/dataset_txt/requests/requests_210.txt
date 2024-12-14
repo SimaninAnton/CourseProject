@@ -1,0 +1,81 @@
+hiranya911 commented on Aug 10, 2018
+I'm using requests to stream an SSE response. The actual streaming takes place on a separate thread:
+import threading
+import time
+
+import requests
+import sys
+
+def read_response(resp):
+    try:
+        resp_iterator = resp.iter_content(decode_unicode=True)
+        for ch in resp_iterator:
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+    except Exception as ex:
+        print ex
+    print 'Exited at:', time.time()
+
+session = requests.Session()
+headers = {}
+headers['Cache-Control'] = 'no-cache'
+headers['Accept'] = 'text/event-stream'
+resp = session.get(my_url, headers=headers, stream=True)
+
+# Kick off the stream in a different thread
+thread = threading.Thread(target=read_response, args=[resp])
+thread.start()
+
+# Keep streaming for 5 seconds
+time.sleep(5)
+
+# Try to close the response
+print 'Closing response...'
+resp.close()
+print 'Closing session...'
+session.close()
+print 'Closed at:', time.time()
+thread.join()
+In the above example I kick off the stream, wait for 5 seconds, and then close the response and the session. I expected the response iterator to end at this point (either normally or by throwing an exception). But it doesn't end for 25-30 additional seconds. Here's the output I get:
+Closing response...
+Closing session...
+Closed at: 1533852042.74
+('Connection broken: error("(9, \'EBADF\')",)', error("(9, 'EBADF')",))
+Exited at: 1533852067.98
+Notice the difference between Closed at and Exited at timestamps.
+Any idea why this is? I assume it has something to do with the underlying socket remaining active for a period of time. Is there some way to force termination of the stream/iterator when the response is closed?
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  }, 
+  "cryptography": {
+    "version": "2.1.4"
+  }, 
+  "idna": {
+    "version": "2.7"
+  }, 
+  "implementation": {
+    "name": "CPython", 
+    "version": "2.7.13"
+  }, 
+  "platform": {
+    "release": "4.9.0-6-amd64", 
+    "system": "Linux"
+  }, 
+  "pyOpenSSL": {
+    "openssl_version": "1010007f", 
+    "version": "17.5.0"
+  }, 
+  "requests": {
+    "version": "2.19.1"
+  }, 
+  "system_ssl": {
+    "version": "1010008f"
+  }, 
+  "urllib3": {
+    "version": "1.23"
+  }, 
+  "using_pyopenssl": true
+}

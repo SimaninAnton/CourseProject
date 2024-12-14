@@ -1,0 +1,57 @@
+mindblight commented on 21 May 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Take two models:
+class A(models.Model):
+  name = models.CharField(...)
+
+class B(models.Model):
+  a = models.OneToOneField(A, related_name='b')
+Their serializers:
+class ASerializer(serializers.ModelSerializer):
+  class Meta:
+    model = A
+    fields = ('name', 'b')
+
+class BSerializer(serializers.ModelSerializer):
+  a = models.OneToOneField(A, related_name='a')
+  class Meta:
+    model = B
+    fields = ('a',)
+And their viewsets:
+class AViewSet(ModelViewSet):
+  # endpoints at '/api/a'
+  queryset = A.objects.all()
+  serializer = ASerializer
+
+class BViewSet(ModelViewSet):
+  # endpoints at '/api/b'
+  queryset = B.objects.all()
+  serializer = BSerializer
+FYI, I'm using DRF JSON API, so my JSON syntax might be a little off, but the idea is the same. Assume an A object exists with id 1, post a B object like this:
+{
+   "a": 1
+}
+Expected behavior
+A[id=1] is updated to point to the new B. This works with a ManyToMany thanks to saving them after the fact: https://github.com/encode/django-rest-framework/blob/master/rest_framework/serializers.py#L960
+Actual behavior
+You get a response like:
+{
+  "id": 2,
+  "a": 1,
+}
+Which says that A[id=1] points to B[id=2]. But, if you load B[id=2] afterwards, you'll get:
+{
+  "d": 2,
+  "a": null,
+}
+Thoughts
+It looks like the fix is to save any reverse relation instead of just ManyToManys. I'm also not sure if there's a similar bug for updates
+1

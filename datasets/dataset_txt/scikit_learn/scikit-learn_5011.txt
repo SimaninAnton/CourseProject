@@ -1,0 +1,108 @@
+Contributor
+AWinterman commented on Jan 25, 2013
+I'm seeing very slow unpickling times for multilabel random forests. I'm opening this as an issue re: my discussion with @ogrisel on Stack Overflow.
+trainX is my training feature matrix. It is a sparse matrix with shape (926, 1236). validX is the feature matrix I want to categorize. By coincidence, it has the same size as the training matrix. Y is a numpy array of python lists (since this is a multilabel problem.). Each sample has at most 4 labels, with most having only one. There are 52 unique labels.
+import numpy as np
+import cPickle as pickle
+import cProfile
+import os
+from collections import defaultdict
+
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.ensemble import RandomForestClassifier as classifier
+from sklearn.pipeline import Pipeline
+from sklearn.decomposition import RandomizedPCA
+
+clf_params = {'n_estimators':15, 'n_jobs': -1, 'min_density': 0,
+                       'max_depth': np.log2((trainX.shape[0]))-1}
+#Classifier
+clf = Pipeline([('reduce_dim',
+                RandomizedPCA(n_components=100,
+                                                    whiten=False),),
+               ('clf',  OneVsRestClassifier(
+                                classifier(**clf_params))
+               )
+ ])
+
+#Training
+clf.fit(trainX, Y)
+scores = clf.predict_proba(validX)
+
+#serializing
+serialized = pickle.dumps(clf, protocol=-1)
+
+cProfile.run("pickle.loads(serialized)")
+Output:
+>>> cProfile.run("pickle.loads(serialized)")
+
+         1465558 function calls in 5.188 seconds
+
+   Ordered by: standard name
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.006    0.006    5.188    5.188 <string>:1(<module>)
+      781    4.245    0.005    4.245    0.005 __init__.py:93(__RandomState_ctor)
+      780    0.001    0.000    0.007    0.000 fromnumeric.py:1774(amax)
+    20393    0.009    0.000    0.009    0.000 pickle.py:1002(load_tuple1)
+     1044    0.001    0.000    0.001    0.000 pickle.py:1006(load_tuple2)
+    10618    0.012    0.000    0.012    0.000 pickle.py:1010(load_tuple3)
+       55    0.000    0.000    0.000    0.000 pickle.py:1014(load_empty_list)
+     2451    0.003    0.000    0.003    0.000 pickle.py:1018(load_empty_dictionary)
+      890    0.001    0.000    0.002    0.000 pickle.py:1080(load_newobj)
+       13    0.000    0.000    0.000    0.000 pickle.py:1087(load_global)
+       13    0.000    0.000    0.000    0.000 pickle.py:1122(find_class)
+    13220    0.040    0.000    4.310    0.000 pickle.py:1129(load_reduce)
+    66498    0.083    0.000    0.121    0.000 pickle.py:1154(load_binget)
+      256    0.000    0.000    0.001    0.000 pickle.py:1168(load_binput)
+    72387    0.105    0.000    0.162    0.000 pickle.py:1173(load_long_binput)
+       54    0.000    0.000    0.000    0.000 pickle.py:1185(load_appends)
+     1671    0.011    0.000    0.022    0.000 pickle.py:1201(load_setitems)
+    13849    0.031    0.000    0.071    0.000 pickle.py:1211(load_build)
+    13905    0.007    0.000    0.008    0.000 pickle.py:1250(load_mark)
+        1    0.000    0.000    0.000    0.000 pickle.py:1254(load_stop)
+        1    0.017    0.017    5.355    5.355 pickle.py:1380(loads)
+        1    0.000    0.000    0.000    0.000 pickle.py:829(__init__)
+        1    0.000    0.000    0.000    0.000 pickle.py:83(__init__)
+        1    0.238    0.238    5.338    5.338 pickle.py:845(load)
+    13905    0.029    0.000    0.031    0.000 pickle.py:870(marker)
+        1    0.000    0.000    0.000    0.000 pickle.py:883(load_proto)
+     2580    0.001    0.000    0.001    0.000 pickle.py:899(load_none)
+    11138    0.005    0.000    0.006    0.000 pickle.py:903(load_false)
+       55    0.000    0.000    0.000    0.000 pickle.py:907(load_true)
+      893    0.001    0.000    0.002    0.000 pickle.py:925(load_binint)
+    44845    0.038    0.000    0.056    0.000 pickle.py:929(load_binint1)
+     2059    0.003    0.000    0.005    0.000 pickle.py:933(load_binint2)
+     2394    0.003    0.000    0.006    0.000 pickle.py:957(load_binfloat)
+     3125    0.005    0.000    0.010    0.000 pickle.py:974(load_binstring)
+     8654    0.010    0.000    0.017    0.000 pickle.py:988(load_short_binstring)
+    12180    0.034    0.000    0.056    0.000 pickle.py:993(load_tuple)
+     1671    0.001    0.000    0.001    0.000 pickle.py:998(load_empty_tuple)
+       13    0.000    0.000    0.000    0.000 {__import__}
+     2394    0.002    0.000    0.002    0.000 {_struct.unpack}
+      890    0.001    0.000    0.001    0.000 {built-in method __new__ of type object at 0x101d00178}
+        1    0.000    0.000    0.000    0.000 {cStringIO.StringIO}
+    13862    0.006    0.000    0.006    0.000 {getattr}
+    14407    0.005    0.000    0.005    0.000 {intern}
+      890    0.001    0.000    0.001    0.000 {isinstance}
+    15576    0.003    0.000    0.003    0.000 {len}
+    82190    0.030    0.000    0.030    0.000 {marshal.loads}
+      781    0.005    0.000    0.005    0.000 {method '__setstate__' of 'mtrand.RandomState' objects}
+      421    0.001    0.000    0.001    0.000 {method '__setstate__' of 'numpy.dtype' objects}
+    10197    0.017    0.000    0.017    0.000 {method '__setstate__' of 'numpy.ndarray' objects}
+      780    0.000    0.000    0.000    0.000 {method '__setstate__' of 'sklearn.tree._tree.ClassificationCriterion' objects}
+      780    0.002    0.000    0.002    0.000 {method '__setstate__' of 'sklearn.tree._tree.Tree' objects}
+   164062    0.016    0.000    0.016    0.000 {method 'append' of 'list' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+       54    0.000    0.000    0.000    0.000 {method 'extend' of 'list' objects}
+      890    0.001    0.000    0.001    0.000 {method 'iteritems' of 'dict' objects}
+      780    0.008    0.000    0.008    0.000 {method 'max' of 'numpy.ndarray' objects}
+    27960    0.007    0.000    0.007    0.000 {method 'pop' of 'list' objects}
+   527243    0.129    0.000    0.129    0.000 {method 'read' of 'cStringIO.StringI' objects}
+       26    0.000    0.000    0.000    0.000 {method 'readline' of 'cStringIO.StringI' objects}
+    10197    0.015    0.000    0.015    0.000 {numpy.core.multiarray._reconstruct}
+      261    0.000    0.000    0.000    0.000 {numpy.core.multiarray.scalar}
+   120254    0.013    0.000    0.013    0.000 {ord}
+     1671    0.002    0.000    0.002    0.000 {range}
+   142867    0.024    0.000    0.024    0.000 {repr}
+I can include the rest, but the bulk of the time is spend on __init__.py:93(__RandomStat_ctor).
+Note that this is actually a slightly smaller example than the one I was talking about on stack overflow (for the sake of ease). It still illustrates the problem.

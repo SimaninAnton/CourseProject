@@ -1,0 +1,22 @@
+nathancahill commented on 24 Oct 2012
+Interesting bug in tornado/simple_httpclient.py (v2.4, Mac OSX 10.8.2, Python 2.7.3):
+While looping through the request queue in SimpleAsyncHTTPClient, self.queue.popleft()
+returns a HTTPRequest object. Then, _HTTPConnection tries to parse the object's URL:
+Line 140:
+parsed = urlparse.urlsplit(_unicode(self.request.url))
+This fails, however, because self.request.url is actually a tuple of HTTPRequest objects!
+My work around is to grab the first object in the tuple, and then the URL from that. Obviously
+not a fix, just trying to understand what's going on:
+parsed = urlparse.urlsplit(_unicode(self.request.url[0].url))
+To reproduce:
+this_request = tornado.httpclient.HTTPRequest(url = 'http://www.google.com')
+tornado.httpclient.AsyncHTTPClient().fetch(this_request, self.handle_response)
+Error:
+WARNING:root:uncaught exception
+Traceback (most recent call last):
+File "tornado/simple_httpclient.py", line 318, in cleanup
+    yield
+File "tornado/simple_httpclient.py", line 140, in __init__
+    parsed = urlparse.urlsplit(_unicode(self.request.url))
+File "tornado/escape.py", line 183, in to_unicode
+    assert isinstance(value, bytes)

@@ -1,0 +1,81 @@
+RaffEdwardBAH commented on 2 May 2016
+It appears networks with Lambda Layers can't be saved though the to_json or to_yaml methods
+To implement graves style skip connections for a classification problem I'm using a lambda layer to get the results from the last time step
+Lambda(lambda x: x[:,-1,:], output_shape=last_step_shape)
+where
+def last_step_shape(input_shape):
+    shape = list(input_shape)
+    assert len(shape) == 3
+    return tuple((shape[0], shape[2]))
+This model does successfully start training, but I can't save the architecture specification. The model is defined using the Graph API. Looks something like
+model = Graph()
+model.add_input(name='input', batch_input_shape=(batchsize, maxlen), dtype='int')
+model.add_node(Embedding(257, embed_size, input_length=maxlen, name='embedding', input='input')
+
+prev_name = 'embedding'
+
+#add intermediate hidden LSTM layers, they need to return their sequences. 
+for l in range(num_layers-1):
+    ls = str(l)
+    if l > 0:
+        model.add_node(LSTM(lstm_layer_size, return_sequences=True), 
+                       name='_f'+ls, inputs=[prev_name, 'embedding'])
+        model.add_node(Lambda(lambda x: x[:,-1,:], output_shape=last_step_shape), name='f'+ls, input='_f'+ls)
+    else:
+        model.add_node(LSTM(lstm_layer_size, return_sequences=True), 
+                       name='_f'+ls, input=prev_name)
+        model.add_node(Lambda(lambda x: x[:,-1,:], output_shape=last_step_shape), name='f'+ls, input='_f'+ls)
+    prev_name = '_f'+ls
+
+#add last LSTM layer
+ls = str(num_layers-1)
+if num_layers > 1:
+    model.add_node(LSTM(lstm_layer_size), name='f'+ls, inputs=[prev_name, 'embedding'])
+    model.add_node(Dense(1, activation='sigmoid'), name='sigmoid', inputs=['f'+str(x) for x in range(num_layers)], merge_mode='concat')
+else:
+    model.add_node(LSTM(lstm_layer_size, dropout_W=0.5, dropout_U=0.5, W_regularizer=l2(1e-5)), name='f'+ls, input=prev_name)
+    model.add_node(Dense(1, activation='sigmoid'), name='sigmoid', input='f'+ls, merge_mode='concat')
+
+model.add_output(name='output', input='sigmoid')
+
+# try using different optimizers and different optimizer configs
+optimizer = Adam(lr=0.001, clipnorm=grad_clip)
+
+model.compile(optimizer, {'output': 'binary_crossentropy'})
+I get the error
+---------------------------------------------------------------------------
+UnicodeDecodeError                        Traceback (most recent call last)
+<ipython-input-25-e4d9f49c02c8> in <module>()
+----> 5 json_string = model.to_json()
+      6 # open(name+'.json', 'w').write(json_string)
+      7 
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in to_json(self, **kwargs)
+   2375             'config': config,
+   2376         }
+-> 2377         return json.dumps(model_config, default=get_json_type, **kwargs)
+   2378 
+   2379     def to_yaml(self, **kwargs):
+
+/usr/lib/python2.7/json/__init__.pyc in dumps(obj, skipkeys, ensure_ascii, check_circular, allow_nan, cls, indent, separators, encoding, default, sort_keys, **kw)
+    248         check_circular=check_circular, allow_nan=allow_nan, indent=indent,
+    249         separators=separators, encoding=encoding, default=default,
+--> 250         sort_keys=sort_keys, **kw).encode(obj)
+    251 
+    252 
+
+/usr/lib/python2.7/json/encoder.pyc in encode(self, o)
+    205         # exceptions aren't as detailed.  The list call should be roughly
+    206         # equivalent to the PySequence_Fast that ''.join() would do.
+--> 207         chunks = self.iterencode(o, _one_shot=True)
+    208         if not isinstance(chunks, (list, tuple)):
+    209             chunks = list(chunks)
+
+/usr/lib/python2.7/json/encoder.pyc in iterencode(self, o, _one_shot)
+    268                 self.key_separator, self.item_separator, self.sort_keys,
+    269                 self.skipkeys, _one_shot)
+--> 270         return _iterencode(o, 0)
+    271 
+    272 def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
+
+UnicodeDecodeError: 'utf8' codec can't decode byte 0x83 in position 28: invalid start byte

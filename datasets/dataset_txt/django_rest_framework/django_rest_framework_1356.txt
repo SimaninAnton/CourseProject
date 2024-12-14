@@ -1,0 +1,102 @@
+emamirazavi commented on 30 Dec 2015
+I have two models named request and invoice and have two serializers. My base serializer is request and nested named invoice. When i attach invoice to request without many=True permanently i have error that invoice must be set. When i use many=True for invoice and pass invoice in a list we have a serious problem in to_internal_value method and data passed to it. All keys start with [ and end with ]!!! and field.get_value returns empty for all of them. Any solution my friends?
+class InvoiceSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Invoice
+        fields = ('created_time')
+
+    def to_internal_value(self, data):
+        """
+        Dict of native values <- Dict of primitive datatypes.
+        """
+        if not isinstance(data, dict):
+            message = self.error_messages['invalid'].format(
+                datatype=type(data).__name__
+            )
+            raise ValidationError({
+                api_settings.NON_FIELD_ERRORS_KEY: [message]
+            })
+
+        ret = OrderedDict()
+        errors = OrderedDict()
+        fields = self._writable_fields
+        print('data ', data)
+        for field in fields:
+            validate_method = getattr(self, 'validate_' + field.field_name, None)
+            print(field.field_name, field.get_value(data))
+            primitive_value = field.get_value(data)
+            try:
+                validated_value = field.run_validation(primitive_value)
+                if validate_method is not None:
+                    validated_value = validate_method(validated_value)
+            except ValidationError as exc:
+                errors[field.field_name] = exc.detail
+            except DjangoValidationError as exc:
+                errors[field.field_name] = list(exc.messages)
+            except SkipField:
+                pass
+            else:
+                set_value(ret, field.source_attrs, validated_value)
+
+        if errors:
+            raise ValidationError(errors)
+
+        return ret
+
+
+class BillSerializer(serializers.ModelSerializer):
+    invoice = InvoiceSerializer(many=True)
+
+    class Meta:
+        model = Request
+        fields = '__all__'
+
+    def create(self, validated_data):
+        invoice_data = validated_data.pop('invoice')
+
+    def to_internal_value(self, data):
+        """
+        Dict of native values <- Dict of primitive datatypes.
+        """
+        if not isinstance(data, dict):
+            message = self.error_messages['invalid'].format(
+                datatype=type(data).__name__
+            )
+            raise ValidationError({
+                api_settings.NON_FIELD_ERRORS_KEY: [message]
+            })
+
+        ret = OrderedDict()
+        errors = OrderedDict()
+        fields = self._writable_fields
+        print('data ', data)
+        for field in fields:
+            validate_method = getattr(self, 'validate_' + field.field_name, None)
+            primitive_value = field.get_value(data)
+            try:
+                validated_value = field.run_validation(primitive_value)
+                if validate_method is not None:
+                    validated_value = validate_method(validated_value)
+            except ValidationError as exc:
+                errors[field.field_name] = exc.detail
+            except DjangoValidationError as exc:
+                errors[field.field_name] = list(exc.messages)
+            except SkipField:
+                pass
+            else:
+                set_value(ret, field.source_attrs, validated_value)
+
+        if errors:
+            raise ValidationError(errors)
+
+        return ret
+I posted these parameters:
+form data:
+xxxxx
+invoice[0][created_time]:2015-10-10 23:00:00
+And the code prints:
+data  <QueryDict: {xxxxx,'invoice[0][created_time]': ['2015-10-10 23:00:00']}>
+data  <MultiValueDict: {'[created_time]': ['2015-10-10 23:00:00']}>
+created_time <class 'rest_framework.fields.empty'>
+due_time <class 'rest_framework.fields.empty'>

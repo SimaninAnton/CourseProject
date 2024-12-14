@@ -1,0 +1,87 @@
+Fenil3510 commented on 12 Feb 2018
+I am trying to run a U-net on variable(in height,width) sized images , but there seems to be an error in concatenate_21 layer, I can't figure out why.
+#U-NET Model
+inputs = Input((None, None, 4))
+s = inputs
+
+c1 = Conv2D(16, (3, 3), activation='elu',kernel_initializer='he_normal', padding='same') (s)
+c1 = Dropout(0.1) (c1)
+c1 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c1)
+p1 = MaxPooling2D((2, 2)) (c1)
+
+c2 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (p1)
+c2 = Dropout(0.1) (c2)
+c2 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c2)
+p2 = MaxPooling2D((2, 2)) (c2)
+
+c3 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (p2)
+c3 = Dropout(0.2) (c3)
+c3 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c3)
+p3 = MaxPooling2D((2, 2)) (c3)
+
+c4 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (p3)
+c4 = Dropout(0.2) (c4)
+c4 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c4)
+p4 = MaxPooling2D(pool_size=(2, 2)) (c4)
+
+c5 = Conv2D(256, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (p4)
+c5 = Dropout(0.3) (c5)
+c5 = Conv2D(256, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c5)
+
+u6 = Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same') (c5)
+u6 = concatenate([u6, c4])
+c6 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u6)
+c6 = Dropout(0.2) (c6)
+c6 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c6)
+
+u7 = Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same') (c6)
+u7 = concatenate([u7, c3])
+c7 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u7)
+c7 = Dropout(0.2) (c7)
+c7 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c7)
+
+u8 = Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same') (c7)
+u8 = concatenate([u8, c2])
+c8 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u8)
+c8 = Dropout(0.1) (c8)
+c8 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c8)
+
+u9 = Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same') (c8)
+u9 = concatenate([u9, c1], axis=3)
+c9 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u9)
+c9 = Dropout(0.1) (c9)
+c9 = Conv2D(16, (3, 3), activation='elu',   kernel_initializer='he_normal', padding='same') (c9)
+
+outputs = Conv2D(1, (1, 1), activation='sigmoid') (c9)
+
+model = Model(inputs=[inputs], outputs=[outputs])
+model.compile(optimizer='SGD', loss='binary_crossentropy', metrics=  [my_iou_metric])
+model.summary()
+def simple_gen():
+ while True:
+    for i, img in enumerate(final_images):
+            temp = np.expand_dims(label_masks[i],0)
+            yield np.expand_dims(final_images[i],0), np.expand_dims(temp,-1)
+            continue
+model.fit_generator(simple_gen(), 
+                     steps_per_epoch=len(final_images),
+                    epochs = 2)
+After 6th batch heres what I get.
+ InvalidArgumentError: All dimensions except 3 must match. Input 1
+ has    shape [1 45 45 128] and doesn't match input 0 with shape
+ [1 44    44 128].
+ [[Node:  training_1/SGD/gradients/concatenate_21/concat_grad/ConcatOffset =  ConcatOffset[N=2, _class=["loc:@concatenate_21/concat"], 
+ _device="/job:localhost/replica:0/task:0/cpu:0"]
+ (training_1/SGD/gradients/concatenate_21/concat_grad/mod, training_1/SGD/gradients/concatenate_21/concat_grad/ShapeN, training_1/SGD/gradients/concatenate_21/concat_grad/ShapeN:1)]]
+And heres is a list of the first 10 final_images sizes.
+(256, 256, 4)
+(256, 256, 4)
+(256, 320, 4)
+(256, 320, 4)
+(256, 320, 4)
+(256, 256, 4)
+(256, 256, 4)
+(360, 360, 4)
+(256, 256, 4)
+(360, 360, 4)
+And label_masks(target) shape being the corresponding above but greyscale.

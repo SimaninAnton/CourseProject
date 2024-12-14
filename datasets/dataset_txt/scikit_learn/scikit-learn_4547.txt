@@ -1,0 +1,50 @@
+Member
+mblondel commented on Jan 14, 2014
+Currently, there is the following test for sample_weight in Ridge:
+def test_ridge_sample_weights():
+    rng = np.random.RandomState(0)
+
+    for solver in ("dense_cholesky", ):
+        for n_samples, n_features in ((6, 5), (5, 10)):
+            for alpha in (1.0, 1e-2):
+                y = rng.randn(n_samples)
+                X = rng.randn(n_samples, n_features)
+                sample_weight = 1 + rng.rand(n_samples)
+
+                coefs = ridge_regression(X, y,
+                                         alpha=alpha,
+                                         sample_weight=sample_weight,
+                                         solver=solver)
+                # Sample weight can be implemented via a simple rescaling
+                # for the square loss.
+                coefs2 = ridge_regression(
+                    X * np.sqrt(sample_weight)[:, np.newaxis],
+                    y * np.sqrt(sample_weight),
+                    alpha=alpha, solver=solver)
+                assert_array_almost_equal(coefs, coefs2)
+The test calls ridge_regression directly so it only tests for the fit_intercept=False case.
+Ideally, I would like to add a test for checking the correctness of the sample_weight support in the fit_intercept=True case as well. The following test fails but I'm not sure whether the problem is in the test or in the code.
+def test_ridge_sample_weights_estimator():
+    rng = np.random.RandomState(0)
+
+    for solver in ("dense_cholesky", ):
+        for n_samples, n_features in ((6, 5), (5, 10)):
+            for alpha in (1.0, 1e-2):
+                y = rng.randn(n_samples)
+                X = rng.randn(n_samples, n_features)
+                sample_weight = 1 + rng.rand(n_samples)
+
+                est = Ridge(alpha=alpha, solver=solver, fit_intercept=True)
+                est.fit(X, y, sample_weight=sample_weight)
+                coefs = est.coef_.copy()
+
+                # Sample weight can be implemented via a simple rescaling
+                # for the square loss.
+                est.fit(X * np.sqrt(sample_weight)[:, np.newaxis],
+                        y * np.sqrt(sample_weight))
+
+                coefs2 = est.coef_
+
+                assert_array_almost_equal(coefs, coefs2)
+In any case, I think it is important to check for the correctness of the fit_intercept=True case.
+CC @agramfort @GaelVaroquaux

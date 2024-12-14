@@ -1,0 +1,82 @@
+tgy commented on 14 Nov 2017
+I'm trying to create a LSTM-based regression model with Keras but I'm having
+trouble. I read blog posts and code examples from GitHub and feel like I'm
+using the Keras API the right way but it still crashes.
+Here is the code
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import LSTM
+
+import data_utils
+
+seq_len = 10
+n_epochs = 100
+batch_size = 32
+hdim = 4
+
+train, valid = data_utils.load_dataset(10, 5, features=['trade_sign'])
+datasets = {'train': train, 'valid': valid}
+
+input_dim = data_utils.infer_input_dim(train)
+batch_input_shape = (batch_size, seq_len, input_dim)
+print('input_dim = {}'.format(input_dim))
+print('batch_input_shape = {}'.format(batch_input_shape))
+
+# reshape datasets to (n_samples, seq_len, input_dim)
+# also make sure that n_samples is a multiple of batch_size
+for dataset in datasets.values():
+  data_utils.create_sequential_dataset(dataset, seq_len, batch_size)
+
+model = Sequential()
+model.add(LSTM(hdim, stateful=True, return_sequences=False,
+        batch_input_shape=batch_input_shape))
+model.add(Dense(1, activation='linear'))
+model.compile(loss='mean_squared_error', optimizer='rmsprop')
+
+print(model.summary())
+
+for e in range(n_epochs):
+  for i, (datestr, (x, y)) in enumerate(train.items()):
+    model.reset_states()
+    model.fit(x, y, epochs=1, batch_size=batch_size,
+       verbose=999, shuffle=False)
+The code raises a ValueError at the model.fit step.
+Here's the output I get when running this code:
+(hello)~ $ python /mnt/tmp/tmp7d/minimal_lstm_keras.py
+Using TensorFlow backend.
+input_dim = 1
+batch_input_shape = (32, 10, 1)
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #
+=================================================================
+lstm_1 (LSTM)                (32, 4)                   96
+_________________________________________________________________
+dense_1 (Dense)              (32, 1)                   5
+=================================================================
+Total params: 101
+Trainable params: 101
+Non-trainable params: 0
+_________________________________________________________________
+None
+Traceback (most recent call last):
+  File "minimal_lstm_keras.py", line 43, in <module>
+verbose=999, shuffle=False, callbacks=[tb_cb])
+  File "python2.7/site-packages/keras/models.py"
+, line 867, in fit initial_epoch=initial_epoch)
+  File "python2.7/site-packages/keras/engine/tra
+ining.py", line 1522, in fit batch_size=batch_size)
+  File "python2.7/site-packages/keras/engine/tra
+ining.py", line 1382, in _standardize_user_data
+    exception_prefix='target')
+  File "python2.7/site-packages/keras/engine/tra
+ining.py", line 144, in _standardize_input_data
+    str(array.shape))
+ValueError: Error when checking target:
+expected dense_1 to have shape (32, 1)
+but got array with shape (218816, 10)
+The x I am passing to the model.fit is of shape (batch_size, seq_len, input_dim), as it should be. y is of shape (batch_size, seq_len): also as
+it should be.
+What am I doing wrong here?
+Python version: 2.7.13
+Tensorflow version: 1.2.0
+Keras version: 2.0.8

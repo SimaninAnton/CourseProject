@@ -1,0 +1,14 @@
+Contributor
+EderSantana commented on 23 Oct 2015
+The way mask affects the cost function right now is not the best way. Note that the mask comes from the input and multiplies the final cost. This is right when we are doing sequence prediction, in which case the input has always the same length as the output. But, for text translation, question answering and other applications, the desired sequence does not always have same length as the input.
+I'm working to rewrite the cost function API in this PR #802. But I'd like to hear opinions on what should be the best thing here. Right now, I'm planning to take mask out of the cost function completely since sample_weight can do that for us. The thing is, right now, we do not provide an automatic way to generate sample_weight AFAIK.
+Another problem mask, as implemented right now, is not stateful-friendly (not even adaptive first state friendly):
+self.activation(x_t + mask_tm1 * T.dot(h_tm1, u))
+This will reset the hidden state to zero, instead of using the previous value. I suggest to do:
+hh_t = self.activation(x_t + T.dot(h_tm1, u))
+h_t = mask * hh_t + (1-mask)*hh_t
+Note that this solution defaults to the previous one when not using stateful or initializing first states to zero. In this case the mask has always to be binary, which I believe is done already.
+In conclusion, we have two problems to solve:
+Take off mask of the cost function and provide a solution based on sample_weight
+Rewrite Recurrent layers to use previous hidden state instead of resetting.
+Let me know what you think.

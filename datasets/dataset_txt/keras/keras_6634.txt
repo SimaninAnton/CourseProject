@@ -1,0 +1,35 @@
+elanmart commented on 24 Sep 2015
+I'd like to ask for advice, extending #576 a little bit:
+Suppose we have a Power layer, which for input X computes X**2 and X**3.
+Add layer computes a + b + c for three arbitrary inputs.
+example = Graph()
+example.add_input('X1')
+example.add_input('X2')
+example.add_node(Power(), input='X1', name='pow')
+example.add_node(Add(), connection_map={'a':'X2', 'b':'pow_squared', 'c':'pow_cubed'})
+...
+The problem with this example is that we cannot simply use a connection_map to connect 2 layers with matching output/input numbers. We would somehow have to fork the outputs of Power into seperate Layers (here named pow_squared and pow_cubed), and then feed those into Add alongside X2.
+The question is: does it make sense to try implementing something like this? In this simple scenario we could get away with a simple Graph, but I imagine that allowing arbitrary computations inside a Layer and then producing several outputs is a more general solution.
+For example the following computation cannot be easily done using Keras (unless we go with some concating and slicing):
+X = get_input()
+a = f1(X)
+b = f2(X)
+out_1 = |a-b|
+out_2 = a / b
+If it does make sense, how could I implement this? The only solution I came up is not very elegant:
+Power outputs a dict {'squared' : X**2, 'cubed' : X**3}.
+Then, inside add_node method we do the following:
+# of course this would happen inside some kind of a loop
+f_square = Filter('squared')
+f_square.set_previous(self.nodes['pow'])
+f_cube = Filter('cubed')
+f_cube.set_previous(self.nodes['pow'])
+and then only worry about feeding f_square, f_cube and X2 to the Add layer.
+The Filter works like this:
+class Filter():
+    def __init__(self, key):
+        self.key=key
+    def get_output(self, train):
+        dct = self.get_input(train)
+        return dct[key]
+Again: does it make sense to implement such multi-output support, or I should find a smarter solution? Or simply go for implementing my heavily branching stuff in pure Theano?

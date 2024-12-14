@@ -1,0 +1,62 @@
+Contributor
+rigrassm commented on 29 Apr 2019
+My operating system is (include version):
+[root@host ~]# head -n4 /etc/os-release
+NAME=Fedora
+VERSION="29 (Server Edition)"
+ID=fedora
+VERSION_ID=29
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+OS Package Manager
+I ran this command and it produced this output:
+RFC-2136 configuration file contents(Secret is random data and not valid):
+dns_rfc2136_server = 1.2.3.4
+dns_rfc2136_name = certbot
+dns_rfc2136_secret = 
+Mjk0MjQzZTg1ODk5MTUyMWMyNjZkMjBhYWY1N2UzOGVkMGU1MmM1NDg1OTJiODVmYWY4M2M2N2Uy==
+dns_rfc2136_algorithm = hmac-sha512
+[root@host ~]# certbot certonly --dns-rfc2136 --dns-rfc2136-credentials /etc/letsencrypt/rfc2136.ini --server https://acme-v02.api.letsencrypt.org/directory --email email.address@domain.tld --agree-tos --no-eff-email -d 'domain.tld' -d '*.domain.tld'
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Plugins selected: Authenticator dns-rfc2136, Installer None
+Obtaining a new certificate
+Performing the following challenges:
+dns-01 challenge for domain.tld
+dns-01 challenge for domain.tld
+Cleaning up challenges
+Unknown algorithm: hmac-sha512.
+Certbot's behavior differed from what I expected because:
+The plugins documentation does not specify that the algorithm name is expected to be all uppercase letters. This causes the command to fail when the plugins configuration file specifies the algorithm with the name provided in lowercase letters.
+This is due to the algorithm validation function checking if the specified algorithm name is found in the algorithm dictionary which has the keys named with all uppercase letters.
+ 30     ALGORITHMS = {
+ 31       'HMAC-MD5': dns.tsig.HMAC_MD5,
+ 32       'HMAC-SHA1': dns.tsig.HMAC_SHA1,
+ 33       'HMAC-SHA224': dns.tsig.HMAC_SHA224,
+ 34       'HMAC-SHA256': dns.tsig.HMAC_SHA256,
+ 35       'HMAC-SHA384': dns.tsig.HMAC_SHA384,
+ 36       'HMAC-SHA512': dns.tsig.HMAC_SHA512
+ 37     }
+
+[...TRUNCATED...]
+
+ 57     def _validate_algorithm(self, credentials):
+ 58         algorithm = credentials.conf('algorithm')
+ 59         if algorithm:
+ 60             if not self.ALGORITHMS.get(algorithm):
+ 61                 raise errors.PluginError("Unknown algorithm: {0}.".format(algorithm))
+This issue occurred for me due to copying and pasting the results of the pdnsutil output when generating the key and after looking at other utilities I couldn't find an example that only worked with the algorithm name being in all caps.
+I'm proposing allowing the configuration option to be valid regardless of the case of the letters provided in the value which can easily be done with the patch below.
+diff --git a/certbot-dns-rfc2136/certbot_dns_rfc2136/dns_rfc2136.py b/certbot-dns-rfc2136/certbot_dns_rfc2136/dns_rfc2136.py
+index f985c9bf..2061374e 100644
+--- a/certbot-dns-rfc2136/certbot_dns_rfc2136/dns_rfc2136.py
++++ b/certbot-dns-rfc2136/certbot_dns_rfc2136/dns_rfc2136.py
+@@ -57,7 +57,7 @@ class Authenticator(dns_common.DNSAuthenticator):
+     def _validate_algorithm(self, credentials):
+         algorithm = credentials.conf('algorithm')
+         if algorithm:
+-            if not self.ALGORITHMS.get(algorithm):
++            if not self.ALGORITHMS.get(algorithm.upper()):
+                 raise errors.PluginError("Unknown algorithm: {0}.".format(algorithm))
+
+     def _setup_credentials(self):
+The change made wouldn't have any effect on existing users and would simply remove the strict casing requirement currently in place.
+I have a fork with this as well as an update to the unit test for this that I can submit a pull request for should there be any interest in the change.

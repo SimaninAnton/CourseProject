@@ -1,0 +1,46 @@
+kamil-forys commented on Apr 16, 2014
+tl;dr
+Scrapy can't follow links, which contains additional attribute with non-ASCII character.
+So, here is my test website:
+<html>
+    <body>
+        <a href="test1.html">test1</a>
+        <a foo="bar" href="test2.html">test2</a>
+        <a fØo="bar" href="test3.html">test3</a> <!-- Scrapy can't follow this one -->
+        <a href="test4.html" fØo="bar">test4</a>
+    </body>
+</html>
+Files named test[].html looks almost the same, here is a sample:
+<html>
+    <body>
+        <h1>Test 1</h1>
+    </body>
+</html>
+Here is my spider code (simplified):
+class followSpider(CrawlSpider):
+    name = 'follow'
+    allowed_domains = ['localhost']
+    start_urls = ['http://localhost/']
+
+    rules = [Rule(SgmlLinkExtractor(), callback='parse_follow')]
+
+    def parse_follow(self, response):
+        follow = FollowItem()
+        sel = Selector(response)
+        follow['url'] = response.url
+        follow['h1'] = sel.xpath("//h1/text()").extract()
+        return follow
+Executing of Scrapy (scrapy crawl follow -o follow.json), gives me follow.json file:
+{"url": "http://localhost/test4.html", "h1": ["Test 4"]}
+{"url": "http://localhost/test2.html", "h1": ["Test 2"]}
+{"url": "http://localhost/test1.html", "h1": ["Test 1"]}
+As you can see, Scrapy didn't crawl 'Test 3' website. Take a look again into test3 url:
+<a fØo="bar" href="test3.html">test3</a>
+It contains additional attribute with UTF character Ø. I think this might be essence of the problem.
+Take a look also into test4 url:
+<a href="test4.html" fØo="bar">test4</a>
+It also contains additional attribute with UTF character Ø, but it is placed after href attribute. Scrapy can follow this kind of url.
+Summary: Scrapy can't follow links, which contains additional attribute with non-ASCII character, which is placed before href attribute. I know, that non-ASCII characters are not allowed in html attribute names, but I have to crawl a website which contains plenty of this ugly urls.
+Can you fix it?
+$ scrapy -version
+Scrapy 0.22.2

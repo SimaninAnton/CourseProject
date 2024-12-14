@@ -1,0 +1,64 @@
+untrix commented on 30 Jun 2017 •
+edited
+I was reviewing the code of keras.backend().rnn for tensorflow backend and I think I may have found either a bug in the code or in the documentation. Specifically line# 2506 in the file https://github.com/fchollet/keras/blob/master/keras/backend/tensorflow_backend.py.
+2502                for state, new_state in zip(states, new_states):
+2503                    new_state.set_shape(state.get_shape())
+2504                tiled_mask_t = tf.tile(mask_t,
+2505                                       tf.stack([1, tf.shape(output)[1]]))
+2506                output = tf.where(tiled_mask_t, output, states[0])
+2507                new_states = [tf.where(tiled_mask_t, new_states[i], states[i]) for i in range(len(states))]
+2508                output_ta_t = output_ta_t.write(time, output)
+2509                return (time + 1, output_ta_t) + tuple(new_states)
+states[0] on line 2506 should either be new_states[0] i.e.
+2506                output = tf.where(tiled_mask_t, output, new_states[0])
+because the definition of step_function requires new_states[0] at time t to contain the output at time (t-1). Since states holds the previous state, i.e. state returned at time t-1, states[0] would contain the output at time t-2. But that's not what we want here; we want the previous output (i.e. at time t-1).
+Alternatively, - and I think this is more appropriate - the definition of step_function should be changed to require new_states[0] at time t to contain the output at time t (not t-1). In other words the following snippet
+2469        if mask is not None:
+2470            if not states:
+2471                raise ValueError('No initial states provided! '
+2472                                 'When using masking in an RNN, you should '
+2473                                 'provide initial states '
+2474                                 '(and your step function should return '
+2475                                 'as its first state at time `t` '
+2476                                 'the output at time `t-1`).')
+should change to
+2469        if mask is not None:
+2470            if not states:
+2471                raise ValueError('No initial states provided! '
+2472                                 'When using masking in an RNN, you should '
+2473                                 'provide initial states '
+2474                                 '(and your step function should return '
+2475                                 'as its first state at time `t` '
+2476                                 'the output at time `t`).')
+I checked SimpleRNN code and it is consistent with the fix # 2 above (i.e. documentation/definition of new_states should require the first entry to contain the current output, not the previous one). See lines 566 and 576 below.
+https://github.com/fchollet/keras/blob/master/keras/layers/recurrent.py
+555    def step(self, inputs, states):
+556        if self.implementation == 0:
+557            h = inputs
+558        else:
+559            if 0 < self.dropout < 1:
+560                h = K.dot(inputs * states[1], self.kernel)
+561            else:
+562                h = K.dot(inputs, self.kernel)
+563            if self.bias is not None:
+564                h = K.bias_add(h, self.bias)
+565
+566        prev_output = states[0]
+567        if 0 < self.recurrent_dropout < 1:
+568            prev_output *= states[2]
+569        output = h + K.dot(prev_output, self.recurrent_kernel)
+570        if self.activation is not None:
+571            output = self.activation(output)
+572
+573        # Properly set learning phase on output tensor.
+574        if 0 < self.dropout + self.recurrent_dropout:
+575            output._uses_learning_phase = True
+576        return output, [output]
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+[*] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[*] If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+[*] If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[*] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

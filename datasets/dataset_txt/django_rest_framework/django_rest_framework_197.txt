@@ -1,0 +1,202 @@
+txusdumort commented on 22 Mar 2019
+Checklist
+[*] I have verified that that issue exists against the master branch of Django REST framework.
+[*] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[*] This is not a usage question. (Those should be directed to the discussion group instead.)
+[*] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[*] I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+hi.
+I've a similar problem, wen the context is described below.
+I'm using MongoDB the connection is provided by Djongo, over is being used DRF to manage all request to mi API.
+My data (profile) is structured like next Json object
+{
+    "name" : "profile name",
+    "description" : "this is a description",
+    "params" : "X1, X2,X3, etc",
+    "config" : "CONFIG OF DEVICE",
+    "user" : {
+        "name" : "user name",
+        "middle_name" : "test middle name",
+        "last_name" : "test last name",
+        "email" : "test@test.com",
+        "institute" : {
+            "name" : "MIT",
+            "place" : {
+                "coordinates" : [ 30.0, 101.0,  0.0 ],
+                "type" : "Point"
+            },
+            "country" : "US"
+        }
+    },
+    "place" : {
+        "coordinates" : [  90.0, 901.0, 10.0 ],
+        "type" : "Point"
+    },
+    "devices" : [ 
+        {
+            "name" : "DEVICE 1",
+            "verification_code" : "",
+            "verificated" : 0,
+            "configuration" : "kjk",
+            "places" : [ 
+                {
+                    "coordinates" : [ 30.0,  101.0,  0.0 ],
+                    "type" : "Point"
+                }, 
+                {
+                    "coordinates" : [  31.0, 102.0, 1.0 ],
+                    "type" : "Point"
+                }
+            ]
+        }
+    ]
+}
+I know, the coordinates are wrong, but is just for test.
+Well I send that object to my view and then to the ProfileSerializer, this get the responsible to check the embedded objects (each one have your own serializer). After checking data, the info is saved without problem as you can see in next picture:
+But the problem is when I try to. retrieve all profiles. Just the coordinates are null, Other embedded objects are retrieved in good way, only the Place Object is malformed. Next, I'll show you the response:
+[
+{
+        "id": 22,
+        "name": "profile name",
+        "description": "this is a description",
+        "params": "X1, X2,X3, etc",
+        "config": "CONFIG OF DEVICE",
+        "user": {
+            "name": "user name",
+            "middle_name": "test middle name",
+            "last_name": "test last name",
+            "email": "test@test.com",
+            "institute": {
+                "name": "MIT",
+                "place": {
+                    "coordinates": **null**,
+                    "type": "Point"
+                },
+                "country": "US",
+                "created_at": "2019-03-21T20:43:33.928000Z"
+            },
+            "created_at": "2019-03-21T20:43:33.959000Z"
+        },
+        "place": {
+            "coordinates": **null**,
+            "type": "Point"
+        },
+        "devices": [
+            {
+                "name": "DEVICE 1",
+                "verificated": 0,
+                "configuration": "kjk",
+                "places": [
+                    {
+                        "coordinates": **null**,
+                        "type": "Point"
+                    },
+                    {
+                        "coordinates": **null**,
+                        "type": "Point"
+                    }
+                ],
+                "created_at": "2019-03-21T20:43:33.898000Z"
+            }
+        ],
+        "created_at": "2019-03-21T20:43:33.976000Z"
+    }
+]
+For this questions only I'll describe/show the serializer of one object, but if you need some info I'll get you as soon as possible.
+Models
+class Place(models.Model):
+    coordinates = models.ListField(blank=True, null=True, default=[0.0, 0.0, 0.0])
+    type = models.CharField(max_length=10, default="Point")
+    objects = models.DjongoManager()
+
+class Profile(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(default="Without Description")
+    params = models.TextField(default="No params")
+    config = models.CharField(max_length=200)
+    user = models.EmbeddedModelField(
+        model_container=User
+    )
+    place = models.EmbeddedModelField(
+        model_container=Place
+    )
+    devices = models.ArrayModelField(
+        model_container=Device
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    objects = models.DjongoManager()
+Serializers
+class PlaceSerializer(serializers.ModelSerializer):
+    coordinates = serializers.ListSerializer(
+        child=serializers.FloatField(),
+    )
+    class Meta:
+        model = Place
+        fields = ('id', 'coordinates', 'type')
+
+class ProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer( )
+    place = PlaceSerializer()
+    devices = DeviceSerializer( many=True)
+
+    class Meta:
+        model = Profile
+        fields = ('id', 'name', 'description', 'params', 'config',
+                  'user', 'place', 'devices', 'created_at')
+        depth=8
+
+    def create(self, validated_data):
+        # get principal fields
+        user_data = validated_data.pop('user')
+        **place_data = validated_data.pop('place')**
+        devices_data = validated_data.pop('devices')
+
+        # get nested fields
+
+        # devices nested fields
+        devices = []
+        for device in devices_data:
+            places = []
+            places_data = device.pop('places')
+            for place in places_data:
+                places.append( **Place(coordinates=place['coordinates'], type=place['type'])** )
+
+            device['places'] = places
+            devices.append( Device.objects.create(**device) )
+        validated_data['devices'] = devices
+        # user nested fields
+        institute_data = user_data.pop('institute')
+        place = institute_data.pop('place')
+        institute_data['place'] = Place(coordinates=place['coordinates'], type=place['type'])
+        user_data['institute'] = Institute.objects.create(**institute_data)
+        validated_data['user'] = User.objects.create(**user_data)
+        profile = Profile.objects.create(**validated_data)
+        return profile
+I've defined PlaceSerializer on many ways but all of them gets the same result, Below describe this ways
+CASE 1
+class PlaceSerializer(serializers.ModelSerializer):
+    coordinates = serializers.ListSerializer(
+        child=serializers.FloatField(),
+    )
+CASE 2
+class CoordinatesSerializer(serializers.ListSerializer):
+        child=serializers.FloatField()
+
+class PlaceSerializer(serializers.ModelSerializer):
+    coordinates = CoordinatesSerializer()
+CASE 3
+class PlaceSerializer(serializers.ModelSerializer):
+    coordinates = serializers.ListField(
+        child=serializers.FloatField()
+    )
+CASE 4
+class PlaceSerializer(serializers.ModelSerializer):
+    coordinates = serializers.ListField()
+CASE 5
+class PlaceSerializer(serializers.ModelSerializer):
+    coordinates = serializers.ListSerializer()
+#gives error for child is not present
+I had changed the types, CharField, IntegerField, FloatField, etc with same results.
+Another tests that I've done are append to serializer the methods create, update, to_representation, to_internal_value, all of this for to manage in a better way the info that will saved o retrieved but any works. Another curiosity, if I add a simple Listfield like [10,90,1], is saved and retrieved without problem in contrast when this ListField is inside Place Objects
+Please if you know how to solve this I'll glad to you.

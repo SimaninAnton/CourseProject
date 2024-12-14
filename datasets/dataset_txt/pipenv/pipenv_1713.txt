@@ -1,0 +1,30 @@
+ghost commented on 19 Dec 2017
+This is an issue caused by some odd quirk in how cmd.exe handles path names on Windows.
+As a result, it is possible to end up in a situation, where running a pipenv command (such as pipenv shell) in a directory, for which a valid virtualenv already exists, causes pipenv to ignore it and create a brand new one, with the same name (except for the hash).
+I have recently run into this issue at work. I have a workstation running Windows 10 and Python 2.7, which usually gets called from cmd.exe. What I have just discovered, is that depending on what command I use when changing directories, a slightly different path gets reported as pipfile_location in project.py:
+cd c:\tmp\test
+results in "c:\tmp\test" getting set as the current directory in cmd.exe and "c:\tmp\test\Pipfile" getting returned from pipfile_location
+vs.
+cd C:\tmp\test
+which leads to "C:\tmp\test" getting set as the current directory in cmd.exe and "C:\tmp\test\Pipfile" being the reported location of the Pipfile.
+Note the lower- vs. upper-case drive letter, which results in a completely different hash value for the pipfile location, and in consequence, a completely different name being returned from virtualenv_name in project.py, which then triggers the creation of a brand new virtualenv.
+This seems to affect only drive letters -- directory names are fine ("cd C:\TMP" produces "C:\tmp" on my machine). PowerShell does not seem to suffer from this.
+Describe your environment
+OS Type : Windows 10 x64 (build 1709)
+Python version: 2.7.14
+Pipenv version: 9.0.1
+Expected result
+'pipenv shell' activates the existing environment
+Actual result
+'pipenv shell' creates a new environment alongside the existing one
+Steps to replicate
+Provide the steps to replicate (which usually at least includes the commands and the Pipfile).
+With Python 2.7 (and pipenv) installed and added to the PATH env variable:
+Start the command prompt (Win+R, cmd.exe)
+From within the command prompt, create a directory somewhere on a disk (e.g. C:\temp\test)
+Go to that directory, typing the drive letter in upper case (cd C:\temp\test)
+Call pipenv to create a new virtualenv for that directory (e.g. pipenv install pylint)
+Change the current working directory to some other directory (e.g. cd C:)
+Go back to the test directory, typing the drive letter in lower case (cd c:\temp\test)
+Call pipenv shell (or pipenv --venv) inside the test directory -- pipenv will
+create a new virtualenv, ignoring the one created in step 4

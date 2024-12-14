@@ -1,0 +1,152 @@
+wrdcz commented on Mar 7, 2019
+Description
+Infinite loop when calling fit on AdaBoostClassifier.
+This problem is pretty wired because about half a year ago I run this code successfully and didn't do any change(if my memory serves me right) to environment but it aborts now.
+Steps/Code to Reproduce
+import os
+import re
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import AdaBoostClassifier
+
+
+def sorted_aphanumeric(data):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(data, key=alphanum_key)
+
+
+def read_file():
+    sample = [[0 for i in range(25)] for i in range(13233)]
+    label = []
+    ori_path = "D:\\app\\face\\face_databases\lfw_p\\"
+    path_list = sorted_aphanumeric(os.listdir(ori_path))
+    for j in range(len(path_list)):
+        path = path_list[j]
+
+        index = path.find('_')
+        label.append(int(path[:index]))
+
+        file = open(ori_path + path, 'r')
+        string_file = file.read()
+        separated_file = string_file.split(",")
+        for n in range(len(separated_file)):
+            sample[j][n] = int(separated_file[n])
+    return sample, label
+
+
+if __name__ == '__main__':
+    sample, label = read_file()
+
+    clf = AdaBoostClassifier(
+        DecisionTreeClassifier(max_depth=44, min_samples_split=12, min_samples_leaf=6, max_features=0.13),
+        n_estimators=10,
+        learning_rate=0.3, algorithm='SAMME.R', random_state=3)
+    clf.fit(sample, label)
+    label_pre = clf.predict(sample)
+    print(accuracy_score(label, label_pre))
+Expected Results
+Value returned by accuracy_score should be print
+Actual Results
+Traceback (most recent call last):
+  File "D:/Program Files/PY projects/adaboost.py", line 40, in <module>
+    clf.fit(sample, label)
+  File "D:\Program Files\python\lib\site-packages\sklearn\ensemble\weight_boosting.py", line 412, in fit
+    return super(AdaBoostClassifier, self).fit(X, y, sample_weight)
+  File "D:\Program Files\python\lib\site-packages\sklearn\ensemble\weight_boosting.py", line 143, in fit
+    random_state)
+  File "D:\Program Files\python\lib\site-packages\sklearn\ensemble\weight_boosting.py", line 472, in _boost
+    return self._boost_real(iboost, X, y, sample_weight, random_state)
+  File "D:\Program Files\python\lib\site-packages\sklearn\ensemble\weight_boosting.py", line 514, in _boost_real
+    y_coding = y_codes.take(classes == y[:, np.newaxis])
+MemoryError
+After that, program will step into
+if self.algorithm == 'SAMME.R':
+    return self._boost_real(iboost, X, y, sample_weight, random_state)
+on _boost() of AdaBoostClassifier in weight_boosting.py
+then
+for iboost in range(self.n_estimators):
+    # Boosting step
+    sample_weight, estimator_weight, estimator_error = self._boost(
+        iboost,
+        X, y,
+        sample_weight,
+        random_state)
+on fit() of BaseWeightBoosting in weight_boosting.py
+then
+return super(AdaBoostClassifier, self).fit(X, y, sample_weight)
+on fit() of AdaBoostClassifier in weight_boosting.py
+then return to clf.fit(sample, label) of my code, and stuck for 2 steps, then
+IncrementalDecoder.__init__(self, errors)
+on init of BufferedIncrementalDecoder in codecs.py
+then
+self.errors = errors
+on init() of IncrementalDecoder in codecs.py
+then
+IncrementalDecoder.__init__(self, errors)
+self.buffer = b""
+on init of BufferedIncrementalDecoder in codecs.py
+then
+return (self.buffer, 0)
+on getstate() of BufferedIncrementalDecoder in codecs.py
+then
+data = self.buffer + input
+(result, consumed) = self._buffer_decode(data, self.errors, final)
+# keep undecoded input until the next call
+self.buffer = data[consumed:]
+return result
+on decode() of BufferedIncrementalDecoder in codecs.py
+then getstate() again, then decode() again ... these two function will be repeated after that and memory will be consumed rapidly, memoryerror, abort at last
+Versions
+here's the result of running sklearn.show_versions()
+Could not locate executable g77
+Could not locate executable f77
+Could not locate executable ifort
+Could not locate executable ifl
+Could not locate executable f90
+Could not locate executable DF
+Could not locate executable efl
+Could not locate executable gfortran
+Could not locate executable f95
+Could not locate executable g95
+Could not locate executable efort
+Could not locate executable efc
+Could not locate executable flang
+don't know how to compile Fortran code on platform 'nt'
+
+System:
+    python: 3.6.2 (v3.6.2:5fd33b5, Jul  8 2017, 04:14:34) [MSC v.1900 32 bit (Intel)]
+executable: D:\Program Files\python\python.exe
+   machine: Windows-10-10.0.17763-SP0
+
+BLAS:
+    macros: 
+  lib_dirs: 
+cblas_libs: cblas
+
+Python deps:
+       pip: 19.0.3
+setuptools: 40.8.0
+   sklearn: 0.20.3
+     numpy: 1.16.2
+     scipy: 1.2.1
+    Cython: None
+    pandas: 0.24.1
+D:\Program Files\python\lib\site-packages\numpy\distutils\system_info.py:638: UserWarning: 
+    Atlas (http://math-atlas.sourceforge.net/) libraries not found.
+    Directories to search for the libraries can be specified in the
+    numpy/distutils/site.cfg file (section [atlas]) or by setting
+    the ATLAS environment variable.
+  self.calc_info()
+D:\Program Files\python\lib\site-packages\numpy\distutils\system_info.py:638: UserWarning: 
+    Blas (http://www.netlib.org/blas/) libraries not found.
+    Directories to search for the libraries can be specified in the
+    numpy/distutils/site.cfg file (section [blas]) or by setting
+    the BLAS environment variable.
+  self.calc_info()
+D:\Program Files\python\lib\site-packages\numpy\distutils\system_info.py:638: UserWarning: 
+    Blas (http://www.netlib.org/blas/) sources not found.
+    Directories to search for the sources can be specified in the
+    numpy/distutils/site.cfg file (section [blas_src]) or by setting
+    the BLAS_SRC environment variable.
+  self.calc_info()

@@ -1,0 +1,59 @@
+Contributor
+matthiasplappert commented on 25 Jul 2016
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+It appears that different backends in Keras product incompatible results. This has recently hit me in a case where I used Theano to perform the training on a GPU server but evaluated using TensorFlow due to the faster compile times on my client machine. This is potentially extremely confusing since the exact same weights, model and inputs produce different results depending on the used backend.
+Here's a script to easily and consistently reproduce the problem:
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers import Dense, Activation, Flatten, Convolution2D
+from keras.optimizers import RMSprop
+
+
+INPUT_SHAPE = (84, 84)
+WINDOW_LENGTH = 4
+
+
+# Seed numpy so that we always get the same results.
+np.random.seed(123)
+
+# Create model.
+model = Sequential()
+model.add(Convolution2D(32, 8, 8, subsample=(4, 4), input_shape=(WINDOW_LENGTH,) + INPUT_SHAPE))
+model.add(Activation('relu'))
+model.add(Convolution2D(64, 4, 4, subsample=(2, 2)))
+model.add(Activation('relu'))
+model.add(Convolution2D(64, 3, 3, subsample=(1, 1)))
+model.add(Activation('relu'))
+model.add(Flatten())
+model.add(Dense(512))
+model.add(Activation('relu'))
+model.add(Dense(6))
+model.add(Activation('linear'))
+model.compile(loss='mse', optimizer='sgd')
+print(model.summary())
+
+# Load weights and inputs.
+model.load_weights('weights.h5f')
+ins = np.load('inputs.npy')
+
+print('ins stats: {} {} {} {}'.format(np.mean(ins), np.std(ins), np.min(ins), np.max(ins)))
+out = model.predict_on_batch(ins)
+print('out stats: {} {} {} {}'.format(np.mean(out), np.std(out), np.min(out), np.max(out)))
+You can find the necessary weights.h5f and inputs.npy files here: data.zip. The weights have been computed using the Theano backend.
+Now, run the following two commands:
+KERAS_BACKEND=theano python test.py
+[...]
+ins stats: 0.501073653378 0.288006601804 3.61132652882e-06 0.999969375844
+out stats: 5.00053977966 5.88441133499 -6.34532308578 17.0934753418
+and
+KERAS_BACKEND=tensorflow python test.py
+[...]
+ins stats: 0.501073653378 0.288006601804 3.61132652882e-06 0.999969375844
+out stats: 5.99497842789 4.11607885361 -3.65094423294 12.9958868027
+As you can see, the output is different although the model, weights and inputs are identical.
+This is pretty problematic in my opinion since this makes it essentially impossible to share weights without also specifying the backend that was used. I'm not entirely sure if this is only a problem with CNNs or a general issue.

@@ -1,0 +1,42 @@
+dtsmith2001 commented on Jun 25, 2015
+I observed a long delay between fitting trees after constructing a RandomForestClassifier with n_jobs=20. I fired up iPython and used
+%runit -l forest.py forest.fit(X, y)
+(where the forest object is the constructed classifier - see below). I found that the function _set_oob_score was taking up most of the time. This function is in the class ForestClassifier.
+I am using scikit-learn version 0.16.1 with Anaconda 3 on Windows Server 2008 R2 Enterprise x64.
+Here is the code I’m using to create the forest object I use with %runit:
+import sklearn as sk
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import make_classification
+
+print("scikit-learn version {0}".format(sk.__version__))
+
+X, y = make_classification(n_samples=5000,
+                     n_features=30, n_informative=10, n_redundant=0, n_repeated=0,
+                     n_classes=2, random_state=0, weights=[0.9, 0.1],  # unbalanced
+                     shuffle=False)
+
+print("Number of cases {0} number of features {1}".format(X.shape[0], X.shape[1]))
+forest = RandomForestClassifier(n_estimators=50,
+                     random_state=100, oob_score=True,
+                     bootstrap=True, verbose=2)
+At this point we are ready to use %runit as I illustrated above.
+My own use case corresponds to using n_samples=400000 and n_features=3500 (n_informative is not relevant in this example).
+The issue here is that _set_oob_score uses vastly more time than actually creating the trees, particularly with my use case of 400,000 samples and 3,500 features.
+Here is a completely reproducible example of the code I'm running. I can see in Task Manager that the processors are in use generating the trees, but after the number of processors in use goes back to one, there is a long delay before fit finishes. Note that this code uses 20 processors, over 17 gb memory, and takes a lot of time on my own computer. YMMV.
+import sklearn as sk
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import make_classification
+
+print("scikit-learn version {0}".format(sk.__version__))
+
+X, y = make_classification(n_samples=400000, n_features=3500,
+                           n_informative=10, n_redundant=0, n_repeated=0,
+                           n_classes=2, random_state=0, weights=[0.9, 0.1],  # unbalanced
+                           shuffle=False)
+
+print("Number of cases {0} number of features {1}".format(X.shape[0], X.shape[1]))
+forest = RandomForestClassifier(n_estimators=50, n_jobs=20,
+                                random_state=100, oob_score=True, bootstrap=True, verbose=2)
+forest.fit(X, y)
+print("Finished")
+Please rewrite _set_oob_score to improve performance.

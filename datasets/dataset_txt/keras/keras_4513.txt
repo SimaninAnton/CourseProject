@@ -1,0 +1,27 @@
+AtlantixJJ commented on 26 Aug 2016 •
+edited
+I see the recent commit of CTC and want to apply it to speech recognition. As we know, the phoneme sequence in a fragment of speech varies a lot, but the example code assumes that all sequences are of the same length, and passes the length as parameter to CTC cost function. So I tried to use the ctc_cost without label sequence.
+But after a few days, I found myself end up with inf number errors. Here I will show my implementation:
+This is relevant code for network building:
+Setting input to None or we have to set a max length
+labels = layers.Input(shape=[None],dtype='float32',name="CTC_Label")
+...
+labels is a 2-dim keras tensor. I have to discard its first dimension or ctc_cost cannot compile
+def ctc_onebatch(args):
+pred,lab = args
+return K.ctc_cost(pred[:,2:,:],lab[0,:])
+ctc_loss_out = layers.Lambda(ctc_onebatch,output_shape=(1,),name="CTC_Loss")([FramePred,labels])
+self.model = models.Model(input=[FrameInput, labels],output=[ctc_loss_out])
+lr = 0.001
+clipnorm = 5
+sgd = SGD(lr=lr, decay=5e-5, momentum=0.9, nesterov=True, clipnorm=clipnorm)
+I have tried loss={'CTC_Loss': lambda labels, FramePred: FramePred} but the result doesn't change..
+self.model.compile(loss={'CTC_Loss': lambda labels, FramePred: ctc_loss_out}, optimizer=sgd)
+This relevant code for training:
+train_x is a (1,405,x) tensor (padded to same length)
+train_y is a (1,x) tensor with various length
+MyNet.model.train_on_batch({"Framewise_Input":train_x,"CTC_Label":train_y} ,train_y)
+In this way, my model compiles and runs but the output seems to be inf forever.
+But I cannot pad the label sequence to make the length all the same. It is nonsense.
+Is it possible to use CTC without a predefined length? Any advice is much appreciated.
+1

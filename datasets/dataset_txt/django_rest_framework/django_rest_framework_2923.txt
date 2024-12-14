@@ -1,0 +1,161 @@
+ivanff commented on 6 Feb 2013
+#-*- coding:utf-8 -*-
+from utils.tools import rm_list
+
+__author__ = "ivan fedoseev"
+
+from django.utils.datastructures import SortedDict
+from django.db import models
+
+from psearch.models import Program
+from restframework import serializers, fields
+
+class CustomModelSerializer(serializers.ModelSerializer):
+    """
+    read_only for add fields
+    """
+    exclude_foreign_fields = {}
+
+    def get_related_field(self, model_field, to_many=False):
+        kwargs = {
+            'null': model_field.null,
+            'queryset': model_field.rel.to._default_manager,
+        }
+
+        if to_many:
+            kwargs['exclude_foreign'] = self.exclude_foreign_fields.get(model_field.name, [])
+            # print 'M2M:', model_field.rel.to, kwargs['exclude_foreign']
+            return SerializerManyRelatedField(**kwargs)
+        kwargs['exclude_foreign'] = self.exclude_foreign_fields.get(model_field.rel.to._meta.module_name, [])
+        # print 'FK:', model_field.rel.to, kwargs['exclude_foreign']
+        return SerializerRelatedField(**kwargs)
+
+    def get_default_fields(self):
+        """
+        exclude lock fields and set read_only for all model fields
+        """
+        fields = super(CustomModelSerializer, self).get_default_fields()
+        def set_read_only(v):
+            v.read_only = True
+            return v
+        return SortedDict((k, set_read_only(v)) for k, v in fields.iteritems() if not k.startswith('lock_'))
+
+    def save(self, save_m2m=True):
+        return
+
+class SerializerManyRelatedField(fields.ManyRelatedField):
+
+    def __init__(self, *args, **kwargs):
+        self.extra_fields = kwargs.pop('extra_fields', {})
+        self.extra_filter = kwargs.pop('extra_filter', {})
+        self.exclude_foreign = kwargs.pop('exclude_foreign', [])
+
+        self.exclude_foreign.extend(['id', 'program']) # default
+        super(SerializerManyRelatedField, self).__init__(*args, **kwargs)
+        # if self.queryset:
+        #     print self.exclude_foreign, self.queryset.model
+
+    def field_to_native(self, obj, field_name):
+        value = getattr(obj, self.source or field_name)
+        return [self.to_native(item) for item in value.filter(**self.extra_filter)]
+
+    def to_native(self, value):
+        if not isinstance(value, models.Model):
+            return super(SerializerManyRelatedField, self).to_native(value)
+
+        to_delete = []
+        exclude_foreign_fields={}
+
+        for field_path in self.exclude_foreign:
+            root_path = field_path.split('__', 1)[0]
+            paths = field_path.split('__', 1)[1:]
+            if hasattr(value, root_path) and paths:
+                to_delete.append(self.exclude_foreign.index(field_path))
+                exclude_foreign_fields.setdefault(root_path, []).extend(paths)
+
+        # rm_list(self.exclude_foreign, to_delete)
+        class tmpSerializer_(CustomModelSerializer):
+
+            @classmethod
+            def setup_fields(cls, exclude_foreign_fields):
+                cls.exclude_foreign_fields = exclude_foreign_fields
+                for field_name, callback in self.extra_fields.iteritems():
+                    cls.base_fields[field_name] = callback
+                return cls
+
+            class Meta:
+                model = value.__class__
+                exclude = self.exclude_foreign
+
+        tmpSerializer = tmpSerializer_.setup_fields(exclude_foreign_fields)
+        value_s = tmpSerializer(instance=value)
+        return value_s.data
+
+class SerializerRelatedField(fields.RelatedField):
+
+    def __init__(self, *args, **kwargs):
+        self.extra_fields = kwargs.pop('extra_fields', {})
+        self.exclude_foreign = kwargs.pop('exclude_foreign', [])
+
+        self.exclude_foreign.extend(['id']) # default
+
+        super(SerializerRelatedField, self).__init__(*args, **kwargs)
+
+    def to_native(self, value):
+
+        if not isinstance(value, models.Model):
+            return super(SerializerRelatedField, self).to_native(value)
+
+        class tmpSerializer_(CustomModelSerializer):
+
+            @classmethod
+            def setup_fields(cls):
+                for field_name, callback in self.extra_fields.iteritems():
+                    cls.base_fields[field_name] = callback
+                return cls
+
+            class Meta:
+                model = value.__class__
+                exclude = self.exclude_foreign
+
+        tmpSerializer = tmpSerializer_.setup_fields()
+        value_s = tmpSerializer(instance=value)
+        return value_s.data
+#
+# Work classes
+#
+
+class ProgramSerializer(CustomModelSerializer):
+
+    #reversed foreign
+    links = SerializerManyRelatedField(source='links', exclude_foreign=['url_digest'], extra_filter={'hidden': False})
+    tracks = SerializerManyRelatedField(source='tracks', exclude_foreign=['digest'])
+    courses = SerializerManyRelatedField(source='courses', exclude_foreign=['digest'],
+        extra_fields={'get_course_type_display': fields.CharField('get_course_type_distplay'),})
+    lang_req = SerializerManyRelatedField(source='language_requirements',
+        extra_fields={'get_language_exam_display': fields.CharField('get_language_exam_distplay')})
+    start_dates = SerializerManyRelatedField(source='start_dates')
+
+    #m2m
+    cities = SerializerManyRelatedField(source='cities', exclude_foreign=['category'])
+    fields_of_study = SerializerManyRelatedField(source='fields_of_study',
+        exclude_foreign=['category__type', 'category__name', 'category__tooltip'])
+
+    #non default fields
+    has_deadline = serializers.SerializerMethodField('get_has_deadline')
+    has_deadline_foreign = serializers.SerializerMethodField('get_has_deadline_foreign')
+    links_mv = SerializerManyRelatedField(source='links', extra_filter={'link_type': 'mv', 'hidden': False})
+    links_br = SerializerManyRelatedField(source='links', extra_filter={'link_type': 'br', 'hidden': False})
+    degree = SerializerRelatedField(source='degree', exclude_foreign=['description'],
+        extra_fields={'get_template_name': fields.CharField('get_template_name')})
+
+    def get_has_deadline(self, obj):
+        return obj.start_dates.filter(deadline__isnull=False).exists()
+
+    def get_has_deadline_foreign(self, obj):
+        return obj.start_dates.filter(deadline_foreign__isnull=False).exists()
+
+    class Meta:
+        exclude = ('organisation', 'level', 'desc_postfix', 'desc_prefix', 'slug', 'is_hodex', 'highlight', 'hidden',\
+            'html_description', 'hodex_url')
+        model = Program

@@ -1,0 +1,74 @@
+wwfan91 commented on 28 Nov 2016
+I try to use AttentionLSTMWrapper in this attention_lstm.py
+My code is to reading two sequences, seq1 and seq2 and output a single score. The raw inputs seq1, seq2 are first passed into Embedding layers. Then the two will go through LSTM layers. seq2 will be used as attention vector for seq1. The model in the end will return a single output value.
+My code is as following:
+from keras.models import Sequential
+from keras.layers import Dense, Activation, Embedding, Flatten, Input, LSTM
+import numpy as np
+from keras.layers import merge
+from keras.models import Model
+from attention_lstm import AttentionLSTMWrapper
+
+in_txt = Input(shape=(10,64), dtype='float32')
+in_att = Input(shape=(10,64), dtype='float32')
+lstm_att = LSTM(64,return_sequences=False)(in_att)
+in_encoder = LSTM(64,return_sequences=True)
+in_encoder = AttentionLSTMWrapper(in_encoder, lstm_att, single_attention_param=True)
+emb = in_encoder(in_txt)
+emb = Flatten()(emb)
+out = merge([emb, lstm_att], mode='concat', concat_axis=-1)
+out = Dense(1)(out)
+model = Model(input=[in_txt, in_att], output=out)
+
+model.compile(loss='binary_crossentropy',
+       optimizer='adam',
+       metrics=['acc'])
+
+
+in_1 = Input(shape=(10,), dtype='int32')
+in_2 = Input(shape=(10,), dtype='int32')
+emb_1 = Embedding(1000, 64, input_length=10)(in_1)
+emb_2 = Embedding(1000, 64, input_length=10)(in_2)
+pred = model([emb_1,emb_2])
+model_with_embedding = Model(input=[in_1,in_2], output=pred)
+model_with_embedding.compile(loss='binary_crossentropy', 
+       optimizer='adam',
+       metrics=['acc'])
+
+
+input_array1 = np.random.randint(1000, size=(32, 10))
+input_array2 = np.random.randint(1000, size=(32, 10))
+
+model_with_embedding.fit([input_array1,input_array2],[1]*32)
+The problem is when I fit the model_with_embedding, an error happens:
+Using Theano backend.
+Traceback (most recent call last):
+  File "test_keras.py", line 73, in <module>
+    model_with_embedding.fit([input_array1,input_array2],[1]*32)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\keras\engine\training.py", line 1079, in fit
+    self._make_train_function()
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\keras\engine\training.py", line 703, in _make_train_function
+    **self._function_kwargs)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\keras\backend\theano_backend.py", line 727, in function
+    return Function(inputs, outputs, updates=updates, **kwargs)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\keras\backend\theano_backend.py", line 713, in __init__
+    **kwargs)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\compile\function.py", line 320, in function
+    output_keys=output_keys)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\compile\pfunc.py", line 479, in pfunc
+    output_keys=output_keys)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\compile\function_module.py", line 1776, in orig_function
+    output_keys=output_keys).create(
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\compile\function_module.py", line 1428, in __init__
+    accept_inplace)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\compile\function_module.py", line 177, in std_fgraph
+    update_mapping=update_mapping)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\gof\fg.py", line 171, in __init__
+    self.__import_r__(output, reason="init")
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\gof\fg.py", line 360, in __import_r__
+    self.__import__(variable.owner, reason=reason)
+  File "c:\toolkits\anaconda2-4.2.0\lib\site-packages\theano-0.8.2-py2.7.egg\theano\gof\fg.py", line 474, in __import__
+    r)
+theano.gof.fg.MissingInputError: ("An input of the graph, used to compute Reshape{2}(input_2, TensorConstant{[-1 64]}), was not provided and not given a value.Use the Theano flag exception_verbosity='high',for more information on this error.", input_2)
+I have tried to fix it for 2 days but still stuck.
+I would be very grateful if you could help me take a look and fix that.

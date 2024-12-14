@@ -1,0 +1,85 @@
+Member
+elacuesta commented on Dec 29, 2017
+The Pickle-based disk queues silently serialize requests that shouldn't be serialized in Python<=3.5. I found this problem when dumping a request with an ItemLoader object in its meta dict. Python 3.6 fails in this line with TypeError: can't pickle HtmlElement objects, because the loader contains a Selector, which in turns contains an HtmlElement object.
+I tested this using the https://github.com/scrapinghub/scrapinghub-stack-scrapy repository, and found that pickle.loads(pickle.dumps(selector)) doesn't fail, but generates a broken object.
+Python 2.7, Scrapy 1.3.3 (https://github.com/scrapinghub/scrapinghub-stack-scrapy/tree/branch-1.3)
+root@04bfc6cf84cd:/# scrapy version -v
+Scrapy    : 1.3.3
+lxml      : 3.7.2.0
+libxml2   : 2.9.3
+cssselect : 1.0.1
+parsel    : 1.1.0
+w3lib     : 1.17.0
+Twisted   : 16.6.0
+Python    : 2.7.14 (default, Dec 12 2017, 16:55:09) - [GCC 4.9.2]
+pyOpenSSL : 16.2.0 (OpenSSL 1.0.1t  3 May 2016)
+Platform  : Linux-4.9.44-linuxkit-aufs-x86_64-with-debian-8.10
+root@04bfc6cf84cd:/# scrapy shell "http://example.org"
+2017-12-29 16:49:27 [scrapy.utils.log] INFO: Scrapy 1.3.3 started (bot: scrapybot)
+(...)
+>>> from six.moves import cPickle as pickle
+>>> s2 = pickle.loads(pickle.dumps(response.selector, protocol=2))
+>>> response.selector.css('a')
+[<Selector xpath=u'descendant-or-self::a' data=u'<a href="http://www.iana.org/domains/exa'>]
+>>> s2.css('a')
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+  File "/usr/local/lib/python2.7/site-packages/parsel/selector.py", line 227, in css
+    return self.xpath(self._css2xpath(query))
+  File "/usr/local/lib/python2.7/site-packages/parsel/selector.py", line 203, in xpath
+    **kwargs)
+  File "src/lxml/lxml.etree.pyx", line 1584, in lxml.etree._Element.xpath (src/lxml/lxml.etree.c:59349)
+  File "src/lxml/xpath.pxi", line 257, in lxml.etree.XPathElementEvaluator.__init__ (src/lxml/lxml.etree.c:170478)
+  File "src/lxml/apihelpers.pxi", line 19, in lxml.etree._assertValidNode (src/lxml/lxml.etree.c:16482)
+AssertionError: invalid Element proxy at 140144569743064
+Python 3.5, Scrapy 1.3.3 (https://github.com/scrapinghub/scrapinghub-stack-scrapy/tree/branch-1.3-py3)
+root@1945e2154919:/# scrapy version -v
+Scrapy    : 1.3.3
+lxml      : 3.7.2.0
+libxml2   : 2.9.3
+cssselect : 1.0.1
+parsel    : 1.1.0
+w3lib     : 1.17.0
+Twisted   : 16.6.0
+Python    : 3.5.4 (default, Dec 12 2017, 16:43:39) - [GCC 4.9.2]
+pyOpenSSL : 16.2.0 (OpenSSL 1.0.1t  3 May 2016)
+Platform  : Linux-4.9.44-linuxkit-aufs-x86_64-with-debian-8.10
+root@1945e2154919:/# scrapy shell "http://example.org"
+2017-12-29 16:52:37 [scrapy.utils.log] INFO: Scrapy 1.3.3 started (bot: scrapybot)
+(...)
+>>> from six.moves import cPickle as pickle
+>>> s2 = pickle.loads(pickle.dumps(response.selector, protocol=2))
+>>> response.selector.css('a')
+[<Selector xpath='descendant-or-self::a' data='<a href="http://www.iana.org/domains/exa'>]
+>>> s2.css('a')
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+  File "/usr/local/lib/python3.5/site-packages/parsel/selector.py", line 227, in css
+    return self.xpath(self._css2xpath(query))
+  File "/usr/local/lib/python3.5/site-packages/parsel/selector.py", line 203, in xpath
+    **kwargs)
+  File "src/lxml/lxml.etree.pyx", line 1584, in lxml.etree._Element.xpath (src/lxml/lxml.etree.c:59349)
+  File "src/lxml/xpath.pxi", line 257, in lxml.etree.XPathElementEvaluator.__init__ (src/lxml/lxml.etree.c:170478)
+  File "src/lxml/apihelpers.pxi", line 19, in lxml.etree._assertValidNode (src/lxml/lxml.etree.c:16482)
+AssertionError: invalid Element proxy at 139862544625976
+Python 3.6, Scrapy 1.3.3 (https://github.com/scrapinghub/scrapinghub-stack-scrapy/tree/branch-1.3-py3)
+root@43e690443ca7:/# scrapy version -v
+Scrapy    : 1.3.3
+lxml      : 3.7.2.0
+libxml2   : 2.9.3
+cssselect : 1.0.1
+parsel    : 1.1.0
+w3lib     : 1.17.0
+Twisted   : 16.6.0
+Python    : 3.6.4 (default, Dec 21 2017, 01:35:12) - [GCC 4.9.2]
+pyOpenSSL : 16.2.0 (OpenSSL 1.0.1t  3 May 2016)
+Platform  : Linux-4.9.44-linuxkit-aufs-x86_64-with-debian-8.10
+root@43e690443ca7:/# scrapy shell "http://example.org"
+2017-12-29 16:54:49 [scrapy.utils.log] INFO: Scrapy 1.3.3 started (bot: scrapybot)
+(...)
+>>> from six.moves import cPickle as pickle
+>>> s2 = pickle.loads(pickle.dumps(response.selector, protocol=2))
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+TypeError: can't pickle HtmlElement objects
+👍 3

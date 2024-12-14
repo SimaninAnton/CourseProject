@@ -1,0 +1,26 @@
+henrypinkard commented on 12 Jan 2019
+I'm trying to create a custom RNN cell that takes in a list of input tensors (e.g. feature blocks from a convolutional layer) and has multiple tensors in its state (with the same dimensions as the inputs). My approach for doing this was to create a custom RNN cell and pass it to the RNN layer. However, an error occurs because RNN.input_spec is set to [None] rather than the actual size of the input. Looking through source code of RNN and it's super class, I don't see anywhere where this input_spec would be correctly set, so I'm wondering if this is a bug in its implementation. The code to reproduce it is copied below. It doesn't seem to have anything to do with the custom RNN cell I wrote, so for brevity I replaced it with SimpleRNNCell (even though the architecture this gives probably won't work for other reasons).
+from tensorflow import keras as ks
+from pyramid_rnn import PyramidRNNCell
+
+# Build initial featurizer which takes an image as an input and outputs a list of features
+inputs = ks.layers.Input(shape=(512, 512, 1))
+outputs = [ks.layers.Conv2D(32, 5)(inputs), ks.layers.Conv2D(54, 10)(inputs)]
+featurizer = ks.models.Model(inputs=inputs, outputs=outputs)
+feature_shapes = [tensor.shape for tensor in featurizer.outputs]
+
+# make list of time series for inputs to RNN
+time_series_input = ks.layers.Input(shape=(None, 512, 512, 1))
+rnn_inputs = []
+# apply TimeDistributed to each feature block
+for feature_block in featurizer.outputs:
+    rnn_inputs.append(ks.layers.TimeDistributed(
+        ks.models.Model(featurizer.input, feature_block))(time_series_input))
+
+# create initial state for RNN, which are same dimensionality as inputs
+rnn_initial_state = []
+for shapes in feature_shapes:
+    rnn_initial_state.append(ks.layers.Input(shape=shapes[1:]))
+
+cell = ks.layers.SimpleRNNCell(10)
+rnn_output = ks.layers.RNN(cell)([rnn_inputs, *rnn_initial_state])

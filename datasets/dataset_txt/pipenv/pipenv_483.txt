@@ -1,0 +1,55 @@
+Contributor
+Jamim commented on 2 Nov 2018
+Issue description
+On OS which handles file systems in case-sensitive manner (e.g. Linux based), pipenv mistakenly uses virtual environment which corresponds to similar-named directory if it exists.
+Expected result
+pipenv creates and uses different virtual environments for projects in different directories which names are equals when they are normalized to lower or upper case.
+Actual result
+pipenv uses single virtual environment for different projects.
+Steps to replicate
+mkdir pipenv-tests/{test,TEST} -p
+cd pipenv-tests/test
+pipenv shell
+pipenv --venv
+exit
+cd ../TEST
+pipenv shell
+pipenv --venv
+Here is what I've got using d985784 revision of pipenv (current master):
+~/projects $ mkdir pipenv-tests/{test,TEST} -p
+~/projects $ cd pipenv-tests/test
+~/projects/pipenv-tests/test $ pipenv shell
+Creating a virtualenv for this project…
+Pipfile: /home/mim/projects/pipenv-tests/test/Pipfile
+Using /usr/bin/python3 (3.6.6) to create virtualenv…
+✔ Complete Running... Installing setuptools, pip, wheel...done.
+Already using interpreter /usr/bin/python3
+Using base prefix '/usr'
+New python executable in /home/mim/.local/share/virtualenvs/test-Ic8GqeXz/bin/python3
+Also creating executable in /home/mim/.local/share/virtualenvs/test-Ic8GqeXz/bin/python
+Installing setuptools, pip, wheel...done.
+Virtualenv location: /home/mim/.local/share/virtualenvs/test-Ic8GqeXz
+Creating a Pipfile for this project…
+Launching subshell in virtual environment…
+~/projects/pipenv-tests/test $  . /home/mim/.local/share/virtualenvs/test-Ic8GqeXz/bin/activate
+(test) ~/projects/pipenv-tests/test $ pipenv --venv
+/home/mim/.local/share/virtualenvs/test-Ic8GqeXz
+(test) ~/projects/pipenv-tests/test $ exit
+exit
+~/projects/pipenv-tests/test $ cd ../TEST
+~/projects/pipenv-tests/TEST $ pipenv shell
+Creating a Pipfile for this project…
+Launching subshell in virtual environment…
+~/projects/pipenv-tests/TEST $  . /home/mim/.local/share/virtualenvs/test-Ic8GqeXz/bin/activate
+(test) ~/projects/pipenv-tests/TEST $ pipenv --venv
+/home/mim/.local/share/virtualenvs/test-Ic8GqeXz
+As you can see, /home/mim/.local/share/virtualenvs/test-Ic8GqeXz was used for both test and TEST projects.
+Environment
+$ lsb_release -d
+Description: Ubuntu 18.04.1 LTS
+$ pipenv --support
+Root cause
+I tried to investigate this bug and found that it was introduced by #2513.
+The root cause of the issue is that os.name != "nt" condition was mistakenly converted to fnmatch.fnmatch('A', 'a') when it should have been converted to not fnmatch.fnmatch('A', 'a').
+Solution
+I created a PR #2883 that fixes this issue.

@@ -1,0 +1,49 @@
+StabbarN commented on 11 Nov 2016
+How to start using message and code instead of detail on exceptions and at the same time keep existing logic in the default exception_handler?
+Would be great if we could just override the code for generation of response body and not the whole exception_handler.
+Here is our temporary solution:
+def _format_api_exception_with_full_details(exc):
+    return exc.get_full_details()
+
+
+def _format_http404_with_full_details(exc):
+    msg = _('Not found.')
+    return {
+        'message': six.text_type(msg),
+        'code': 'not_found',
+    }
+
+
+def _format_permission_denied_with_full_details(exc):
+    msg = _('Permission denied.')
+    return {
+        'message': six.text_type(msg),
+        'code': 'permission_denied',
+    }
+
+
+# Only modify Response's data
+def our_exception_handler(exc, context):
+    if isinstance(exc, exceptions.APIException):
+        headers = {}
+        if getattr(exc, 'auth_header', None):
+            headers['WWW-Authenticate'] = exc.auth_header
+        if getattr(exc, 'wait', None):
+            headers['Retry-After'] = '%d' % exc.wait
+
+        data = _format_api_exception_with_full_details(exc)
+        set_rollback()
+        return Response(data, status=exc.status_code, headers=headers)
+
+    elif isinstance(exc, Http404):
+        data = _format_http404_with_full_details(exc)
+        set_rollback()
+        return Response(data, status=status.HTTP_404_NOT_FOUND)
+
+    elif isinstance(exc, PermissionDenied):
+        data = _format_permission_denied_with_full_details(exc)
+        set_rollback()
+        return Response(data, status=status.HTTP_403_FORBIDDEN)
+
+    return None
+Please compare our_exception_handler with https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/views.py#L56

@@ -1,0 +1,72 @@
+tomekwojcik commented on 8 Jan 2013
+I've stumbled upon a weird problem that occurs when using AsyncHTTPTestCase to test a handler that's asynchronous.
+Example code to reproduce the bug:
+application.py
+import tornado.httpclient
+import tornado.ioloop
+import tornado.web
+
+
+class MainHandler(tornado.web.RequestHandler):
+    @tornado.web.asynchronous
+    def get(self):
+        http = tornado.httpclient.AsyncHTTPClient()
+        http.fetch("http://httpbin.org/get",
+                   callback=self.on_response)
+
+    def on_response(self, response):
+        if response.error: raise tornado.web.HTTPError(500)
+        self.write(response.body)
+        self.finish()
+
+application = tornado.web.Application([
+    (r"/", MainHandler),
+], debug=True)
+
+if __name__ == "__main__":
+    application.listen(12345)
+    tornado.ioloop.IOLoop.instance().start()
+test_application.py
+# -*- coding: utf-8 -*-
+
+import tornado.testing
+import unittest
+
+import application
+
+
+class AsyncAppTestCase(tornado.testing.AsyncHTTPTestCase):
+    def get_app(self):
+        return application.application
+
+    def test_async_response(self):
+        self.http_client.fetch(self.get_url('/'), self.stop)
+        response = self.wait()
+        assert response.body == 'OK'
+
+if __name__ == '__main__':
+    unittest.main()
+Running $ python test_application.py yields the following result:
+F
+======================================================================
+FAIL: test_async_response (__main__.AsyncAppTestCase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "test_acync.py", line 15, in test_async_response
+    response = self.wait()
+  File "/Users/bilbo/Projects/playground/lib/python2.7/site-packages/tornado/testing.py", line 205, in wait
+    self.__rethrow()
+  File "/Users/bilbo/Projects/playground/lib/python2.7/site-packages/tornado/testing.py", line 149, in __rethrow
+    raise_exc_info(failure)
+  File "/Users/bilbo/Projects/playground/lib/python2.7/site-packages/tornado/testing.py", line 186, in timeout_func
+    timeout)
+AssertionError: Async operation timed out after 5 seconds
+
+----------------------------------------------------------------------
+Ran 1 test in 5.012s
+
+FAILED (failures=1)
+Querying the server with curl or anything works as expected.
+I've checked with PDB and it looks like the MainHandler.on_response method isn't invoked in tests.
+Any ideas?
+NOTE: As you can see the code is pretty much copy-pasted from examples given in the docs. The same happens in a production app I'm working on which code is pretty much the same (except using AsyncMongo instead of HTTPClient) but I cannot share it.

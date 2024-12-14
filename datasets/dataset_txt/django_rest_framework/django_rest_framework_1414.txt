@@ -1,0 +1,29 @@
+nplatias commented on 27 Nov 2015
+I am using a UUIDField in a serializer as such:
+    class ExampleSerializer(serializers.Serializer):
+        some_id = serializers.UUIDField(required = False)
+
+
+    class ExampleView(APIView):
+
+        def post(self, request):
+            example_serializer = ExampleSerializer(data = request.data)
+            example_serializer.is_valid()
+If I make a request to this view with the parameter some_id mapped to a list, e.g. {"some_id": [1, 2, 3]}, I get an AttributeError: list object has no attribute replace, even though the expected behavior is that the exception is caught by is_valid and its return value is False (since a list is clearly not valid input to a UUIDField)
+The AttributeError is thrown by Python's uuid.py (I am on Python 3.4.3) at the following line of UUID's __init__ method:
+    if hex is not None:
+        hex = hex.replace('urn:', '').replace('uuid:', '')
+I believe the issue lies in the to_internal_value method of UUIDField when it calls the UUID constructor to construct the field from the input data (code from https://github.com/tomchristie/django-rest-framework/blob/a8deb380ff70b5df8d3c62c9be981b60e363c7f9/rest_framework/fields.py#L767):
+def to_internal_value(self, data):
+    if not isinstance(data, uuid.UUID):
+        try:
+            if isinstance(data, six.integer_types):
+                return uuid.UUID(int=data)
+            else:
+                return uuid.UUID(hex=data)
+        except (ValueError, TypeError):
+            self.fail('invalid', value=data)
+    return data
+Shouldn't AttributeError also be caught here before calling self.fail (to register validation failure)?
+I an on djangorestframework version 3.3.1
+Thanks for taking a look!

@@ -1,0 +1,50 @@
+nancyhwr commented on 24 Jul 2018
+I'm a beginner in deep learning. I have a pre-trained LSTM model build with Keras and I want to use reinforcement learning to fine-tune this model. I list my main code below:
+json_file = open('model/prior_model_RMSprop.json', 'r')
+json_model = json_file.read()
+json_file.close()
+
+agent = model_from_json(json_model)
+prior = model_from_json(json_model)
+
+agent.load_weights('model/model_RMSprop.h5')
+prior.load_weights('model/model_RMSprop.h5')
+Since I need a loss function with reinforcement reward, I used keras.backend to do this operations.
+iteration = 500
+BATCH_SIZE = 100
+
+agent_trainable_variables = agent.trainable_weights
+sess = tf.InteractiveSession()
+K.set_session(sess)
+sess.run(tf.variables_initializer(agent_trainable_variables))
+
+agent_logits = K.cast(K.max(agent_output, axis = 2), dtype = tf.float32)
+prior_logits = K.cast(K.max(prior_output, axis = 2), dtype = tf.float32)
+
+p_a_prior = K.sum(K.log(prior_logits), axis = 1)
+p_a_agent = K.sum(K.log(agent_logits), axis = 1)
+
+for i in range(iteration):
+       
+    print('[iteration] = ', i)
+
+    # smiles is a list of string; trainingExample is an numpy array (1, 135)
+    smiles, _, trainingExample = agent_sample(BATCH_SIZE)
+    trainingExample = trainingExample.astype(dtype = float)
+
+    # reward is a function, input a list of string, output a int [-1, 0, 1 ]
+    score = K.sum(tf.py_func(reward, smiles, [tf.float32]))
+    loss = K.mean(K.square(p_a_agent - p_a_prior - tf.multiply(2.0, score)))
+   
+    def _compute_gradients(tensor, var_list):
+        grads = K.gradients(tensor, var_list)
+        return [grad if grad is not None else K.zeros_like(var)
+              for var, grad in zip(var_list, grads)]
+   
+    grads = _compute_gradients(loss, agent.trainable_weights)
+
+    evaluated_gradient = sess.run([grads], feed_dict = {agent.input: trainingExample})
+    agent.set_weights(np.subtract(agent.get_weights(), evaluated_gradient))
+There may be lots of errors in my and any correction or suggestion will be appreciated!
+I keep getting None return from the gradients function so I added a function "_compute_gradients", but I don't think that would solve the essential problem.
+Another problem is the error "You must feed a value for placeholder tensor 'input_1_1' with dtype float and shape [?,?]". Apparently, the agent.input in the feed_list is under the name 'input_1_1', however, the agent.input is under the name 'input_1' if you check it above. I know it's related to the variable scope, but I have no clue so far how to fix it. I appreciate any help!!!

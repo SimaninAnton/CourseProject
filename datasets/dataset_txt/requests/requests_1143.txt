@@ -1,0 +1,37 @@
+Contributor
+jakubroztocil commented on Mar 7, 2016
+I'm working on adding support for streamed uploads via stdin to HTTPie. It works fine when stdin redirected from a file, but fails with OSError: [Errno 29] Illegal seek when piping programs together.
+test.py:
+#!/usr/bin/env python
+import sys
+import requests
+
+r = requests.post(
+    'http://httpbin.org/post', 
+    data=getattr(sys.stdin, 'buffer', sys.stdin)
+)
+print(r.text)
+😄 works:
+$ python test.py < test.py
+😞 fails:
+$ cat test.py | python test.py
+Traceback (most recent call last):
+  File "test.py", line 5, in <module>
+    r = requests.post('http://httpbin.org/post', data=sys.stdin.buffer)
+  File "python3.5/site-packages/requests/api.py", line 107, in post
+    return request('post', url, data=data, json=json, **kwargs)
+  File "python3.5/site-packages/requests/api.py", line 53, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "python3.5/site-packages/requests/sessions.py", line 454, in request
+    prep = self.prepare_request(req)
+  File "python3.5/site-packages/requests/sessions.py", line 388, in prepare_request
+    hooks=merge_hooks(request.hooks, self.hooks),
+  File "python3.5/site-packages/requests/models.py", line 296, in prepare
+    self.prepare_body(data, files, json)
+  File "python3.5/site-packages/requests/models.py", line 430, in prepare_body
+    length = super_len(data)
+  File "python3.5/site-packages/requests/utils.py", line 86, in super_len
+    current_position = o.tell()
+OSError: [Errno 29] Illegal seek
+Tested on OS X 10.11.3 + Python 3.5.1 & 2.7.11 with requests==2.9.1.
+I imagine checking for that error in the appropriate except clause in model.py:431 would do the trick. Or a more robust super_len(). I'll be happy to submit a pull request, if interested.

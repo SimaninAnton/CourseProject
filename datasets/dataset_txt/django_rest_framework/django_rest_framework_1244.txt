@@ -1,0 +1,20 @@
+egamonal commented on 5 Apr 2016
+Steps to reproduce
+set up a ReadOnlyModelViewSet endpoint with IsAuthenticatedOrReadOnly permissions
+make a GET request with an invalid token
+Expected behavior
+status code 403 or 401 because the header makes authentication fail.
+if there wasn't an authorization header I'd expect 200.
+Actual behavior
+status code 200
+It looks like it isn't differentiating between requests that didn't contain any authentication info and requests that did, but failed.
+Any invalid auth on a request with that class is just going to be treated the same as an unauthenticated request. This can be misleading, e.g. if I have different policies for anonymous and authenticated users, and doesn't help api clients discover they need a new token.
+In https://github.com/evonove/django-oauth-toolkit/blob/master/oauth2_provider/ext/rest_framework/authentication.py
+I guess there should be AuthenticationFailed somewhere? It should return False only if no auth was attempted in the request. For example: https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/authentication.py#L193
+def authenticate_credentials(self, key):
+        model = self.get_model()
+        try:
+            token = model.objects.select_related('user').get(key=key)
+        except model.DoesNotExist:
+            raise exceptions.AuthenticationFailed(_('Invalid token.'))
+...

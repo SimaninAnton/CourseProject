@@ -1,0 +1,59 @@
+Collaborator
+fchollet commented on 13 Feb 2016
+The cifar10_cnn.py example, with no data augmentation, gets to 0.76-0.77 accuracy quickly.
+If you add dim_ordering="tf" in every MaxPooling2D and Convolution2D layer, and make sure the training data shape matches:
+x_train = np.transpose(x_train, (0, 2, 3, 1))
+x_test = np.transpose(x_test, (0, 2, 3, 1))
+then you incur a significant performance loss --the network only gets to 0.70.
+The networks and training data are completely identical, only difference is the dimension ordering convention. The issue appears to occur in both backends.
+I have introduced unit tests to check that dim_ordering does not affect the output of Convolution2D and MaxPooling2D, with either backend. The fact that the unit tests are passing confirms that both dim_ordering modes are completely identical in their behavior.
+https://github.com/fchollet/keras/blob/master/tests/keras/layers/test_convolutional.py#L116-L145
+https://github.com/fchollet/keras/blob/master/tests/keras/layers/test_convolutional.py#L166-L186
+So this appears to be a very subtle issue. If there are any problem sleuths available around, take a look...
+Attached: the code to reproduce the issue.
+from keras.datasets import cifar10
+from keras.models import Sequential
+from keras.layers import Flatten, Dense, Convolution2D, MaxPooling2D, Dropout
+from keras.utils import np_utils
+import numpy as np
+
+do = 'tf'
+
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+if do == 'tf':
+    x_train = np.transpose(x_train.astype('float32') / 255., (0, 2, 3, 1))
+    x_test = np.transpose(x_test.astype('float32') / 255., (0, 2, 3, 1))
+
+if do == 'th':
+    x_train = x_train.astype('float32') / 255.
+    x_test = x_test.astype('float32') / 255.
+
+y_train = np_utils.to_categorical(y_train)
+y_test = np_utils.to_categorical(y_test)
+
+model = Sequential()
+model.add(Convolution2D(32, 3, 3, border_mode='same', dim_ordering=do,
+                        activation='relu',
+                        input_shape=x_train.shape[1:]))
+model.add(Convolution2D(32, 3, 3, border_mode='same', dim_ordering=do,
+                        activation='relu'))
+model.add(MaxPooling2D((2, 2), dim_ordering=do))
+
+model.add(Convolution2D(64, 3, 3, border_mode='same', dim_ordering=do,
+                        activation='relu'))
+model.add(Convolution2D(64, 3, 3, border_mode='same', dim_ordering=do,
+                        activation='relu'))
+model.add(MaxPooling2D((2, 2), dim_ordering=do))
+
+model.add(Flatten())
+model.add(Dropout(0.5))
+model.add(Dense(512, activation='relu'))
+model.add(Dense(10, activation='softmax'))
+
+model.summary()
+
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+model.fit(x_train, y_train, batch_size=32, show_accuracy=True,
+          validation_data=(x_test, y_test), nb_epoch=100, shuffle=True)

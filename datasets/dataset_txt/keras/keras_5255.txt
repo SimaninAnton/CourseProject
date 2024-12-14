@@ -1,0 +1,28 @@
+Contributor
+kylemcdonald commented on 5 May 2016 •
+edited
+edit: A less obscure situation: after loading a model from disk, it's necessary to call compile() with optimizer and loss, even if you're only using it for prediction. A more obscure situation follows.
+I'm using the new functional API to predict intermediate output from my network. First I set up the network and compile the model:
+inputs = Input(shape=(1, img_rows, img_cols))
+x = Convolution2D(32, 3, 3, activation='relu')(x)
+...
+x = Flatten()(x)
+e = Dense(512, name='e', activation='relu')(x)
+x = Dense(nb_classes, activation='softmax')(e)
+
+model = Model(input=inputs, output=x)
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+Then I train it. After it's done training, I want to evaluate the output at e.
+Previously with the Sequential model I did something like this:
+def matching_layers(model, name):
+    return [l for l in model.layers if l.name == name]
+get_encoding = K.function([model.layers[0].input, K.learning_phase()],
+                          [matching_layers(model, 'e')[0].output])
+encoded = get_encoding([data, 1])[0]
+That worked correctly, but I usually have to split the data into chunks and then recombine it because I run out of GPU memory otherwise.
+Now I can do something much simpler:
+emodel = Model(input=inputs, output=e)
+emodel.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+encoded = emodel.predict(data)
+Awesome. It's less code, and makes more sense. And for some reason I don't have to split up the data (not sure what's different behind the scenes...)
+But why do I need to specify optimizer and loss if I'm not training the model?

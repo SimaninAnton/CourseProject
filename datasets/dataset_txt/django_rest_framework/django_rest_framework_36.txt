@@ -1,0 +1,57 @@
+moseb commented on 30 Oct 2019 •
+edited
+Hi!
+I'm working on a DRF-based backend and we get 500 errors caused by specific Unicode characters…
+I'm opening an issue here because it's not specific to our code or setup. I would also like to share a workaround and hear your thoughts about it. I'm aware of #6895 and #6633 and checked that DRF 3.10.3 is still affected by this issue.
+The problem
+Make sure you use rest_framework.parsers.JSONParser in REST_FRAMEWORK['DEFAULT_PARSER_CLASSES'] in settings. Now pass JSON to an API endpoint of yours that looks like this: {"title": "\ud83d"}. Instead of title use some field that your serializer supports and that is backed by a CharField, explicitly or implicitly. That input is ASCII technically but the JSON decoder will interpret \ud83d and turn it into an str instance equal to chr(0xd83d), i.e. a string with is a code point from the surrogates block which cannot be encoded to UTF-8 (or UTF-16 or ..) — because Isolated surrogate code points have no general interpretation —, see:
+In [1]: import sys; sys.version_info.major                                                                                                                                                                           
+Out[1]: 3
+
+In [2]: chr(0xd83d).encode('utf-8')                                                                                                                                                                                  
+[..]
+UnicodeEncodeError: 'utf-8' codec can't encode character '\ud83d' in position 0: surrogates not allowed
+
+In [3]: import json; json.loads('{"title": "\\ud83d"}')['title'].encode('utf-8')                                                                                                                                     
+[..]
+UnicodeEncodeError: 'utf-8' codec can't encode character '\ud83d' in position 0: surrogates not allowed
+So my CharField title now contains a Python 3 string '\ud83d' and the code in the serializer starts working with it and we will only learn that we received malformed data in the first place once we try to store it into a database or when we use it while rendering the reply. That's rather late — maybe too late?
+To write a test for this case for your own API, you could do something like this:
+def test_..............(self):
+    detail_url = reverse(...................)
+    data = '{"some-charfield-of-yours": "\\ud83d"}'
+
+    response = self.client.patch(detail_url, data, content_type='application/json')
+
+    ...........
+Workaround
+One way to workaround this problem globally and deny malformed input from even getting to your serializers is to use a derived JSON parser for REST_FRAMEWORK['DEFAULT_PARSER_CLASSES'] like this:
+# This code is from https://github.com/encode/django-rest-framework/issues/7026#issue-514872212
+# Licensed under the BSD license as DRF itself
+
+import os
+
+from rest_framework.exceptions import ParseError
+from rest_framework.parsers import JSONParser
+from rest_framework.utils import json
+
+
+class JsonParserThatRejectsSurrogateCodePoints(JSONParser):
+
+    @staticmethod
+    def _reject_surrogate_code_points(parsed):
+        try:
+            with open(os.devnull, 'w') as f:
+                json.dump(parsed, f, ensure_ascii=False)
+        except UnicodeEncodeError as e:
+            raise ParseError(f'Parsed JSON contains surrogates (code points 0xD800 to 0xDFFF) - {e}')
+
+    def parse(self, stream, media_type=None, parser_context=None):
+        parsed = super().parse(stream, media_type=media_type, parser_context=parser_context)
+        self._reject_surrogate_code_points(parsed)
+        return parsed
+I have not measured the performance penalty if this approach, yet. The upside is that only once single place of code needs to be touched to get all API endpoints on dry ground.
+Discussion
+I would love to hear how you handled this situation in your backend, if this is something you expect DRF users to handle themselves or would want to protect against upstream, and what other approaches come to your mind.
+Many thanks in advance,
+Sebastian

@@ -1,0 +1,51 @@
+ludokx commented on May 10, 2017
+This worked fine with 2.13.0 but started failing today since 2.14.0, this is the stacktrace
+Traceback (most recent call last):
+  File "requests_test.py", line 31, in <module>
+    s.request(method='GET', url='https://google.com')
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/sessions.py", line 518, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/sessions.py", line 639, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 403, in send
+    conn = self.get_connection(request.url, proxies)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/adapters.py", line 307, in get_connection
+    conn = self.poolmanager.connection_from_url(url)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/packages/urllib3/poolmanager.py", line 279, in connection_from_url
+    pool_kwargs=pool_kwargs)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/packages/urllib3/poolmanager.py", line 227, in connection_from_host
+    return self.connection_from_context(request_context)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/packages/urllib3/poolmanager.py", line 240, in connection_from_context
+    return self.connection_from_pool_key(pool_key, request_context=request_context)
+  File "/Users/ludo/Library/Python/2.7/lib/python/site-packages/requests/packages/urllib3/poolmanager.py", line 261, in connection_from_pool_key
+    pool = self._new_pool(scheme, host, port, request_context=request_context)
+TypeError: _new_pool() got an unexpected keyword argument 'request_context'
+Here's the sample code to reproduce the issue:
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.poolmanager import PoolManager, HTTPSConnectionPool
+
+class MyHTTPSConnectionPool(HTTPSConnectionPool):
+    def __init__(self, host, port=None, **conn_kw):
+        HTTPSConnectionPool.__init__(self, host, port, **conn_kw)
+
+class MyPoolManager(PoolManager):
+    def __init__(self, **kw_args):
+        PoolManager.__init__(self, **kw_args)
+
+    def _new_pool(self, scheme, host, port):
+        if scheme == 'https':
+            kwargs = self.connection_pool_kw
+            return MyHTTPSConnectionPool(host, port, **kwargs)
+        return super(MyPoolManager, self)._new_pool(scheme, host, port)
+
+class MyAdapter(HTTPAdapter):
+
+    def __init__(self, **kw_args):
+        HTTPAdapter.__init__(self, **kw_args)
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = MyPoolManager(num_pools=connections,
+
+s = requests.Session()
+s.mount('https://', MyAdapter())
+s.request(method='GET', url='https://google.com')

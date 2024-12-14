@@ -1,0 +1,58 @@
+jmagnusson commented on 11 Jun 2015
+I really like being able to override the error templates for each blueprint using their errorhandler methods. All error codes work great for me. Except one. 405's are AFAIK not catchable by the blueprint. This is a bit unfortunate when you have a JSON REST API where you want your consumers to be able to parse the data that they get back.
+This line in werkzeug.routing is where the exception is raised. I feel a bit lost about the whole flow of a request in werkzeug/flask and don't really have any idea what I could do to be able to catch it in the Blueprint. Is this a bug? A known "feature"? Or am I doing something wrong?
+Here's a test case which shows this behavior:
+import unittest
+from flask import Flask, Blueprint, request
+
+app = Flask(__name__)
+myblueprint = Blueprint('myblueprint', __name__)
+
+
+@myblueprint.route('/', methods=['GET'])
+def hello():
+    return 'hello world!'
+
+myblueprint.errorhandler(405)(lambda e: ('myblueprint 405', 405))
+app.register_blueprint(myblueprint)
+app.errorhandler(405)(lambda e: ('app 405', 405))
+
+
+class BlueprintOrAppTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.client = app.test_client()
+
+    def test_200(self):
+        resp = self.client.get('/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_405(self):
+        with app.test_client() as client:
+            resp = client.post('/?http405')
+            self.assertEqual(resp.status_code, 405)
+            self.assertEqual(resp.get_data(True), 'myblueprint 405')
+            self.assertEqual(request.blueprint, 'myblueprint')
+
+
+if __name__ == '__main__':
+    # app.run(use_reloader=True)
+    unittest.main()
+Running this gives:
+.F
+======================================================================
+FAIL: test_405 (__main__.BlueprintOrAppTestCase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "test.py", line 30, in test_405
+    self.assertEqual(resp.get_data(True), 'myblueprint 405')
+AssertionError: 'app 405' != 'myblueprint 405'
+- app 405
++ myblueprint 405
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.013s
+
+FAILED (failures=1)
+A version which tests more error codes can be found in this gist.

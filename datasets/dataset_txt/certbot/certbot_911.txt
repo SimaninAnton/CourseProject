@@ -1,0 +1,92 @@
+logol commented on 12 Nov 2017
+My operating system is (include version):
+ArchLinux (Kernel 4.13.11-1)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+pacman -S cerbot-nginx
+I ran this command and it produced this output:
+cerbot --nginx
+Certbot's behavior differed from what I expected because:
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+An unexpected error occurred:
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2 in position 330: ordinal not in range(128)
+Please see the logfiles in /var/log/letsencrypt for more details.
+Here is a Certbot log showing the issue (if available):
+2017-11-12 15:15:18,497:DEBUG:certbot.main:certbot version: 0.19.0
+2017-11-12 15:15:18,499:DEBUG:certbot.main:Arguments: ['--nginx']
+2017-11-12 15:15:18,500:DEBUG:certbot.main:Discovered plugins: PluginsRegistry(PluginEntryPoint#manual,PluginEntryPoint#nginx,PluginEntryPoint#null,PluginEntryPoint#standalone,PluginEntryPoint#webroot)
+2017-11-12 15:15:18,529:DEBUG:certbot.log:Root logging level set at 20
+2017-11-12 15:15:18,531:INFO:certbot.log:Saving debug log to /var/log/letsencrypt/letsencrypt.log
+2017-11-12 15:15:18,532:DEBUG:certbot.plugins.selection:Requested authenticator nginx and installer nginx
+2017-11-12 15:15:18,557:DEBUG:certbot.log:Exiting abnormally:
+Traceback (most recent call last):
+  File "/usr/bin/certbot", line 11, in <module>
+    load_entry_point('certbot==0.19.0', 'console_scripts', 'certbot')()
+  File "/usr/lib/python3.6/site-packages/certbot/main.py", line 861, in main
+    return config.func(config, plugins)
+  File "/usr/lib/python3.6/site-packages/certbot/main.py", line 685, in run
+    installer, authenticator = plug_sel.choose_configurator_plugins(config, plugins, "run")
+  File "/usr/lib/python3.6/site-packages/certbot/plugins/selection.py", line 189, in choose_configurator_plugins
+    authenticator = installer = pick_configurator(config, req_inst, plugins)
+  File "/usr/lib/python3.6/site-packages/certbot/plugins/selection.py", line 25, in pick_configurator
+    (interfaces.IAuthenticator, interfaces.IInstaller))
+  File "/usr/lib/python3.6/site-packages/certbot/plugins/selection.py", line 77, in pick_plugin
+    verified.prepare()
+  File "/usr/lib/python3.6/site-packages/certbot/plugins/disco.py", line 248, in prepare
+    return [plugin_ep.prepare() for plugin_ep in six.itervalues(self._plugins)]
+  File "/usr/lib/python3.6/site-packages/certbot/plugins/disco.py", line 248, in <listcomp>
+    return [plugin_ep.prepare() for plugin_ep in six.itervalues(self._plugins)]
+  File "/usr/lib/python3.6/site-packages/certbot/plugins/disco.py", line 130, in prepare
+    self._initialized.prepare()
+  File "/usr/lib/python3.6/site-packages/certbot_nginx/configurator.py", line 156, in prepare
+    self.parser = parser.NginxParser(self.conf('server-root'))
+  File "/usr/lib/python3.6/site-packages/certbot_nginx/parser.py", line 35, in __init__
+    self.load()
+  File "/usr/lib/python3.6/site-packages/certbot_nginx/parser.py", line 42, in load
+    self._parse_recursively(self.config_root)
+  File "/usr/lib/python3.6/site-packages/certbot_nginx/parser.py", line 53, in _parse_recursively
+    trees = self._parse_files(filepath)
+  File "/usr/lib/python3.6/site-packages/certbot_nginx/parser.py", line 203, in _parse_files
+    parsed = nginxparser.load(_file)
+  File "/usr/lib/python3.6/site-packages/certbot_nginx/nginxparser.py", line 122, in load
+    return loads(_file.read())
+  File "/usr/lib/python3.6/encodings/ascii.py", line 26, in decode
+    return codecs.ascii_decode(input, self.errors)[0]
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2 in position 330: ordinal not in range(128)
+2017-11-12 15:15:18,560:ERROR:certbot.log:An unexpected error occurred:
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+user http;
+worker_processes auto;
+worker_cpu_affinity auto;
+pcre_jit on;
+
+events {
+    worker_connections 2048;
+}
+
+
+http {
+    include mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    tcp_nopush on;
+    aio threads;
+    server_tokens off; # Security: Disables nginx version in error messages and in the “Server” response header field.
+    charset utf-8; # Force usage of UTF-8
+    index index.php index.html index.htm;
+    server {
+      listen 80;
+      listen [::]:80;
+      server_name domain.tld;
+      root /usr/share/nginx/html;
+      location / {
+        index index.htm index.html;
+      }
+
+      # ACME challenge
+      location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /var/lib/letsencrypt;
+      }
+    }
+}
+4

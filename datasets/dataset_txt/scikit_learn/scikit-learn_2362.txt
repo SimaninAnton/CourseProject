@@ -1,0 +1,45 @@
+Contributor
+wallygauze commented on Mar 2, 2017 •
+edited by TomDLT
+Description
+As shown in #7947, if n_samples < n_components (inputed by the user) < n_features, PCA (in pca.py) proceeds without raising any error but returns a result with a number of components equal to n_samples (the latter is the normal PCA algorithm result). This lack of an error message taking n_samples into account in the same way there is one taking n_features into account results in a number of inconsistencies in the code. There are also a number of inconsistencies in documentation which I address in my pull request.
+I am aware @amueller and @jnothman indicated an error message would not be necessary, but my understanding is that this was not saying that the optimal solution would not be indeed to return such an error and deal with whatever related issues there would be. Please correct me if I am wrong.
+Some of the main inconsistencies:
+n_components==None results in the maximum number of components being chosen. The matrix of eigenvectors returned when accessing the components_ attribute has the correct shape, BUT the n_components_ attribute is taken from n_features instead of min(n_samples, n_features).
+On the n_components_ attribute, see also my message dated 21 Feb 2017 currently at the bottom of the discussion in #7947.
+With the svd_solver ARPACK, PCA accepts without raising any error such value as mentioned above for n_components, but the scipy module it depends on actually raises an error. But because it's from another module, the error message does not make it clear that the value n_components is the one to change (the bottom error line reads "ValueError: k must be between 1 and min(A.shape), k=7", while k is not a parameter of the PCA class).
+Here is the code for 2):
+Steps/Code to Reproduce
+import numpy as np
+from .pca import PCA
+
+X = np.array([[-1, -1,3,4,-1, -1,3,4], [-2, -1,5,-1, -1,3,4,2], [-3, -2,1,-1, -1,3,4,1],
+[1, 1,4,-1, -1,3,4,2], [2, 1,0,-1, -1,3,4,2], [3, 2,10,-1, -1,3,4,10]])
+
+pca = PCA(n_components = 7, svd_solver= "arpack")
+
+pca.fit(X)
+Results
+Returns following error
+Traceback (most recent call last):
+  File "//anaconda/lib/python2.7/runpy.py", line 174, in _run_module_as_main
+    "__main__", fname, loader, pkg_name)
+  File "//anaconda/lib/python2.7/runpy.py", line 72, in _run_code
+    exec code in run_globals
+  File "/Users/macowner/Documents/DSC/scikit-learn/sklearn/decomposition/test.py", line 10, in <module>
+    ipca.fit(X)
+  File "sklearn/decomposition/pca.py", line 325, in fit
+    self._fit(X)
+  File "sklearn/decomposition/pca.py", line 388, in _fit
+    return self._fit_truncated(X, n_components, svd_solver)
+  File "sklearn/decomposition/pca.py", line 474, in _fit_truncated
+    U, S, V = svds(X, k=n_components, tol=self.tol, v0=v0)
+  File "//anaconda/lib/python2.7/site-packages/scipy/sparse/linalg/eigen/arpack/arpack.py", line 1714, in svds
+    raise ValueError("k must be between 1 and min(A.shape), k=%d" % k)
+ValueError: k must be between 1 and min(A.shape), k=7
+Versions
+Darwin-16.4.0-x86_64-i386-64bit
+('Python', '2.7.13 |Anaconda custom (x86_64)| (default, Dec 20 2016, 23:05:08) \n[GCC 4.2.1 Compatible Apple LLVM 6.0 (clang-600.0.57)]')
+('NumPy', '1.12.0')
+('SciPy', '0.18.1')
+('Scikit-Learn', '0.19.dev0')

@@ -1,0 +1,12 @@
+nathanfolkman commented on 15 Jun 2012
+Working on some XMPP related code that promotes an existing IOStream to a SSLIOStream I came across a bug that only manifests itself on Linux and not Mac OS X. I believe this is related to the fact that Python's select uses poll() or epoll() on Linux and kqueue() on Mac OS X. Specifically it looks like epoll.register() will throw an IOError if you try to register a file descriptor that's already registered - see: http://docs.python.org/library/select.html#module-select.
+The following patch to use modify() seems to fix the issue:
+tornado/ioloop.py:
+179 def add_handler(self, fd, handler, events):
+180 """Registers the given handler to receive the given events for fd."""
+181 self._handlers[fd] = stack_context.wrap(handler)
+182
+183 try:
+184 self._impl.register(fd, events | self.ERROR)
+185 except:
+186 self._impl.modify(fd, events | self.ERROR)

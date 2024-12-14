@@ -1,0 +1,79 @@
+g-rutter commented on 5 Feb 2016
+Inserting a DropOut layer with a drop probability arbitrarily close to 1 (i.e. 0.999...) does not disturb training. I would expect DropOut to stop the neural net from training at these high values.
+Experimenting with the code attached below, I see that the results are hardly different regardless of whether dropout is set to 0.5 or 0.999999 in the settings section. Despite seeding the random number generator, the results are slightly different, implying that something is happening.
+(I have tested this with real data containing actual patterns, too)
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import numpy as np
+# NOTE: This is the only simple way to get reproducable results in Keras.
+np.random.seed(1)
+
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation
+from keras.optimizers import SGD
+
+##############
+#  Settings  #
+##############
+
+n_features = 10
+n_outcomes = 5
+n_samples = 5000
+fraction_train = 0.7
+
+hidden_layer_size = 8
+hidden_activation = 'relu'
+
+dropout = 0.999999
+# dropout = 0.5
+
+#########################
+#  Make synthetic data  #
+#########################
+
+X = np.random.normal(size=[n_samples,n_features])
+Y = np.random.randint(2, size=[n_samples,n_outcomes])
+
+X_train = X[n_samples*fraction_train:]
+X_test = X[:n_samples*fraction_train]
+
+Y_train = Y[n_samples*fraction_train:]
+Y_test = Y[:n_samples*fraction_train]
+
+###############
+#  Create NN  #
+###############
+
+keras_nn = Sequential()
+
+keras_nn.add(Dense(
+    hidden_layer_size,
+    input_dim=n_features,
+    activation=hidden_activation)
+)
+
+keras_nn.add(Dropout(dropout))
+
+keras_nn.add(Dense(
+    n_outcomes,
+    activation='softmax')
+)
+
+optimiser = SGD()
+
+keras_nn.compile(loss='categorical_crossentropy', class_mode='binary', optimizer=optimiser)
+
+##############
+#  Train NN  #
+##############
+
+history = keras_nn.fit(X_train, Y_train, nb_epoch=1)
+
+keras_proba = keras_nn.predict_proba(X_test, verbose=0)
+
+print keras_proba
+My configuration:
+Ubuntu 14.04.3 LTS
+Python 2.7 with bleeding-edge Keras and Theano. I've also tried recent stable releases.
+No GPU use that I know of.

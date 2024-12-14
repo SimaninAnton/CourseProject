@@ -1,0 +1,39 @@
+panisson commented on Feb 22, 2016
+I'm trying to implement different criterions for decision trees.
+I've found that decision trees could accept a Criterion object as a criterion parameter:
+https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/tree/tree.py#L335
+And the easiest way to implement other criterions would be to implement subclasses of tree._criterion.Criterion class.
+The normal way to pass a criterion to a decision tree is by using its string name, and it works fine:
+from sklearn import tree, model_selection, metrics, datasets
+import numpy as np
+
+X, y = datasets.make_classification(n_samples=1000, random_state=42)
+cv = model_selection.KFold(n_folds=10, shuffle=True, random_state=43)
+
+dtc = tree.DecisionTreeClassifier(criterion='gini', random_state=42)
+print np.mean(model_selection.cross_val_score(dtc, X, y, cv=cv))
+mean score is 0.866.
+However, if I use a Criterion object, it does not work anymore:
+gini = tree._criterion.Gini(n_outputs=1, n_classes=np.array([2]))
+dtc = tree.DecisionTreeClassifier(criterion=gini, random_state=42)
+print np.mean(model_selection.cross_val_score(dtc, X, y, cv=cv))
+mean score now is 0.476.
+It seems that the cloning of the decision tree is breaking the criterion object in some way, because this code is also not working:
+from sklearn.base import clone
+
+gini = tree._criterion.Gini(n_outputs=1, n_classes=np.array([2]))
+
+dtc = tree.DecisionTreeClassifier(criterion=gini, random_state=42)
+scores = []
+for train_idx, test_idx in cv.split(X, y):
+    estimator = clone(dtc)
+    estimator.fit(X[train_idx], y[train_idx])
+    scores.append(metrics.accuracy_score(y[test_idx], estimator.predict(X[test_idx])))
+print np.mean(scores)
+but if I reset the criterion object of the estimator by, e.g.,
+estimator.criterion = dtc.criterion
+then the score values are back to normal.
+I could not find where the cloning is breaking the criterion object, any help would be welcome.
+Thanks all for your effort on this project, sklearn is really great!
+regards
+André

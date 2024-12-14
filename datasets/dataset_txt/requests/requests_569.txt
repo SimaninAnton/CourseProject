@@ -1,0 +1,43 @@
+timuralp commented on Jul 21, 2017
+Filing this to track the issue in urllib3 -- urllib3/urllib3#1234. Whenever urllib3 merges a fix, requests should update its requirements to avoid leaking connections.
+The issue is that some servers -- in my case, Amazon S3 -- will set "Transfer-Encoding: chunked" even in response to a HEAD request. This results in urllib3 not returning the connection to the connection pool after requests calls stream() to get the content.
+Here is a small script I wrote to confirm the problem (with a hacky reach into the pool).
+s = requests.Session()
+req = requests.Request(method='HEAD', url='https://s3.amazonaws.com/other-bucket')
+p = s.prepare_request(req)
+resp = s.send(p, allow_redirects=False)
+pool = s.adapters['https://'].poolmanager.pools._container.values()[0].pool
+print pool.qsize()
+
+s = requests.Session()
+req = requests.Request(method='HEAD', url='https://google.com/other-bucket')
+p = s.prepare_request(req)
+resp = s.send(p, allow_redirects=False)
+pool = s.adapters['https://'].poolmanager.pools._container.values()[0].pool
+print pool.qsize()
+In the case of google.com, the pool size is 10 upon completing the request, as the connection is put back. In the case of contacting Amazon, the pool size is 9. The default pool size is 10 and that's what we expect to get back.
+Here's the debug information from the interaction, along with the requests version used:
+2.18.1
+DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): s3.amazonaws.com
+send: 'HEAD /other-bucket HTTP/1.1\r\nHost: s3.amazonaws.com\r\nConnection: keep-alive\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nUser-Agent: python-requests/2.18.1\r\n\r\n'
+reply: 'HTTP/1.1 301 Moved Permanently\r\n'
+header: x-amz-bucket-region: ap-northeast-1
+header: x-amz-request-id: A63B39B85D7E91DF
+header: x-amz-id-2: BcZpRKNNvxorP7jG7SZE6RgcwFulAkuQDMBqw/q0C3DI6meKksIeZBYaeUD7pF3Xi3Mp5QjdObo=
+header: Content-Type: application/xml
+header: Transfer-Encoding: chunked
+header: Date: Fri, 21 Jul 2017 08:01:49 GMT
+header: Server: AmazonS3
+DEBUG:urllib3.connectionpool:https://s3.amazonaws.com:443 "HEAD /other-bucket HTTP/1.1" 301 0
+9
+DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): google.com
+send: 'HEAD /other-bucket HTTP/1.1\r\nHost: google.com\r\nConnection: keep-alive\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nUser-Agent: python-requests/2.18.1\r\n\r\n'
+reply: 'HTTP/1.1 404 Not Found\r\n'
+header: Content-Type: text/html; charset=UTF-8
+header: Referrer-Policy: no-referrer
+header: Content-Length: 1573
+header: Date: Fri, 21 Jul 2017 08:01:50 GMT
+header: Alt-Svc: quic=":443"; ma=2592000; v="39,38,37,36,35"
+DEBUG:urllib3.connectionpool:https://google.com:443 "HEAD /other-bucket HTTP/1.1" 404 0
+10
+As far as I can tell, this bug has been present ever since the read_chunked() method was introduced in urllib3.Response in 1.10.3.

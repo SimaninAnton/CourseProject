@@ -1,0 +1,68 @@
+codersbrew commented on 18 Sep 2013
+This might be an issue on my end.
+I am running a localserver apach2 with self signed openssl Cert.
+I then start up the basic mitmproxy via python. I can visit https sites like google or what have you and I see the requests and responses.
+If I go to my own apache2 server locally via firefox, "https://127.0.0.1/test.html" I get the following error.
+Error in processing of request from 127.0.0.1:50944
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/site-packages/netlib/tcp.py", line 369, in request_thread
+    self.handle_connection(request, client_address)
+  File "/usr/lib/python2.7/site-packages/libmproxy/proxy.py", line 511, in handle_connection
+    h.handle()
+  File "/usr/lib/python2.7/site-packages/libmproxy/proxy.py", line 175, in handle
+    while self.handle_request(cc) and not cc.close:
+  File "/usr/lib/python2.7/site-packages/libmproxy/proxy.py", line 191, in handle_request
+    request = self.read_request(cc)
+  File "/usr/lib/python2.7/site-packages/libmproxy/proxy.py", line 441, in read_request
+    return self.read_request_proxy(client_conn)
+  File "/usr/lib/python2.7/site-packages/libmproxy/proxy.py", line 375, in read_request_proxy
+    dummycert = self.find_cert(client_conn, host, port, host)
+  File "/usr/lib/python2.7/site-packages/libmproxy/proxy.py", line 307, in find_cert
+    host = conn.cert.cn.decode("utf8").encode("idna")
+AttributeError: 'NoneType' object has no attribute 'decode'
+This is the code I am running
+#!/usr/bin/env python
+"""
+This example builds on mitmproxy's base proxying infrastructure to
+implement functionality similar to the "sticky cookies" option. This is at
+a lower level than the Flow mechanism, so we're dealing directly with
+request and response objects.
+"""
+from libmproxy import controller, proxy
+import os
+
+class StickyMaster(controller.Master):
+    def __init__(self, server):
+        controller.Master.__init__(self, server)
+        self.stickyhosts = {}
+
+    def run(self):
+        try:
+            return controller.Master.run(self)
+        except KeyboardInterrupt:
+            self.shutdown()
+
+    def handle_request(self, msg):
+        hid = (msg.host, msg.port)
+        #if msg.headers["cookie"]:
+        #    self.stickyhosts[hid] = msg.headers["cookie"]
+        #elif hid in self.stickyhosts:
+        #    msg.headers["cookie"] = self.stickyhosts[hid]
+        msg.reply()
+
+    def handle_response(self, msg):
+        hid = (msg.request.host, msg.request.port)
+        print hid
+        output = msg._get_state()
+        print msg.request.path + msg.request.host + str(output['timestamp_start']) + str(output['timestamp_end'])
+        #if msg.headers["set-cookie"]:
+        #    self.stickyhosts[hid] = msg.headers["set-cookie"]
+        msg.reply()
+
+
+config = proxy.ProxyConfig(
+    cacert = os.path.expanduser("~/.mitmproxy/mitmproxy-ca.pem")
+)
+server = proxy.ProxyServer(config, 8080)
+m = StickyMaster(server)
+m.run()

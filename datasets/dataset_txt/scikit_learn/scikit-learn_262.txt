@@ -1,0 +1,50 @@
+Francis-Hsu commented on Sep 11, 2019
+Description
+Arrays in scores_ attribute of sklearn.linear_model.LogisticRegressionCV may be in wrong order when tuning elastic net with C and l1_ratios together. For example, with binary classification scores_ contains one array, with shape (n_folds, n_cs, n_l1_ratios) according to the document. Hence if mean is taken across CV folds then the resulting 2D array should have columns correspond to l1 ratios and rows correspond to Cs. However plotting the columns will show this is not the case. Flatten then reshape the array with Fortran-like index order will fix the issue.
+Steps/Code to Reproduce
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.datasets import load_breast_cancer
+
+# load data
+data = load_breast_cancer()
+X = MinMaxScaler().fit_transform(data.data)
+y = data.target
+
+# setup CV
+alpha_range = [0.3, 0.5, 0.7, 0.9, 1]
+clf = LogisticRegressionCV(cv=5, penalty='elasticnet',
+                           class_weight='balanced',
+                           solver='saga', max_iter=5000,
+                           scoring='roc_auc', l1_ratios=alpha_range).fit(X, y)
+
+# plot mean CV error
+clf_scores_mean = np.mean(clf.scores_[1], axis=0)
+for i in np.arange(len(alpha_range)):
+    plt.semilogx(clf.Cs_, clf_scores_mean[:, i],
+                 label='alpha = %0.1f' % alpha_range[i])
+plt.legend(loc="best")
+plt.show() # columns do not correspond to l1 ratio
+
+# plot reshaped mean CV error
+clf_scores_mean = clf_scores_mean.flatten().reshape(clf_scores_mean.shape, order="F")
+for i in np.arange(len(alpha_range)):
+    plt.semilogx(clf.Cs_, clf_scores_mean[:, i],
+                 label='alpha = %0.1f' % alpha_range[i])
+plt.legend(loc="best")
+plt.show()
+Versions
+System:
+    python: 3.7.3 (default, Apr 24 2019, 15:29:51) [MSC v.1915 64 bit (AMD64)]
+    machine: Windows-10-10.0.18362-SP0
+Python deps:
+    pip: 19.2.3
+    setuptools: 40.8.0
+    sklearn: 0.21.3
+    numpy: 1.17.2
+    scipy: 1.3.0
+    Cython: None
+    pandas: 0.25.0
+👍 1

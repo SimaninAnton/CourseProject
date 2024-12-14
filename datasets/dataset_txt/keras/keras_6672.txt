@@ -1,0 +1,37 @@
+pcyin commented on 9 Sep 2015
+Currently, Keras builds the computational graph in a top-down fashion. That is, starting from the final output tensor and recursively calling get_output() until reaching the input. This is fine for sequential models, since layers are stacked linearly and the computational flow is a straight line. However, for graph models, the computational flow could have branches, and this top-down fashion will incur redundancy because self.get_output() will "repeat" the downstream computations at the branching point. Consider the following example:
+X = T.vector('X')
+B = X * 3
+Z1 = B + 1
+Z2 = B + 2
+Y = Z1 + Z2
+theano.printing.pydotprint(Y)
+The graph looks like this (as one can imagine)
+When implemented in Keras:
+# helper layer
+class LambdaLayer(Layer):
+    def __init__(self, func):
+        super(LambdaLayer, self).__init__()
+        self.func = func
+
+    def get_output(self, train=False):
+        X = self.get_input(train)
+        return self.func(X)
+
+g = Graph()
+g.add_input('X', ndim=1)
+
+mul = LambdaLayer(lambda x: x * 3)
+g.add_node(mul, name='mul', input='X')
+add1 = LambdaLayer(lambda x: x + 1)
+add2 = LambdaLayer(lambda x: x + 2)
+add3 = LambdaLayer(lambda x: x['1'] + x['2'])
+
+g.add_node(add1, name='add1', input='mul')
+g.add_node(add2, name='add2', input='mul')
+# I modified Keras to support multiple inputs, no Merge layer required here
+g.add_node(add3, name='add3', inputs={'1': 'add1', '2': 'add2'}, create_output=True)
+
+theano.printing.pydotprint(g.get_output())
+The graph looks like this. X * 3 repeats twice.
+Of cause we can count on Theano's optimizer to reduce the redundancy, but when it comes to large graph models with complicated wiring. The optimization will take quite a long time (Actually I have a graph model with lots of branching and it takes 8 hours to compile). Does it seem better to build computational graph in bottom-up fashion?

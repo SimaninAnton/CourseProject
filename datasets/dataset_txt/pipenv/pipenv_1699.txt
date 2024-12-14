@@ -1,0 +1,38 @@
+surajbarkale commented on 22 Dec 2017
+Pipenv almost always insists on creating a virtualenv (only exception I can think of is pipenv install --system). While, this is a good thing in general, it can be cumbersome when all you want is the dependencies. I had two use cases where virtualenv was not needed
+Creating a docker image containing my app
+Creating a zip bundle for AWS lambda deployment
+Since I used docker for building both releases, here are my solutions for anyone interested:
+python app packaging - I wanted to use distribution provided packages whenever possible and did not want pipenv & its dependencies in the final image. Unfortunately pew does not work on alpine so I had to resort to jq for generating requirements.txt.
+FROM alpine:3.7 AS base
+RUN apk --no-cache add ca-certificates python3 py3-pillow libssl1.0
+
+FROM base AS builder
+RUN apk --no-cache add jq build-base python3-dev openssl-dev
+RUN pip3 install --upgrade pip
+COPY Pipfile.lock ./
+RUN jq -r '.default | to_entries | .[] | "\(.key)\(.value.version)\(if .value.markers then "; \(.value.markers)" else "" end) --hash=\(.value.hashes|join("  --hash="))"' Pipfile.lock > requirements.txt
+RUN pip3 install -r requirements.txt -t /app
+
+FROM base
+COPY --from=builder /app /app
+COPY . /app/
+ENTRYPOINT ["python", "/app/main.py"]
+AWS lambda packaging - For lambda, pipenv lock did work without any errors. So I took the easy way out. However, the build is slower because of extra stuff installed and creation of virtualenv.
+FROM lambci/lambda:build-python3.6 AS builder
+RUN python -m pip install --upgrade pipenv
+COPY Pipfile Pipfile.lock ./
+RUN pipenv lock --requirements > /requirements.txt
+RUN python -m pip install -r /requirements.txt -t /dist
+
+WORKDIR /dist
+COPY *.py ./
+
+ARG ARCHIVE=lambda.zip
+RUN zip -qr ${ARCHIVE} .
+
+FROM scratch
+ARG ARCHIVE=lambda.zip
+COPY --from=builder /dist/${ARCHIVE} /
+While going through our codebase and transitioning from requirements.txt, I realized it would be much better if pip could directly consume Pipfile.lock. It already satisfies a lot of installation scenarios and there is no point is trying to add these to Pipenv.
+So is it worthwhile to teach Pip to install from Pipfile.lock? Is the lock format stable enough that pip can consume it? I was envisioning a command like pip install --lockfile --topic=default

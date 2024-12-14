@@ -1,0 +1,102 @@
+neutrinus commented on Sep 23, 2015
+Story
+We are using requests in MonitOwl agent to communicate with API servers, big "thank you" for great software. Few days ago we ordered new certificates for *.monitowl.com and deployed it to new instance, our issuer is nazwa.pl. Pointing a webbrowser to https://activeo.monitowl.com works flawlessly, requests seems to have some problems, when setting verify="./cabundle.crt".
+Technical notes
+In front of the tornado server handling ssl there is a haproxy checking SNI and redistributing the traffic, part of the config file:
+        acl app_activeo req_ssl_sni -i activeo.monitowl.com
+        use_backend bk_activeo if app_activeo
+We need to provide own cabundle to have control what is accepted - because of security issues and deployment scripts. We are using debian jessie everywhere.
+# from issuer https://panel.nazwa.pl/uploads/ssl/nazwaSSL_SHA-2.zip
+$ cat monitowlcom.crt nazwasslsha2.pem certumca-ctncasha2.pem gscasha2.pem > ./ca_bundle.crt
+# exported from firefox
+$ cat monitowl.com nazwaSSL CertumTrustedNetworkCA CertumGlobalServicesCASHA2 > ca_bundle_ff.crt
+$  openssl verify -untrusted ./ca.crt  monitowlcom.crt 
+monitowlcom.crt: OK
+$ c_rehash ./
+$ openssl s_client -CApath ./  -connect activeo.monitowl.com:443 -servername activeo.monitowl.com
+CONNECTED(00000003)
+depth=4 C = PL, O = Unizeto Sp. z o.o., CN = Certum CA
+verify return:1
+depth=3 C = PL, O = Unizeto Technologies S.A., OU = Certum Certification Authority, CN = Certum Trusted Network CA
+verify return:1
+depth=2 C = PL, O = Unizeto Technologies S.A., OU = Certum Certification Authority, CN = Certum Global Services CA SHA2
+verify return:1
+depth=1 C = PL, O = nazwa.pl S.A., OU = http://nazwa.pl, CN = nazwaSSL
+verify return:1
+depth=0 C = PL, CN = *.monitowl.com, emailAddress = admin@whitehats.pl
+verify return:1
+[...]
+*    Verify return code: 0 (ok)*
+
+$ curl -I --cacert ca_bundle.crt https://activeo.monitowl.com 
+HTTP/1.1 200 OK
+$ curl -I --cacert ca_bundle_ff.crt https://activeo.monitowl.com 
+HTTP/1.1 200 OK
+As you can see, the openssl s_client verifies the connection, curl works without problems.
+Problem
+In [1]:  import requests
+In [3]: requests.get('https://activeo.monitowl.com', verify=True)      
+Out[3]: <Response [200]>
+In [4]: requests.get('https://activeo.monitowl.com', verify="./ca_bundle.crt")
+---------------------------------------------------------------------------
+SSLError                                  Traceback (most recent call last)
+<ipython-input-3-c92a3091d6ce> in <module>()
+----> 1 requests.get('https://activeo.monitowl.com', verify="./ca_bundle.crt")
+
+/home/vagrant/.virtualenvs/test/local/lib/python2.7/site-packages/requests/api.pyc in get(url, params, **kwargs)
+     67 
+     68     kwargs.setdefault('allow_redirects', True)
+---> 69     return request('get', url, params=params, **kwargs)
+     70 
+     71 
+
+/home/vagrant/.virtualenvs/test/local/lib/python2.7/site-packages/requests/api.pyc in request(method, url, **kwargs)
+     48 
+     49     session = sessions.Session()
+---> 50     response = session.request(method=method, url=url, **kwargs)
+     51     # By explicitly closing the session, we avoid leaving sockets open which
+     52     # can trigger a ResourceWarning in some cases, and look like a memory leak
+
+/home/vagrant/.virtualenvs/test/local/lib/python2.7/site-packages/requests/sessions.pyc in request(self, method, url, params, data, headers, cookies, files, auth, timeout, allow_redirects, proxies, hooks, stream, verify, cert, json)
+    463         }
+    464         send_kwargs.update(settings)
+--> 465         resp = self.send(prep, **send_kwargs)
+    466 
+    467         return resp
+
+/home/vagrant/.virtualenvs/test/local/lib/python2.7/site-packages/requests/sessions.pyc in send(self, request, **kwargs)
+    571 
+    572         # Send the request
+--> 573         r = adapter.send(request, **kwargs)
+    574 
+    575         # Total elapsed time of the request (approximately)
+
+/home/vagrant/.virtualenvs/test/local/lib/python2.7/site-packages/requests/adapters.pyc in send(self, request, stream, timeout, verify, cert, proxies)
+    429         except (_SSLError, _HTTPError) as e:
+    430             if isinstance(e, _SSLError):
+--> 431                 raise SSLError(e, request=request)
+    432             elif isinstance(e, ReadTimeoutError):
+    433                 raise ReadTimeout(e, request=request)
+
+SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:581)
+
+In [5]: requests.get('https://activeo.monitowl.com', verify="./ca_bundle_ff.crt")    
+[same error]
+In [7]:  import ssl; ssl.OPENSSL_VERSION
+Out[7]: 'OpenSSL 1.0.1k 8 Jan 2015'
+In [8]: import sys; print (sys.version)
+2.7.9 (default, Mar  1 2015, 12:57:24) 
+[GCC 4.9.2]
+In [2]: requests.__version__
+Out[2]: '2.7.0'
+On server side (tornado):
+ SSLError: [SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:581)
+I asked some friends to test it with the bundle exported from webbrowser and:
+Python==2.7.9 + OpenSSL==1.0.1k => FAILS
+Python==2.7.10 + OpenSSL==1.0.1k => FAILS
+Python==2.7.9 + OpenSSL==1.0.1l => FAILS
+Python==2.7.10 + OpenSSL==1.0.1p => WORKS
+Python==2.7.10 + OpenSSL==1.0.2d => WORKS
+Python==2.7.9 + OpenSSL 1.0.2d => WORKS
+I'm aware that python verifies the certs differently than web browsers.
+Do you have any clues what is wrong with the bundle? What else can I check? It's a bug? In requests, openssl, python or urllib3?

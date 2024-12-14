@@ -1,0 +1,58 @@
+niitsuma commented on 15 Jan 2016
+This works
+import numpy as np
+from keras.models import Graph
+from keras.layers.core import LambdaMerge
+from keras.layers.embeddings import Embedding
+from keras.objectives import mse
+
+index_size=3
+vocab_size=3
+vector_size=2
+code_dim=2
+maxlen=1
+
+kerasmodel = Graph()
+
+kerasmodel.add_input(name='iword' , input_shape=(1,), dtype=int)
+kerasmodel.add_node(Embedding(vocab_size, vector_size,
+                              trainable=False,
+                              weights=[np.array([[1,2],[3,4],[5,6]],'float32')]
+                              ),name='embedword', input='iword')
+
+kerasmodel.add_input(name='index' , input_shape=(1,), dtype=int)
+kerasmodel.add_node(Embedding(index_size, vector_size,
+                              trainable=False,
+                              weights=[np.array([[10,20],[30,40],[50,60]],'float32')]
+                              ),name='embedindex', input='index')
+
+kerasmodel.add_node(LambdaMerge([kerasmodel.nodes['embedword'],kerasmodel.nodes['embedindex']] ,
+                                lambda x: x[0].mean(-2)+x[1].mean(-2)
+                                ,output_shape=(vector_size,)
+                                 ),
+                    name='merege'
+                    )
+
+kerasmodel.add_output(name='out',input='merege')
+kerasmodel.compile('rmsprop', {'out':'mse'})
+
+print kerasmodel.predict({'index':np.array([[0,0],[1,0]]),'iword':np.array([[1,0],[1,1]]) })
+However, comment out
+#trainable=False 
+in these two Embeddings cause error
+Traceback (most recent call last):
+  File "for-debug-post.py", line 39, in <module>
+    kerasmodel.compile('rmsprop', {'out':'mse'})
+  File "/usr/lib64/python2.7/site-packages/keras/models.py", line 1076, in compile
+    self._train = K.function(train_ins, [train_loss], updates=updates)
+  File "/usr/lib64/python2.7/site-packages/keras/backend/theano_backend.py", line 394, in function
+    return Function(inputs, outputs, updates=updates)
+  File "/usr/lib64/python2.7/site-packages/keras/backend/theano_backend.py", line 386, in __init__
+    allow_input_downcast=True, **kwargs)
+  File "/usr/lib64/python2.7/site-packages/theano/compile/function.py", line 266, in function
+    profile=profile)
+  File "/usr/lib64/python2.7/site-packages/theano/compile/pfunc.py", line 489, in pfunc
+    no_default_updates=no_default_updates)
+  File "/usr/lib64/python2.7/site-packages/theano/compile/pfunc.py", line 198, in rebuild_collect_shared
+    (store_into, update_d[store_into]))
+ValueError: ('this shared variable already has an update expression', (<CudaNdarrayType(float32, matrix)>, GpuFromHost.0))

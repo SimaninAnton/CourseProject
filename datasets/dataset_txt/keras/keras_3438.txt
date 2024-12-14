@@ -1,0 +1,28 @@
+Nilabhra commented on 19 Jan 2017
+I implemented Mean Average Precision (MAP@all) in tensorflow like this:
+def mean_avg_prec_tf(y_true, y_pred):
+    dims = tf.shape(y_true)
+    n = dims[0]
+    k = dims[1]
+
+    _, top_idx = tf.nn.top_k(y_pred, k)
+
+    y_true = tf.to_float(y_true)
+    top_idx = tf.to_float(top_idx)
+
+    label_idx = tf.concat(1, [y_true, top_idx])
+    label_idx = tf.reshape(label_idx, [n, 2, k])
+
+    def avg_prec(label_idx):
+        label = label_idx[0]
+        idx = label_idx[1]
+        idx = tf.to_int32(idx)
+        ordered_pred = tf.gather(label, idx)
+        prec = ordered_pred * tf.cumsum(ordered_pred)
+        prec /= tf.to_float(tf.range(1, k + 1))
+        prec = tf.reduce_sum(prec) / tf.reduce_sum(ordered_pred)
+        return prec
+
+    precs = tf.map_fn(avg_prec, label_idx)
+    return tf.reduce_mean(precs)
+This gives me a nan on training set during training but the correct value for the validation set. Any idea how I can fix this?

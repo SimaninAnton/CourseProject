@@ -1,0 +1,53 @@
+Collaborator
+jtratner commented on 17 Feb 2018
+Short version: 9f41427 ("pip hash mode compatibility for pipenv lock -r") and later causes pipenv install with this repo's Pipfile to fail. I tried to dig into why the (seemingly unrelated) change would cause this, but couldn't quite grok why this happened. (v9.1.0 commit builds just fine)
+Describe your environment
+OS Type: OS X 10.12.6 (also fails in docker)
+Python version: Python 2.7.14
+Pipenv version: $ pipenv --version
+Expected result
+Expected pipenv to install
+Actual result
+This traceback (added a print(package_name) just to make debugging a little easier, whichi s why -e . dumps):
+configparser==3.5.0; python_version < '3.2' --hash=sha256:5308b47021bc2340965c371f0f058cc6971a04502638d4244225c49d80db273a
+# -e .▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 17/18 — 00:00:00
+Traceback (most recent call last):
+  File "/usr/local/bin/pipenv", line 11, in <module>
+    load_entry_point('pipenv', 'console_scripts', 'pipenv')()
+  File "/Users/jtratner/pipenv/pipenv/vendor/click/core.py", line 722, in __call__
+    return self.main(*args, **kwargs)
+  File "/Users/jtratner/pipenv/pipenv/vendor/click/core.py", line 697, in main
+    rv = self.invoke(ctx)
+  File "/Users/jtratner/pipenv/pipenv/vendor/click/core.py", line 1066, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/Users/jtratner/pipenv/pipenv/vendor/click/core.py", line 895, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/Users/jtratner/pipenv/pipenv/vendor/click/core.py", line 535, in invoke
+    return callback(*args, **kwargs)
+  File "/Users/jtratner/pipenv/pipenv/cli.py", line 207, in install
+    deploy=deploy
+  File "/Users/jtratner/pipenv/pipenv/core.py", line 1708, in do_install
+    do_init(dev=dev, allow_global=system, ignore_pipfile=ignore_pipfile, system=system, skip_lock=skip_lock, verbose=verbose, concurrent=concurrent, deploy=deploy, pre=pre)
+  File "/Users/jtratner/pipenv/pipenv/core.py", line 1321, in do_init
+    skip_lock=skip_lock, verbose=verbose, concurrent=concurrent)
+  File "/Users/jtratner/pipenv/pipenv/core.py", line 834, in do_install_dependencies
+    index=index
+  File "/Users/jtratner/pipenv/pipenv/core.py", line 1346, in pip_install
+    req = get_requirement(package_name.split('--hash')[0].split('--trusted-host')[0]).vcs
+  File "/Users/jtratner/pipenv/pipenv/utils.py", line 110, in get_requirement
+    req = [r for r in requirements.parse(dep)][0]
+IndexError: list index out of range
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 17/18 — 00:00:02
+Steps to replicate
+Put this in a script, it will fail
+rm -r ~/pipenv-env || true
+pip install virtualenv
+virtualenv --python=python2.7 ~/pipenv-env
+source ~/pipenv-env/bin/activate
+python setup.py develop
+pipenv install
+For good measure, I confirmed this also fails in Docker:
+FROM python:3.6.4
+
+ADD . /repo
+RUN cd /repo && bash ./script.sh

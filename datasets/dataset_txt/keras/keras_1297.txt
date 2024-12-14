@@ -1,0 +1,100 @@
+mynkpl1998 commented on 24 Jan 2018
+I am trying to build a network where I want to predict the input after 2 Dense layers and after getting the estimate of the input use that to further train Dense layers of the same network.
+Something like this,
+def decodeSignal(x):
+    x = softmax(x)
+    Y = K.one_hot(K.argmax(x), num_classes=M)
+    return Y
+    
+
+input_layer = Input(shape=(M,))
+
+# Relay
+relay = Dense(M,activation='relu')(input_layer)
+relay = Dense(M,)(relay)
+relay_softmax = Lambda(decodeSignal,output_shape=(M,))(relay)
+
+
+model = Model(input_layer,relay_softmax)
+model.compile(optimizer=Adam(lr=.001),loss='categorical_crossentropy')
+print(model.summary())
+model.fit(onehot_symbols,onehot_symbols,epochs=1000,shuffle=True,verbose=False)
+I want to predict from relay but at the same time, I don't want to apply activation here as I want to use those weights in further layers. That why I used lambda layer where I first do the softmax and get the signal sent and then convert it to M dimensional one - hot vector. This M dimensional vector is the output from lambda layer which is then passed to further Dense Layers where the previous layer should be the relay ( not the relay after activation).
+Model compiled successfully but value error was reported during model.fit()
+ValueError                                Traceback (most recent call last)
+<ipython-input-91-45ea0e0c60db> in <module>()
+     31 model.compile(optimizer=Adam(lr=.001),loss='categorical_crossentropy')
+     32 print(model.summary())
+---> 33 model.fit(onehot_symbols,onehot_symbols,epochs=1000,shuffle=True,verbose=False,validation_data=(onehot_symbols,onehot_symbols),callbacks=[TensorBoard(log_dir='/home/mayank/Documents/Codes/WSI_Project')])
+
+/home/mayank/.local/lib/python3.6/site-packages/keras/engine/training.py in fit(self, x, y, batch_size, epochs, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, initial_epoch, steps_per_epoch, validation_steps, **kwargs)
+   1632         else:
+   1633             ins = x + y + sample_weights
+-> 1634         self._make_train_function()
+   1635         f = self.train_function
+   1636 
+
+/home/mayank/.local/lib/python3.6/site-packages/keras/engine/training.py in _make_train_function(self)
+    988                     training_updates = self.optimizer.get_updates(
+    989                         params=self._collected_trainable_weights,
+--> 990                         loss=self.total_loss)
+    991                 updates = self.updates + training_updates
+    992                 # Gets loss and metrics. Updates weights at each call.
+
+/home/mayank/.local/lib/python3.6/site-packages/keras/legacy/interfaces.py in wrapper(*args, **kwargs)
+     85                 warnings.warn('Update your `' + object_name +
+     86                               '` call to the Keras 2 API: ' + signature, stacklevel=2)
+---> 87             return func(*args, **kwargs)
+     88         wrapper._original_function = func
+     89         return wrapper
+
+/home/mayank/.local/lib/python3.6/site-packages/keras/optimizers.py in get_updates(self, loss, params)
+    430 
+    431         for p, g, m, v in zip(params, grads, ms, vs):
+--> 432             m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
+    433             v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g)
+    434             p_t = p - lr_t * m_t / (K.sqrt(v_t) + self.epsilon)
+
+/home/mayank/.local/lib/python3.6/site-packages/tensorflow/python/ops/math_ops.py in binary_op_wrapper(x, y)
+    883       if not isinstance(y, sparse_tensor.SparseTensor):
+    884         try:
+--> 885           y = ops.convert_to_tensor(y, dtype=x.dtype.base_dtype, name="y")
+    886         except TypeError:
+    887           # If the RHS is not a tensor, it might be a tensor aware object
+
+/home/mayank/.local/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in convert_to_tensor(value, dtype, name, preferred_dtype)
+    834       name=name,
+    835       preferred_dtype=preferred_dtype,
+--> 836       as_ref=False)
+    837 
+    838 
+
+/home/mayank/.local/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in internal_convert_to_tensor(value, dtype, name, as_ref, preferred_dtype, ctx)
+    924 
+    925     if ret is None:
+--> 926       ret = conversion_func(value, dtype=dtype, name=name, as_ref=as_ref)
+    927 
+    928     if ret is NotImplemented:
+
+/home/mayank/.local/lib/python3.6/site-packages/tensorflow/python/framework/constant_op.py in _constant_tensor_conversion_function(v, dtype, name, as_ref)
+    227                                          as_ref=False):
+    228   _ = as_ref
+--> 229   return constant(v, dtype=dtype, name=name)
+    230 
+    231 
+
+/home/mayank/.local/lib/python3.6/site-packages/tensorflow/python/framework/constant_op.py in constant(value, dtype, shape, name, verify_shape)
+    206   tensor_value.tensor.CopyFrom(
+    207       tensor_util.make_tensor_proto(
+--> 208           value, dtype=dtype, shape=shape, verify_shape=verify_shape))
+    209   dtype_value = attr_value_pb2.AttrValue(type=tensor_value.tensor.dtype)
+    210   const_tensor = g.create_op(
+
+/home/mayank/.local/lib/python3.6/site-packages/tensorflow/python/framework/tensor_util.py in make_tensor_proto(values, dtype, shape, verify_shape)
+    369   else:
+    370     if values is None:
+--> 371       raise ValueError("None values not supported.")
+    372     # if dtype is provided, forces numpy array to be the type
+    373     # provided if possible.
+
+ValueError: None values not supported.

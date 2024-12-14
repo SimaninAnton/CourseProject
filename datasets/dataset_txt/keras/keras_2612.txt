@@ -1,0 +1,71 @@
+ruanxt commented on 19 Apr 2017
+Hi I'm trying to implement PCA using Keras and there are some errors, could anyone help me out? Here is my code:
+from keras.models import Model
+import numpy as np
+from keras.engine.topology import Layer
+from keras.layers import Input
+from keras.optimizers import RMSprop
+import scipy.stats as stats
+from sklearn.decomposition import IncrementalPCA
+import keras.backend as K
+
+class PCALayer(Layer):
+
+    def __init__(self, pc_dim, input_dim=None, **kwargs):
+        self.pc_dim = pc_dim
+        self.input_dim = input_dim
+        super(PCALayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        mean = 0.0
+        std = 1.0
+        pc_num = self.pc_dim
+        p = self.input_dim
+        initial_W_values = stats.truncnorm.rvs(-2 * std, 2 * std, loc=mean, scale=std, size=(pc_num, p))
+        inital_b_values = np.zeros((1, p))
+        self.W = K.variable(initial_W_values)
+        self.b=K.zeros((1, p))
+
+        self.ipca = IncrementalPCA(n_components=pc_num)
+
+    def call(self, inputs, mask=None):
+        print type(inputs)
+        inputs_vals = inputs
+        self.ipca.partial_fit(inputs_vals)
+        self.W = self.ipca.components_
+        self.b = self.ipca.mean_
+        result = np.dot((inputs_vals - self.ipca.mean_), self.ipca.components_.T)
+        return result
+
+    def get_output_shape_for(self, input_shape):
+        return(input_shape[0], self.pc_dim)
+
+inputLayer = Input(shape=(10,))
+PCLayer = PCALayer(pc_dim=3, input_dim=10)(inputLayer)
+
+model = Model(input=inputLayer, output=PCLayer)
+optimizer=RMSprop(lr=0.001)
+model.compile(loss="mse", optimizer=optimizer)
+
+model.fit(np.rand([100, 10]), np.rand([100, 3]), batch_size = 5, nb_epoch = 10)
+And there are these errors:
+Using TensorFlow backend.
+Traceback (most recent call last):
+<class 'tensorflow.python.framework.ops.Tensor'>
+  File "/home/ruanxt/projects/DL_shapespace/code/layer_custom_v0.py", line 45, in <module>
+    PCLayer = PCALayer(pc_dim=3, input_dim=10)(inputLayer)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 578, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/home/ruanxt/projects/DL_shapespace/code/layer_custom_v0.py", line 34, in call
+    self.ipca.partial_fit(inputs_vals)
+  File "/usr/local/lib/python2.7/dist-packages/sklearn/decomposition/incremental_pca.py", line 199, in partial_fit
+    X = check_array(X, copy=self.copy, dtype=[np.float64, np.float32])
+  File "/usr/local/lib/python2.7/dist-packages/sklearn/utils/validation.py", line 373, in check_array
+    array = np.array(array, dtype=dtype, order=order, copy=copy)
+ValueError: setting an array element with a sequence.
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

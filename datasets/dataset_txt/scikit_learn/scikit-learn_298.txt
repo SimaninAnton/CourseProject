@@ -1,0 +1,64 @@
+Hellisotherpeople commented on Aug 27, 2019 •
+edited
+Description
+Trained classifiers within a pipeline seem to have trouble with updating themselves when a saved model is loaded and new examples are introduced with partial_fit
+Steps/Code to Reproduce
+increment = True
+keras = False
+def parse_string(a_str):
+    to_ret = "".join([c.lower() for c in a_str if c in string.ascii_letters or c in string.whitespace])
+    to_ret2 = to_ret.split()
+    to_ret3 = " ".join(to_ret2)
+    return to_ret3
+
+pipe = joblib.load('saved_card_classification.pkl')
+
+if keras:
+    pipe.named_steps['model'].model = load_model('keras_model.h5')
+
+
+with open('card_classification.csv', 'a') as csvfile:
+    spamwriter = csv.writer(csvfile)
+    done = False
+    while not done:
+        to_process = input("Please copy and paste a document to be classified Ctrl-shift-D or ctrl-D to exit")    
+        print("MODEL PREDICTION:")
+        pred = pipe.predict(str(to_process))
+        probs = pipe.predict_proba(str(to_process))
+        print(pred)
+        print(probs)
+        explain_pred(str(to_process))
+        label = input("What is the ground truth label of this? Seperate labels with a space")
+        if label == "":
+            pass
+        elif label == "f":
+            break
+        elif label == "stop":
+            csvfile.close()
+            if keras and increment:
+                pipe.named_steps['model'].model.save('keras_model.h5')
+                pipe.named_steps['model'].model = None
+                joblib.dump(pipe, 'saved_card_classification.pkl')
+                print("Model Dumped!!!!")
+            done = True
+            sys.exit()
+        else:
+            the_labels = label.split()
+            if increment == True:
+                t_model = pipe.named_steps['model']
+                ppset = Sentence(str(to_process))
+                stacked_embeddings.embed(ppset)
+                the_emb = ppset.get_embedding().cpu().detach().numpy().reshape(1, -1)
+                t_model.partial_fit(the_emb, the_labels) ## Next classification done after this doesn't change probabilities 
+                joblib.dump(pipe, 'saved_card_classification.pkl')
+                print("Model Dumped!!!!")
+                pipe = joblib.load('saved_card_classification.pkl')
+            the_labels.append(str(to_process))
+            spamwriter.writerow(the_labels)
+            csvfile.flush()
+Expected Results
+After a single example is fitted with partial fit, the new weights should be saved within the model used within my pipeline, meaning that if I train it on a single new example, I expect the probabilities of each class to change for the same document after I've trained on it
+Actual Results
+Using the exact same document, my classifier seems not to update during partial_fit. I see evidence that it trained for another epoch (listing loss / a new epoch) but then it seems that my weights are not being properly saved within the pipeline. I get the exact same probabilities when I predict on the same document before and after a partial_fit with human supplied ground truth on it
+Versions
+latest scikit learn version from pip3.

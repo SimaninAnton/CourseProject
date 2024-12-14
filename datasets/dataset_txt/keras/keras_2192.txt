@@ -1,0 +1,75 @@
+ghost commented on 8 Jun 2017
+My code:
+'''Variational Autoencoder''
+
+from sklearn.datasets import make_blobs
+from sklearn.preprocessing import MinMaxScaler
+from keras.layers import Input, Dense, Lambda
+from keras.losses import mean_squared_error
+from keras.models import Model
+import keras.backend as K
+
+'''Define the variational autoencoder with keras'''
+class vae():
+    def __init__(self, d_input, d_latent):
+        self.d_input = d_input  # dimention of input variable
+        self.d_latent = d_latent  # dimention of latent variable
+
+        self.input = Input(shape=(self.d_input,))
+        self.encoder = Dense(units=25, activation='relu')(self.input)
+        self.mu = Dense(units=d_latent, activation='sigmoid')(self.encoder)
+        self.sigma = Dense(units=d_latent, activation='softplus')(self.encoder)
+        self.z = Lambda(self.sampling, output_shape=(self.d_latent,))([self.mu, self.sigma])
+        self.decoder = Dense(units=25, activation='relu')(self.z)
+        self.decoder = Dense(units=self.d_input, activation='sigmoid')(self.decoder)
+
+        self.autoencoder = Model(inputs=self.input, outputs=self.decoder)
+        self.autoencoder.compile(optimizer='Adam', loss=self.vae_loss)
+
+    @staticmethod
+    def sampling(args):
+        mu, sigma = args
+        epsilon = K.random_normal(shape=K.shape(mu), mean=0, stddev=1)
+        return mu + sigma * epsilon
+
+    def vae_loss(self):
+        KL = - 0.5 * K.mean(1 + 2 * K.log(self.sigma) - K.square(self.sigma) - K.square(self.mu), axis=-1)
+        recon_error = 0.5 * mean_squared_error(self.decoder, self.input)
+        return KL + recon_error
+
+    def fit(self, data, batch_size, training_epochs):
+        self.autoencoder.fit(x=data, y=data, batch_size=batch_size, epochs=training_epochs)
+
+    def reconstruct(self, data):
+        return self.autoencoder.predict(data)
+
+
+'''Begin our test'''
+# Set parameters
+n_samples = 10000  # the number of samples
+d_samples = 200  # the dimention of samples
+training_epochs = 100
+batch_size = 128
+# Generate samples randomly
+samples, _ = make_blobs(n_samples=n_samples, n_features=d_samples, centers=3, center_box=(-10, 10))
+samples = MinMaxScaler().fit_transform(samples)
+# Fit the model
+lm = vae(d_input=d_samples, d_latent=2)
+lm.fit(data=samples, batch_size=batch_size, training_epochs=training_epochs)
+Run it, and arise:
+S:\Anaconda3\python.exe W:/Nutstore_Lab/RPM_Project/Code/try_it2.py
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "W:/Nutstore_Lab/RPM_Project/Code/try_it2.py", line 55, in <module>
+    lm = vae(d_input=d_samples, d_latent=2)
+  File "W:/Nutstore_Lab/RPM_Project/Code/try_it2.py", line 25, in __init__
+    self.autoencoder.compile(optimizer='Adam', loss=self.vae_loss)
+  File "S:\Anaconda3\lib\site-packages\keras\engine\training.py", line 911, in compile
+    sample_weight, mask)
+  File "S:\Anaconda3\lib\site-packages\keras\engine\training.py", line 436, in weighted
+    score_array = fn(y_true, y_pred)
+TypeError: vae_loss() takes 1 positional argument but 3 were given
+
+Process finished with exit code 1
+I don't know why this error happened.
+the version of Tensorflow is 1.2.0rc1, and Keras is master.

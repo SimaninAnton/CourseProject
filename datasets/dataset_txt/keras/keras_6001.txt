@@ -1,0 +1,92 @@
+Contributor
+parag2489 commented on 4 Feb 2016
+I am having difficulty in writing a data generator which can work with multiple workers. My data generator works fine with one worker, but with > 1 workers, it gives me the following error:
+UnboundLocalError: local variable 'generator_output' referenced before assignment
+I have tried many things such as declaring X_train, X_test, y_train, y_test as global. I also tried wrapping the myGenerator() function into a Python mutex. Those solutions didn't work.
+My system: Ubuntu 14.04, Python 2.7, Tesla K40 GPU
+A script and its sample out to reproduce the issue is given below:
+import time
+import logging
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, Flatten
+from keras.layers.convolutional import Convolution1D, Convolution2D, MaxPooling2D
+from keras.utils import np_utils
+from keras import callbacks
+
+class printbatch(callbacks.Callback):
+    def on_epoch_begin(self, epoch, logs={}):
+        print(logs)
+    def on_epoch_end(self, epoch, logs={}):
+        print(logs)
+
+nb_classes = 10
+nb_epoch = 12
+
+img_rows, img_cols = 28, 28
+nb_filters = 32
+nb_pool = 2
+nb_conv = 3
+
+def myGenerator():
+    (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    y_train = np_utils.to_categorical(y_train,10)
+    X_train = X_train.reshape(X_train.shape[0], 1, 28, 28)
+    X_test = X_test.reshape(X_test.shape[0], 1, 28, 28)
+    X_train = X_train.astype('float32')
+    X_test = X_test.astype('float32')
+    X_train /= 255
+    X_test /= 255
+    while 1:
+        for i in range(1875):
+            print("came till here")
+            yield X_train[i*32:(i+1)*32], y_train[i*32:(i+1)*32]
+            print("and here")
+        print("and here too")
+
+model = Sequential()
+
+model.add(Convolution2D(nb_filters, nb_conv, nb_conv,
+                        border_mode='valid',
+                        input_shape=(1, img_rows, img_cols)))
+model.add(Activation('relu'))
+model.add(Convolution2D(nb_filters, nb_conv, nb_conv))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
+model.add(Dropout(0.25))
+
+model.add(Flatten())
+model.add(Dense(128))
+model.add(Activation('relu'))
+model.add(Dropout(0.5))
+model.add(Dense(10))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adadelta')
+
+pb = printbatch()
+my_generator = myGenerator()
+
+print("Built the generator")
+
+t0=time.time()
+model.fit_generator(my_generator, samples_per_epoch = 5000, nb_epoch = 2, verbose=2, show_accuracy=True, callbacks=[pb], validation_data=None, class_weight=None, nb_worker=2)
+t1=time.time()
+
+print("Training completed in " + str(t1-t0) + " seconds")
+Sample output:
+Built the generator
+Epoch 1/2
+{}
+Traceback (most recent call last):
+  File "/testGenerator_multiWorkers.py", line 72, in <module>
+    model.fit_generator(my_generator, samples_per_epoch = 5000, nb_epoch = 2, verbose=2, show_accuracy=True, callbacks=[pb], validation_data=None, class_weight=None, nb_worker=2)
+  File "build/bdist.linux-x86_64/egg/keras/models.py", line 966, in fit_generator
+
+UnboundLocalError: local variable 'generator_output' referenced before assignment
+
+came till here
+
+Process finished with exit code 1
+P.S. I searched about this issue but the above issue is not similar to most other ones such as this.
+9

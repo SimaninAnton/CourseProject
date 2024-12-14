@@ -1,0 +1,99 @@
+yushuinanrong commented on 6 Oct 2017
+Hi all,
+I'm trying to split one keras layer using Lambda function. Follow is my code snippet:
+` k = 5
+x = Input((120,160,1))
+h = Conv2D(units / 4, (k, k), strides = (2,2), border_mode='same', activation = 'elu')(x)
+h = BatchNormalization(momentum=0.8)(h)
+h = Dropout(dropout)(h)
+# h = MaxPooling2D(pool_size=(2, 2))(h)
+# h = LeakyReLU(0.2)(h)
+h = Conv2D(units / 2, (k, k), strides = (2,2), border_mode='same', activation = 'elu')(h)
+h = BatchNormalization(momentum=0.8)(h)
+h = Dropout(dropout)(h)
+# h = MaxPooling2D(pool_size=(2, 2))(h)
+# h = LeakyReLU(0.2)(h)
+h = Conv2D(units / 2, (k, k), strides = (2,2), border_mode='same', activation = 'elu')(h)
+h = BatchNormalization(momentum=0.8)(h)
+h = Dropout(dropout)(h)
+# h = MaxPooling2D(pool_size=(2, 2))(h)
+# h = LeakyReLU(0.2)(h)
+h = Conv2D(units, (k, k), strides = (2,2), border_mode='same', activation = 'elu')(h)
+h = BatchNormalization(momentum=0.8)(h)
+h = Dropout(dropout)(h)
+# h = LeakyReLU(0.2)(h)
+h = AveragePooling2D((6,8))(h)
+h = Dense(latent_dim, name="encoder_mu")(h)
+h_left = Lambda(lambda x : x[:,:,0:latent_dim/2],output_shape=(1,1,latent_dim/2))(h)
+h_out = Lambda(lambda x : x[:,:,latent_dim/2:latent_dim], output_shape=(1,1,latent_dim/2))(h)
+# h_out = K.squeeze(h_out)(h_out)
+auxiliary_c = Input(shape=(1,1, c_dim), name='aux_input_c')
+auxiliary_z = Input(shape=(1,1, noise_dim), name='aux_input_z')
+h = keras.layers.concatenate([h_left, auxiliary_c, auxiliary_z])
+
+# h = Flatten()(h)
+h_dense = Dense(15 * 20 * 64, activation = 'relu')(h)
+h = Reshape(( 15, 20, 64))(h_dense)
+# h = LeakyReLU(0.2)(h)
+h = Conv2DTranspose(units/2, (k,k),  strides = (2,2),  padding = 'same', activation = 'elu')(h) # 8*6*64
+# h = Dropout(dropout)(h)
+h = BatchNormalization(momentum=0.8)(h)
+# h = LeakyReLU(0.2)(h)
+# h = UpSampling2D(size=(2, 2))(h)
+h = Conv2DTranspose(units/4, (k,k),  strides = (2,2),  padding = 'same', activation = 'elu')(h) # 8*6*64
+# h = Dropout(dropout)(h)
+h = BatchNormalization(momentum=0.8)(h)
+# h = LeakyReLU(0.2)(h)
+# h = UpSampling2D(size=(2, 2))(h)
+h = Conv2DTranspose(1, (k,k),  strides = (2,2),  padding = 'same', activation = 'tanh')(h) # 8*6*64
+# h = Dropout(dropout)(h)
+# h = BatchNormalization(momentum=0.8)(h)
+# h = LeakyReLU(0.2)(h)
+# h = UpSampling2D(size=(2, 2))(h)
+# output = Conv2D(1, (k, k), border_mode='same', activation = 'tanh')(h)
+
+return Model([x, auxiliary_c,auxiliary_z], [h, h_out], name="encoder")
+`
+This model compiles well.
+But when I feed real training data to this model, it gives me the error messege:
+[generated_images,f_id] = generator.predict([image_batch, c_, z])
+File "build/bdist.linux-x86_64/egg/keras/engine/training.py", line 1653, in predict
+File "build/bdist.linux-x86_64/egg/keras/engine/training.py", line 1246, in _predict_loop
+File "build/bdist.linux-x86_64/egg/keras/backend/tensorflow_backend.py", line 2255, in call
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 767, in run
+run_metadata_ptr)
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 965, in _run
+feed_dict_string, options, run_metadata)
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1015, in _do_run
+target_list, options, run_metadata)
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1035, in _do_call
+raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Input to reshape is a tensor with 8768 values, but the requested shape requires a multiple of 146
+[[Node: dense_4/Reshape = Reshape[T=DT_FLOAT, Tshape=DT_INT32, _device="/job:localhost/replica:0/task:0/gpu:0"](concatenate_1/concat, dense_4/Reshape/shape)]]
+[[Node: conv2d_transpose_3/Tanh/_53 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_1_conv2d_transpose_3/Tanh", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]]
+Caused by op u'dense_4/Reshape', defined at:
+File "GAN_UTD_2nd_model.py", line 428, in
+generator = model_generator(latent_dim = latent_dim, input_shape = input_shape, units = units)
+File "GAN_UTD_2nd_model.py", line 240, in model_generator
+h_dense = Dense(15 * 20 * 64, activation = 'relu')(h)
+File "build/bdist.linux-x86_64/egg/keras/engine/topology.py", line 602, in call
+output = self.call(inputs, **kwargs)
+File "build/bdist.linux-x86_64/egg/keras/layers/core.py", line 841, in call
+output = K.dot(inputs, self.kernel)
+File "build/bdist.linux-x86_64/egg/keras/backend/tensorflow_backend.py", line 973, in dot
+xt = tf.reshape(x, [-1, x_shape[-1]])
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/ops/gen_array_ops.py", line 2630, in reshape
+name=name)
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/framework/op_def_library.py", line 763, in apply_op
+op_def=op_def)
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2327, in create_op
+original_op=self._default_original_op, op_def=op_def)
+File "/home/vivo/anaconda2/envs/tensorflow/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 1226, in init
+self._traceback = _extract_stack()
+InvalidArgumentError (see above for traceback): Input to reshape is a tensor with 8768 values, but the requested shape requires a multiple of 146
+[[Node: dense_4/Reshape = Reshape[T=DT_FLOAT, Tshape=DT_INT32, _device="/job:localhost/replica:0/task:0/gpu:0"](concatenate_1/concat, dense_4/Reshape/shape)]]
+[[Node: conv2d_transpose_3/Tanh/_53 = _Recvclient_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_1_conv2d_transpose_3/Tanh", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]]
+I don't understand especially this error message"tensorflow.python.framework.errors_impl.InvalidArgumentError: Input to reshape is a tensor with 8768 values, but the requested shape requires a multiple of 146".
+The output of Dense layer is 19200 units, so it should be right for the following Reshape layer...
+Any idea??
+Best

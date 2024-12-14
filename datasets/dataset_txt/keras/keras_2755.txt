@@ -1,0 +1,57 @@
+peune commented on 3 Apr 2017
+Hi,
+I built a CNN A that generates images using Deconvolution2D layer. This layer is re-used later in another CNN B. The following code illustrates this idea.
+    A = Sequential()
+    A.add( Deconvolution2D(10, 10,10, border_mode='valid', bias=False, input_shape=(1,1,1), output_shape=(None,10,10,10)) )
+    A.add( Convolution2D(1, 3,3, border_mode='same', bias=False) )
+    A.compile(loss='mean_squared_error', optimizer='adam')
+
+    I = np.random.random((100,1,1,1))
+    O = np.random.random((100,1,10,10))
+    A.fit( I, O, batch_size=5, nb_epoch=10)
+
+    B = Sequential()
+    B.add( Convolution2D(1, 1,1, border_mode='same', bias=False, input_shape=(1,1,1)) )
+    l = len(A.layers)
+    for i in range(l):
+        B.add( A.layers[i] )
+    B.compile(loss='mean_squared_error', optimizer='adam')    
+    B.fit( I, O, batch_size=5, nb_epoch=10)
+This code works fine on CPU but when I switch to GPU it produces the following error:[
+Traceback (most recent call last):
+  File "test.py", line 36, in <module>
+    B.fit( I, O, batch_size=5, nb_epoch=10)
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 627, in fit
+    sample_weight=sample_weight)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1124, in fit
+    callback_metrics=callback_metrics)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 842, in _fit_loop
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 792, in __call__
+    return self.function(*inputs)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 871, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 314, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 859, in __call__
+    outputs = self.fn()
+ValueError: GpuElemwise. Output dimension mis-match. Output 0 (indices start at 0), working inplace on input 1, has shape[0] == 1, but the output's size on that axis is 10.
+Apply node that caused the error: GpuElemwise{Composite{((i0 * i1) + (i2 * i3))}}[(0, 1)](GpuDimShuffle{x,x,x,x}.0, <CudaNdarrayType(float32, 4D)>, GpuElemwise{sub,no_inplace}.0, GpuDnnConvGradW{alg
+o='none', inplace=True}.0)
+Toposort index: 113
+Inputs types: [CudaNdarrayType(float32, (True, True, True, True)), CudaNdarrayType(float32, 4D), CudaNdarrayType(float32, (True, True, True, True)), CudaNdarrayType(float32, 4D)]
+Inputs shapes: [(1, 1, 1, 1), (1, 1, 3, 3), (1, 1, 1, 1), (10, 1, 3, 3)]
+Inputs strides: [(0, 0, 0, 0), (0, 0, 3, 1), (0, 0, 0, 0), (9, 0, 3, 1)]
+Inputs values: [CudaNdarray([[[[ 0.89999998]]]]), 'not shown', CudaNdarray([[[[ 0.10000002]]]]), 'not shown']
+Outputs clients: [['output', GpuElemwise{Composite{(i0 - ((i1 * i2) / (i3 + sqrt(clip(i4, i5, i6)))))}}[(0, 0)](convolution2d_2_W, GpuElemwise{Composite{((i0 * sqrt(clip((i1 - (i2 ** i3)), i4, i5)))
+ / (i1 - (i6 ** i3)))},no_inplace}.0, GpuElemwise{Composite{((i0 * i1) + (i2 * i3))}}[(0, 1)].0, CudaNdarrayConstant{[[[[  9.99999994e-09]]]]}, GpuElemwise{Composite{((i0 * i1) + (i2 * sqr(i3)))}}[(
+0, 1)].0, CudaNdarrayConstant{[[[[ 0.]]]]}, CudaNdarrayConstant{[[[[ inf]]]]})]]
+This error can be fixed by inserting a 'Reshape' layer right after the 'Deconvolution2D' layer:
+    B = Sequential()
+    B.add( Convolution2D(1, 1,1, border_mode='same', bias=False, input_shape=(1,1,1)) )
+    B.add( Reshape(1,1,1) )
+The input to the Reshape layer is also (1,1,1) so it quite strange that this layer is needed here.
+I believe there could be some bug in the Deconvolution2D layer.
+I used Theano backend and Keras version is 1.1.1 (unfortunately, I am not an admin on this machine so I cannot update it myself).
+Regards,
+Sanparith

@@ -1,0 +1,26 @@
+Member
+jeremiedbb commented on Mar 25, 2019
+The MissingIndicator raises an error when a feature has missing values at transform time but didn't have missing values at fit time. This can be an issue when using it in cross validation. If a feature has only a few missing values there's a good chance that for some split, only the test contains those missing values. Below is a reproducible example of such a behavior.
+import numpy as np
+
+from sklearn.impute import MissingIndicator, SimpleImputer
+from sklearn.pipeline import make_pipeline, make_union
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import Ridge
+
+X = np.random.random_sample((1000, 10))
+y = np.random.random_sample(1000)
+
+seeds = np.random.choice(np.arange(1000), 9)                                                                                        
+for i in range(9): 
+    # First 9 features have normal amount of missing values
+    indices = np.random.choice(np.arange(X.shape[0]), 50, replace=False)
+    X[indices, i] = np.nan 
+
+X[0, 9] = np.nan  # last feature has only a few missing values (here only 1)
+
+estimator = make_pipeline(make_union(SimpleImputer(), MissingIndicator()), Ridge())
+
+cross_val_score(estimator, X, y, cv=5)
+>>> The features [9] have missing values in transform but have no missing values in fit.
+This is an annoying behavior... I propose to add an option, like handle_unknown in OneHotEncoder, to be able to not raise that error. Maybe handle_unseen ?

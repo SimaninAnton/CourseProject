@@ -1,0 +1,106 @@
+istorch commented on Oct 27, 2018
+Description
+Consider a fake data set of 1M points and 500 features, which takes up ~4 GB in memory. When I try to fit an IsolationForest to this dataset with just 2 estimators, and I try to leverage parallel computing by setting n_jobs = -1, the memory usage nearly doubles. In contrast, when I set n_jobs = 1, the memory usage only increases by 18 MB (see memory profiler results below).
+The isolation forest should be very memory efficient because each tree only fits to a random sample of 256 points. However, I suspect that somehow the entire dataset is being copied to every worker.
+Do you guys happen to have any suggestions for how this could be fixed?
+Thanks!
+Steps/Code to Reproduce
+Import modules:
+import numpy as np
+from sklearn.ensemble import IsolationForest
+%load_ext memory_profiler
+Generate fake data:
+X = np.random.randn(1000000, 500)
+Run in parallel:
+%%mprun -f IsolationForest.fit -c
+model = IsolationForest(
+    n_estimators=2,
+    max_samples=256,
+    max_features=1.0,
+    bootstrap=False,
+    n_jobs=-1,
+    random_state=123,
+    verbose=1000,
+    contamination="auto",
+    behaviour="new",
+)
+model.fit(X)
+Output is:
+[Parallel(n_jobs=2)]: Using backend LokyBackend with 2 concurrent workers.
+...
+Line #    Mem usage    Increment   Line Contents
+================================================
+   190   3930.7 MiB   3930.7 MiB       def fit(self, X, y=None, sample_weight=None):
+...
+   263   3938.3 MiB      0.0 MiB           super(IsolationForest, self)._fit(X, y, max_samples,
+   264   3938.3 MiB      0.0 MiB                                             max_depth=max_depth,
+   265  10155.9 MiB   6217.7 MiB                                             sample_weight=sample_weight)
+Run in serial:
+%%mprun -f IsolationForest.fit -c
+model = IsolationForest(
+    n_estimators=2,
+    max_samples=256,
+    max_features=1.0,
+    bootstrap=False,
+    n_jobs=1,
+    random_state=123,
+    verbose=1000,
+    contamination="auto",
+    behaviour="new",
+)
+model.fit(X)
+Output is:
+[Parallel(n_jobs=1)]: Using backend SequentialBackend with 1 concurrent workers.
+...
+Line #    Mem usage    Increment   Line Contents
+================================================
+   190   4153.1 MiB   4153.1 MiB       def fit(self, X, y=None, sample_weight=None):
+...
+   263   4160.6 MiB      0.0 MiB           super(IsolationForest, self)._fit(X, y, max_samples,
+   264   4160.6 MiB      0.0 MiB                                             max_depth=max_depth,
+   265   4178.5 MiB     17.9 MiB                                             sample_weight=sample_weight)
+Expected Results
+Running with n_jobs=-1 should not increase memory by much more than 18 MB.
+Actual Results
+Running with n_jobs=-1 increases memory by ~6 GB.
+Versions
+Output from import sklearn; sklearn.show_versions():
+System
+------
+executable: /usr/bin/python3
+    python: 3.5.2 (default, Nov 23 2017, 16:37:01)  [GCC 5.4.0 20160609]
+   machine: Linux-4.4.0-1070-aws-x86_64-with-Ubuntu-16.04-xenial
+
+BLAS
+----
+    macros: 
+  lib_dirs: 
+cblas_libs: cblas
+
+Python deps
+-----------
+    Cython: 0.29
+    pandas: None
+     numpy: 1.15.3
+       pip: 8.1.1
+   sklearn: 0.20.0
+setuptools: 40.5.0
+     scipy: 1.1.0
+/home/istorch/.local/lib/python3.5/site-packages/numpy/distutils/system_info.py:625: UserWarning: 
+    Atlas (http://math-atlas.sourceforge.net/) libraries not found.
+    Directories to search for the libraries can be specified in the
+    numpy/distutils/site.cfg file (section [atlas]) or by setting
+    the ATLAS environment variable.
+  self.calc_info()
+/home/istorch/.local/lib/python3.5/site-packages/numpy/distutils/system_info.py:625: UserWarning: 
+    Blas (http://www.netlib.org/blas/) libraries not found.
+    Directories to search for the libraries can be specified in the
+    numpy/distutils/site.cfg file (section [blas]) or by setting
+    the BLAS environment variable.
+  self.calc_info()
+/home/istorch/.local/lib/python3.5/site-packages/numpy/distutils/system_info.py:625: UserWarning: 
+    Blas (http://www.netlib.org/blas/) sources not found.
+    Directories to search for the sources can be specified in the
+    numpy/distutils/site.cfg file (section [blas_src]) or by setting
+    the BLAS_SRC environment variable.
+  self.calc_info()

@@ -1,0 +1,39 @@
+phdowling commented on 25 May 2016 •
+edited
+I have a model, constructed like this:
+text_input = Input((self.text_maxlen,), dtype="int32")
+title_input = Input((self.title_maxlen,), dtype="int32")
+embed = Embedding(  # TODO re-enable masking once merge supports it!
+    input_dim=self.vocab_size, output_dim=self.text_embedding_size, mask_zero=False, 
+    name="word_embeddings",
+    weights=[get_word_vector_matrix()]
+)
+title_embedding = embed(title_input)
+title_encoded = LSTM(self.title_lstm_size, return_sequences=False)(title_embedding)
+title_encoded = Dropout(0.3)(title_encoded)
+title_encoded_repeat = RepeatVector(self.text_maxlen)(title_encoded)
+text_embedding = embed(text_input)
+merged_aux_and_text = merge([title_encoded_repeat, text_embedding], mode="concat")
+merged_text_lstm = LSTM(self.text_lstm_size, return_sequences=False)(merged_aux_and_text)
+merged_text_lstm = Dropout(0.3)(merged_text_lstm)
+prediction = Dense(1, activation="sigmoid")(merged_text_lstm)
+model = Model(input=[text_input, title_input], output=prediction)
+I save using something like
+fname = folder + "expertise_classifier_%s.model" % (time.time())
+with open(fname, "w") as of:
+    of.write(self.model.to_json())
+
+self.model.save_weights(fname + ".weights")
+Loading:
+with open(fname, "r") as inf:
+    self.model = model_from_json(inf.read())
+
+ln.debug("Loading weights..")
+self.model.load_weights(fname + ".weights")
+I get the following error:
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2206, in from_config
+    assert inbound_layer_name in created_layers, 'Missing layer: %s' % inbound_layer_name
+AssertionError: Missing layer: input_1
+Here's the model JSON, it seems the input layer really is missing: No it's not, but somehow it's not being loaded!
+{"class_name": "Model", "config": {"layers": [{"class_name": "InputLayer", "config": {"batch_input_shape": [null, 18], "name": "input_2", "input_dtype": "int32"}, "inbound_nodes": [], "name": "input_2"}, {"class_name": "Embedding", "config": {"trainable": true, "name": "word_embeddings", "activity_regularizer": null, "W_constraint": null, "init": "uniform", "input_dtype": "int32", "mask_zero": false, "input_dim": 160693, "batch_input_shape": [null, null], "W_regularizer": null, "dropout": 0.0, "output_dim": 300, "input_length": null}, "inbound_nodes": [[["input_2", 0, 0]], [["input_1", 0, 0]]], "name": "word_embeddings"}, {"class_name": "LSTM", "config": {"U_regularizer": null, "name": "lstm_1", "inner_activation": "hard_sigmoid", "go_backwards": false, "activation": "tanh", "trainable": true, "unroll": false, "consume_less": "cpu", "stateful": false, "init": "glorot_uniform", "inner_init": "orthogonal", "dropout_U": 0.0, "dropout_W": 0.0, "input_dim": 300, "return_sequences": false, "b_regularizer": null, "W_regularizer": null, "output_dim": 200, "forget_bias_init": "one", "input_length": null}, "inbound_nodes": [[["word_embeddings", 0, 0]]], "name": "lstm_1"}, {"class_name": "Dropout", "config": {"p": 0.3, "trainable": true, "name": "dropout_1"}, "inbound_nodes": [[["lstm_1", 0, 0]]], "name": "dropout_1"}, {"class_name": "InputLayer", "config": {"batch_input_shape": [null, 450], "name": "input_1", "input_dtype": "int32"}, "inbound_nodes": [], "name": "input_1"}, {"class_name": "RepeatVector", "config": {"trainable": true, "name": "repeatvector_1", "n": 450}, "inbound_nodes": [[["dropout_1", 0, 0]]], "name": "repeatvector_1"}, {"class_name": "Merge", "config": {"name": "merge_1", "concat_axis": -1, "mode_type": "raw", "dot_axes": [-1, -1], "mode": "concat", "output_shape": null, "output_shape_type": "raw"}, "inbound_nodes": [[["repeatvector_1", 0, 0], ["word_embeddings", 1, 0]]], "name": "merge_1"}, {"class_name": "LSTM", "config": {"U_regularizer": null, "name": "lstm_2", "inner_activation": "hard_sigmoid", "go_backwards": false, "activation": "tanh", "trainable": true, "unroll": false, "consume_less": "cpu", "stateful": false, "init": "glorot_uniform", "inner_init": "orthogonal", "dropout_U": 0.0, "dropout_W": 0.0, "input_dim": 500, "return_sequences": false, "b_regularizer": null, "W_regularizer": null, "output_dim": 200, "forget_bias_init": "one", "input_length": null}, "inbound_nodes": [[["merge_1", 0, 0]]], "name": "lstm_2"}, {"class_name": "Dropout", "config": {"p": 0.3, "trainable": true, "name": "dropout_2"}, "inbound_nodes": [[["lstm_2", 0, 0]]], "name": "dropout_2"}, {"class_name": "Dense", "config": {"W_constraint": null, "b_constraint": null, "name": "dense_1", "activity_regularizer": null, "trainable": true, "init": "glorot_uniform", "bias": true, "input_dim": null, "b_regularizer": null, "W_regularizer": null, "activation": "sigmoid", "output_dim": 1}, "inbound_nodes": [[["dropout_2", 0, 0]]], "name": "dense_1"}], "input_layers": [["input_1", 0, 0], ["input_2", 0, 0]], "output_layers": [["dense_1", 0, 0]], "name": "model_1"}}
+Something seems to be going wrong when saving (or loading?) the model. Any ideas how to fix this?

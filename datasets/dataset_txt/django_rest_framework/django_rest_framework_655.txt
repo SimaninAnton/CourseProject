@@ -1,0 +1,28 @@
+Contributor
+anx-ckreuzberger commented on 11 Sep 2017
+Before you call redirect me to StackOverflow, please hear me out. My question is not related on how to implement something. I am however trying to raise awareness that there is something already implemented in DRF that seems to be unintuitive (for me). (FYI, I am using DRF 3.6)
+TL;DR: I am questioning why would one even call filter_queryset in the get_object method of a (Model)ViewSet?
+Example
+I have a ModelViewSet with ModelSerializer and am using a soft-delete filter which automatically hides all objects that have deleted == True (without having to specify this filter):
+When I call GET /api/tasks/ I only get objects that have not been deleted (yet).
+However, I can also explicitly define this filter:
+GET /api/tasks/?deleted=on or GET /api/tasks/?deleted=off (default).
+Now this is fine for list calls, and can be easily accomplished with django filters (Using a BooleanDefaultFilter and BooleanDefaultField).
+But when I want to do a retrieve/detail call, e.g., GET /api/tasks/123/, I usually do not specify any filters (makes sense, does it?).
+This leads to a very simple problem: Soft-deleted objects can not be found using the above detail call. Problem: filter_queryset is called for the get_object method, and as I have deleted=off as a default filter, I will not be able to make detail calls on soft-deleted object.
+To retrieve a soft-deleted object I would have to make the following API call:
+GET /api/tasks/123/?deleted=on.
+This behaviour seems unintuitive for me (why would I need to provide a filter for a detail call?).
+DRF Source
+It is very easy to see what is going on in the ViewSet. Every call to get_object does this:
+queryset = self.filter_queryset(self.get_queryset())
+(see https://github.com/encode/django-rest-framework/blob/master/rest_framework/generics.py#L77-L103 ).
+So essentially, if I do not want this behaviour, I just have to override filter_queryset like this:
+    def filter_queryset(self, qs):
+        if self.action == 'list':
+            return super(BaseViewSet, self).filter_queryset(qs)
+
+        return qs
+I consider my code from above as dirty and non-pythonic. It's a hack.
+So either I am missing the point of why get_object is calling filter_queryset (feel free to teach me a lesson here), or (please forgive me if I sound ignorrant) get_object should just not be calling filter_queryset at all.
+Please discuss and let me know if I should provide a PR and a test.

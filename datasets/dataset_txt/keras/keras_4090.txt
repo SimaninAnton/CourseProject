@@ -1,0 +1,74 @@
+cdj0311 commented on 24 Oct 2016 •
+edited
+Hi all,
+I have a doubt that how to use multiple GPUs with tensorflow backend for text category??
+My code as follows (reference https://blog.keras.io/keras-as-a-simplified-interface-to-tensorflow-tutorial.html ):
+# set parameters:
+max_features = 5000
+maxlen = 400
+batch_size = 32
+embedding_dims = 50
+nb_filter = 250
+filter_length = 3
+hidden_dims = 250
+nb_epoch = 3
+print('Loading data...')
+(X_train, y_train), (X_test, y_test) = imdb.load_data(nb_words=max_features)
+print(len(X_train), 'train sequences')
+print(len(X_test), 'test sequences')
+
+print('Pad sequences (samples x time)')
+X_train = sequence.pad_sequences(X_train, maxlen=maxlen)
+X_test = sequence.pad_sequences(X_test, maxlen=maxlen)
+print('X_train shape:', X_train.shape)
+print('X_test shape:', X_test.shape)
+print('Build model...')
+with tf.device('/cpu:0'):
+    x = tf.placeholder(tf.float32, shape=(None, maxlen))
+    Model = Sequential()
+    # we start off with an efficient embedding layer which maps
+    # our vocab indices into embedding_dims dimensions
+    Model.add(Embedding(max_features,
+                        embedding_dims,
+                        input_length=maxlen,
+                        dropout=0.2))
+    # we add a Convolution1D, which will learn nb_filter
+    # word group filters of size filter_length:
+    Model.add(Convolution1D(nb_filter=nb_filter,
+                            filter_length=filter_length,
+                            border_mode='valid',
+                            activation='relu',
+                            subsample_length=1))
+    # we use max pooling:
+    Model.add(MaxPooling1D(pool_length=Model.output_shape[1]))
+    # We flatten the output of the conv layer,
+    # so that we can add a vanilla dense layer:
+    Model.add(Flatten())
+    # We add a vanilla hidden layer:
+    Model.add(Dense(hidden_dims))
+    Model.add(Dropout(0.2))
+    Model.add(Activation('relu'))
+    # We project onto a single unit output layer, and squash it with a sigmoid:
+    Model.add(Dense(1))
+    Model.add(Activation('sigmoid'))
+with tf.device('/gpu:0'):
+    output_0 = Model(x)
+with tf.device('/gpu:1'):
+    output_1 = Model(x)
+with tf.device('/gpu:2'):
+    output_2 = Model(x)
+with tf.device('/gpu:3'):
+    output_3 = Model(x)
+with tf.device('/cpu:0'):
+    merge_output = 0.5 * (output_0 + output_1 + output_2 + output_3)
+sess = tf.Session()
+model_output = sess.run([merge_output], feed_dict={x:X_train})
+model = Model(input=Model, output=model_output)
+model.compile(loss='binary_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+model.fit(X_train, y_train,
+          batch_size=batch_size,
+          nb_epoch=nb_epoch,
+          validation_data=(X_test, y_test))
+model.save_weights("model/cnn.model", overwrite=True)

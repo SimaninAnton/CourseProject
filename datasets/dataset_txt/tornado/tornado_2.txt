@@ -1,0 +1,66 @@
+Gusakovskiy commented 16 days ago
+Python 3.7
+Tornado 5.1 and above.
+Hello, I have a problem running async code in sync manner when tornado IOLoop is running.
+The simplified version of what I am trying to achieve is looked like:
+import tornado.ioloop
+import tornado.web
+import asyncio
+
+def run_sync():
+    return asyncio.run(_async_connect())
+
+async def _async_connect():
+      await asyncio.sleep(3)
+      return {'error': 42}
+
+class MainHandler(tornado.web.RequestHandler):
+    def get(self):
+        result = run_sync()
+        self.write(result)
+
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+    ])
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+Because of some projects reasons function _async_connect can't be called with await.
+This peace of code raises error that asyncio.run can not be called from other event lopp Traceback:
+ERROR:tornado.application:Uncaught exception GET / (127.0.0.1)
+HTTPServerRequest(protocol='http', host='127.0.0.1:8888', method='GET', uri='/', version='HTTP/1.1', remote_ip='127.0.0.1')
+Traceback (most recent call last):
+  File ".../python3.7/site-packages/tornado/web.py", line 1590, in _execute
+    result = method(*self.path_args, **self.path_kwargs)
+  File ".../projects/todnado_check/main.py", line 19, in get
+    result = run_sync()
+  File ".../projects/todnado_check/main.py", line 8, in run_sync
+    return asyncio.run(_async_connect())
+  File "/Library/Frameworks/Python.framework/Versions/3.7/lib/python3.7/asyncio/runners.py", line 34, in run
+    "asyncio.run() cannot be called from a running event loop")
+RuntimeError: asyncio.run() cannot be called from a running event loop
+So the next step was to use tornado IOLoop and use run_sync method:
+def run_sync():
+    tornado_loop = tornado.ioloop.IOLoop.current()
+    return tornado_loop.run_sync(_async_connect)()
+But this raises other tracebacks that event loop is already runing:
+ERROR:tornado.application:Uncaught exception GET / (127.0.0.1)
+HTTPServerRequest(protocol='http', host='127.0.0.1:8888', method='GET', uri='/', version='HTTP/1.1', remote_ip='127.0.0.1')
+Traceback (most recent call last):
+  File ".../projects/todnado_check/envv/lib/python3.7/site-packages/tornado/web.py", line 1590, in _execute
+    result = method(*self.path_args, **self.path_kwargs)
+  File ".../projects/todnado_check/main.py", line 20, in get
+    result = run_sync()
+  File "/Users/vitalii/projects/todnado_check/main.py", line 9, in run_sync
+    return tornado_loop.run_sync(_async_connect)()
+  File ".../projects/todnado_check/envv/lib/python3.7/site-packages/tornado/ioloop.py", line 571, in run_sync
+    self.start()
+  File "...todnado_check/envv/lib/python3.7/site-packages/tornado/platform/asyncio.py", line 132, in start
+    self.asyncio_loop.run_forever()
+  File "/Library/Frameworks/Python.framework/Versions/3.7/lib/python3.7/asyncio/base_events.py", line 521, in run_forever
+    raise RuntimeError('This event loop is already running')
+RuntimeError: This event loop is already running
+ERROR:tornado.access:500 GET / (127.0.0.1) 4.29ms
+Those runtime errors are blocking any calls to async functions from sync code handlers.

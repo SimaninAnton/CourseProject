@@ -1,0 +1,56 @@
+shrkw commented on 28 Oct 2015
+Python 2.7.5
+tornado 4.2.1
+gunicorn 19.3.0
+I'm implementing simple tornado app that works on gunicorn, also I want to let it listen HTTPS.
+But tornado refuses ssl options passed from gunicorn.
+I created a smalll patch to let tornado accept a few additional ssl options, and it works well on my environment.
+I'm not sure this patch is reasonable enough, but may I create PR?
+patch:
+diff --git a/tornado/netutil.py b/tornado/netutil.py
+index 4fc8d04..aeb4a85 100644
+--- a/tornado/netutil.py
++++ b/tornado/netutil.py
+@@ -462,7 +462,8 @@ class OverrideResolver(Resolver):
+ # to their SSLContext equivalents (the other arguments are still passed
+ # to SSLContext.wrap_socket).
+ _SSL_CONTEXT_KEYWORDS = frozenset(['ssl_version', 'certfile', 'keyfile',
+-                                   'cert_reqs', 'ca_certs', 'ciphers'])
++                                   'cert_reqs', 'ca_certs', 'ciphers',
++                                   'do_handshake_on_connect', 'suppress_ragged_eofs'])
+
+
+ def ssl_options_to_context(ssl_options):
+@@ -508,6 +509,13 @@ def ssl_wrap_socket(socket, ssl_options, server_hostname=None, **kwargs):
+     appropriate).
+     """
+     context = ssl_options_to_context(ssl_options)
++    if isinstance(ssl_options, dict):
++        if 'do_handshake_on_connect' not in kwargs:
++            kwargs['do_handshake_on_connect'] = ssl_options.get('do_handshake_on_connect', True)
++        if 'suppress_ragged_eofs' not in kwargs:
++            kwargs['suppress_ragged_eofs'] = ssl_options.get('suppress_ragged_eofs', True)
++
++
+     if hasattr(ssl, 'SSLContext') and isinstance(context, ssl.SSLContext):
+         if server_hostname is not None and getattr(ssl, 'HAS_SNI'):
+             # Python doesn't have server-side SNI support so we can't
+stacktrace when happen AssertionError:
+[2015-10-27 20:29:04 +0000] [4360] [INFO] Booting worker with pid: 4360
+ERROR:tornado.application:Exception in callback (<gunicorn.sock.TCPSocket object at 0x2a6bc50>, <function null_wrapper at 0x2c91488>)
+Traceback (most recent call last):
+  File "/home/hiro/.virtualenvs/CP275_asyncproxy/lib/python2.7/site-packages/tornado/ioloop.py", line 866, in start
+    handler_func(fd_obj, events)
+  File "/home/hiro/.virtualenvs/CP275_asyncproxy/lib/python2.7/site-packages/tornado/stack_context.py", line 275, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/home/hiro/.virtualenvs/CP275_asyncproxy/lib/python2.7/site-packages/tornado/netutil.py", line 265, in accept_handler
+    callback(connection, address)
+  File "/home/hiro/.virtualenvs/CP275_asyncproxy/lib/python2.7/site-packages/tornado/tcpserver.py", line 239, in _handle_connection
+    do_handshake_on_connect=False)
+  File "/home/hiro/.virtualenvs/CP275_asyncproxy/lib/python2.7/site-packages/tornado/netutil.py", line 501, in ssl_wrap_socket
+    context = ssl_options_to_context(ssl_options)
+  File "/home/hiro/.virtualenvs/CP275_asyncproxy/lib/python2.7/site-packages/tornado/netutil.py", line 471, in ssl_options_to_context
+    assert all(k in _SSL_CONTEXT_KEYWORDS for k in ssl_options), ssl_options
+AssertionError: {'do_handshake_on_connect': False, 'certfile': '/home/hiro/201510/server.crt', 'suppress_ragged_eofs': True, 'ciphers': 'TLSv1', 'ssl_version': 3, 'cert_reqs': 0, 'ca_certs': None, 'keyfile': '/home/hiro/201510/server.key'}
+and here is a starting command line for gunicorn:
+$ gunicorn --certfile=/home/hiro/201510/server.crt --keyfile=/home/hiro/201510/server.key -b 0.0.0.0:16189 -w 1 -k "tornado" 'httpproxy:get_service("tcp://0.0.0.0:5555")'

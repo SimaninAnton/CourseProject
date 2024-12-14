@@ -1,0 +1,55 @@
+Contributor
+warvariuc commented on Oct 27, 2011
+start_requests() and parse() in BaseSpider are expected to return iterables. I suggest to modify this behaviour and force them to return generators. I start_requests wants to generate requests for url by a pattern it may eat a lot of memory:
+from scrapy.conf import settings
+from scrapy.crawler import CrawlerProcess
+from scrapy.spider import BaseSpider
+
+
+class TestSpider(BaseSpider):
+    name = "test_spider"
+    start_urls = ['http://www.amazon.com/dp/B005890G8Y/']
+
+    def parse(self, response):
+        print 'parse'
+        for i in xrange(100000000):
+            url = 'http://www.amazon.com/dp/%i/' % i
+            print i,
+            yield self.make_requests_from_url(url)
+
+
+crawler = CrawlerProcess(settings)
+crawler.install()
+crawler.configure()
+
+spider = TestSpider()
+crawler.queue.append_spider(spider)
+crawler.start()
+or
+from scrapy.conf import settings
+from scrapy.crawler import CrawlerProcess
+from scrapy.spider import BaseSpider
+
+
+class TestSpider(BaseSpider):
+    name = "test_spider"
+    #start_urls = ['http://www.amazon.com/dp/B005890G8Y/']
+
+    def start_requests(self):
+        for i in xrange(100000000):
+            url = 'http://www.amazon.com/dp/%i/' % i
+            print 'yielding a start url: %s' % url
+            yield self.make_requests_from_url(url)
+
+    def parse(self, response):
+        '''does nothing'''
+        print 'parse' 
+
+
+crawler = CrawlerProcess(settings)
+crawler.install()
+crawler.configure()
+
+spider = TestSpider()
+crawler.queue.append_spider(spider)
+crawler.start()

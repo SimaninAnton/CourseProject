@@ -1,0 +1,39 @@
+okeuday commented on 23 Oct 2018 •
+edited
+Desiring a deep copy of session RequestContext data is present as a separate issue and pull request. This issue is focused on desiring a deep copy of the request RequestContext data for use in a separate thread. To pursue this, it is necessary to copy the environ data in a new function or the same copy_current_request_context function with a boolean argument to enable the deep copy.
+Expected Behavior
+For using a thread with a copy of a request, it is advantageous to have the functionality present in copy_current_request_context, though the request needs a deep copy instead of a shallow copy. Based on the code comment of the RequestContext copy function, the intent of the function was a shallow copy, due to "Because the actual request object is the same this cannot be used to move a request context to a different thread unless access to the request object is locked.".
+For having a copy of a request for a separate thread, I found it necessary to modify the flask.copy_current_request_context function to be:
+def _copy_current_request_context(function):
+    top = _request_ctx_stack.top
+    if top is None:
+        raise RuntimeError('This decorator can only be used at local scopes '
+                           'when a request context is on the stack.  '
+                           'For instance within view functions.')
+    reqctx = top.copy()
+    # environ is used by headers too, so only a copy of environ is necessary
+    reqctx.request.environ = reqctx.request.environ.copy()
+    def wrapper(*args, **kwargs):
+        with reqctx:
+            return function(*args, **kwargs)
+    return update_wrapper(wrapper, function)
+If the request environ is not copied, it is possible with flask 1.0.2 to have older requests in a separate thread read the environ data from newer requests with methods like request.method, which is not desirable at all. I am not suggesting modifying flask.copy_current_request_context to be like the source code above (1 line change), but rather suggesting the RequestContext copy function could be modified to create a deep copy of a request by providing an environ.copy() to the RequestContext class to create a new request object. The deep copy could occur based on a boolean keyword argument added to flask.copy_current_request_context.
+However, if you want that functionality for threads, you also need to be able to copy the current_app context:
+def _copy_current_app_context(function):
+    app_context = _app_ctx_stack.top
+    def current_app_context_decorator(*args, **kwargs):
+        with app_context:
+            return function(*args, **kwargs)
+    return current_app_context_decorator
+Then you would want to use them together with a single decorator:
+def bind_context(function):
+    function = _copy_current_request_context(function)
+    function = _copy_current_app_context(function)
+    return function
+Actual Behavior
+flask.copy_current_request_context will only do a shallow copy and the copy_current_app_context decorator is not provided, nor is the bind_context decorator. That makes development with threads require more custom source code and be more error-prone than it needs to be.
+Environment
+Python version: 2.7.9
+Flask version: 1.0.2
+Werkzeug version: 0.14.1
+2

@@ -1,0 +1,70 @@
+kernelfreak commented on 4 May 2016 •
+edited
+We have a Debian 7 X64 server running Apache Tomcat on which I am trying to install a certificate from LetsEncrypt. I am partially successful as I am getting an error where certificate verification is failing.
+I followed the guide on letsencrypts community site https://community.letsencrypt.org/t/how-to-use-the-certificate-for-tomcat/3677
+
+For adding LetsEncrypt to Tomcat, I had to create a new JKS and add the converted keys into the JKS keystore, which is referred in Apache Tomcat. This are the steps I followed:
+Commands:
+openssl pkcs12 -export -in fullchain.pem -inkey privkey.pem -CAfile chain.pem -caname root -out fullchain_and_key.p12 -name tomcat
+
+keytool -importkeystore -deststorepass PASS -destkeypass PASS -destkeystore MyDSKeyStore.jks -srckeystore fullchain_and_key.p12 -srcstoretype pkcs12 -srcstorepass PASS -alias tomcat
+
+keytool -import -trustcacerts -alias root -file chain.pem -keystore MyDSKeyStore.jks
+Output of openssl_connect:
+openssl s_client -connect mydomain.de:443
+CONNECTED(00000003)
+depth=1 CN = Fake LE Intermediate X1
+verify error:num=20:unable to get local issuer certificate
+
+---
+Certificate chain
+ 0 s:/CN=mydomain.de/serialNumber=fa4eff65933b17aa84130eaabf96ce401ae5
+   i:/CN=Fake LE Intermediate X1
+ 1 s:/CN=Fake LE Intermediate X1
+   i:/CN=Fake LE Root X1
+
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+RANDOMDATA ending with ==
+-----END CERTIFICATE-----
+subject=/CN=mydomain.de/serialNumber=fa4eff65933b17aa84130eaabf96ce401ae5
+issuer=/CN=Fake LE Intermediate X1
+
+---
+No client certificate CA names sent
+Peer signing digest: SHA512
+Server Temp Key: ECDH, P-256, 256 bits
+
+---
+SSL handshake has read 3002 bytes and written 441 bytes
+
+---
+New, TLSv1/SSLv3, Cipher is ECDHE-RSA-AES128-GCM-SHA256
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+SSL-Session:
+    Protocol  : TLSv1.2
+    Cipher    : ECDHE-RSA-AES128-GCM-SHA256
+    Session-ID: 5729C1080CFF1B8662C6F3C007C783E4066D985A23D99BAD85C5A721ACF6C866
+    Session-ID-ctx: 
+    Master-Key: 3972DBC0072395E1F4C5BE25A23A165DA4AB301DAEDF2753F1FD6FFDBD35BDF8C42B7C6520D3785D425B5D37FE3CD603
+    Key-Arg   : None
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    Start Time: 1462354184
+    Timeout   : 300 (sec)
+    Verify return code: 20 (unable to get local issuer certificate)
+
+---
+read:errno=0
+Tomcat configuration :
+<Connector port="443" protocol="org.apache.coyote.http11.Http11NioProtocol" SSLEnabled="true" maxThreads="200"
+              scheme="https" secure="true" clientAuth="false"  sslProtocol="TLS"
+                keystoreFile="/etc/letsencrypt/live/mydomain.de/MyDSKeyStore.jks" 
+keystorePass="PASS" keyPass="PASS" keyAlias="tomcat"
+                />

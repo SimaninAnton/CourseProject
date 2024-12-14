@@ -1,0 +1,99 @@
+MaxPowerWasTaken commented on Nov 8, 2017 •
+edited
+Description
+Steps/Code to Reproduce
+Below is a pretty minimal pipeline/GridSearchCV example, with some print statements in two trivial transformer classes, to log when each's .fit and .transform methods are called.
+I've added some comments to the log output giving my understanding of why each step is happening, and which ones seem to me (and the person who answered my Stack Overflow question) to be redundant.
+# library imports
+import pandas as pd
+from sklearn import datasets
+from sklearn.model_selection import KFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.base import TransformerMixin, BaseEstimator
+from sklearn.pipeline import Pipeline
+
+# Load toy data
+iris = datasets.load_iris()
+X = pd.DataFrame(iris.data, columns = iris.feature_names)
+y = pd.Series(iris.target, name='y')
+
+# Define a couple trivial pipeline steps
+class mult_everything_by(TransformerMixin, BaseEstimator):
+
+    def __init__(self, multiplier=2):
+        self.multiplier = multiplier
+
+    def fit(self, X, y=None):
+        print "Fitting step 1"
+        return self
+
+    def transform(self, X, y=None):
+        print "Transforming step 1"
+        return X* self.multiplier
+
+class do_nothing(TransformerMixin, BaseEstimator):
+
+    def __init__(self, meaningless_param = 'hello'):
+        self.meaningless_param=meaningless_param
+
+
+    def fit(self, X, y=None):
+        print "Fitting step 2"
+        return self
+
+    def transform(self, X, y=None):
+        print "Transforming step 2"
+        return X
+
+# Define the steps in our Pipeline
+pipeline_steps = [('step1', mult_everything_by()),
+                  ('step2', do_nothing()), 
+                  ('classifier', LogisticRegression()),
+                  ]
+
+pipeline = Pipeline(pipeline_steps)
+
+# To keep this example super minimal, this param grid only has one set
+# of hyperparams, so we are only fitting one type of model
+param_grid = {'step1__multiplier': [2],   #,3],
+              'step2__meaningless_param': ['hello']   #, 'howdy', 'goodbye']
+              }
+
+# Define model-search process/object
+# (fit one model, 3-fits due to 3-fold cross-validation)
+cv_model_search = GridSearchCV(pipeline, 
+                               param_grid, 
+                               cv = KFold(3),
+                               refit=False, 
+                               verbose = 0) 
+
+# Fit all (1) models defined in our model-search object
+cv_model_search.fit(X,y)
+If the code is too long, feel free to put it in a public gist and link
+it in the issue: https://gist.github.com
+Log Results (my comments after '///')
+/// below is initial fit/transform of each pipeline step on 'train' folds of first cv split
+Fitting step 1
+Transforming step 1
+Fitting step 2           
+Transforming step 2
+
+/// applying transforms (fit/learned above) to test folds of first cv split, to get test-score
+Transforming step 1   
+Transforming step 2   
+
+/// applying transforms to train-set again to get train score.  (these two
+/// lines below don't show up in log with return_train_score=False)
+/// ????? Couldn't train-score have been calculated after initial fit/transform of train-folds above???
+Transforming step 1   
+Transforming step 2    
+
+/// loop through all steps above again with second KFold loop, then again for third...                         
+Fitting step 1              
+...
+Versions
+Linux-4.8.0-30-generic-x86_64-with-debian-stretch-sid
+('Python', '2.7.14 | packaged by conda-forge | (default, Oct 5 2017, 14:19:56) \n[GCC 4.8.2 20140120 (Red Hat 4.8.2-15)]')
+('NumPy', '1.13.3')
+('SciPy', '0.19.1')
+('Scikit-Learn', '0.19.0')

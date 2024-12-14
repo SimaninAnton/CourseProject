@@ -1,0 +1,38 @@
+around1991 commented on 11 Jan 2016
+Hi all
+The following code gives an error:
+from keras.models import Graph, Sequential, model_from_json
+from keras.layers.core import Dense
+
+inner_model = Sequential()
+inner_model.add(Dense(input_dim=2, output_dim=1))
+
+model = Graph()
+model.add_input(name='l', input_shape=(2,), dtype='float')
+model.add_input(name='r', input_shape=(2,), dtype='float')
+model.add_shared_node(layer=inner_model, name='comp', inputs=['l', 'r'], merge_mode='sum', create_output=True)
+
+config = model.to_json()
+
+test_model = model_from_json(config)
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/auto/homes/kc391/event_rnn/env/bin/keras/keras/models.py", line 137, in model_from_json
+    return model_from_config(config, custom_objects=custom_objects)
+  File "/auto/homes/kc391/event_rnn/env/bin/keras/keras/models.py", line 148, in model_from_config
+    model = container_from_config(config, custom_objects=custom_objects)
+  File "/auto/homes/kc391/event_rnn/env/bin/keras/keras/utils/layer_utils.py", line 57, in container_from_config
+    layer = container_from_config(layer_dict['nodes'].get(node['name']))
+  File "/auto/homes/kc391/event_rnn/env/bin/keras/keras/utils/layer_utils.py", line 88, in container_from_config
+    base_layer = get_layer(name, layer_dict)
+  File "/auto/homes/kc391/event_rnn/env/bin/keras/keras/utils/layer_utils.py", line 154, in get_layer
+    instantiate=True, kwargs=kwargs)
+  File "/auto/homes/kc391/event_rnn/env/bin/keras/keras/utils/generic_utils.py", line 18, in get_from_module
+    return res(**kwargs)
+TypeError: __init__() got an unexpected keyword argument 'trainable'
+I think there are multiple issues in the way Siamese loads from config:
+Siamese.init accepts different kwargs to Layer.init, but Siamese.get_config() calls Layer.get_config(), so any attempt to load a Siamese layer from config will call some of the kwargs that Layer inits with (such as 'trainable' and 'cache_enabled'). At the very least, we should probably have a **kwargs at the end of Siamese.init() to handle this case.
+When loading from config, the 'layer' argument of kwargs is a dictionary, not a layer or container object. I think we need to instantiate this argument first before feeding it in to the Siamese constructor, but the way get_from_module works doesn't seem to allow this as an easy case.
+@farizrahman4u do you have any ideas or suggestions?
+1

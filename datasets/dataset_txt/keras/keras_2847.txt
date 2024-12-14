@@ -1,0 +1,42 @@
+blaind commented on 26 Mar 2017 •
+edited
+I'm using keras with following setup: tensorflow backend (1.0.1-gpu), keras v 2.0.1
+Due to legacy reasons, my model input data was in format of (channels, h, w), e.g. theano format (th) / channels_first.
+After adding batch normalization, the model per epoch time was very slow. Hence I started investigating what could be the cause. Turns out, using theano format (channels_first) on tensorflow backend makes it a lot slower (makes sense, but didn't realize the difference would be so large).
+Below is code to check it out:
+order = 'tf': epoch takes ~4s (on Nvidia GTX 970)
+order = 'th': epoch takes ~19s
+== ~5x speedup.
+Should probably be documented to backends section?
+import keras
+from keras import backend as K
+import numpy as np
+
+order = 'th' # Change to tf to see performance improvements
+# th = channels_first, tf = channels_last as compared to set_image_data_format
+K.set_image_dim_ordering(order)
+channel_axis = 1 if order == "th" else -1
+
+n_rows = 500
+nb_label = 10
+shape = [n_rows] + ([128, 128, 3] if order == 'tf' else [3, 128, 128])
+data = np.zeros(tuple(shape)).astype(np.float32)
+
+y_train = np.zeros((n_rows, 1))
+y_train = keras.utils.to_categorical(y_train, nb_label)
+
+def conv(model, **opts):
+    model.add(keras.layers.Conv2D(32, 3, **opts))
+    model.add(keras.layers.BatchNormalization(axis=channel_axis))
+    model.add(keras.layers.Activation('relu'))
+
+model = keras.models.Sequential()
+
+conv(model, input_shape=data.shape[1:])
+conv(model)
+conv(model)
+model.add(keras.layers.Flatten())
+model.add(keras.layers.Dense(nb_label, activation='softmax'))
+
+model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adam(), metrics=['accuracy'])
+model.fit(data, y_train, batch_size=16, epochs=10, verbose=1)

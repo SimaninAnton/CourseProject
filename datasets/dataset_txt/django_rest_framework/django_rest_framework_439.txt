@@ -1,0 +1,42 @@
+bhomnick commented on 28 Mar 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+This seems to be a side-effect of #5375 (documented in #5489) which now requires a default to be set in order for dot-source fields to return None if any part of the relationship is missing.
+Here's a simple example:
+class Image(models.Model):
+    url = models.URLField()
+    ...
+
+class Company(models.Model):
+    name = models.CharField(max_length=255)
+    image = models.ForeignKey('Image', null=True)
+    ...
+
+class CompanySerializer(serializers.ModelSerializer):
+    image_url = serializer.CharField(read_only=True, default=None, source='image.url')
+    
+    class Meta:
+        model = Company
+        fields = ('name, 'image_url')
+
+c  = Company(name='foo')
+s = CompanySerializer(c, data={'name': 'bar'}, partial=True)
+s.is_valid(raise_exception=True)
+s.save()
+Expected behavior
+I expect s.data will now contain the complete serialized updated instance, including any read-only fields:
+>>> s.data 
+{'name': 'bar', 'image_url': None}
+The relevant line that excludes anything with a default when partial=True: https://github.com/encode/django-rest-framework/blob/master/rest_framework/fields.py#L473
+Perhaps this should make an exception for read_only fields?
+Actual behavior
+Any fields with default set, including read-only, are omitted from the serialized result:
+>>> s.data
+{'name': 'bar'}

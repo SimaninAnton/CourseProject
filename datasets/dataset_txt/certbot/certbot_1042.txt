@@ -1,0 +1,84 @@
+slava-viktorov commented on 26 Jul 2017
+My operating system is (include version):
+debian 8
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+OS package manager
+I ran this command and it produced this output:
+sudo certbot certonly --webroot -w /home/fgbhnd/www/cert -d cbrmonitor.ru -d www.cbrmonitor.ru
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Starting new HTTPS connection (1): acme-v01.api.letsencrypt.org
+Obtaining a new certificate
+Performing the following challenges:
+http-01 challenge for cbrmonitor.ru
+http-01 challenge for www.cbrmonitor.ru
+Using the webroot path /home/fgbhnd/www/cert for all unmatched domains.
+Waiting for verification...
+Cleaning up challenges
+An unexpected error occurred:
+UnicodeEncodeError: 'ascii' codec can't encode characters in position 226-229: ordinal not in range(128)
+Please see the logfiles in /var/log/letsencrypt for more details.
+Certbot's behavior differed from what I expected because:
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+2017-07-26 17:06:38,787:INFO:certbot.auth_handler:Cleaning up challenges
+2017-07-26 17:06:38,788:DEBUG:certbot.plugins.webroot:Removing /home/fgbhnd/www/cert/.well-known/acme-challenge/1wEz5ge1HTunPyjqvTB6ABLIKd_Jjh04SmqEfg1XC4Q
+2017-07-26 17:06:38,788:DEBUG:certbot.plugins.webroot:Removing /home/fgbhnd/www/cert/.well-known/acme-challenge/6dcwR896sR2IpaP0zg5ccSSvHPH1NkVnxMkKfliGa-A
+2017-07-26 17:06:38,788:DEBUG:certbot.plugins.webroot:All challenges cleaned up, removing /home/fgbhnd/www/cert/.well-known/acme-challenge
+2017-07-26 17:06:38,789:DEBUG:certbot.main:Exiting abnormally:
+Traceback (most recent call last):
+  File "/usr/bin/certbot", line 11, in <module>
+    load_entry_point('certbot==0.10.2', 'console_scripts', 'certbot')()
+  File "/usr/lib/python2.7/dist-packages/certbot/main.py", line 849, in main
+    return config.func(config, plugins)
+  File "/usr/lib/python2.7/dist-packages/certbot/main.py", line 626, in obtain_cert
+    action, _ = _auth_from_available(le_client, config, domains, certname, lineage)
+  File "/usr/lib/python2.7/dist-packages/certbot/main.py", line 107, in _auth_from_available
+    lineage = le_client.obtain_and_enroll_certificate(domains, certname)
+  File "/usr/lib/python2.7/dist-packages/certbot/client.py", line 291, in obtain_and_enroll_certificate
+    certr, chain, key, _ = self.obtain_certificate(domains)
+  File "/usr/lib/python2.7/dist-packages/certbot/client.py", line 262, in obtain_certificate
+    self.config.allow_subset_of_names)
+  File "/usr/lib/python2.7/dist-packages/certbot/auth_handler.py", line 77, in get_authorizations
+    self._respond(resp, best_effort)
+  File "/usr/lib/python2.7/dist-packages/certbot/auth_handler.py", line 134, in _respond
+    self._poll_challenges(chall_update, best_effort)
+  File "/usr/lib/python2.7/dist-packages/certbot/auth_handler.py", line 197, in _poll_challenges
+    _report_failed_challs(all_failed_achalls)
+  File "/usr/lib/python2.7/dist-packages/certbot/auth_handler.py", line 488, in _report_failed_challs
+    _generate_failed_chall_msg(achalls), reporter.MEDIUM_PRIORITY)
+  File "/usr/lib/python2.7/dist-packages/certbot/auth_handler.py", line 504, in _generate_failed_chall_msg
+    if messages.is_acme_error(error):
+  File "/usr/lib/python2.7/dist-packages/acme/messages.py", line 39, in is_acme_error
+    return (ERROR_PREFIX in str(err)) or (OLD_ERROR_PREFIX in str(err))
+UnicodeEncodeError: 'ascii' codec can't encode characters in position 226-229: ordinal not in range(128)
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+upstream cbrmonitor.ru {
+        server 127.0.0.1:3000;
+        keepalive 8;
+}
+
+server {
+        listen 0.0.0.0:80;
+        listen [::]:80;
+        server_name cbrmonitor.ru cbrmonitor;
+        return 301 https://cbrmonitor.ru$request_uri;
+}
+server {
+        # SSL configuration
+
+        listen 443 ssl;
+        listen [::]:443 ssl;
+        ssl_certificate /etc/ssl/cbrmonitor.ru/ssl-bundle.crt;
+        ssl_certificate_key /etc/ssl/cbrmonitor.ru/cbrmonitor_ru.key;
+        add_header Strict-Transport-Security "max-age=31536000";
+
+        location / {
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header Host $http_host;
+                proxy_set_header X-NginX-Proxy true;
+
+                proxy_pass http://cbrmonitor.ru/;
+                proxy_redirect off;
+        }
+}

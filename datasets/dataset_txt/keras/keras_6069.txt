@@ -1,0 +1,92 @@
+udani969 commented on 23 Jan 2016
+I have been trying to implement a LSTM based classifier to classify descrete speech. I have created feature vectors with 13 mfcc. For a given file have 2D vector of [99, 13]. After following the mnist_irnn example I could set up single layer RNN to classify my speech files. But now I want to add more layers to the network. Therefore, I have been trying to implement the network with two LSTM layers and softmax layer as the output layer. After going through number of posts here I could set up the network as follows, where it doesn't throw any exceptions during model building time.
+from __future__ import print_function
+import numpy as np
+
+from keras.optimizers import SGD
+from keras.utils.visualize_util import plot
+
+np.random.seed(1337)  # for reproducibility
+from keras.preprocessing import sequence
+from keras.utils import np_utils
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, TimeDistributedDense
+from keras.layers.recurrent import LSTM
+from SpeechResearch import loadData
+
+batch_size = 5
+hidden_units = 100
+nb_classes = 10
+print('Loading data...')
+(X_train, y_train), (X_test, y_test) = loadData.load_mfcc(10, 2)
+
+print(len(X_train), 'train sequences')
+print(len(X_test), 'test sequences')
+print('X_train shape:', X_train.shape)
+print('X_test shape:', X_test.shape)
+print('y_train shape:', y_train.shape)
+print('y_test shape:', y_test.shape)
+print('Build model...')
+
+Y_train = np_utils.to_categorical(y_train, nb_classes)
+Y_test = np_utils.to_categorical(y_test, nb_classes)
+print(batch_size, 99, X_train.shape[2])
+print(X_train.shape[1:])
+print(X_train.shape[2])
+model = Sequential()
+
+model.add(LSTM(output_dim=hidden_units, init='uniform', inner_init='uniform',
+               forget_bias_init='one', activation='tanh', inner_activation='sigmoid', return_sequences=True,
+               stateful=True, batch_input_shape=(batch_size, 99, X_train.shape[2])))
+# model.add(Dropout(0.5))
+model.add(LSTM(output_dim=hidden_units, init='uniform', inner_init='uniform',
+               forget_bias_init='one', activation='tanh', inner_activation='sigmoid', return_sequences=True,
+               stateful=True, input_length=X_train.shape[2]))
+
+model.add(TimeDistributedDense(input_dim=hidden_units, output_dim=nb_classes))
+model.add(Activation('softmax'))
+
+# try using different optimizers and different optimizer configs
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+
+print("Train...")
+model.fit(X_train, Y_train, batch_size=batch_size, nb_epoch=3, validation_data=(X_test, Y_test), show_accuracy=True)
+score, acc = model.evaluate(X_test, Y_test,
+                            batch_size=batch_size,
+                            show_accuracy=True)
+print('Test score:', score)
+print('Test accuracy:', acc)
+I have been trying different values at different points. (For the moment I have been trying with a small sample, therefore values are very small) But, now it is throwing exception during training. Some dimension mismatch.
+Using Theano backend.
+Loading data...
+100 train sequences
+20 test sequences
+X_train shape: (100, 99, 13)
+X_test shape: (20, 99, 13)
+y_train shape: (100,)
+y_test shape: (20,)
+Build model...
+5 99 13
+(99, 13)
+13
+Train...
+Train on 100 samples, validate on 20 samples
+Epoch 1/3
+
+Traceback (most recent call last):
+  File "/home/udani/PycharmProjects/testResearch/SpeechResearch/lstmNetwork.py", line 54, in <module>
+    model.fit(X_train, Y_train, batch_size=batch_size, nb_epoch=3, validation_data=(X_test, Y_test), show_accuracy=True)
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 581, in fit
+    shuffle=shuffle, metrics=metrics)
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 239, in _fit
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 365, in __call__
+    return self.function(*inputs)
+  File "/home/udani/Documents/ResearchSW/Theano/theano/compile/function_module.py", line 786, in __call__
+    allow_downcast=s.allow_downcast)
+  File "/home/udani/Documents/ResearchSW/Theano/theano/tensor/type.py", line 177, in filter
+    data.shape))
+TypeError: ('Bad input argument to theano function with name "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py:362"  at index 1(0-based)', 'Wrong number of dimensions: expected 3, got 2 with shape (5, 10).')
+I would like to know what I am doing wrong here. I have been going through the code whole day, but still I am unable to figure out the reason for dimension mismatch.
+Further, I would be really thankful if someone can explain what it is meant by output_dim. (Is that the shape of the vector output by a single node, when we have n number of nodes in a given layer? Should it be equal to the number of nodes in the next layer? )

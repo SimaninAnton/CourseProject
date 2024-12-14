@@ -1,0 +1,58 @@
+robi-wan commented on Sep 9, 2013
+We have a web application which accepts (large) files together with some meta data.
+We build a form for uploading these kind of files - and then we added a REST-Interface to this form.
+I build an upload task in our fabfile which essentialliy does this:
+    with open(filename, 'rb') as f:
+        response = requests.post(url, data=values, files={'file': f})
+It seems that that for multipart-encoded POST requests streaming does not work because I get this error (since our files exceeded 128 MB file size):
+Upload artifact 'artifact.tar.gz' (group, SNAPSHOT) running on http://<ip> on behalf of user 'fabric'.
+2aeaa77d0ac917a28e15ec73fe92e060 *artifact.tar.gz
+Traceback (most recent call last):
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\fabric\main.py", line 743, in main
+    *args, **kwargs
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\fabric\tasks.py", line 405, in execute
+    results['<local-only>'] = task.run(*args, **new_kwargs)
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\fabric\tasks.py", line 171, in run
+    return self.wrapped(*args, **kwargs)
+  File "C:\development\work\avatar_herbsting_2013\fabfile.py", line 480, in upload
+    response = upload_artifact(**data)
+  File "C:\development\work\avatar_herbsting_2013\scripts\fabfile\deploy.py", line 106, in upload_artifact
+    response = requests.post(url, data=values, files={'file': f})
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\requests\api.py", line 88, in post
+    return request('post', url, data=data, **kwargs)
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\requests\api.py", line 44, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\requests\sessions.py", line 335, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\requests\sessions.py", line 438, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Documents and Settings\Administrator\.virtualenvs\avatar\lib\site-packages\requests\adapters.py", line 327, in send
+    raise ConnectionError(e)
+requests.exceptions.ConnectionError: HTTPConnectionPool(host='<ip>', port=80): Max retries exceeded with url: /deliver/upload/ (Caused by <class 'socket.error'>: [Errno 10055] An operation on a socket could not be performed because the system lacked sufficient buffer space or because a queue was full)
+Happens on Windows XP SP3 32bit with 2 GB RAM and Windows Server 2003 R2 SP2 with 3 GB RAM.
+Python 2.7.5 32bit.
+requests 1.2.3
+Full code (filename contains the path to the large file I want to upload):
+def upload_artifact(address, filename, version, group, username):
+    """Upload an artifact.
+    """
+    path = 'deliver/upload/'
+    url = urlparse.urljoin(address, path)
+
+    # get id for group
+    url_group_id = urlparse.urljoin(address, 'deliver/groupidbyname/?groupname={}'.format(group))
+    response = requests.get(url_group_id)
+    group_id = response.text
+
+    # upload file
+    values = {'md5hash': md5sum(filename),
+              'group': group_id,
+              'version': version,
+              'username': username,
+              }
+
+    with open(filename, 'rb') as f:
+        response = requests.post(url, data=values, files={'file': f})
+
+    return response
+Is there a way to enable streaming of the large file for this case?

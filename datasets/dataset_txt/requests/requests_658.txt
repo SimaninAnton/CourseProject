@@ -1,0 +1,68 @@
+cmin764 commented on May 19, 2017
+I've found an issue when using requests with toolbelt through Google App Engine, because of the urllib3 patching with urlfetch. The problem is that the cookie jar is not populated due to a missing attribute (original_response) into the urllib3 response (when switching from sockets to urlfetch and using the HTTPAdapter through the toolbelt monkeypatch).
+The bug is self explained within this patch that I've made and works flawlessly into the GAE production and development environments:
+"""Runtime monkey-patching for various problematic libraries."""
+
+
+import re
+
+import requests
+from requests.cookies import MockRequest
+
+
+class MockResponse(object):
+    """Wraps a `httplib.HTTPMessage` to mimic a `urllib.addinfourl`.
+
+    ...what? Basically, expose the parsed HTTP headers from the server response
+    the way `cookielib` expects to see them.
+    """
+
+    SEPARATOR = re.compile(r",\s*(?=[\w-]+=)")
+
+    def __init__(self, response):
+        """Make a MockResponse for `cookielib` to read.
+
+        :param response: a HTTPResponse or analogous carrying the headers
+        """
+        self._response = response
+
+    def info(self):
+        return self
+
+    def getheaders(self, name):
+        headers = self._response.getheader(name)
+        return self.SEPARATOR.split(headers) if headers else []
+
+
+def extract_cookies_to_jar(jar, request, response):
+    """Extract the cookies from the response into a CookieJar.
+
+    :param jar: cookielib.CookieJar (not necessarily a RequestsCookieJar)
+    :param request: our own requests.Request object
+    :param response: urllib3.HTTPResponse object
+    """
+    # the _original_response field is the wrapped httplib.HTTPResponse object,
+    req = MockRequest(request)
+    # pull out the HTTPMessage with the headers and put it in the mock:
+    res = MockResponse(response)
+    jar.extract_cookies(res, req)
+
+
+def _monkeypatch_requests():
+    """Monkey patch that problematic cookie extraction function."""
+    modules = [
+        # Patch the entire namespace within Python.
+        requests.adapters,
+        requests.auth,
+        requests.cookies,
+        requests.sessions,
+    ]
+    for module in modules:
+        setattr(module, "extract_cookies_to_jar", extract_cookies_to_jar)
+
+
+def monkeypatch():
+    _monkeypatch_requests()
+https://pastebin.com/FgDZfT8y
+You should integrate this somehow because is affecting everyone (that's the reason they switch to urlfetch, standard urllib or other primitives). Thanks!
+👍 1

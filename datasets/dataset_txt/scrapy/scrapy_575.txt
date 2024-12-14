@@ -1,0 +1,43 @@
+guodeliang commented on Jul 27, 2017 •
+edited
+        while not self._needs_backout(spider):
+            **if not self._next_request_from_scheduler(spider):**
+                break
+
+        if slot.start_requests and not self._needs_backout(spider):
+            try:
+                **request = next(slot.start_requests)**
+            except StopIteration:
+                slot.start_requests = None
+            except Exception:
+                slot.start_requests = None
+                logger.error('Error while obtaining start requests',
+                             exc_info=True, extra={'spider': spider})
+            else:
+                self.crawl(request, spider)
+When I started running more than two scrapy, start_requests confused me.
+I thought it run start_requests function first， and check the source code。 I found out I was wrong。
+My judgment in start_requests was a complete failure,
+To avoid two scrapy application running two times seed links, my start_requests code is as follows：
+But It's nothing, because of the order of the funcitons
+    def start_requests(self):
+        request = self.crawler.engine.slot.scheduler.next_request()
+        if request:
+            yield request
+            return
+        else:
+            self.logger.info("调度队列为空，续添加采集种子")
+
+        for media_id in self.media_list:
+            toutiao_as_value = self.get_as_cp()
+            url = media_home.format(media_id=media_id, as_param=toutiao_as_value)
+            request = Request(url, dont_filter=True,
+                              headers=self.headers,
+                              callback=self.parse_media_homepage)
+
+            self.crawler.engine.slot.scheduler.enqueue_request(request)
+
+        yield self.crawler.engine.slot.scheduler.next_request()
+    pass
+👎 1
+😕 2

@@ -1,0 +1,41 @@
+maweigert commented on 25 Jan 2017
+I get an unexpected KeyError when saving a model with several inputs where some of the inputs are not used in the computation graph, as in the following minimal example (A):
+(A)
+from keras.layers import Input, merge
+from keras.models import Model
+input1 = Input((10,))
+input2 = Input((10,))
+#create output that only uses input1
+output = merge([input1, input1])
+model = Model(input=[input1, input2], output=[output])
+
+#this works
+model.save_weights("weights.hdf5")
+#this raises an error
+model.save("weights.hdf5")
+KeyError: 'input_2_ib-0'
+when changing the code to incorporate "input2" into the model, everything works as expected
+(B)
+#...
+output = merge([input1, input2])
+#...
+The underlying reason seems to be that for (A) the dangling input layer is pruned from model.layers at build stage yet still present in model.input_layers raising the error in model.get_config():
+(A)
+print([lay.name for lay in  model.layers])
+Out[4]: ['input_1', 'merge_1']
+
+print([lay.name for lay in  model.input_layers])
+Out[5]: ['input_1', 'input_2']
+As I would not necessarily call that a bug (I could just change the inputs of the model to only those that actually get used) I find that behaviour a bit unintuitive:
+the compiling and fitting and generally all computations of models like (A) work as expected, yet the saving throws an error
+it makes the saving of stacks of submodels harder each having fixed inputs/outputs yet which might decide not to use certain inputs in their computation graph
+Maybe I'm missing something or is there an easy workaround?
+Thanks!
+OSX 10.11.6, keras 1.2.1 master, theano backend, GeForce GT 750M (CNMeM is disabled, cuDNN 5105)
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+1

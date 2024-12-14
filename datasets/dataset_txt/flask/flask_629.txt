@@ -1,0 +1,47 @@
+ngaya-ll commented on 2 May 2017
+When Flask finds an error handler for a given exception, it caches it in the handler map. This can lead to incorrect behavior for subclasses of the exception.
+Here is some code demonstrating the problem:
+from flask import Flask
+from werkzeug.exceptions import InternalServerError
+
+
+class E1(Exception):
+    pass
+
+
+class E2(Exception):
+    pass
+
+
+class E(E1, E2):
+    pass
+
+
+app = Flask(__name__)
+
+
+@app.errorhandler(E2)
+def handle_e2(e):
+    return "E2", 500
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return "Exception", 500
+
+
+@app.route("/<exception>", methods=['POST'])
+def raise_exception(exception):
+    exc = globals()[exception]
+    raise exc
+
+
+def test_errorhandler_precedence():
+    client = app.test_client()
+
+    response1 = client.post('/E1')
+    assert response1.data == "Exception"
+
+    response2 = client.post('/E')
+    assert response2.data == "E2"
+In this example, we have two exception classes, E1 and E2, and a third exception E that inherits from both. We register error handlers for E2 and Exception. When E is raised, Flask should invoke the E2 error handler as E2 comes before Exception in the MRO of E. But if E1 has been raised in the past, then the Exception error handler will be "cached" as the handler for E1, so that handler will be invoked instead.

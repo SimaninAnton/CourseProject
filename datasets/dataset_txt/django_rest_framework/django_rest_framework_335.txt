@@ -1,0 +1,41 @@
+Overdrivr commented on 11 Sep 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I have the following view:
+class UserViewSet(viewsets.ModelViewSet):
+    """
+    This viewset automatically provides `list` and `detail` actions.
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = (IsOwner, permissions.IsAdminUser)
+This view is defining two permissions IsOwner and built-in IsAdminUser.
+The IsOwner view is defined as such
+class IsOwner(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        return obj.owner == request.user
+Expected behavior
+I expect this test to pass:
+def test_user_can_fetch_its_info(self):
+        response = self.client.get(
+            reverse('user-detail', kwargs={'pk': self.user.id}),
+            format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+self.user is a non-admin, authenticated user.
+The test fails with status code 403
+Actual behavior
+The user is denied access although it is really the owner (of itself, basically).
+What is really weird is that the IsOwner permission is not even called.
+Basically, it means that only the built-in IsAdmin permission is called, denied (because the user is not an admin), and Django is not evaluating the other permissions.
+Therefore, I feel there are several aspects of this behavior that are not documented:
+evaluation order of the permission_classes: Are built-in evaluated first ? Are they evaluated in the order of the tuple (apparently not) ? etc.
+behavior with multiple permissions: Must pass all to allow request, Must pass one, AND, OR, etc.
+I know there is the rest_condition module, but I feel DRF default behavior should be documented, and as far as I know, it is not (feel free to correct me if I'm wrong).
+Related: https://stackoverflow.com/questions/24884245/django-rest-framework-wont-let-me-have-more-than-one-permission

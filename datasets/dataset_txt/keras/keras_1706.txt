@@ -1,0 +1,48 @@
+MosMK commented on 29 Aug 2017 •
+edited
+I think there is a bug in the ZeroPadding2D layer:
+from keras.models import Model
+from keras.layers import Conv2D, MaxPool2D, Input, ZeroPadding2D
+
+inputs = Input(shape=(224, 224, 3))
+conv1 = Conv2D(filters=96, kernel_size=(7, 7), strides=2)(inputs)
+conv1 = ZeroPadding2D(padding=1)(conv1)
+pool1 = MaxPool2D((3, 3), strides=(2, 2))(conv1)
+model = Model(inputs, pool1)
+
+model.summary()
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_10 (InputLayer)        (None, 224, 224, 3)       0         
+_________________________________________________________________
+conv2d_10 (Conv2D)           (None, 109, 109, 96)      14208     
+_________________________________________________________________
+zero_padding2d_4 (ZeroPaddin (None, 111, 111, 96)      0         
+_________________________________________________________________
+max_pooling2d_10 (MaxPooling (None, 55, 55, 96)        0         
+=================================================================
+Total params: 14,208
+Trainable params: 14,208
+Non-trainable params: 0
+_________________________________________________________________
+I think the output shape of zero_padding2d_4 should be (None, 110, 110, 96).
+By inspecting the source code :
+https://github.com/fchollet/keras/blob/master/keras/layers/convolutional.py
+in line 1536:
+if isinstance(padding, int):
+            self.padding = ((padding, padding), (padding, padding))
+then in line 1570:
+elif self.data_format == 'channels_last':
+            if input_shape[1] is not None:
+                rows = input_shape[1] + self.padding[0][0] + self.padding[0][1]
+            else:
+                rows = None
+            if input_shape[2] is not None:
+                cols = input_shape[2] + self.padding[1][0] + self.padding[1][1]
+            else:
+                cols = None
+            return (input_shape[0],
+                    rows,
+                    cols,
+                    input_shape[3])
+which seems to add the dimension twice in the output shape.

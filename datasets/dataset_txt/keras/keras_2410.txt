@@ -1,0 +1,57 @@
+jiayou3 commented on 12 May 2017 •
+edited
+Hi,
+I updated the Keras to 2.0 API this morning, and issues pop up. The batch_size was set to be 16; however fit_generator only feed images 1 by 1. Thus the training time went extremely intolerable. Attached the code as following. Please check it out.
+Thanks in advance
+vgg16 = VGG16(weights='imagenet',include_top=True)
+fc2 = vgg16.get_layer('fc2').output
+prediction = Dense(output_dim=1, activation='sigmoid', name='logit')(fc2)
+model = Model(input=vgg16.input, output=prediction)
+model.summary()
+for layer in model.layers:
+if layer.name in ['fc1', 'fc2', 'logit']:
+continue
+layer.trainable = False
+sgd = SGD(lr=1e-4, momentum=0.9)
+model.compile(optimizer=sgd, loss='binary_crossentropy', metrics=['accuracy'])
+def preprocess_input_vgg(x):
+from keras.applications.vgg16 import preprocess_input
+X = np.expand_dims(x, axis=0)
+X = preprocess_input(X)
+return X[0]
+train_data_dir = '/home/jiay/TransferLearning/data/train'
+validation_data_dir = '/home/jiay/TransferLearning/data/validation'
+nb_train_samples = 2000
+nb_validation_samples = 800
+nb_epochs = 50
+nb_batch_size = 50
+train_datagen = ImageDataGenerator(featurewise_std_normalization=True,
+#preprocessing_function=preprocess_input_vgg,
+rotation_range = 40,
+width_shift_range=0.2,
+height_shift_range=0.2,
+shear_range=0.2,
+zoom_range=0.2,
+horizontal_flip=True,
+fill_mode='nearest')
+train_generator = train_datagen.flow_from_directory(directory=train_data_dir,
+target_size=[224, 224],
+batch_size=nb_batch_size,
+class_mode='binary')
+validation_datagen = ImageDataGenerator(featurewise_std_normalization=True
+#preprocessing_function=preprocess_input_vgg
+)
+validation_generator = validation_datagen.flow_from_directory(directory=validation_data_dir,
+target_size=[224, 224],
+batch_size=nb_batch_size,
+class_mode='binary')
+filepath="/home/jiay/TransferLearning/data/tfvgg16_fc_weights-improvement-{epoch:02d}-{val_acc:.2f}.hdf5"
+checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
+early = EarlyStopping(monitor='val_acc', min_delta=0, patience=10, verbose=1, mode='auto')
+callbacks_list = [checkpoint,early]
+model.fit_generator(train_generator,
+samples_per_epoch=nb_train_samples,
+epochs=nb_epochs,
+validation_data=validation_generator,
+nb_val_samples=nb_validation_samples,
+callbacks=callbacks_list)

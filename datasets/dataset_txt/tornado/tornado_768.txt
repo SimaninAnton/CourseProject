@@ -1,0 +1,25 @@
+Contributor
+ghost commented on 27 Aug 2014
+The tornado.httpclient implementations of async and blocking HTTP clients do not handle socket errors arising on connection failures, such as "[Errno 65] No route to host" and "[Errno 61] Connection refused".
+It's my understanding that a tornado.httpclient.HTTPError (code 599 or similar) should be raised on socket errors, in Tornado 4.0.1 (and earlier versions) an AttributeError is raised on socket connection errors.
+The problem can be reproduced with the following code:
+import tornado.httpclient
+http = tornado.httpclient.HTTPClient()
+http.fetch('http://example.com:90')
+Which causes a socket connection error that results in an AttributeError raised in tcpclient.py:
+WARNING:tornado.general:Connect error on fd 10: [Errno 65] No route to host
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/local/lib/python3.4/site-packages/tornado/httpclient.py", line 96, in fetch
+    self._async_client.fetch, request, **kwargs))
+  File "/usr/local/lib/python3.4/site-packages/tornado/ioloop.py", line 418, in run_sync
+    return future_cell[0].result()
+  File "/usr/local/lib/python3.4/site-packages/tornado/concurrent.py", line 111, in result
+    raise self._exception
+  File "/usr/local/lib/python3.4/site-packages/tornado/stack_context.py", line 314, in wrapped
+    ret = fn(*args, **kwargs)
+  File "/usr/local/lib/python3.4/site-packages/tornado/tcpclient.py", line 129, in on_timeout
+    self.try_connect(iter(self.secondary_addrs))
+  File "/usr/local/lib/python3.4/site-packages/tornado/tcpclient.py", line 97, in try_connect
+    future.add_done_callback(functools.partial(self.on_connect_done,
+AttributeError: 'NoneType' object has no attribute 'add_done_callback'

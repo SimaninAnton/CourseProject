@@ -1,0 +1,80 @@
+samgd commented on Mar 14, 2017
+Description
+IndexError thrown during kmeans init.
+NumPy's searchsorted function is being called here, and then the result is used to index into an array here. However, as per the searchsorted documentation:
+If there is no suitable index, return either 0 or N (where N is the length of a).
+It is possible that N can be returned, thus causing the later index to throw an IndexError.
+Steps/Code to Reproduce
+The below code should trigger it but often doesn't. I'm unable to share the dataset I'm using that causes it on almost every call.
+from sklearn.cluster import MiniBatchKMeans
+import numpy as np
+
+Xtr = np.random.rand(100000, 10)
+
+for _ in range(10):
+    try:
+        km = MiniBatchKMeans(n_clusters=20000,
+                             init_size=60000,
+                             verbose=1).fit(Xtr)
+    except Exception as exp:
+        print exp
+Expected Results
+No error is thrown. With verbose mode on:
+Init 1/3 with method: k-means++
+Inertia for init 1/3: 0.001478
+Init 2/3 with method: k-means++
+Inertia for init 2/3: 0.002398
+Init 3/3 with method: k-means++
+Inertia for init 3/3: 0.001491
+Actual Results
+(Taken from internal code and not the example snippet)
+---------------------------------------------------------------------------
+IndexError                                Traceback (most recent call last)
+<ipython-input-20-a8dbf5b11047> in <module>()
+      2 features = [8]#range(12, 6, -1)
+      3 np.random.seed(100)
+----> 4 train_errs, valid_errs, aucs = knnResults(X_train, Y_train, k_vals, features)
+      5 
+      6 mterr = train_errs.mean(axis=2)
+
+<ipython-input-19-16ad5376cf30> in knnResults(X, Y, k_vals, features)
+     62                                          max_no_improvement=30,
+     63                                          reassignment_ratio=0.04,
+---> 64                                          verbose=1).fit(Xtr)
+     65                     #except Exception as exp:
+     66                     #    print exp
+
+/usr/lib/python2.7/site-packages/sklearn/cluster/k_means_.pyc in fit(self, X, y)
+   1379                 random_state=random_state,
+   1380                 x_squared_norms=x_squared_norms,
+-> 1381                 init_size=init_size)
+   1382 
+   1383             # Compute the label assignment on the init dataset
+
+/usr/lib/python2.7/site-packages/sklearn/cluster/k_means_.pyc in _init_centroids(X, k, init, random_state, x_squared_norms, init_size)
+    679     if isinstance(init, string_types) and init == 'k-means++':
+    680         centers = _k_init(X, k, random_state=random_state,
+--> 681                           x_squared_norms=x_squared_norms)
+    682     elif isinstance(init, string_types) and init == 'random':
+    683         seeds = random_state.permutation(n_samples)[:k]
+
+/usr/lib/python2.7/site-packages/sklearn/cluster/k_means_.pyc in _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials)
+    112         # Compute distances to center candidates
+    113         distance_to_candidates = euclidean_distances(
+--> 114             X[candidate_ids], X, Y_norm_squared=x_squared_norms, squared=True)
+    115 
+    116         # Decide which candidate is the best
+
+IndexError: index 60000 is out of bounds for axis 0 with size 60000
+Versions
+>>> import platform; print(platform.platform())
+Linux-4.9.6-1-ARCH-x86_64-with-glibc2.2.5
+>>> import sys; print("Python", sys.version)
+('Python', '2.7.13 (default, Dec 21 2016, 07:16:46) \n[GCC 6.2.1 20160830]')
+>>> import numpy; print("NumPy", numpy.__version__)
+('NumPy', '1.12.0')
+>>> import scipy; print("SciPy", scipy.__version__)
+('SciPy', '0.18.1')
+>>> import sklearn; print("Scikit-Learn", sklearn.__version__)
+('Scikit-Learn', '0.18.1')
+👍 1

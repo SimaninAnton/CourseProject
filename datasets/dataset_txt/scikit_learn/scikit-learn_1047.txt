@@ -1,0 +1,72 @@
+Isabek commented on Sep 29, 2018
+Description
+Getting an error when trying to use KerasClassifier with GridSearchCV.
+This error is thrown when shapes of y_true and y_pred are not equal. Example: (6000, 10) and (6000, ).
+Inside scikit_learn.py file on the line 228 you can see code like below:
+proba = self.model.predict(x, **kwargs) 
+if proba.shape[-1] > 1:
+     classes = proba.argmax(axis=-1)
+else:
+     classes = (proba > 0.5).astype('int32')
+return self.classes_[classes]
+self.model.predict(x, **kwargs) returns array with shape (6000, 10). But the next two lines converts it to (6000, ) array.
+P.S. This code works when I delete on hot encoding.
+Steps/Code to Reproduce
+from keras.datasets import mnist
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.models import Sequential
+from keras.utils import to_categorical
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import GridSearchCV
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+x_train = x_train.reshape(x_train.shape[0], x_train.shape[1] * x_train.shape[2])
+x_train = x_train.astype('float32') / 255
+
+x_test = x_test.reshape(x_test.shape[0], x_test.shape[1] * x_test.shape[2])
+x_test = x_test.astype('float32') / 255
+
+y_train = to_categorical(y_train)
+y_test = to_categorical(y_test)
+
+
+def build_classifier(optimizer, dropout1, dropout2):
+    model = Sequential()
+    model.add(Dense(units=256, activation='relu', input_dim=784))
+    model.add(Dropout(rate=dropout1))
+    model.add(Dense(units=64, activation='relu'))
+    model.add(Dropout(rate=dropout2))
+    model.add(Dense(units=10, activation='softmax'))
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+classifier = KerasClassifier(build_fn=build_classifier)
+
+parameters = {
+    'batch_size': [200],
+    'epochs': [5],
+    'optimizer': ['rmsprop'],
+    'dropout1': [0.0],
+    'dropout2': [0.1]
+}
+
+grid = GridSearchCV(estimator=classifier,
+                    param_grid=parameters,
+                    scoring='accuracy',
+                    cv=10, verbose=2)
+
+result = grid.fit(x_train, y_train)
+
+print(result.best_params_)
+Expected Results
+An error occurs
+Actual Results
+ValueError: Classification metrics can't handle a mix of multilabel-indicator and multiclass targets
+Versions
+Linux-4.15.0-34-generic-x86_64-with-debian-stretch-sid
+Python 3.6.4 |Anaconda custom (64-bit)| (default, Jan 16 2018, 18:10:19) [GCC 7.2.0]
+NumPy 1.13.3
+SciPy 1.0.0
+Scikit-Learn 0.19.1

@@ -1,0 +1,86 @@
+Hellboy10 commented on 17 May 2017 •
+edited
+I have 500 samples in my dataset.Each sample corresponds to a conversation about 5 different topics : Science,Sports,Politics,Health and Economics .The conversation about each topic consists of 10 sentences each. So discussion about "Science topic" lasts for only 10 sentences, similarly for others topics. Each sentence comprises of 30 words( After padding ).
+Inorder to capture features at "topic level","sentence level" and "word level" , I am using CNN.
+The Input to CNN is 5D(V,W,X,Y,Z)
+V=Number of samples i.e 500
+W=Number of different topics i.e 5
+X=Number of sentences in each topic i.e 10
+Y=Number of words in each sentences after padding i.e 30
+Z=Using Glove Word Embedding of Dimension 200
+In my training data I have concatenated all the conversation like shown below
+Sample 1: [Science_S1...Science_S10 ][Sports_S1...Sports_S10][Politics][Health][Economics]
+Sample 2:
+where:
+Science_S1 is a sentence which comprises of words. These words are represented using Glove word vectors of 200D. Similarly for others.
+Also what should be conv layer filter size .
+The code which tried is as below.
+`
+#load the data and labels
+#=========================================
+y_train = np.loadtxt("tagTrainVec")
+#print (y_train)
+#y_train = y_train.reshape(TRAIN_SIZE, SENT_SIZE, 4)
+y_test = np.loadtxt("tagTestVec")
+#print (y_test)
+#y_test = y_test.reshape(TEST_SIZE, SENT_SIZE, 4)
+print("Loading train data")
+x_train = np.loadtxt("Glove200D_Train")
+print("Loading test data")
+x_test = np.loadtxt("Glove200D_Test")
+print("Loading train label")
+print("Pad sequences (samples x time)")
+print('X_train shape:',x_train.shape)
+print('X_test shape:', x_test.shape)
+print('y_train shape:', y_train.shape)
+print('y_test shape:', y_test.shape)
+#=====================================================CODE FOR 3D CNN==================================================================
+CNN Training parameters
+batch_size = 10
+nb_classes = 5
+nb_epoch = 10
+#patch_size=32
+number of convolutional filters to use at each layer
+nb_filters = [16, 32]
+level of pooling to perform at each layer (POOL x POOL)
+nb_pool = [3, 3]
+level of convolution to perform at each layer (CONV x CONV)
+nb_conv = [7, 3]
+model = Sequential()
+#model.add(Convolution3D(nb_filters[0],(nb_depth=nb_conv[0],nb_row=nb_conv[0],nb_col=nb_conv[0]), border_mode='full', activation='relu'))
+model.add(Convolution3D(nb_filters[0],(nb_conv[0],nb_conv[0],nb_conv[0]), strides=(1, 1, 1), padding='valid', activation='relu',input_shape=(500,5,10,30,200)))
+#keras.layers.convolutional.Conv3D(filters, kernel_size, strides=(1, 1, 1), padding='valid', data_format=None, dilation_rate=(1, 1, 1), activation=None, use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None)
+model.add(MaxPooling3D(pool_size=(nb_pool[0], nb_pool[0], nb_pool[0])))
+model.add(Dropout(0.5))
+model.add(Convolution3D(nb_filters[1],nb_depth=nb_conv[1], nb_row=nb_conv[1], nb_col=nb_conv[1], border_mode='full',
+activation='relu'))
+model.add(MaxPooling3D(pool_size=(nb_pool[1], nb_pool[1], nb_pool[1])))
+model.add(Flatten())
+model.add(Dropout(0.5))
+model.add(Dense(16, init='normal', activation='relu'))
+model.add(Dense(nb_classes, init='normal'))
+model.add(Activation('softmax'))
+sgd = RMSprop(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+model.fit(x_train, y_train, batch_size=batch_size, nb_epoch=nb_epoch, show_accuracy=True, verbose=2,
+validation_data=(x_test, y_test))
+score = model.evaluate(x_test, y_test, batch_size=batch_size, show_accuracy=True)
+print('Test score:', score[0])
+print('Test accuracy:', score[1])
+#Calculate Predictions:
+#======================
+predictions = model.predict(x_test)
+print (type(predictions))
+np.savetxt('Prediction.txt', predictions, fmt='%d')
+`
+I am getting following error:
+Traceback (most recent call last):
+File "Test.py", line 213, in
+model.add(Convolution3D(nb_filters[0],(nb_conv[0],nb_conv[0],nb_conv[0]), strides=(1, 1, 1), padding='valid', activation='relu',input_shape=(500,5,10,30,200)))
+File "/home/mtech15/saurav.mtcs15/anaconda3/lib/python3.5/site-packages/keras/models.py", line 442, in add
+layer(x)
+File "/home/mtech15/saurav.mtcs15/anaconda3/lib/python3.5/site-packages/keras/engine/topology.py", line 541, in call
+self.assert_input_compatibility(inputs)
+File "/home/mtech15/saurav.mtcs15/anaconda3/lib/python3.5/site-packages/keras/engine/topology.py", line 440, in assert_input_compatibility
+str(K.ndim(x)))
+ValueError: Input 0 is incompatible with layer conv3d_1: expected ndim=5, found ndim=6

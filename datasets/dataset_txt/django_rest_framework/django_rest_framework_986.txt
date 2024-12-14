@@ -1,0 +1,194 @@
+sebastian-philipp commented on 3 Nov 2016 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+I've a mystery here. This is the Traceback I'm getting:
+Internal Server Error: {u'kwargs': {}, u'args': (), u'request': <rest_framework.request.Request object at 0x7fe51daaf8d0>, u'view': <volumes.restapi.VolumeProxyViewSet object at 0x7fe51daaf890>}
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/dist-packages/rest_framework/views.py", line 463, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/usr/share/openattic/rest/multinode/handlers.py", line 101, in create
+    return super(RequestHandlers, self).create(request, args, kwargs)
+  File "/usr/share/openattic/volumes/restapi.py", line 447, in create
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+  File "/usr/lib/python2.7/dist-packages/rest_framework/serializers.py", line 503, in data
+    ret = super(Serializer, self).data
+  File "/usr/lib/python2.7/dist-packages/rest_framework/serializers.py", line 239, in data
+    self._data = self.to_representation(self.instance)
+  File "/usr/share/openattic/rest/utilities.py", line 102, in to_representation
+    return self.to_native(instance)
+  File "/usr/share/openattic/volumes/restapi.py", line 331, in to_native
+    data.update(dict([(key, value) for (key, value) in serializer_instance.data.items()
+  File "/usr/lib/python2.7/dist-packages/rest_framework/serializers.py", line 503, in data
+    ret = super(Serializer, self).data
+  File "/usr/lib/python2.7/dist-packages/rest_framework/serializers.py", line 239, in data
+    self._data = self.to_representation(self.instance)
+  File "/usr/lib/python2.7/dist-packages/rest_framework/serializers.py", line 472, in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+  File "/usr/lib/python2.7/dist-packages/rest_framework/relations.py", line 355, in to_representation
+    raise ImproperlyConfigured(msg % self.view_name)
+ImproperlyConfigured: Could not resolve URL for hyperlinked relationship using view name "host-detail". You may have failed to include the related model in your API, or incorrectly configured the `lookup_field` attribute on this field.
+This is the minimal testcase:
+from django.db import models
+from rest_framework import viewsets, serializers, relations
+
+class F(models.Model):
+    pass
+
+class M(models.Model):
+    @property
+    def f(self):
+        return F.objects.get()
+
+class FSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = F
+        fields = ('id', )
+
+class MSerializer(serializers.HyperlinkedModelSerializer):
+    f = relations.HyperlinkedRelatedField(read_only=True, view_name='f-detail')
+
+    class Meta:
+        model = M
+        fields = ('id', 'f')
+
+class FViewSet(viewsets.ModelViewSet):
+    queryset = F.objects.all()
+    serializer_class = FSerializer
+
+
+class MViewSet(viewsets.ModelViewSet):
+    queryset = M.objects.all()
+    serializer_class = MSerializer
+There is a problem, if
+You are using DRF >= 3.0
+and your serializer contains a HyperlinkedRelatedField named f
+and the corresponding model does not have a related field f.
+Instead, it has a property f returning an F-model instance, e.g.:
+class M(Model):
+     @property
+     def my_prop(self):
+        return self.foo.my_prop
+Then, the serializer will fail to generate the URL, because the HyperlinkedRelatedField
+cannot cope with the fact that django.db.models.base.Model#serializable_value
+returns the PK, if the model returns a field with that name, or else the model instance.
+If we disable the pk-only-optimization, HyperlinkedRelatedField will not call
+django.db.models.base.Model#serializable_value, thus disabling the ode path affected
+by this bug.
+Another idea would be to force the use of the PK for these property based
+HyperlinkedRelatedFields by specifying the sorce attribute of the HyperlinkedRelatedField.
+But that doesn't work, cause some serializers must support properties and ForeinKeys at
+the same time.
+This a regression to DRF 2, as the minimal example works there flawlessly.
+Let's run manage.py shell to find out more details
+Imitialize stuff (you can ignore this):
+In [3]: from lvm.models import LogicalVolume
+ 
+ 
+In [7]: lv = LogicalVolume.objects.get()
+ 
+ 
+In [10]: from volumes.restapi import BlockVolumeSerializer
+ 
+
+# For Mocking Request objects. 
+In [14]: class Yup(object):
+   ....:     def __init__(self, **kwargs):
+   ....:         self.__dict__.update(**kwargs)
+   ....:     def build_absolute_uri(self, url):
+   ....:         return 'http://localhost' + url
+   ....:    
+
+In [19]: lvs = BlockVolumeSerializer(lv, context={'request': Yup(path='/openattic/api/volumes', GET={})})
+
+In [10]: lvs
+Out[10]: 
+BlockVolumeSerializer(<LogicalVolume: lv1>, context={'request': <__main__.Yup object>}):
+    type = ContentTypeSerializer(read_only=True, source='volume_type'):
+        url = HyperlinkedIdentityField(view_name='contenttype-detail')
+        app_label = CharField(max_length=100, required=True)
+        model = CharField(label='Python model class name', max_length=100, required=True)
+        class Meta:
+            validators = [<UniqueTogetherValidator(queryset=ContentType.objects.all(), fields=(u'app_label', u'model'))>]
+    host = HyperlinkedRelatedField(read_only=True, view_name='host-detail')
+    path = CharField()
+    perfdata = SerializerMethodField('get_performance_data')
+Here is the Trachback as seen above:
+In [32]: lvs.data
+---------------------------------------------------------------------------
+ImproperlyConfigured                      Traceback (most recent call last)
+<ipython-input-32-e553062931ab> in <module>()
+----> 1 lvs.data
+ 
+/usr/lib/python2.7/dist-packages/rest_framework/serializers.pyc in data(self)
+    501     @property
+    502     def data(self):
+--> 503         ret = super(Serializer, self).data
+    504         return ReturnDict(ret, serializer=self)
+    505 
+ 
+/usr/lib/python2.7/dist-packages/rest_framework/serializers.pyc in data(self)
+    237         if not hasattr(self, '_data'):
+    238             if self.instance is not None and not getattr(self, '_errors', None):
+--> 239                 self._data = self.to_representation(self.instance)
+    240             elif hasattr(self, '_validated_data') and not getattr(self, '_errors', None):
+    241                 self._data = self.to_representation(self.validated_data)
+ 
+/usr/lib/python2.7/dist-packages/rest_framework/serializers.pyc in to_representation(self, instance)
+    470                 ret[field.field_name] = None
+    471             else:
+--> 472                 ret[field.field_name] = field.to_representation(attribute)
+    473 
+    474         return ret
+ 
+/usr/lib/python2.7/dist-packages/rest_framework/relations.pyc in to_representation(self, value)
+    353                     "entries in your URL conf." % value_string
+    354                 )
+--> 355             raise ImproperlyConfigured(msg % self.view_name)
+    356 
+    357         if url is None:
+ 
+ImproperlyConfigured: Could not resolve URL for hyperlinked relationship using view name "host-detail". You may have failed to include the related model in your API, or incorrectly configured the `lookup_field` attribute on this field.
+But, this works, if I call to_representation on the field directly:
+In [31]: lvs.fields['host'].to_representation(lv.host)
+Out[31]: u'http://localhost/api/hosts/1'
+And it works, if I append 'pk' to the .sources_attrs of the field:
+In [133]: lvs.fields['host'].source_attrs = [u'host', 'pk']
+and it works, if I call reverse directly:
+In [24]: reverse('host-detail', kwargs={'pk': lv.host.pk}, request=Yup(path='/openattic/api/volumes', GET={}))
+Out[24]: u'http://localhost/api/hosts/1'
+I've debuged a little bit and found PKOnlyObject().pk to be the actual object (Host), and not the primary key (e.g. 5), thus I'm guessing the root cause there.
+See also our Issue: https://tracker.openattic.org/browse/OP-1676
+EDIT: let's deep into the PKOnlyObject().pk issue:
+In [60]: type(lvs.fields['host'].get_attribute(lv).pk)
+Out[60]: ifconfig.models.Host  # if this is int, it works as expected.
+
+In [65]: lvs.fields['host'].source_attrs[:-1]
+Out[65]: []
+
+In [70]: lv.serializable_value('host')
+Out[70]: <Host: oa-xen-1.oa.master.dns>
+Turns out, serializable_value returns either int or Host, if the field can be found by name.
+EDIT2, On my other system, to_representation actually worked with this broken PKOnlyObject().pk.
+This is the output of the other system:
+In [25]: reverse('host-detail', kwargs={'pk': lv.host.pk}, request=Yup(path='/openattic/api/volumes', GET={}))
+Out[25]: u'http://localhost/api/hosts/1'
+
+In [26]: reverse('host-detail', kwargs={'pk': lv.host}, request=Yup(path='/openattic/api/volumes', GET={}))
+Out[26]: u'http://localhost/api/hosts/ubuntubox'
+And http://localhost/api/hosts/ubuntubox is actually invalid.
+EDIT3:
+The error seems to be related to django.db.models.base.Model#serializable_value which returns either the related object or the primary key of the object dependent on self._meta.get_field(field_name) finding the field or not:
+    def serializable_value(self, field_name):
+        try:
+            field = self._meta.get_field(field_name)
+        except FieldDoesNotExist:
+            return getattr(self, field_name)  # returns the Host object
+        return getattr(self, field.attname) # returns the Host's primary key.
+Edit4:
+This is our workaround: https://bitbucket.org/openattic/openattic/pull-requests/499/op-1676-workaround-for/diff

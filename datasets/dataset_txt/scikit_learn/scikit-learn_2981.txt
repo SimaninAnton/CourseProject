@@ -1,0 +1,25 @@
+arogozhnikov commented on May 30, 2016 •
+edited by TomDLT
+Hi, we've recently found some strange inconsistency in the behavior of roc_auc_score. After long digging @tata-antares found out that it is wrongly computed for large data samples if weights passed are float32.
+Minimal example
+from sklearn.metrics import roc_auc_score
+import numpy
+numpy.random.seed(42)
+
+n_samples = 4 * 10 ** 7
+y = numpy.random.randint(2, size=n_samples)
+prediction = numpy.random.normal(size=n_samples) + y * 0.01
+trivial_weight = numpy.ones(n_samples)
+
+roc_auc_score(y, prediction)
+#prints 0.50273924526046887
+
+roc_auc_score(y, prediction, sample_weight=trivial_weight.astype('float32'))
+#**prints nan** and wrong warning
+/moosefs/miniconda/envs/ipython_py2/lib/python2.7/site-packages/sklearn/metrics/ranking.py:530: UndefinedMetricWarning: No negative samples in y_true, false positive value should be meaningless
+  UndefinedMetricWarning)
+
+roc_auc_score(y, prediction, sample_weight=trivial_weight.astype('float64'))
+#prints 0.50273924526046887
+The value when dtype=float64 is correct, but in the case we investigated after passing float32 metric returned a regular number, which is very different from correct one (e.g 0.58 instead of 0.52). It is some occasion we detected this problem.
+sklearn == '0.17.1'

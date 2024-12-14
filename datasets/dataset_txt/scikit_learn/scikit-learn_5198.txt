@@ -1,0 +1,28 @@
+Contributor
+ianozsvald commented on Oct 6, 2012
+The following code snippet raises a ValueError as max(vocabulary.itervalues()) has no items to iterate over (exception listed below).
+from sklearn.feature_extraction.text import CountVectorizer
+train_set = ['a', 'b'] # fails
+vectorizer = CountVectorizer()
+vectorizer.fit(train_set)
+
+...sklearn/feature_extraction/text.py in _term_count_dicts_to_matrix(self, term_count_dicts)
+    398             term_count_dict.clear()
+    399 
+--> 400         shape = (len(term_count_dicts), max(vocabulary.itervalues()) + 1)
+    401         spmatrix = sp.coo_matrix((values, (i_indices, j_indices)),
+    402                                  shape=shape, dtype=self.dtype)
+ValueError: max() arg is an empty sequence
+I can see that the default CountVectorizer only accepts tokens of length 2 or more characters so the single character tokens are stripped leaving a 0 length vocabulary. I think adding a friendlier exception message to warn the user about their empty vocabulary rather than the less helpful ValueError might make it easier for new users to identify their problem:
+def _term_count_dicts_to_matrix(self, term_count_dicts):
+    i_indices = []
+    j_indices = []
+    values = []
+    vocabulary = self.vocabulary_
+
+    # SUGGESTED NEW LINES
+    if len(vocabulary) == 0:
+        raise Exception("0 terms in vocabulary, we need >= 1")
+I'm not sure if Exception is the right type to raise here, none of the other standard exception types seem to fit warning the user that the code cannot execute with the inputs they've provided.
+This was tested with:
+sklearn.__version__ == '0.12'

@@ -1,0 +1,68 @@
+SylvainTakerkart commented on Jan 22, 2015
+Hello, following Andy's advice(http://sourceforge.net/p/scikit-learn/mailman/message/33251002/), I'm opening this issue... Here is the description of the problem:
+I'm trying to use the instance weighting capability of the SVC class, and I
+encountered some weird behavior: when the C parameter is chosen very small
+and the weights are not very large, weighted SVM yields constant
+prediction...
+Below, you'll find a piece of code that demonstrates this. What it does:
+create a dummy dataset for binary classification, with a training and a
+testing dataset
+create random weights that are very very very close to one (so close
+that they should not influence what follows)
+run unweighted and weighted SVM (hereafter SVM and wSVM) with decreasing
+values of C
+We expect SVM and wSVM to yield exactly the same predictions because the
+instance weights are ridiculously close to one. This is exactly what
+happens for large to small-ish values of C; but at some point when C gets
+smaller, wSVM yields constant predictions (either all zeros, or all ones)
+while SVM still behaves normally...
+Sylvain
+import numpy as np
+from numpy.random import multivariate_normal
+
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+
+# create dummy training and testing dataset...
+n_samples_per_class = 100
+
+X_train_plus = multivariate_normal([0,2],np.identity(2),n_samples_per_class)
+X_train_minus = multivariate_normal([0,3],np.identity(2),n_samples_per_class)
+X_test_plus = multivariate_normal([0,2],np.identity(2),n_samples_per_class)
+X_test_minus = multivariate_normal([0,3],np.identity(2),n_samples_per_class)
+
+X_train = np.vstack([X_train_plus, X_train_minus])
+X_test = np.vstack([X_test_plus, X_test_minus])
+
+# create labels
+y_train = np.hstack([np.zeros(n_samples_per_class), np.ones(n_samples_per_class)])
+y_test = np.hstack([np.zeros(n_samples_per_class), np.ones(n_samples_per_class)])
+
+n_train_samples = len(y_train)
+
+# the list of decreasing C values
+C_list = 10. ** np.arange(2,-5,-1)
+
+# create random sample weights (very very very close to one)
+mu = 1.
+sigma = 0.001
+sample_weights = np.random.normal(mu,sigma,n_train_samples)
+
+for C in C_list:
+    # run SVM
+    svc = SVC(C=C)
+    svc.fit(X_train,y_train)
+    y_svc = svc.predict(X_test)
+    svc_acc = accuracy_score(y_svc,y_test)
+
+    # run weighted SVM
+    wsvc = SVC(C=C)
+    wsvc.fit(X_train,y_train,sample_weight=sample_weights)
+    y_wsvc = wsvc.predict(X_test)
+
+    wsvc_acc = accuracy_score(y_wsvc,y_test)
+    print 'Accuracies of SVM and weighted-SVM for C = %f: %.2f %.2f' % (C,svc_acc,wsvc_acc)
+    print 'Predictions for weighted-SVM:'
+    print y_wsvc
+    print

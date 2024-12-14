@@ -1,0 +1,154 @@
+MaratZakirov commented on 19 Jan 2017
+Suppose we have simple example (taken from keras documentation) with one shared LSTM how could I introduce one shared Embedding here? Sorry If my question is already answered but I read this topics and found them a bit confusing. I tried to simply make one Embedding and put it in different sequential models but model.fit failed with assert "You are only have one one input but give two". Then I took this example below and tried to put shared Embedding.
+This is original
+from keras.layers import Input, LSTM, Dense, merge
+from keras.models import Model
+
+tweet_a = Input(shape=(140, 256))
+tweet_b = Input(shape=(140, 256))
+
+# this layer can take as input a matrix
+# and will return a vector of size 64
+shared_lstm = LSTM(64)
+
+# when we reuse the same layer instance
+# multiple times, the weights of the layer
+# are also being reused
+# (it is effectively *the same* layer)
+encoded_a = shared_lstm(tweet_a)
+encoded_b = shared_lstm(tweet_b)
+
+# we can then concatenate the two vectors:
+merged_vector = merge([encoded_a, encoded_b], mode='concat', concat_axis=-1)
+
+# and add a logistic regression on top
+predictions = Dense(1, activation='sigmoid')(merged_vector)
+
+# we define a trainable model linking the
+# tweet inputs to the predictions
+model = Model(input=[tweet_a, tweet_b], output=predictions)
+
+model.compile(optimizer='rmsprop',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+model.fit([data_a, data_b], labels, nb_epoch=10)
+This refactored with shared embeding
+# -*- coding: utf-8 -*-
+from keras.layers import Input, LSTM, Dense, merge, Embedding
+from keras.models import Model
+import numpy
+
+tweet_a = Input(shape=(140, ), dtype='int32')
+tweet_b = Input(shape=(140, ), dtype='int32')
+
+emb = Embedding(input_dim=100, output_dim=10, input_length=20)
+
+em_1 = emb(tweet_a)
+em_2 = emb(tweet_b)
+
+# this layer can take as input a matrix
+# and will return a vector of size 64
+shared_lstm = LSTM(64)
+
+# when we reuse the same layer instance
+# multiple times, the weights of the layer
+# are also being reused
+# (it is effectively *the same* layer)
+encoded_a = shared_lstm(em_1)
+encoded_b = shared_lstm(em_2)
+
+# we can then concatenate the two vectors:
+merged_vector = merge([encoded_a, encoded_b], mode='concat')
+
+# and add a logistic regression on top
+predictions = Dense(1, activation='sigmoid')(merged_vector)
+
+# we define a trainable model linking the
+# tweet inputs to the predictions
+model = Model(input=[tweet_a, tweet_b], output=predictions)
+
+model.compile(optimizer='rmsprop', loss='binary_crossentropy')
+
+print 'Number of model parameters: ', model.count_params()
+
+data_a = numpy.zeros(shape=(223, 140), dtype='int32')
+data_b = numpy.zeros(shape=(223, 140), dtype='int32')
+labels = numpy.zeros(shape=(223, 1), dtype='float32')
+
+model.fit([data_a, data_b], labels, nb_epoch=10)
+But got:
+Traceback (most recent call last):
+  File "/home/zakirov/proj/semantic/plm/wt-em-lstm-4-neg.py", line 45, in <module>
+    model.fit([data_a, data_b], labels, nb_epoch=10)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1111, in fit
+    initial_epoch=initial_epoch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 826, in _fit_loop
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 811, in __call__
+    return self.function(*inputs)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 871, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 314, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 859, in __call__
+    outputs = self.fn()
+  File "/usr/local/lib/python2.7/dist-packages/theano/scan_module/scan_op.py", line 951, in rval
+    r = p(n, [x[0] for x in i], o)
+  File "/usr/local/lib/python2.7/dist-packages/theano/scan_module/scan_op.py", line 940, in <lambda>
+    self, node)
+  File "theano/scan_module/scan_perform.pyx", line 405, in theano.scan_module.scan_perform.perform (/home/zakirov/.theano/compiledir_Linux-3.19--generic-x86_64-with-Ubuntu-15.04-vivid-x86_64-2.7.9-64/scan_perform/mod.cpp:4316)
+  File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 314, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "theano/scan_module/scan_perform.pyx", line 397, in theano.scan_module.scan_perform.perform (/home/zakirov/.theano/compiledir_Linux-3.19--generic-x86_64-with-Ubuntu-15.04-vivid-x86_64-2.7.9-64/scan_perform/mod.cpp:4193)
+ValueError: Input dimension mis-match. (input[0].shape[0] = 224, input[1].shape[0] = 32)
+Apply node that caused the error: Elemwise{add,no_inplace}(Subtensor{::, int64::}.0, dot.0)
+Toposort index: 35
+Inputs types: [TensorType(float32, matrix), TensorType(float32, matrix)]
+Inputs shapes: [(224, 64), (32, 64)]
+Inputs strides: [(20480, 4), (256, 4)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[Elemwise{mul,no_inplace}(Elemwise{add,no_inplace}.0, DimShuffle{x,x}.0)]]
+
+Backtrace when the node is created(use Theano flag traceback.limit=N to make it longer):
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 517, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 571, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 155, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/usr/local/lib/python2.7/dist-packages/keras/layers/recurrent.py", line 227, in call
+    input_length=input_shape[1])
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 981, in rnn
+    go_backwards=go_backwards)
+  File "/usr/local/lib/python2.7/dist-packages/theano/scan_module/scan.py", line 745, in scan
+    condition, outputs, updates = scan_utils.get_updates_and_outputs(fn(*args))
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 973, in _step
+    output, new_states = step_function(input, states)
+  File "/usr/local/lib/python2.7/dist-packages/keras/layers/recurrent.py", line 825, in step
+    o = self.inner_activation(x_o + K.dot(h_tm1 * B_U[3], self.U_o))
+
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Apply node that caused the error: for{cpu,scan_fn}(Subtensor{int64}.0, Subtensor{:int64:}.0, IncSubtensor{Set;:int64:}.0, IncSubtensor{Set;:int64:}.0, Subtensor{int64}.0, lstm_1_U_o, lstm_1_U_f, lstm_1_U_i, lstm_1_U_c)
+Toposort index: 401
+Inputs types: [TensorType(int64, scalar), TensorType(float32, 3D), TensorType(float32, 3D), TensorType(float32, 3D), TensorType(int64, scalar), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, matrix)]
+Inputs shapes: [(), (20, 224, 256), (21, 32, 64), (21, 32, 64), (), (64, 64), (64, 64), (64, 64), (64, 64)]
+Inputs strides: [(), (1024, 20480, 4), (8192, 256, 4), (8192, 256, 4), (), (256, 4), (256, 4), (256, 4), (256, 4)]
+Inputs values: [array(20), 'not shown', 'not shown', 'not shown', array(20), 'not shown', 'not shown', 'not shown', 'not shown']
+Outputs clients: [[], [], [DimShuffle{0,1,2}(for{cpu,scan_fn}.2)]]
+
+Backtrace when the node is created(use Theano flag traceback.limit=N to make it longer):
+  File "/home/zakirov/proj/semantic/plm/wt-em-lstm-4-neg.py", line 24, in <module>
+    encoded_a = shared_lstm(em_1)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 517, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 571, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 155, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/usr/local/lib/python2.7/dist-packages/keras/layers/recurrent.py", line 227, in call
+    input_length=input_shape[1])
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 981, in rnn
+    go_backwards=go_backwards)
+
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+What I am doing wrong?

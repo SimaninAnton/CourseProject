@@ -1,0 +1,51 @@
+ryt51V commented on 15 Jan 2016
+Letsencrypt fails with an unobvious error message if you try to request a certificate for a domain containing any upper case letters.
+I have tested this on two Debian and one Ubuntu servers (Python 2.7.9 and 2.7.6 respectively) with the same results, one of which was a clean install, so hopefully this should be easy to reproduce. Happens both in live and staging.
+See below the exaMple.com and example.com - the former fails with UnexpectedUpdate, the latter makes it to the challenge.
+$ /opt/letsencrypt/letsencrypt-auto certonly --test-cert --standalone --domains exaMple.com
+Updating letsencrypt and virtual environment dependencies......
+Requesting root privileges to run with virtualenv: sudo /home/user/.local/share/letsencrypt/bin/letsencrypt certonly --test-cert --standalone --domains exaMple.com
+An unexpected error occurred:
+UnexpectedUpdate: AuthorizationResource(body=Authorization(status=Status(pending), challenges=(ChallengeBody(chall=UnrecognizedChallenge(), status=Status(pending), validated=None, uri=u'
+<snip - I'm not sure which parts of the message are safe for me send.  It does include  "value=u'example.com'" in lower case) >  
+Please see the logfiles in /var/log/letsencrypt for more details.
+
+$ /opt/letsencrypt/letsencrypt-auto certonly --test-cert --standalone --domains example.com
+Updating letsencrypt and virtual environment dependencies......
+Requesting root privileges to run with virtualenv: sudo /home/user/.local/share/letsencrypt/bin/letsencrypt certonly --test-cert --standalone --domains example.com
+Failed authorization procedure. example.com (tls-sni-01): urn:acme:error:unauthorized :: The client lacks sufficient authorization :: Correct zName not found for TLS SNI challenge. Found 'www.example.org, example.com, example.edu, example.net, example.org, www.example.com, www.example.edu, www.example.net'
+From the log:
+2016-01-15 06:55:57,274:DEBUG:acme.challenges:dns-01 was not recognized, full message: {u'status': u'pending', u'token': u'<snip>', u'type': u'dns-01', u'uri': u'https://acme-staging.api.letsencrypt.org/acme/challenge/<snip>'}
+2016-01-15 06:55:57,306:DEBUG:letsencrypt.cli:Exiting abnormally:
+Traceback (most recent call last):
+  File "/home/user/.local/share/letsencrypt/bin/letsencrypt", line 11, in <module>
+    sys.exit(main())
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/cli.py", line 1398, in main
+    return args.func(args, config, plugins)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/cli.py", line 600, in obtain_cert
+    _auth_from_domains(le_client, config, domains)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/cli.py", line 404, in _auth_from_domains
+    lineage = le_client.obtain_and_enroll_certificate(domains)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/client.py", line 283, in obtain_and_enroll_certificate
+    certr, chain, key, _ = self.obtain_certificate(domains)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/client.py", line 266, in obtain_certificate
+    return self._obtain_certificate(domains, csr) + (key, csr)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/client.py", line 224, in _obtain_certificate
+    authzr = self.auth_handler.get_authorizations(domains)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/letsencrypt/auth_handler.py", line 74, in get_authorizations
+    domain, self.account.regr.new_authzr_uri)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/acme/client.py", line 215, in request_domain_challenges
+    typ=messages.IDENTIFIER_FQDN, value=domain), new_authz_uri)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/acme/client.py", line 198, in request_challenges
+    return self._authzr_from_response(response, identifier)
+  File "/home/user/.local/share/letsencrypt/local/lib/python2.7/site-packages/acme/client.py", line 179, in _authzr_from_response
+    raise errors.UnexpectedUpdate(authzr)
+UnexpectedUpdate: AuthorizationResource(body=Authorization(status=Status(pending), challenges=(ChallengeBody(chall=UnrecognizedChallenge(), status=Status(pending), validated=None, uri=u'<snip>
+Obviously the solution for the user is to just make requests in lower case, but none of the above indicates they need to do this. Letsencrypt should ideally do one of the following with an upper case domain argument:
+Exit gracefully with an explanation to use lower case.
+Warn about upper case letters, but then proceed as normal (almost certainly running into the issue above).
+Convert all domain arguments to lowercase.
+(Side note to those arriving from Google: You might have found this link suggesting you comment the following lines in client.py:
+if authzr.body.identifier != identifier:
+    raise errors.UnexpectedUpdate(authzr)
+This supresses the error and might allow letsencrypt to work, but it breaks renewals - running the same command, at least with upper case letters, will keep creating new certificates in 0001 etc. folders.)

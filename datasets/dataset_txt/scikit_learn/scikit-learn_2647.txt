@@ -1,0 +1,78 @@
+mpg85 commented on Oct 21, 2016 •
+edited
+Description
+RuntimeWarning: overflow encountered in double_scalars leads to ValueError: Input contains NaN, infinity or a value too large for dtype('float64') in sklearn/ensemble/gradient_boosting.py
+Steps/Code to Reproduce
+I am unable to reproduce the behaviour since it happens in a heavily parallelized randomized search, however i was able to track it down to the method _update_terminal_region of the BinomialDeviance class.
+I did some simple printing, in particular of the contents of numerator and denominator in line 517.
+The output is shown below:
+numerator --- denominator
+4.0 --- 8.94896967215e-309
+/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/ensemble/gradient_boosting.py:518: RuntimeWarning: overflow encountered in double_scalars
+  tree.value[leaf, 0, 0] = numerator / denominator
+numerator --- denominator
+-4.55102661584 --- 1.17358529293
+numerator --- denominator
+-6.69090780883 --- 5.35410051391
+/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/ensemble/gradient_boosting.py:490: RuntimeWarning: invalid value encountered in multiply
+  np.sum(sample_weight * ((y * pred) - np.logaddexp(0.0, pred))))
+/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/ensemble/gradient_boosting.py:490: RuntimeWarning: invalid value encountered in subtract
+  np.sum(sample_weight * ((y * pred) - np.logaddexp(0.0, pred))))
+The division 4.0 / 8.94896967215e-309 is causing overflow, it is easily verifiable by executing the same division in the interpreter:
+>>> 4.0 / 8.94896967215e-309
+inf
+The complete traceback of the crash is:
+Traceback (most recent call last):
+  File "double_cv.py", line 68, in <module>
+    double_cv(**vars(args))
+  File "double_cv.py", line 49, in double_cv
+    rs.fit(X_train, y_train)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 1185, in fit
+    return self._fit(X, y, groups, sampled_params)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/model_selection/_search.py", line 562, in _fit
+    for parameters in parameter_iterable
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 758, in __call__
+    while self.dispatch_one_batch(iterator):
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 608, in dispatch_one_batch
+    self._dispatch(tasks)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 571, in _dispatch
+    job = self._backend.apply_async(batch, callback=cb)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 109, in apply_async
+    result = ImmediateResult(func)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 322, in __init__
+    self.results = batch()
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/externals/joblib/parallel.py", line 131, in __call__
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/model_selection/_validation.py", line 260, in _fit_and_score
+    test_score = _score(estimator, X_test, y_test, scorer)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/model_selection/_validation.py", line 287, in _score
+    score = scorer(estimator, X_test, y_test)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/metrics/scorer.py", line 196, in __call__
+    return self._sign * self._score_func(y, y_pred, **self._kwargs)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/metrics/ranking.py", line 260, in roc_auc_score
+    sample_weight=sample_weight)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/metrics/base.py", line 84, in _average_binary_score
+    return binary_metric(y_true, y_score, sample_weight=sample_weight)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/metrics/ranking.py", line 255, in _binary_roc_auc_score
+    sample_weight=sample_weight)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/metrics/ranking.py", line 505, in roc_curve
+    y_true, y_score, pos_label=pos_label, sample_weight=sample_weight)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/metrics/ranking.py", line 301, in _binary_clf_curve
+    assert_all_finite(y_score)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/utils/validation.py", line 65, in assert_all_finite
+    _assert_all_finite(X.data if sp.issparse(X) else X)
+  File "/home/podda/.venvs/vermont/local/lib/python2.7/site-packages/sklearn/utils/validation.py", line 58, in _assert_all_finite
+    " or a value too large for %r." % X.dtype)
+ValueError: Input contains NaN, infinity or a value too large for dtype('float64').
+but I'm not sure it is of any help since might be messed up by the parallelization.
+Versions
+>>> import platform; print(platform.platform())
+Linux-4.2.0-42-generic-x86_64-with-Ubuntu-14.04-trusty
+>>> import sys; print("Python", sys.version)
+('Python', '2.7.6 (default, Jun 22 2015, 17:58:13) \n[GCC 4.8.2]')
+>>> import numpy; print("NumPy", numpy.__version__)
+('NumPy', '1.11.2')
+>>> import scipy; print("SciPy", scipy.__version__)
+('SciPy', '0.18.1')
+>>> import sklearn; print("Scikit-Learn", sklearn.__version__)
+('Scikit-Learn', '0.18')

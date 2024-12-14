@@ -1,0 +1,31 @@
+maxbry commented on 1 Oct 2016
+Currently, when BatchNorm is called several times, there is an exception telling that this is not possible. This has to do with creating the running mean and std. I made a change to the call method that should solve this problem:
+def build(self, input_shape):
+    # [...]
+    self.called_with = []
+
+def call(self, x, mask=None):
+    if self.mode == 0:
+        assert self.built, 'Layer must be built before being called'
+        input_shape = self.input_spec[0].shape
+
+        reduction_axes = list(range(len(input_shape)))
+        del reduction_axes[self.axis]
+        broadcast_shape = [1] * len(input_shape)
+        broadcast_shape[self.axis] = input_shape[self.axis]
+
+        # mode 0
+        self.called_with += [x]
+        x_normed, mean, std = K.normalize_batch_in_training(
+            x, self.gamma, self.beta, reduction_axes,
+            epsilon=self.epsilon)
+
+        all_x = K.concatenate(self.called_with, self.concat_axis)
+        all_x_normed, all_mean, all_std = K.normalize_batch_in_training(
+            all_x, self.gamma, self.beta, reduction_axes,
+            epsilon=self.epsilon)
+
+        self.updates = [K.moving_average_update(self.running_mean, all_mean, self.momentum),
+                        K.moving_average_update(self.running_std, all_std, self.momentum)]
+The inputs with which that layer is being call are stored in a list. After that, the list items are concatenated into one matrix/tensor. That tensor than is being batch normed and the outputs are used for the updates. If the layer is called again, the list gets extendes and self.updates get overwritten. Any thoughts?
+1

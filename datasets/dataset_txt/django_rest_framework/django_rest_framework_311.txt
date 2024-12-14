@@ -1,0 +1,92 @@
+mmmcorpsvit commented on 28 Sep 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+requirements.txt
+Django<2.0.0
+djangorestfrework
+# -*- coding: utf-8 -*-
+
+import logging
+
+import coreapi
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from rest_framework import renderers
+from rest_framework.views import APIView
+from rest_framework.filters import BaseFilterBackend
+from rest_framework.generics import GenericAPIView
+from rest_framework.response import Response
+from rest_framework.decorators import renderer_classes, api_view
+from rest_framework.renderers import JSONRenderer
+
+
+logger = logging.getLogger(__name__)
+
+class PlainTextRenderer(renderers.BaseRenderer):
+    media_type = 'text/plain'
+    format = 'txt'
+
+    def render(self, data, media_type=None, renderer_context=None):
+        logger.debug(str(data))
+        return str(data)
+        #return data.encode(self.charset)
+
+
+class SmsActivate(GenericAPIView):
+#class SmsActivate(APIView):    
+    #encoding = 'UTF-8'
+    user = None
+    filter_backends = (SmsActivateFilter,)
+
+    #renderer_classes = [PlainTextRenderer, JSONRenderer]
+    #renderer_classes = (PlainTextRenderer, )
+
+    #@api_view(['GET', 'POST'])
+    #@renderer_classes((PlainTextRenderer,))
+    def get(self, request):
+        api_key = request.query_params.get('api_key')
+        if api_key:
+            self.user = get_user_model().objects.filter(auth_token__key=api_key).first()
+            if not self.user:
+                return Response('BAD_KEY')
+        else:
+            return Response('NO_KEY')
+
+        action = request.query_params.get('action')
+        if action:
+            if action in ACTION_CHOICES.keys():
+                return getattr(self, ACTION_CHOICES[action])()
+            else:
+                return Response('BAD_ACTION')
+        else:
+            return Response('NO_ACTION')
+
+    #@api_view(['GET', 'POST'])
+    #@renderer_classes((PlainTextRenderer,))
+    def get_numbers_status(self):
+            return Response('ERROR_SQL') # < - JSON
+
+
+
+    #@api_view(['GET', 'POST'])
+    #@api_view(('GET',))
+    @renderer_classes((PlainTextRenderer,))
+    def get_balance(self):
+        return Response('balance:%s' % self.user.balance) # <- Plaine
+Expected behavior
+get_balance - return plaine text
+get_numbers_status - return default JSON
+Actual behavior
+But in fact get strange errors like:
+AttributeError: 'SmsActivate' object has no attribute 'encoding'
+if add encoding then get what need GET object etc.... something wrong
+are docs there correct: http://www.django-rest-framework.org/api-guide/renderers/#custom-renderers
+or can any help fix this error?

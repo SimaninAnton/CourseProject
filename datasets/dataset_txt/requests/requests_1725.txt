@@ -1,0 +1,20 @@
+edrevo commented on May 28, 2014
+Calls to requests.put([...], data=file_obj) send invalid requests on Windows when file_obj is a file object that contains Windows-style newlines (\r\n). This does not repro in Mac.
+The problem is that the Content-Length header is determined through the super_len function, which in turn calls os.fstat(o.fileno()).st_size. This return value, which comes from the actual file size in the disk, does not need to match the length of the contents that get read through the file object, since Python will perform newline normalization in Windows:
+>>> import os
+>>> f = open('test.md') # this file contains Windows-style newlines
+>>> f.fileno()
+3
+>>> os.fstat(3).st_size
+4031L
+>>> c = f.read(4031)
+>>> len(c)
+3983
+>>> c[:50]
+'# Cosmos "Little Joe" (1G) Hardware spec.\n\nThe fir'
+In Mac, on the other hand, the content is read without newline normalization:
+>>> f = open('test.md') # this file contains Windows-style newlines
+>>> c = f.read(4031)
+>>> c[:50]
+'# Cosmos "Little Joe" (1G) Hardware spec.\r\n\r\nThe f'
+The consequence of this mismatch is that the HTTP request will have a body which is smaller than what the Content-Length says, so the server will wait for the rest of the content and it will eventually give up.

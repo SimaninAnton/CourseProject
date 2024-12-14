@@ -1,0 +1,80 @@
+Contributor
+lukedeo commented on 10 Jul 2015
+Hey @fchollet, I'm using keras in some research, and I've found myself making a config system like caffe (except I'm using json in lieu of protobuf). I've been using a system like:
+{
+    "data_layers" : [
+        {
+            "name" : "raw_data",
+            "connects_to" : "maxout/1"
+        },
+        {
+            "name" : "other_data", 
+            "connects_to" : "dense/1"
+        }
+    ],
+    "output_layers" : [
+        {
+            "name" : "output",
+            "input" : "softmax/1"
+        }
+    ],
+    "components" : {
+        "dense/1" : {
+            "class" : "Dense",
+            "input" : "other_data",
+            "constructor" : {
+                "input_dim" : 15,
+                "output_dim" : 10,
+                "activation" : "relu"
+            }
+        },
+        "maxout/1" : {
+            "class" : "MaxoutDense",
+            "input" : "raw_data",
+            "constructor" : {
+                "input_dim" : 30,
+                "output_dim" : 20,
+                "nb_feature" : 10
+            }
+        },
+        "dropout/1" : {
+            "class" : "Dropout", 
+            "input": "maxout/1",
+            "constructor" : {
+                "p" : 0.5
+            }
+        },
+        "dropout/2" : {
+            "class" : "Dropout", 
+            "input": "dense/1",
+            "constructor" : {
+                "p" : 0.2
+            }
+        },
+        "softmax/1" : {
+            "class" : "Dense",
+            "inputs" : ["dropout/1", "dropout/2"],
+            "merge_mode" : "concat",
+            "constructor" : {
+                "input_dim" : 30,
+                "output_dim" : 12,
+                "activation" : "softmax"
+            }
+        }
+    }, 
+}
+Which is equivalent to
+graph = Graph()
+graph.add_input(name='raw_data')
+graph.add_input(name='other_data')
+
+graph.add_node(Dense(15, 10, activation='relu'), name='dense/1', input='other_data')
+graph.add_node(MaxoutDense(30, 20, 10), name='maxout/1', input='raw_data')
+
+graph.add_node(Dropout(0.5)), name='dropout/1', input='maxout/1')
+graph.add_node(Dropout(0.2)), name='dropout/2', input='dense/1')
+
+graph.add_node(Dense(30, 12, activation='softmax'), name='softmax/1', inputs=['dropout/1', 'dropout/2'], merge_mode='concat')
+
+graph.add_output(name='output', input='softmax/1')
+If I organized this in a nice way, would this be useful to Keras as a PR?

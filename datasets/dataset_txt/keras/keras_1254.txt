@@ -1,0 +1,87 @@
+Ao-Lee commented on 9 Feb 2018 •
+edited
+I use a pre-trained inception network and fine-tune the last fully connected layer. It performs well during training, with about 80% accuracy during the first epoch. But when using model.test_on_batch to get predictions( on training data, not testing data), it gives a very bad result. The code is as follows:
+    for images, labels in loader_tr:
+        images = preprocess_input(images)
+        labels = keras.utils.to_categorical(labels, cfg.num_classes)
+        [loss, accuracy] = model.train_on_batch(images, labels)
+        print('during training: loss is {} accuracy is {}'.format(loss, accuracy))
+        
+        [loss2, accuracy2] = model.test_on_batch(images, labels)
+        print('during testing: loss is {} accuracy is {}'.format(loss2, accuracy2))
+        break
+here is the result of the code above:
+during training: loss is 0.27284860610961914 accuracy is 0.949999988079071
+during testing: loss is 4.6825151443481445 accuracy is 0.0
+Could anyone give a hint why the loss returned by train_on_batch and test_on_batch behave so differently and is there anything I can do to get it right?
+the whole task is to classify dog pictures, I use pre-trained inception network and modified the last fc layer. here is whole project. by the way, the code "from dataset import GetDataLoaders" acts exactly as the dataloader object in torchvision.
+import keras
+from keras.applications.inception_resnet_v2 import InceptionResNetV2, preprocess_input
+from keras.models import Model
+from keras.layers import Dense, Activation
+from keras import optimizers
+import numpy as np
+from dataset import GetDataLoaders
+import cfg
+
+    
+def TrainOneEpoch(dataloader, model):
+    for b, (images, labels) in enumerate(dataloader):
+        labels = keras.utils.to_categorical(labels, cfg.num_classes)
+        images = preprocess_input(images)
+        [loss, acc] = model.train_on_batch(images, labels)
+        if b % 30 == 0:
+            info = 'acc:{0:6.3f}  loss:{1:6.3f}'
+            print(info.format(acc, loss))
+
+
+def TrainProcess(loader_tr, model, epoch=1):
+    for e in range(epoch):
+        print('epoch {}'.format(e))
+        TrainOneEpoch(loader_tr, model)
+    
+
+def GetModel():
+    base_model = InceptionResNetV2(weights='imagenet', include_top=False, pooling='avg')
+    x = base_model.output
+    x = Dense(cfg.num_classes)(x)
+    outputs = Activation('softmax')(x)
+    model = Model(inputs=base_model.input, outputs=outputs)
+    return model, base_model
+   
+if __name__=='__main__':
+    
+    model, base_model = GetModel()
+    for layer in base_model.layers:
+        layer.trainable = False
+    opt = optimizers.SGD(lr=0.1)
+    model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
+    loader_tr, _ = GetDataLoaders()
+    TrainProcess(loader_tr, model, epoch=1)
+the training result is:
+epoch 0
+acc: 0.050  loss: 5.050
+acc: 0.200  loss: 4.190
+acc: 0.450  loss: 3.031
+acc: 0.550  loss: 2.554
+acc: 0.750  loss: 1.559
+acc: 0.750  loss: 1.420
+acc: 0.750  loss: 1.109
+acc: 0.800  loss: 0.976
+acc: 0.900  loss: 0.766
+acc: 0.800  loss: 0.867
+acc: 0.800  loss: 0.973
+acc: 0.850  loss: 0.826
+acc: 0.600  loss: 1.424
+acc: 0.900  loss: 0.414
+acc: 0.850  loss: 1.057
+acc: 0.850  loss: 0.436
+also, if I check what the model actually predicts, the result is very confusing:
+    for images, labels in loader_tr:
+        images = preprocess_input(images)
+        prob = model.predict(images)
+        prediction = prob.argmax(axis=1)
+        print(prediction)
+        break
+the output of the above code is:
+[82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82 82]

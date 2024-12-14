@@ -1,0 +1,43 @@
+PhyloStar commented on 3 Feb 2017
+I am trying to implement a variational recurrent autoencoder. I am doing the following:
+` batch_size = 32
+latent_dim = 2
+intermediate_dim = 256
+nb_epoch = 2
+epsilon_std = 1.0
+max_word_len = 10
+x = Input(batch_shape=(batch_size,max_word_len, n_dim))
+h = GRU(intermediate_dim)(x)
+z_mean = Dense(latent_dim)(h)
+z_log_var = Dense(latent_dim)(h)
+def sampling(args):
+z_mean, z_log_var = args
+epsilon = K.random_normal(shape=(batch_size, latent_dim), mean=0.,
+std=epsilon_std)
+z = z_mean + K.exp(z_log_var / 2) * epsilon
+return z
+z = Lambda(sampling)([z_mean, z_log_var])
+repeat_z = RepeatVector(max_word_len)
+decoder_h = GRU(intermediate_dim, return_sequences=True)
+decoder_mean = TimeDistributed(Dense(n_dim, activation="softmax"))
+h_decoded = decoder_h(repeat_z(z))
+x_decoded_mean = decoder_mean(h_decoded)
+def vae_loss(x, x_decoded_mean):
+xent_loss = objectives.binary_crossentropy(x, x_decoded_mean)
+kl_loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+return xent_loss + kl_loss
+vae = Model(x, x_decoded_mean)
+vae.compile(optimizer='rmsprop', loss=vae_loss)
+`
+I ported the vae code to make it work for sequences. The above code runs only when the batch_size=1 and shows the following tensorflow error when changed to 32. The following error comes up:
+Traceback (most recent call last):
+File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 965, in _do_call
+return fn(*args)
+File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 947, in _run_fn
+status, run_metadata)
+File "/usr/lib/python3.5/contextlib.py", line 66, in exit
+next(self.gen)
+File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/errors.py", line 450, in raise_exception_on_not_ok_status
+pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors.InvalidArgumentError: Incompatible shapes: [32,10] vs. [32]
+[[Node: add_11 = Add[T=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"](Mean, mul_2)]]

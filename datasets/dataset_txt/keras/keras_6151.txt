@@ -1,0 +1,27 @@
+mostlymetalman commented on 9 Jan 2016
+Caveat: I'm Working in Theano, don’t know if TF is different.
+The output of a scan with go_backwards is in the order that the sequence is processed. So, the first time step in the output of a go_backwards scan corresponds to the output after processing the original last element of the input sequence.
+If return_sequences=False, this is fine. output[-1] represents the result of processing the full sequence. But in the return_sequences=True context, this is going to hurt since outputs don’t have sequential correspondence with their inputs. Consider a bidirectional sequence labeling task. The point of bidirectionality here is to have access to the entire context at each time step. Any merge on the first element contains only the recurrent output of x0 and xn, but instead should contain x0 and xn,…,0.
+Easy way to check this is:
+forward = Sequential()
+forward.add(Embedding(100,7))
+forward.add(LSTM(12, return_sequences=True))
+
+backward = Sequential()
+backward.add(Embedding(100,7))
+backward.add(LSTM(12, return_sequences=True, go_backwards=True))
+then compile
+forward.set_weights(backward.get_weights())
+
+input = np.array([[1,2,3,4,5,6]])
+
+np.all(forward.predict(input[:,::-1]) == backward.predict(input))
+The result of that all is going to be true, which means the final output of backwards is in reverse order from the input to forward.
+EDIT
+Edit 2 @lemuriandezapada pointed out a clarity issue in my response.
+FYI, I've addressed this locally just by overriding get_output with a final:
+if self.go_backwards:
+    return output[:, ::-1, :]
+else:
+    return output
+and have seen some pretty significant sequence labeling gains.

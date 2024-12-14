@@ -1,0 +1,59 @@
+Contributor
+jaap3 commented on 16 Apr 2019 •
+edited by rpkilby
+Recently I came across an issue where invalid data was being created through our API, it turns out there's a subtle difference between the validation on an ArrayField and the resulting ListField in a ModelSerializer.
+Given the following models.py:
+from django.db import models
+from django.contrib.postgres.fields import ArrayField
+
+class Example(models.Model):
+    data = ArrayField(models.IntegerField())  # blank=False by default
+and this serializers.py
+from rest_framework import serializers
+from .models import Example
+
+class ExampleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Example
+        fields = ['data']
+
+class ExampleSerializer2(serializers.ModelSerializer):
+    data = serializers.ListField(child=serializers.IntegerField(), allow_empty=False)
+
+    class Meta:
+        model = Example
+        fields = ['data']
+The TestExampleSerializer.test_empty_list test fails:
+from unittest import TestCase
+
+from django.core.exceptions import ValidationError
+
+from .models import Example
+from .serializers import ExampleSerializer, ExampleSerializer2
+
+class TestExampleModel(TestCase):
+    def test_empty_list(self):
+        # This works, Django doesn't allow an empty list if blank=False
+        obj = Example(data=[])
+        with self.assertRaises(ValidationError) as cm:
+            obj.full_clean()
+        error_dict = cm.exception.error_dict
+        self.assertIn('data', error_dict)
+        self.assertEqual('blank', error_dict['data'][0].code)
+
+class TestExampleSerializer(TestCase):
+    def test_empty_list(self):
+        # This fails, DRF allows empty lists
+        serializer = ExampleSerializer(data={'data': []})
+        self.assertFalse(serializer.is_valid(), 'Expected validation error for empty list')
+
+class TestExampleSerializer2(TestCase):
+    def test_empty_list(self):
+        # Setting allow_empty=False manually works
+        serializer = ExampleSerializer2(data={'data': []})
+        self.assertFalse(serializer.is_valid(), 'Expected validation error for empty list')
+        self.assertIn('data', serializer.errors)
+        self.assertEqual('empty', serializer.errors['data'][0].code)
+I expected ExampleSerializer and ExampleSerializer2 to behave the same.
+When creating the ListField from the ArrayField DRF should set allow_empty on the ListField to the same value as blank on the ArrayField.
+1

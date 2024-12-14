@@ -1,0 +1,47 @@
+dpmccabe commented on 1 May 2019
+I've discovered a weird interaction between Flask, pytest, SQLAlchemy, and FactoryBoy that I think is a Flask bug. Consider these two identical routes that should both return the number of records in a database table:
+bp = Blueprint('example', __name__, url_prefix='/example')
+
+@bp.route('/form', methods = ['POST'])
+def test_form():
+    return str(db_session.query(Person).count())
+
+@bp.route('/json', methods = ['POST'])
+def test_json():
+    return str(db_session.query(Person).count())
+The difference is in the unit tests:
+def test_form(self, client):
+    person = PersonFactory()
+    resp = client.post('/example/form', data={'foo': 'bar'})
+    assert resp.data == b'1'
+
+def test_json(self, client):
+    person = PersonFactory()
+    resp = client.post('/example/json', json={'foo': 'bar'})
+    assert resp.data == b'1'
+We're posting form data in the first test and JSON in the second. The first test succeeds and you see this in the log:
+2019-04-30 14:26:05,425 INFO sqlalchemy.engine.base.Engine BEGIN (implicit)
+2019-04-30 14:26:05,427 INFO sqlalchemy.engine.base.Engine INSERT INTO people (id) VALUES (%(id)s)
+2019-04-30 14:26:05,427 INFO sqlalchemy.engine.base.Engine {'id': '658e241a-5522-47ca-9e61-bd6862d6ddc6}
+2019-04-30 14:26:05,432 INFO sqlalchemy.engine.base.Engine SELECT count(*) AS count_1 FROM (SELECT people.id AS people_id FROM people) AS anon_1
+2019-04-30 14:26:05,432 INFO sqlalchemy.engine.base.Engine {}
+2019-04-30 14:26:05,433 INFO sqlalchemy.engine.base.Engine ROLLBACK
+FactoryBoy correctly inserts the data and rolls it back when the test is done. However, the second test fails because the test person isn't inserted:
+2019-04-30 14:28:27,341 INFO sqlalchemy.engine.base.Engine BEGIN (implicit)
+2019-04-30 14:28:27,342 INFO sqlalchemy.engine.base.Engine SELECT count(*) AS count_1 
+FROM (SELECT people.id AS people_id FROM people) AS anon_1
+2019-04-30 14:28:27,342 INFO sqlalchemy.engine.base.Engine {}
+2019-04-30 14:28:27,343 INFO sqlalchemy.engine.base.Engine ROLLBACK
+
+tests/test_example.py:40 (TestExample.test_json)
+b'0' != b'1'
+See this gist for how I'm creating the Flask app, initializing SQLAlchemy, and configuring the test suite: https://gist.github.com/dpmccabe/6d3bed81c37817c38fb3f2b262d1393d
+Apologies if I'm doing anything unconventional, since I'm new to Flask.
+Expected Behavior
+The format of the request body (form data vs. JSON) should have nothing to do with whether FactoryBoy inserts records.
+Actual Behavior
+FactoryBoy records are not inserted when testing a post endpoint with a JSON body. It seems like there's some preprocessing step that's not performed with a JSON body.
+Environment
+Python version: 3.7
+Flask version: 1.0.2
+Werkzeug version: 0.15.2

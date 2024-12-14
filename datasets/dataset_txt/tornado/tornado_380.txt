@@ -1,0 +1,78 @@
+Contributor
+JZQT commented on 22 Feb 2017
+Run the following code will raise exception.
+#!/usr/bin/env python3
+# coding: utf-8
+
+import logging
+import logging.config
+
+logging.config.dictConfig({
+    'version': 1,
+    'incremental': False,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'class': 'tornado.log.LogFormatter',
+            'format': '[%(levelname)1.1s %(asctime)s %(module)s:%(lineno)d] %(message)s',
+        },
+    },
+    'handlers': {
+        'default': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default',
+        },
+    },
+    'root': {   # settings of root logger.
+        'level': 'DEBUG',
+        'handlers': ['default'],
+        'propagate': False,
+    },
+})
+
+logging.root.info("message")
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.5/logging/__init__.py", line 981, in emit
+    msg = self.format(record)
+  File "/usr/lib/python3.5/logging/__init__.py", line 831, in format
+    return fmt.format(record)
+  File "/usr/local/lib/python3.5/dist-packages/tornado/log.py", line 164, in format
+    formatted = self._fmt % record.__dict__
+TypeError: unsupported operand type(s) for %: 'NoneType' and 'dict'
+Call stack:
+  File "/home/jzqt/Code/Python/1.py", line 30, in <module>
+    logging.root.info("message")
+Message: 'message'
+Arguments: ()
+Why self._fmt is None? I found the answer in the logging.config.DictConfigurator.configure_formatter.
+class DictConfigurator(BaseConfigurator):
+    ......
+    def configure_formatter(self, config):
+        """Configure a formatter from a dictionary."""
+        if '()' in config:
+            ......
+        else:
+            fmt = config.get('format', None)
+            dfmt = config.get('datefmt', None)
+            style = config.get('style', '%')
+            cname = config.get('class', None)
+            if not cname:
+                c = logging.Formatter
+            else:
+                c = _resolve(cname)
+            result = c(fmt, dfmt, style)    # answer
+        return result
+    ......
+Because tornado.log.LogFormatter.__init__ method is as follows
+class LogFormatter(logging.Formatter):
+    ......
+    def __init__(self, color=True, fmt=DEFAULT_FORMAT,
+                 datefmt=DEFAULT_DATE_FORMAT, colors=DEFAULT_COLORS):
+        ......
+I think that can change tornado.log.LogFormatter.__init__ as follows
+class LogFormatter(logging.Formatter):
+    ......
+    def __init__(self, fmt=DEFAULT_FORMAT, datefmt=DEFAULT_DATE_FORMAT,
+                 style='%', color=True, colors=DEFAULT_COLORS):
+        ......

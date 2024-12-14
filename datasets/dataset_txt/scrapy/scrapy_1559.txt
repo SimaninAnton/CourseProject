@@ -1,0 +1,28 @@
+Contributor
+Mimino666 commented on Jan 9, 2013
+I have noticed that spider_idle signal is not called when the last issued request is filtered out by dedupe filter.
+Example spider:
+from scrapy import log, signals
+from scrapy.http import Request
+from scrapy.spider import BaseSpider
+
+
+class IdleSpider(BaseSpider):
+    name = 'idle_spider'
+
+    def set_crawler(self, crawler):
+        super(IdleSpider, self).set_crawler(crawler)
+        self.crawler.signals.connect(self._spider_idle, signal=signals.spider_idle)
+
+    def _spider_idle(self, spider):
+        self.log('Enqueuing...', log.INFO)
+        self.crawler.engine.crawl(Request('http://httpbin.org/'), self)
+
+    def start_requests(self):
+        return []
+
+    def parse(self, response):
+        self.log('Parsing...', log.INFO)
+        pass
+Message "Enqueuing..." is printed out exactly two times and "Parsing..." exactly once. After that spider_idle signal is sent no more. To me it seems like a bug, but if it is an intention, please reconsider it. It is rather unfortunate in the scenario, when _spider_idle is issuing new requests in batches and suddenly the last request was redirected to previously visited url (i.e. it wasn't even directly duplicate request).
+Of course the simple solution can be to use dont_filter on the issued requests, but it doesn't seem right to me.

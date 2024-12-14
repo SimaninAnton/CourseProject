@@ -1,0 +1,48 @@
+ycpei commented on Dec 6, 2018 •
+edited
+Description
+Not sure if this belongs here because it is some doubt on the implementation. I mentioned it in another issue but I am not sure if it is related to that issue.
+Recall in LDA there are two transformations:
+transformation to make the sample covariance matrix identity.
+projection to the space spanned by class means.
+Step 1 is achieved by doing SVD on X = (X - class_mean[y]) * sqrt(1 / (n_samples - n_classes)):
+X = U S Vt
+Then the transformation is Vt.T / S.
+In the code, Xc was normalised column-wise by std before the SVD
+X = np.sqrt(fac) * (Xc / std)
+where Xc is the centred version of original X.
+And the transformation was rescaled by std:
+scalings = (V[:rank] / std).T / S[:rank]
+But the resulting transformation is different.
+So my question is: is there any justification for doing this?
+Steps/Code to Reproduce
+Here is an example that shows the two transformations are different:
+import numpy as np
+
+n_classes = 2
+n_samples = 8
+n_features = 4
+np.random.seed(0)
+x = np.random.randn(n_samples, n_features)
+mid = n_samples // 2
+x[:mid] = x[:mid] - np.mean(x[:mid], axis=0)
+x[mid:] = x[mid:] - np.mean(x[mid:], axis=0)
+x1 = x / np.sqrt(n_samples - n_classes)
+std = np.std(x, axis=0)
+x2 = x1 / std
+_, s1, vt1 = np.linalg.svd(x1, full_matrices=0)
+_, s2, vt2 = np.linalg.svd(x2, full_matrices=0)
+vt2 = vt2 / std
+scaling1 = vt1.T / s1
+scaling2 = vt2.T / s2
+print("scaling1:", scaling1)
+print("scaling2:", scaling2)
+Results
+scaling1: [[-0.53647497 -0.17938608 -0.47510033  0.18166666]
+ [ 0.18206599 -0.61843809 -1.22557139 -0.02073434]
+ [ 0.03853551  0.06554463 -0.09633366  2.76754849]
+ [-0.02152724 -0.642656    1.30217762  0.25150681]]
+scaling2: [[-0.27288618  0.20328084 -0.33316465 -0.59322778]
+ [ 0.56234439  0.19973166  0.10284961 -1.24553878]
+ [ 0.52446116 -1.24552229 -2.41126463 -0.18385719]
+ [ 0.29586313  0.64212399 -0.57451132  1.15865047]]

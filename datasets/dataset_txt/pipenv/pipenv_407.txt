@@ -1,0 +1,44 @@
+delfick commented on 27 Nov 2018 •
+edited
+Hi,
+I was wondering if it's possible to use pipenv as a library to manage the lockfile instead of using the commandline tools directly?
+I ask because I want my venvstarter project (https://venvstarter.readthedocs.io/en/latest/) to be able to use a lockfile.
+The premise of venvstarter is that my project has a console script and I want to not have to care about making the virtualenv and ensuring correct versions in that virtualenv to run that console script.
+As a bonus I like being able to generate the dependencies programmatically. An example of this is taken from one of my projects:
+#!/usr/bin/env python3.7
+
+import runpy
+import os
+
+this_dir = os.path.abspath(os.path.dirname(__file__))
+
+cloudgazer_version = runpy.run_path(os.path.join(this_dir, "cloudgazer", "__init__.py"))["VERSION"]
+photons_version = runpy.run_path(os.path.join(this_dir, "..", "..", "modules", "photons_app", "__init__.py"))["VERSION"]
+
+deps = [f"-e file:{this_dir}#egg=lifx-cloudgazer=={cloudgazer_version}"]
+
+if "FOR_PROD" not in os.environ:
+    deps.append(f"-e file:{this_dir}/../../modules#egg=lifx-photons[tests]")
+
+deps.append(f"-e file:{this_dir}/../../modules#egg=lifx-photons=={photons_version}")
+
+env = {
+      "CLOUDGAZER_PORT": os.environ.get("PORT1", "7236")
+    , "CLOUDGAZER_HOST": "0.0.0.0"
+    , "CONFIG": os.environ.get("CONFIG", "{venv_parent}/cloudgazer.yml")
+    }
+
+from venvstarter import ignite
+ignite(__file__, "cloudgazer"
+    , deps = deps
+    , env = env
+    , min_python_version = 3.7
+    )
+So in this instance, running the script like ./cloudgazer serve will ensure there is a virtualenv in this directory called .cloudgazer and it will make sure the deps we specified are installed at the right versions and then call /.cloudgazer/bin/cloudgazer serve.
+Unfortunately I can't find any API documentation for the pipenv project, so I assume using it programmatically is not encouraged?
+Ideally I'd need the ability to:
+Determine if a list of requirements is installed and at the versions specified (I only care about the ones specified). Though I can already do this with pkg_resources (or importlib_metadata it seems)
+Install from the lockfile. The process would be if any of the versions have changed, install everything in the lockfile and then install the new versions that were specified
+Update/create a lockfile from the packages that were installed.
+I recognise that this is less flexible than pipenv, but it'll be enough for what I want and it means I can have the best of both worlds where my production applications don't break because of a different transitive dependency and I get the convenience of not having to care about ensuring my virtualenv has the versions of things that I care about during development.
+Thanks

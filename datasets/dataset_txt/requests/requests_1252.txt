@@ -1,0 +1,23 @@
+Contributor
+aartur commented on Nov 6, 2015
+The simplest usage of requests causes big memory leaks on PyPy (2.6.1, 4.0.0) and newest requests (2.8.1). The following script:
+import requests
+import time
+import sys
+
+def main():
+    while True:
+        r = requests.get('https://www.bing.com/')
+
+        time.sleep(0.1)
+        sys.stderr.write('.')
+        sys.stderr.flush()
+
+if __name__ == '__main__':
+    main()
+causes an increase of memory usage of about 1MB/second.
+What does not help: creating and closing a Session for each request. What seems to help: using a global Session.
+I have seen issues about it like #1685 but I'm not sure it was fixed and if it's regression.
+Can connection pooling and keep-alive be disabled as a workaround? It seems like keep-alive is hardcoded now.
+I don't see a leak on CPython, which probably means the bug must be caused by relying on reference counting sideeffects and incorrect cleanup code.
+BTW, this line: https://github.com/kennethreitz/requests/blob/HEAD/requests/api.py#L54 should be wrapped around try ... finally (or with ...), unless session.request can't ever throw an exception.

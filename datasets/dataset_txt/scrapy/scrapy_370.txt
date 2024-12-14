@@ -1,0 +1,154 @@
+dailenspencer commented on May 25, 2018 •
+edited
+I am running into an issue and have not yet been able to figure out the root cause. I have the following Scrapy jobs.py file
+# -*- coding: utf-8 -*-
+import scrapy
+import re
+from scrapy import Request
+import csv
+import os
+from datetime import datetime, timedelta
+
+
+class JobsSpider(scrapy.Spider):
+    
+    name = 'jobs'
+    allowed_domains = ['craigslist.org']
+    present_timestamp = datetime.now()
+
+    
+    # This function handles the verification of a craigslist result item top-level data (title, and url)
+    # TODO: get rid of this extra argument 'log' that is attached to the extract() response from scrapy
+    def verifyTopLevelData (log, title, url, date):
+
+        dataIsValid = True
+                
+        # ensure post date is not older than 2 days
+        post_timestamp = datetime.strptime(date, "%Y-%m-%d %H:%M")
+        cutoff_time = datetime.strptime( (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d 00:00"), "%Y-%m-%d %H:%M" )
+
+        # enforce time-restriction
+        if (bool(post_timestamp > cutoff_time) == False):
+            dataIsValid = False
+        
+        return bool(dataIsValid)
+    
+    # This function handles the building of all craigslist ulrs to extract result list items from
+    # TEMPLATE: <rootlocation>.craigstlist.org/search/<search_category>?query=<search_query>
+    def gatherCraigsListUrls():
+         
+        urls = []
+                
+        # craigslist urls are location based, we build urls based on these root locations
+        rootLocations = [
+            "bakersfield",
+            "chico",
+            "fresno",
+            "goldcountry",
+            "hanford",
+            "humboldt",
+            "imperial",
+            "inlandempire",
+            "losangeles",
+            "mendocino",
+            "merced",
+            "modesto",
+            "monterey",
+            "orangecounty",
+            "palmsprings",
+            "redding",
+            "sacramento",
+            "sandiego",
+            "sfbay",
+            "slo",
+            "santabarbara",
+            "santamaria",
+            "siskiyou",
+            "stockton",
+            "susanville",
+            "ventura",
+            "visalia",
+            "yubasutter"
+        ]
+
+        # craigslist url search categories 
+        searchCategories = [
+            'ggg',
+            'cpg',
+            'web',
+            'sof',
+            'sad',
+            'tch',
+        ]
+
+        # craigslit url search queries
+        # TODO: add regex so we can replace whitespace with '+'
+        searchQueries = [
+            # web
+            'web+developer',
+            'web+design',
+            'react+developer',
+            'angular+developer'
+        ]
+
+        # build urls
+        for location in rootLocations:
+            for category in searchCategories:
+                for query in searchQueries:
+                    url = 'https://' + location + '.craigslist.org/search/' + category + '?query=' + query
+                    urls.append(url)
+       
+        return urls
+  
+    start_urls = gatherCraigsListUrls ()
+
+    
+    def parse(self, response):
+        
+        # proxies can sometimes fail. we check to ensure we've landed on the right page. and if not, re-try but using local port
+        # if not response.xpath('//a[@class="header-logo"]'):
+        #     yield Request(url=response.url, dont_filter=True)
+
+        # grabbing list items from DOM on craigslist result page
+        posts = response.xpath('//p[@class="result-info"]') 
+        
+        # loop through result listings and retrieve top-level data (title, and url)
+        for post in posts:
+
+            # top-level data
+            post_title = post.xpath('a/text()').extract_first("")
+            post_relative_url = post.xpath('a/@href').extract_first()
+            post_absolute_url = response.urljoin(post_relative_url)
+            
+            post_date = post.xpath('time[@class="result-date"]/@datetime').extract_first("")
+            push_date = datetime.now().strftime("%Y-%m-%d 00:00"), "%Y-%m-%d %H:%M"
+
+            # verify top-level data and proceed with extracting contents from craigslist post page
+            if (self.verifyTopLevelData (post_title, post_absolute_url, post_date)):
+                yield Request(post_absolute_url, callback=self.parse_page, meta={'Title':post_title, 'URL': post_absolute_url})
+            
+
+        # move to next page (using pagination button on DOM) and repeat "parse" process
+        nextpage_relative_url = response.xpath('//a[@class="button next"]/@href').extract_first()
+        nextpage_absolute_url = response.urljoin(nextpage_relative_url)
+
+        yield Request(nextpage_absolute_url,callback=self.parse)
+        
+       
+    def parse_page(self, response):
+
+        # proxies can sometimes fail. we check to ensure we've landed on the right page. and if not, re-try but using local port
+        # if not response.xpath('//a[@class="header-logo"]'):
+        #     yield Request(url=response.url, dont_filter=True)
+        
+        description = "".join(line for line in response.xpath('//*[@id="postingbody"]/text()').extract())
+        response.meta['Description'] = description
+        
+        yield response.meta
+If rootLocations is set to an array of just a few items, for example:
+rootLocations = ["losangeles", "sfbay", "sandieg"]
+then my crawl outputs a bunch of different results. You can see the results here
+results for small query
+However, when I broaden the query to include all craigslist root url locations in california(like in the code example above), I only get back two results. You can see the results here
+results for broad query
+Why would my results shrink when adding more urls to the start_urls array?

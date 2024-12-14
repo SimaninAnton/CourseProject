@@ -1,0 +1,51 @@
+Contributor
+Erotemic commented on Aug 1, 2016
+When importing import sklearn.cross_validation I was prompted with a DepricationWarning
+saying I should use sklearn.model_selection instead. To ensure my code is up to date, I switched to the new version, but then I encountered an odd behavior.
+The place in my code where I was generating the cross validation indices does not have access to the data array. However, in the new version to simply generate the indices of the test/train split you must supply the entire dataset. Previously all that was needed was the labels.
+Forcing the developer to specify a data array is a problem when you have large amounts of high dimensional data and you want to wait to load only the subset of it needed by the current cross validation run. Furthremore, I cannot think of a reason why X would be required by this process, nor can I see a reason in the scikit-learn code.
+Here is a small piece of code demonstrating the issue.
+    import sklearn.cross_validation
+    import sklearn.model_selection
+    y = np.array([0, 0, 1, 1, 1, 0, 0, 1])
+    X = y.reshape(len(y), 1)
+
+    # In the old version all that is needed is the labels
+    skf_old = sklearn.cross_validation.StratifiedKFold(y, random_state=0)
+    indicies_old = list(skf_old)
+
+    # The new version seems to require a data array for some reason
+    skf_new = sklearn.model_selection.StratifiedKFold(random_state=0)
+    indicies_new = list(skf_new.split(X, y))
+
+    # Causes an error, but there is no reason why X must be specified
+    indicies_new2 = list(skf_new.split(None, y))
+Even if it was nice to have the split signature contain an X for compatibility reasons, I think you should at least be able to specify X as None. However, if you try to set X=None it results in a type error.
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-9-7995a67b2df2> in <module>()
+----> 1 indicies_new2 = list(skf_new.split(None, y))
+
+/home/joncrall/code/scikit-learn/sklearn/model_selection/_split.pyc in split(self, X, y, labels)
+    312         """
+    313         X, y, labels = indexable(X, y, labels)
+--> 314         n_samples = _num_samples(X)
+    315         if self.n_folds > n_samples:
+    316             raise ValueError(
+
+/home/joncrall/code/scikit-learn/sklearn/utils/validation.pyc in _num_samples(x)
+    120         else:
+    121             raise TypeError("Expected sequence or array-like, got %s" %
+--> 122                             type(x))
+    123     if hasattr(x, 'shape'):
+    124         if len(x.shape) == 0:
+
+TypeError: Expected sequence or array-like, got <type 'None Type'>
+It would be nice if there was either an alternative method like "split_indicies(y)" that generated the indices using only the labels, or if the developer was able to specify X=None when calling split.
+Version Info:
+Linux-3.13.0-92-generic-x86_64-with-Ubuntu-14.04-trusty
+Python 2.7.6 (default, Mar 22 2014, 22:59:56)
+[GCC 4.8.2]
+NumPy 1.11.1
+SciPy 0.18.0
+Scikit-Learn 0.18.dev0

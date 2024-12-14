@@ -1,0 +1,46 @@
+samueldg commented on 20 Mar 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Description
+When overwriting the list() method for ViewSet subclasses (in particular, ModelViewSet subclasses, or other classes inheriting from ListModelMixin), you end up redefining/shadowing a Python builtin: list().
+The documentation also redefines list in the example for ViewSets: http://www.django-rest-framework.org/api-guide/viewsets/#example
+This can have some unintended side effects in the rest of the class definition, which would be really unintuitive. (See in Steps to reproduce for examples I found.)
+It can also confuse syntax highlighters, for which the Python builtins can be considered different (actually how I realized there was an issue in the first place.)
+Steps to reproduce
+An example of impacting a default kwarg:
+>>> class MyViewSet():
+...     def list(self):
+...         return('woopsie')
+...     def convert_collection(self, collection, callable=list):
+...         return(callable(collection))
+...
+>>>
+>>> m = MyViewSet()
+>>> m.convert_collection([1,2,3], tuple)
+(1, 2, 3)
+>>> m.convert_collection((1,2,3), list)
+[1, 2, 3]
+>>> m.convert_collection((1,2,3))
+'woopsie'
+An example of impacting a class attribute definition:
+>>> class MyViewSet:
+...     my_list = list((1, 2, 3, 4))
+...     def list(self):
+...         return('woopsie')
+...     my_other_list = list((1, 2, 3, 4))
+...
+>>> m = MyViewSet()
+>>> m.my_list
+[1, 2, 3, 4]
+>>> m.my_other_list
+'woopsie'
+Expected behavior
+Overwriting a parent class method should not shadow a Python builtin for the rest of the code in the body of the class.
+Actual behavior
+Python list() builtin will be shadowed by the list() method.

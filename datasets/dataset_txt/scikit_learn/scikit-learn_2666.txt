@@ -1,0 +1,163 @@
+kokostek commented on Oct 14, 2016
+Description
+I use the subclassed FunctionTransformer to remove some features from dataset by hand. Call to .fit() method works ok, but cross-validation fails with ValueError.
+Steps/Code to Reproduce
+import numpy as np
+
+from sklearn.cross_validation import cross_val_score
+from sklearn.preprocessing import FunctionTransformer, PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+
+
+class ColumnsSelection(FunctionTransformer):
+
+    def __init__(self, cols):
+        func = lambda x: x[:, cols]
+        super(ColumnsSelection, self).__init__(func)
+
+
+X, y = np.random.randn(10, 3), np.random.rand(10)
+
+model_1 = Pipeline([
+    ('poly', PolynomialFeatures(degree=2)),
+    ('regr', LinearRegression())
+])
+
+model_2 = Pipeline([
+    ('cols', ColumnsSelection([0, 2])),
+    ('poly', PolynomialFeatures(degree=2)),
+    ('regr', LinearRegression())
+])
+
+coef_1 = model_1.fit(X, y).named_steps['regr'].coef_
+print('model No1 coef:', coef_1)
+
+coef_2 = model_2.fit(X, y).named_steps['regr'].coef_
+print('model No2 coef:', coef_2)
+
+scores_1 = cross_val_score(model_1, X, y)
+print('model No1 scores:', scores_1)
+
+scores_2 = cross_val_score(model_2, X, y)
+print('model No2 scores:', scores_2)
+Expected Results
+No error is thrown.
+Actual Results
+model No1 coef: [ 0.          0.2020082   0.19294185  0.06783355  0.15234094 -0.25347733
+  0.43752831 -0.05060953  0.24397655 -0.58623083]
+model No2 coef: [ 0.          0.23834465  0.1089252   0.18521326  0.51605381 -0.64564339]
+model No1 scores: [-104.81644326   -6.17092555  -15.27140149]
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+d:\work\indian\gyro_heat\sklearn_bug.py in <module>()
+     36 print('model No1 scores:', scores_1)
+     37 
+---> 38 scores_2 = cross_val_score(model_2, X, y)
+     39 print('model No2 scores:', scores_2)
+
+C:\Anaconda3\lib\site-packages\sklearn\cross_validation.py in cross_val_score(estimator, X, y, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch)
+   1517                                               train, test, verbose, None,
+   1518                                               fit_params)
+-> 1519                       for train, test in cv)
+   1520     return np.array(scores)[:, 0]
+   1521 
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self, iterable)
+    756             # was dispatched. In particular this covers the edge
+    757             # case of Parallel used with an exhausted iterator.
+--> 758             while self.dispatch_one_batch(iterator):
+    759                 self._iterating = True
+    760             else:
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in dispatch_one_batch(self, iterator)
+    606                 return False
+    607             else:
+--> 608                 self._dispatch(tasks)
+    609                 return True
+    610 
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in _dispatch(self, batch)
+    569         dispatch_timestamp = time.time()
+    570         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+--> 571         job = self._backend.apply_async(batch, callback=cb)
+    572         self._jobs.append(job)
+    573 
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in apply_async(self, func, callback)
+    107     def apply_async(self, func, callback=None):
+    108         """Schedule a func to be run"""
+--> 109         result = ImmediateResult(func)
+    110         if callback:
+    111             callback(result)
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in __init__(self, batch)
+    320         # Don't delay the application, to avoid keeping the input
+    321         # arguments in memory
+--> 322         self.results = batch()
+    323 
+    324     def get(self):
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+C:\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py in <listcomp>(.0)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+C:\Anaconda3\lib\site-packages\sklearn\cross_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, error_score)
+   1611             estimator.fit(X_train, **fit_params)
+   1612         else:
+-> 1613             estimator.fit(X_train, y_train, **fit_params)
+   1614 
+   1615     except Exception as e:
+
+C:\Anaconda3\lib\site-packages\sklearn\pipeline.py in fit(self, X, y, **fit_params)
+    266             This estimator
+    267         """
+--> 268         Xt, fit_params = self._fit(X, y, **fit_params)
+    269         if self._final_estimator is not None:
+    270             self._final_estimator.fit(Xt, y, **fit_params)
+
+C:\Anaconda3\lib\site-packages\sklearn\pipeline.py in _fit(self, X, y, **fit_params)
+    232                 pass
+    233             elif hasattr(transform, "fit_transform"):
+--> 234                 Xt = transform.fit_transform(Xt, y, **fit_params_steps[name])
+    235             else:
+    236                 Xt = transform.fit(Xt, y, **fit_params_steps[name]) \
+
+C:\Anaconda3\lib\site-packages\sklearn\base.py in fit_transform(self, X, y, **fit_params)
+    495         else:
+    496             # fit method of arity 2 (supervised transformation)
+--> 497             return self.fit(X, y, **fit_params).transform(X)
+    498 
+    499 
+
+C:\Anaconda3\lib\site-packages\sklearn\preprocessing\data.py in fit(self, X, y)
+   1256         Compute number of output features.
+   1257         """
+-> 1258         n_samples, n_features = check_array(X).shape
+   1259         combinations = self._combinations(n_features, self.degree,
+   1260                                           self.interaction_only,
+
+C:\Anaconda3\lib\site-packages\sklearn\utils\validation.py in check_array(array, accept_sparse, dtype, order, copy, force_all_finite, ensure_2d, allow_nd, ensure_min_samples, ensure_min_features, warn_on_dtype, estimator)
+    403         if not allow_nd and array.ndim >= 3:
+    404             raise ValueError("Found array with dim %d. %s expected <= 2."
+--> 405                              % (array.ndim, estimator_name))
+    406         if force_all_finite:
+    407             _assert_all_finite(array)
+
+ValueError: Found array with dim 3. Estimator expected <= 2.
+Versions
+Windows-7-6.1.7601-SP1
+Python 3.5.1 |Anaconda custom (64-bit)| (default, Feb 16 2016, 09:49:46) [MSC v.1900 64 bit (AMD64)]
+NumPy 1.11.2
+SciPy 0.18.1
+Scikit-Learn 0.18

@@ -1,0 +1,56 @@
+tinder-arozinov commented on 24 Apr 2018 •
+edited
+I'm trying to implement an architecture similar to this one:
+Time = 0    Time = 1    ....    Time = t
+  im@0         im@1     ....       im@t
+    |            |                   |
+   CNN          CNN     ....        CNN
+    |            |                   |
+   RNN--------->RNN---->....------->RNN
+                                     |
+                               some prediction 
+In words, I have a sequence of images that are processed by a CNN which are then fed into an RNN. I've pinned the time sequence to have exactly 4 images, which may end up masked if there are less images in the data.
+The associated code is (for tensorflow backend):
+MAX_CROPS=4
+SIZE_RET=(299,299)
+IMAGE_MASK= -2*np.ones((1,SIZE_RET[0],SIZE_RET[1],3))
+
+base_model = inception_v3.InceptionV3(weights='imagenet', include_top=False)
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(2048,activation="relu")(x)
+base_model = Model(base_model.input,x)
+
+#output of CNN on each crop
+CNN_OUTPUT_SIZE = int(base_model.output.shape[-1])
+print(CNN_OUTPUT_SIZE)
+
+LSTM_MASK = np.zeros((1,CNN_OUTPUT_SIZE))
+
+input_layer = Input(shape=(MAX_CROPS, SIZE_RET[0], SIZE_RET[1], 3))
+#Use dummy image to mask non-body-crops
+curr_layer = Masking(mask_value = IMAGE_MASK)(input_layer)
+
+#freeze tops of CNN
+for layer in base_model.layers[0:41]:
+   layer.trainable = False
+
+#Make cnn predict on each crop
+curr_layer = TimeDistributed(base_model)(curr_layer)
+
+#Reshape doesn't support masking for some reason, so need a dummy identity layer to fix this??
+curr_layer = Lambda(lambda x: x, output_shape=lambda s:s)(curr_layer)
+curr_layer = Reshape(target_shape=(MAX_CROPS, CNN_OUTPUT_SIZE))(curr_layer)
+
+#Second Mask for LSTM
+curr_layer = Masking(mask_value = LSTM_MASK)(curr_layer)
+lstm_out = LSTM(LSTM_OUTPUT_DIM,return_sequences=False)(curr_layer)
+
+lstm_out = Model(input_layer,lstm_out)
+I'm suspecting that the masking is not working correctly here. What seems to be happing is that the first masking layer prior to the CNN correctly identifies the input image mask, and sets it to all 0s. This is already problematic because the CNN now assumes I'm putting in an all-black image (disregard preprocessing here, and this should explain why I chose negative pixel values for the mask). This goes on to be passed to the CNN (which I specifically don't want), which outputs junk values that are nonzero. That's why i set the LSTM_MASK to all 0s, because that's what I would like the output of the CNN to be.
+Maybe I'm not understanding the masking layer here correctly? I thought that the mask specifically excludes that input from processing?
+What can I do to ensure the CNN outputs a dummy mask on an input that has masks?
+The closest issue I found is this one: #4786
+but it's not clear if that ever had a resolution.
+I'm thinking that one possible solution here would be to allow the CNN to evaluate the masked image, but then augment the input with a mask vector, e.g. [1,1,0,0] for an input of 4 images, which would then be inferred by the LSTM to deduce which CNN outputs should be masked. So I would first slice the the CNN output tensor with the above mask vector and then pad it with the LSTM_MASK. Is this the right solution?
+1

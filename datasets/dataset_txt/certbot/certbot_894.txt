@@ -1,0 +1,103 @@
+faerietree commented on 27 Nov 2017 •
+edited
+My operating system is (include version):
+edited (rolling release)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+package manager
+I ran this command and it produced this output:
+sudo su
+certbot renew
+It resulted in a modified apache httpd.conf (commented out ssl module).
+Connection refused to hirschberg-text.de, www.hirschberg-text.de
+Connection refused to hamag-maschinenbau.de, www.hamag-maschinenbau.de
+Certbot's behavior differed from what I expected because:
+Renewal did work on the previous server from which the certs were issued (using certbot-auto sbin)
+The certs work fine on the new server but renewal or issuing a new one after revocation fails (both have been revoked by now).
+This may indicate that a 301 redirect is cached (actually in most recent firefox clearing cache not helps) but how is this handled by certbot?
+From a PC where the sites have never been viewed, the sites work without the https. Thus it should work for certbot too but it complains:
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Plugins selected: Authenticator apache, Installer apache
+Obtaining a new certificate
+Performing the following challenges:
+tls-sni-01 challenge for hamag-maschinenbau.de
+tls-sni-01 challenge for www.hamag-maschinenbau.de
+Waiting for verification...
+Cleaning up challenges
+Failed authorization procedure. hamag-maschinenbau.de (tls-sni-01): urn:acme:error:connection :: The server could not connect to the client to verify the domain :: Connection refused, www.hamag-maschinenbau.de (tls-sni-01): urn:acme:error:connection :: The server could not connect to the client to verify the domain :: Connection refused
+
+IMPORTANT NOTES:
+ - The following errors were reported by the server:
+
+   Domain: hamag-maschinenbau.de
+   Type:   connection
+   Detail: Connection refused
+
+   Domain: www.hamag-maschinenbau.de
+   Type:   connection
+   Detail: Connection refused
+
+   To fix these errors, please make sure that your domain name was
+   entered correctly and the DNS A/AAAA record(s) for that domain
+   contain(s) the right IP address. Additionally, please check that
+   your computer has a publicly routable IP address and that no
+   firewalls are preventing the server from communicating with the
+   client. If you're using the webroot plugin, you should also verify
+   that you are serving files from the webroot path you provided.
+Domain points to the correct IP. But the IP has changed since issuing the certs. Still issuing new certs should work but it doesn't which is really bad because there is no way to view the site if 301 permanent redirect can not be cleared (as is the case for me no matter which advice of the net to clear it I follow).
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+To fix these errors, please make sure that your domain name was entered correctly and the DNS A/AAAA record(s) for that domain contain(s) the right IP address. Additionally, please check that your computer has a publicly routable IP address and that no firewalls are preventing the server from communicating with the client. If you're using the webroot plugin, you should also verify that you are serving files from the webroot path you provided.
+2017-11-27 02:40:28,895:INFO:certbot.auth_handler:Cleaning up challenges
+2017-11-27 02:40:29,076:DEBUG:certbot.log:Exiting abnormally:
+Traceback (most recent call last):
+  File "/usr/bin/certbot", line 11, in <module>
+    load_entry_point('certbot==0.19.0', 'console_scripts', 'certbot')()
+  File "/usr/lib/python3.6/site-packages/certbot/main.py", line 861, in main
+    return config.func(config, plugins)
+  File "/usr/lib/python3.6/site-packages/certbot/main.py", line 698, in run
+    certname, lineage)
+  File "/usr/lib/python3.6/site-packages/certbot/main.py", line 85, in _get_and_save_cert
+    lineage = le_client.obtain_and_enroll_certificate(domains, certname)
+  File "/usr/lib/python3.6/site-packages/certbot/client.py", line 357, in obtain_and_enroll_certificate
+    certr, chain, key, _ = self.obtain_certificate(domains)
+  File "/usr/lib/python3.6/site-packages/certbot/client.py", line 318, in obtain_certificate
+    self.config.allow_subset_of_names)
+  File "/usr/lib/python3.6/site-packages/certbot/auth_handler.py", line 81, in get_authorizations
+    self._respond(resp, best_effort)
+  File "/usr/lib/python3.6/site-packages/certbot/auth_handler.py", line 138, in _respond
+    self._poll_challenges(chall_update, best_effort)
+  File "/usr/lib/python3.6/site-packages/certbot/auth_handler.py", line 202, in _poll_challenges
+    raise errors.FailedChallenges(all_failed_achalls)
+certbot.errors.FailedChallenges: Failed authorization procedure. hamag-maschinenbau.de (tls-sni-01): urn:acme:error:connection :: The server could not connect to the client to verify the domain :: Connection refused, www.hamag-maschinenbau.de (tls-sni-01): urn:acme:error:connection :: The server could not connect to the client to verify the domain :: Connection refused
+Here is the relevant Apache virtualhost for the domain I am configuring:
+<VirtualHost *:80>
+ServerName hamag-maschinenbau.de
+ServerAlias www.hamag-maschinenbau.de
+DocumentRoot /h/
+ErrorLog /h/logs/error.log
+CustomLog /h/logs/access.log common
+<Directory /h>
+Require all granted
+php_admin_value sendmail_path "/usr/sbin/sendmail -t -i -finfo@hamag-maschinenbau.de"
+</Directory>
+</VirtualHost>
+#Redirect / https://hamag-maschinenbau.de
+
+
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+ServerName hamag-maschinenbau.de
+ServerAlias www.hamag-maschinenbau.de
+DocumentRoot /h/
+ErrorLog /h/logs/error.log
+CustomLog /h/logs/access.log common
+SSLEngine on
+SSLCertificateFile /etc/letsencrypt/live/hamag-maschinenbau.de/cert.pem
+SSLCertificateKeyFile /etc/letsencrypt/live/hamag-maschinenbau.de/privkey.pem
+SSLCertificateChainFile /etc/letsencrypt/live/hamag-maschinenbau.de/chain.pem
+<Directory /h>
+Require all granted
+php_admin_value sendmail_path "/usr/sbin/sendmail -t -i -finfo@hamag-maschinenbau.de"
+</Directory>
+</VirtualHost>
+</IfModule>

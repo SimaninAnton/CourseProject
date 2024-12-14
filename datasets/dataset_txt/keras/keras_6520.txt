@@ -1,0 +1,104 @@
+Contributor
+iskandr commented on 24 Oct 2015
+I'm getting good performance from a train model but after saving/loading it from disk, I then get random outputs. I shrank my model down to this sanity check toy example:
+parser = argparse.ArgumentParser()
+parser.add_argument("--only-load", default=False, action="store_true")
+
+def encode(X, embedding_matrix):
+    n_samples, input_length = X.shape
+    embedding_dim = embedding_matrix.shape[1]
+    X_embedded = np.zeros((n_samples, input_length * embedding_dim))
+    for i in range(n_samples):
+        for j in range(input_length):
+            symbol_idx = X_train_index[i, j]
+            X_embedded[i, j * embedding_dim:(j + 1) * embedding_dim] = \
+                embedding_matrix[symbol_idx, :]
+    return X_embedded
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    n_symbols = 2
+    input_length = 1
+    n_training_samples = 1000
+    n_test_samples = 1
+    embedding_dim = 2
+
+    X_train_index = np.random.randint(
+        low=0,
+        high=n_symbols,
+        size=(n_training_samples, input_length))
+    # embed into 15 dimensions
+
+    embedding_matrix = np.random.randn(n_symbols, embedding_dim)
+
+    X_train_embedded = encode(X_train_index, embedding_matrix)
+    w = np.random.randn(embedding_dim * input_length)
+    Y_train = X_train_embedded.dot(w)
+    X_test_index = np.random.randint(
+        low=0,
+        high=n_symbols,
+        size=(n_test_samples, input_length))
+    X_test_embedded = encode(X_test_index, embedding_matrix)
+
+    json_path = "keras-sanity-check.json"
+    hdf_path = "keras-sanity-check.hdf"
+
+    if not args.only_load:
+        Y_test = X_test_embedded.dot(w)
+        print("Y_test", Y_test)
+
+        model = Sequential()
+        model.add(Embedding(
+            input_length=input_length,
+            input_dim=n_symbols,
+            output_dim=embedding_dim))
+        model.add(Flatten())
+        model.add(Dropout(p=0.25))
+        model.add(Dense(
+            input_dim=embedding_dim * input_length,
+            output_dim=1, activation="linear"))
+        model.compile(loss="mse", optimizer="sgd")
+        model.fit(X_train_index, Y_train, verbose=0)
+        print("model weights before", model.get_weights())
+        pred_before = model.predict(X_test_index)
+        print("pred_before", pred_before)
+
+        with open(json_path, "w") as f:
+            f.write(model.to_json())
+
+        model.save_weights(hdf_path, overwrite=True)
+
+    with open(json_path, "r") as f:
+        json_dict = json.load(f)
+
+    model2 = model_from_config(json_dict)
+    model2.load_weights(hdf_path)
+    print(
+        "weights after load",
+        model2.get_weights())
+
+    print("pred after load", model2.predict(X_test_index))
+When I run this code with args.load_only=False I get the following output:
+$ python keras-sanity-check.py
+Y_test [ 1.26809002]
+model weights before [array([[-0.01866564, -0.0450017 ],
+       [-0.20247104, -0.19802226]]), array([[-0.93918418],
+       [-0.89143963]]), array([ 0.9651411])]
+pred_before [[ 1.24015297]]
+weights after load [array([[-0.01866564, -0.0450017 ],
+       [-0.20247104, -0.19802226]]), array([[-0.93918418],
+       [-0.89143963]]), array([ 0.9651411])]
+pred after load [[ 1.24015297]]
+If I load the model back into the same process that generated it, the model predicts correctly.
+However, if I run this script with --load-only then I get different outputs every time, for example:
+$ python keras-sanity-check.py  --only-load
+weights after load [array([[ 0.76787158, -0.78708844],
+       [-0.52980965,  0.5330126 ]]), array([[-1.17773914],
+       [ 1.14566314]]), array([-1.59983862])]
+pred after load [[-2.9544066]]
+$ python keras-sanity-check.py  --only-load
+weights after load [array([[ 0.76787158, -0.78708844],
+       [-0.52980965,  0.5330126 ]]), array([[-1.17773914],
+       [ 1.14566314]]), array([-1.59983862])]
+pred after load [[-0.67386579]]
+Strangely, the results of get_weights() seem to be correct. I suspect this might be a problem with a Theano shared variable holding on to randomly initialized weights. Any idea how to fix this?

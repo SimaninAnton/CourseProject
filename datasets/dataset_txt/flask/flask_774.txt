@@ -1,0 +1,115 @@
+Kieleth commented on 3 Aug 2016 •
+edited by ThiefMaster
+Hi!
+``
+We've experienced an interesting issue:
+Flask:
+#post_flask.py
+from flask import (Flask, request)
+app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 1600 * 1024 * 1024
+
+@app.route('/pepe_post', methods=['POST'])
+def post_pepe():
+    print('Hey!!!')
+    if request.method == 'POST':
+        #print(len(request.data))  #<< Uncomment to fix!!!
+        return 'hoho'
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5555, debug=True)
+Client:
+#do_post.py
+import requests
+
+def post(url, payload=None):
+    """ Handles POST http requests having an url and some optional payload """
+    print("POST against url: '%s'", url)
+    print("POST payload size: '%s'", len(payload))
+    resp = requests.post(url, data=payload, headers={'content-type':'application/json'})
+    print("POST response: '%s'", resp.text)
+    if resp.status_code != requests.codes.ok:
+        print('Service Response indicates error: %s/%s',
+                        resp.status_code, resp.content)
+        resp.raise_for_status()
+
+if __name__ == '__main__':
+    url = 'http://localhost:5555/pepe_post'
+    n = 1
+    while True:
+        print('post with payload of %s' % n)
+        payload = n * 1024 * 'a'   # << this breaks avobe 690K payloads
+        #payload = n * 1024 * 1024 * 'a'   # << this breaks inmediately
+        post(url, payload)
+        n += 1
+Meaning, above ~690K posts, you get:
+post with payload of 696
+POST against url: '%s' http://localhost:5555/pepe_post
+POST payload size: '%s' 712704
+Traceback (most recent call last):
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/connectionpool.py", line 559, in urlopen
+    body=body, headers=headers)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/connectionpool.py", line 353, in _make_request
+    conn.request(method, url, **httplib_request_kw)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 1137, in request
+    self._send_request(method, url, body, headers)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 1182, in _send_request
+    self.endheaders(body)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 1133, in endheaders
+    self._send_output(message_body)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 967, in _send_output
+    self.send(message_body)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 929, in send
+    self.sock.sendall(data)
+BrokenPipeError: [Errno 32] Broken pipe
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/adapters.py", line 376, in send
+    timeout=timeout
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/connectionpool.py", line 609, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/util/retry.py", line 247, in increment
+    raise six.reraise(type(error), error, _stacktrace)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/packages/six.py", line 309, in reraise
+    raise value.with_traceback(tb)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/connectionpool.py", line 559, in urlopen
+    body=body, headers=headers)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/packages/urllib3/connectionpool.py", line 353, in _make_request
+    conn.request(method, url, **httplib_request_kw)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 1137, in request
+    self._send_request(method, url, body, headers)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 1182, in _send_request
+    self.endheaders(body)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 1133, in endheaders
+    self._send_output(message_body)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 967, in _send_output
+    self.send(message_body)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/http/client.py", line 929, in send
+    self.sock.sendall(data)
+requests.packages.urllib3.exceptions.ProtocolError: ('Connection aborted.', BrokenPipeError(32, 'Broken pipe'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "do_post.py", line 21, in <module>
+    post(url, payload)
+  File "do_post.py", line 7, in post
+    resp = requests.post(url, data=payload, headers={'content-type':'application/json'})
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/api.py", line 107, in post
+    return request('post', url, data=data, json=json, **kwargs)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/api.py", line 53, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/sessions.py", line 468, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/sessions.py", line 576, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/lguzman/workspace/anaconda/anaconda3/envs/opportunity/lib/python3.4/site-packages/requests/adapters.py", line 426, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', BrokenPipeError(32, 'Broken pipe'))
+Can someone give us some information about this? is this by design? bug?
+Version:
+Flask==0.10.1
+Thanks!

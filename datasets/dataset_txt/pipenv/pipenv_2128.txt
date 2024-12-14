@@ -1,0 +1,101 @@
+joshourisman commented on 22 Sep 2017 •
+edited
+This one has been tricky to track down, but I've determined that since 7.4.3, pipenv will claim to have successfully installed even when it didn't in certain cases. The specific case that I've found involves installing maya on alpine without gcc installed. Using the following Pipfile and Dockerfile, I've been able to reproduce the error, where pipenv 7.4.2 correctly fails to install, while every version after claims to have successfully installed, even though it didn't. WIth 7.4.2 pipenv install fails building the wheel for the regex package because gcc isn't present. With 7.4.3, 7.4.4, and 7.4.5 pipenv install 'succeeds', but then the as the Dockerfile continues execution it fails on pipenv run python -c "import maya; print(maya.now())" with the error ModuleNotFoundError: No module named 'ruamel'. Based on the problem versions, my hypothesis is this is related to the concurrent installation, but I haven't done any testing to confirm that. If RUN apk add build-base is added to the Dockerfile, everything works as it should.
+During the installation process, pipenv does report two initially failing dependencies, both tzlocal. As an added bonus, if you add tablib to the Pipfile, pipenv still reports two initially failing dependencies, but now they're both xlwt. (Output also below, just in case.)
+I doubt that this is actually an alpine-specific issue, but I haven't yet had a chance to expand my testing to other OSes.
+Pipfile:
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+
+[requires]
+python_version = "3.6"
+
+[dev-packages]
+
+[packages]
+
+maya = "*"
+Dockerfile:
+FROM python:3.6-alpine
+
+RUN addgroup -S -g 1001 app && adduser -S -D -h /app -u 1001 -G app app
+
+ARG PIPENV_VERSION
+RUN pip3 install -U pipenv==$PIPENV_VERSION
+
+WORKDIR /app
+COPY Pipfile Pipfile.lock ./
+RUN chown app:app Pipfile && chown app:app Pipfile.lock
+
+USER app
+RUN pipenv install
+RUN pipenv run python -c "import maya; print(maya.now())"
+
+CMD ["ls"]
+Relevant output from docker build:
+Step 9/11 : RUN pipenv install
+ ---> Running in 1439c5feadd4
+Using /usr/local/bin/python3.6m to create virtualenv…
+Creating a virtualenv for this project…
+Running virtualenv with interpreter /usr/local/bin/python3.6m
+Using base prefix '/usr/local'
+New python executable in /app/.local/share/virtualenvs/app-4PlAip0Q/bin/python3.6m
+Also creating executable in /app/.local/share/virtualenvs/app-4PlAip0Q/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /app/.local/share/virtualenvs/app-4PlAip0Q
+Installing dependencies from Pipfile.lock…
+No package provided, installing all dependencies.
+An error occured while installing tzlocal==1.4! Will try again.
+An error occured while installing tzlocal==1.4! Will try again.
+Installing initially–failed dependencies…
+Success installing tzlocal==1.4!
+Success installing tzlocal==1.4!
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+ ---> 0e84b65d6915
+Removing intermediate container 1439c5feadd4
+Step 10/11 : RUN pipenv run python -c "import maya; print(maya.now())"
+ ---> Running in 9b6ccfc503fa
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/app/.local/share/virtualenvs/app-4PlAip0Q/lib/python3.6/site-packages/maya/__init__.py", line 1, in <module>
+    from .core import *
+  File "/app/.local/share/virtualenvs/app-4PlAip0Q/lib/python3.6/site-packages/maya/core.py", line 7, in <module>
+    import ruamel.yaml
+ModuleNotFoundError: No module named 'ruamel'
+The command '/bin/sh -c pipenv run python -c "import maya; print(maya.now())"' returned a non-zero code: 1
+Output when tablib is added to the mix:
+Step 9/11 : RUN pipenv install
+ ---> Running in 2ac5d1d7fcae
+Using /usr/local/bin/python3.6m to create virtualenv…
+Creating a virtualenv for this project…
+Running virtualenv with interpreter /usr/local/bin/python3.6m
+Using base prefix '/usr/local'
+New python executable in /app/.local/share/virtualenvs/app-4PlAip0Q/bin/python3.6m
+Also creating executable in /app/.local/share/virtualenvs/app-4PlAip0Q/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /app/.local/share/virtualenvs/app-4PlAip0Q
+No package provided, installing all dependencies.
+Installing dependencies from Pipfile.lock…
+An error occured while installing xlwt==1.3.0! Will try again.
+An error occured while installing xlwt==1.3.0! Will try again.
+Installing initially–failed dependencies…
+Success installing xlwt==1.3.0!
+Success installing xlwt==1.3.0!
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+ ---> 2efba5002fc6
+Removing intermediate container 2ac5d1d7fcae
+Step 10/11 : RUN pipenv run python -c "import maya; print(maya.now())"
+ ---> Running in e8704553b002
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/app/.local/share/virtualenvs/app-4PlAip0Q/lib/python3.6/site-packages/maya/__init__.py", line 1, in <module>
+    from .core import *
+  File "/app/.local/share/virtualenvs/app-4PlAip0Q/lib/python3.6/site-packages/maya/core.py", line 7, in <module>
+    import ruamel.yaml
+ModuleNotFoundError: No module named 'ruamel'
+The command '/bin/sh -c pipenv run python -c "import maya; print(maya.now())"' returned a non-zero code: 1

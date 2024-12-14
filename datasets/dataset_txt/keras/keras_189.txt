@@ -1,0 +1,98 @@
+UpCoder commented on 6 Jun 2019 •
+edited
+System information
+Linux Ubuntu 16.04):
+TensorFlow backend, tensorflow-gpu: 1.13.1
+Problem Description
+I want to train an auto-encoder model. So I define the EncoderModel, DecoderModel and AutoEncoderModel. it show as follows:
+class EncoderLayer(tf.keras.Model):
+    def __init__(self, basename, weights, input_shape, **kwargs):
+        super(EncoderLayer, self).__init__(**kwargs)
+        self.basename = basename
+        if basename == 'VGG16':
+            self.base_model = tf.keras.applications.VGG16(include_top=False,
+                                                          weights=weights,
+                                                          input_shape=input_shape)
+            self.preprocess_fn = tf.keras.applications.vgg16.preprocess_input
+
+        elif basename == 'ResNet50':
+            self.base_model = tf.keras.applications.ResNet50(include_top=False,
+                                                             weights=weights,
+                                                             input_shape=input_shape)
+            self.preprocess_fn = tf.keras.applications.resnet50.preprocess_input
+        else:
+            print 'do not support the base model'
+            assert False
+
+    def call(self, input_tensor):
+        # print 'base mode is ', self.base_model
+        return self.base_model(self.preprocess_fn(input_tensor))
+
+class DecoderLayer(tf.keras.Model):
+    def __init__(self, num_upsampling, layer_filters, output_channel, **kwargs):
+        super(DecoderLayer, self).__init__(**kwargs)
+        self.num_upsampling = num_upsampling
+        self.output_channel = output_channel
+        self.decoder_layers = []
+        for i in range(self.num_upsampling):
+            if args.up_method == 'upsampling':
+                self.decoder_layers.append(UpSamplingWithConvLayer(layer_filters[i], upsampling_scale=2,
+                                                                   name='up_block{}'.format(i)))
+            elif args.up_method == 'transpose':
+                self.decoder_layers.append(tf.keras.layers.Conv2DTranspose(layer_filters[i],
+                                                                           kernel_size=[3, 3], strides=(2, 2),
+                                                                           padding='same', activation='relu',
+                                                                           name='up_block{}'.format(i)))
+            else:
+                print('do support the up method', args.up_method)
+                assert False
+        self.logits_layer = tf.keras.layers.Conv2D(self.output_channel, (3, 3), strides=(1, 1),
+                                                   activation='sigmoid', padding='same', name='up_logits')
+
+    def call(self, input_tensor):
+        x = input_tensor
+        for i in range(self.num_upsampling):
+            x = self.decoder_layers[i](x)
+        x = self.logits_layer(x)
+        return x
+
+class AutoEncoder(tf.keras.Model):
+    def __init__(self, input_shape, basename, weights, num_upsampling=5, output_channel=3, **kwargs):
+        super(AutoEncoder, self).__init__(**kwargs)
+        # self.input_shape = input_shape
+        self.encoder_model = EncoderLayer(basename, weights, input_shape)
+        print self.encoder_model.layers[-1]
+        print self.encoder_model.layers[-1].outputs
+        self.decoder_model = DecoderLayer(num_upsampling, args.layer_filters, output_channel)
+
+    def call(self, x):
+        feature_map = self.encoder_model(x)
+        feature = tf.keras.layers.GlobalAveragePooling2D()(feature_map)
+        feature_norm = tf.keras.layers.Lambda(lambda x: tf.keras.backend.l2_normalize(x, axis=1), name='norm')(feature)
+        x = self.decoder_model(feature_map)
+        print feature_map, feature_norm, x
+        return feature_map, feature_norm, x
+and the final model as follow:
+self.auto_encoder_model = AutoEncoder(args.input_shape, config.base_name, config.VGG_MODEL_PATH)
+self.original_input = tf.keras.layers.Input(args.input_shape)
+self.aug_input = tf.keras.layers.Input(args.input_shape)
+self.original_fm, self.original_f, self.original_recovery = self.auto_encoder_model(self.original_input)
+self.aug_fm, self.aug_f, self.aug_recovery = self.auto_encoder_model(self.aug_input)
+self.original_recovery_loss, self.aug_recovery_loss, self.cosine_loss = self.build_loss()
+self.model = tf.keras.Model(
+    inputs=[self.original_input, self.aug_input],
+    outputs=[self.original_fm, self.original_f, self.original_recovery,
+             self.aug_fm, self.aug_f, self.aug_recovery])
+It can be correctly train. But when I want to save it, it alway occur the error as follow:
+Traceback (most recent call last):
+  File "/data00/home/liangdong.tony/PycharmProject/RetrievalCCWebVideo/AE/autoencoder.py", line 227, in <module>
+    ae_obj = SimilarityImageAE()
+  File "/data00/home/liangdong.tony/PycharmProject/RetrievalCCWebVideo/AE/autoencoder.py", line 171, in __init__
+    print self.model.get_config()
+  File "/data00/home/liangdong.tony/.local/lib/python2.7/site-packages/tensorflow/python/keras/engine/network.py", line 1049, in get_config
+    layer_config = layer.get_config()
+  File "/data00/home/liangdong.tony/.local/lib/python2.7/site-packages/tensorflow/python/keras/engine/network.py", line 1028, in get_config
+    raise NotImplementedError
+NotImplementedError
+It seem that the layer is submodel which can not be saved.
+So how to modify it? Thanks!

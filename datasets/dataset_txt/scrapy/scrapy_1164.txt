@@ -1,0 +1,78 @@
+Contributor
+nyov commented on Jul 29, 2015
+I wonder what people would say to this change?
+diff --git a/scrapy/core/downloader/__init__.py b/scrapy/core/downloader/__init__.py
+index 9654718..743a891 100644
+--- a/scrapy/core/downloader/__init__.py
++++ b/scrapy/core/downloader/__init__.py
+@@ -15,7 +15,7 @@ from .middleware import DownloaderMiddlewareManager
+ from .handlers import DownloadHandlers
+
+
+-class Slot(object):
++class DownloadSlot(object):
+     """Downloader slot"""
+
+     def __init__(self, concurrency, delay, randomize_delay):
+@@ -48,7 +48,7 @@ class Slot(object):
+
+     def __str__(self):
+         return (
+-            "<downloader.Slot concurrency=%r delay=%0.2f randomize_delay=%r "
++            "<downloader.DownloadSlot concurrency=%r delay=%0.2f randomize_delay=%r "
+             "len(active)=%d len(queue)=%d len(transferring)=%d lastseen=%s>" % (
+                 self.concurrency, self.delay, self.randomize_delay,
+                 len(self.active), len(self.queue), len(self.transferring),
+@@ -105,7 +105,7 @@ class Downloader(object):
+         if key not in self.slots:
+             conc = self.ip_concurrency if self.ip_concurrency else self.domain_concurrency
+             conc, delay = _get_concurrency_delay(conc, spider, self.settings)
+-            self.slots[key] = Slot(conc, delay, self.randomize_delay)
++            self.slots[key] = DownloadSlot(conc, delay, self.randomize_delay)
+
+         return key, self.slots[key]
+
+diff --git a/scrapy/core/engine.py b/scrapy/core/engine.py
+index 992327b..6e1a47b 100644
+--- a/scrapy/core/engine.py
++++ b/scrapy/core/engine.py
+@@ -21,7 +21,7 @@ from scrapy.utils.log import logformatter_adapter, failure_to_exc_info
+ logger = logging.getLogger(__name__)
+
+
+-class Slot(object):
++class EngineSlot(object):
+
+     def __init__(self, start_requests, close_if_idle, nextcall, scheduler):
+         self.closing = False
+@@ -231,7 +231,7 @@ class ExecutionEngine(object):
+         nextcall = CallLaterOnce(self._next_request, spider)
+         scheduler = self.scheduler_cls.from_crawler(self.crawler)
+         start_requests = yield self.scraper.spidermw.process_start_requests(start_requests, spider)
+-        slot = Slot(start_requests, close_if_idle, nextcall, scheduler)
++        slot = EngineSlot(start_requests, close_if_idle, nextcall, scheduler)
+         self.slot = slot
+         self.spider = spider
+         yield scheduler.open(spider)
+diff --git a/scrapy/core/scraper.py b/scrapy/core/scraper.py
+index 244499b..3082342 100644
+--- a/scrapy/core/scraper.py
++++ b/scrapy/core/scraper.py
+@@ -20,7 +20,7 @@ from scrapy.core.spidermw import SpiderMiddlewareManager
+ logger = logging.getLogger(__name__)
+
+
+-class Slot(object):
++class ScraperSlot(object):
+     """Scraper slot (one per running spider)"""
+
+     MIN_RESPONSE_SIZE = 1024
+@@ -76,7 +76,7 @@ class Scraper(object):
+     @defer.inlineCallbacks
+     def open_spider(self, spider):
+         """Open the given spider for scraping and allocate resources for it"""
+-        self.slot = Slot()
++        self.slot = ScraperSlot()
+         yield self.itemproc.open_spider(spider)
+
+     def close_spider(self, spider):

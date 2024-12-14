@@ -1,0 +1,67 @@
+Contributor
+arthurmensch commented on Aug 27, 2015
+Code :
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from joblib import dump, load
+import os
+
+def run(memmap=False):
+    X = np.random.randn(1000, 100)
+    w = np.random.randn(100, 100)
+    y = X.dot(w)
+    if memmap:
+        dump(y, 'temp')
+        y = load('temp', mmap_mode='r+')
+    lrf = LinearRegression(fit_intercept=False)
+    lrf.fit(X, y)
+    w_r = lrf.coef_
+    if memmap:
+        os.remove('temp')
+    return w, w_r
+Running either
+%mprun -f run run(memmap=True)
+or
+%mprun -f run run(memmap=False)
+the first time yields :
+Line #    Mem usage    Increment   Line Contents
+================================================
+     7     57.3 MiB      0.0 MiB   def run(memmap=False):
+     8     57.3 MiB      0.0 MiB       print('run')
+     9     58.1 MiB      0.8 MiB       X = np.random.randn(1000, 100)
+    10     58.1 MiB      0.0 MiB       w = np.random.randn(100)
+    11     59.6 MiB      1.5 MiB       y = X.dot(w)
+    12     59.6 MiB      0.0 MiB       if memmap:
+    13     59.6 MiB      0.0 MiB           filename = dump(y, 'temp')[0]
+    14     59.6 MiB      0.0 MiB           print(filename)
+    15     60.5 MiB      0.9 MiB           y = load('temp', mmap_mode='r+')
+    16     60.5 MiB      0.0 MiB       lrf = LinearRegression(fit_intercept=False)
+    17     64.5 MiB      4.0 MiB       lrf.fit(X, y)
+    18     64.5 MiB      0.0 MiB       w_r = lrf.coef_
+    19     64.5 MiB      0.0 MiB       lrf = LinearRegression(fit_intercept=False)
+    20     65.3 MiB      0.8 MiB       lrf.fit(X, y)
+    21     65.3 MiB      0.0 MiB       w_r = lrf.coef_
+    22     65.3 MiB      0.0 MiB       if memmap:
+    23     65.3 MiB      0.0 MiB           os.remove(filename)
+    24     65.3 MiB      0.0 MiB       return w, w_r
+and the second time :
+     8     61.5 MiB      0.0 MiB   def run(memmap=False):
+     9     61.5 MiB      0.0 MiB       print('run')
+    10     61.5 MiB      0.0 MiB       X = np.random.randn(1000, 100)
+    11     61.5 MiB      0.0 MiB       w = np.random.randn(100)
+    12     61.5 MiB      0.0 MiB       y = X.dot(w)
+    13     61.5 MiB      0.0 MiB       if memmap:
+    14                                     filename = dump(y, 'temp')[0]
+    15                                     print(filename)
+    16                                     y = load('temp', mmap_mode='r+')
+    17     61.5 MiB      0.0 MiB       lrf = LinearRegression(fit_intercept=False)
+    18     61.6 MiB      0.1 MiB       lrf.fit(X, y)
+    19     61.6 MiB      0.0 MiB       w_r = lrf.coef_
+    20     61.6 MiB      0.0 MiB       lrf = LinearRegression(fit_intercept=False)
+    21     61.6 MiB      0.0 MiB       lrf.fit(X, y)
+    22     61.6 MiB      0.0 MiB       w_r = lrf.coef_
+    23     61.6 MiB      0.0 MiB       if memmap:
+    24                                     os.remove(filename)
+    25     61.6 MiB      0.0 MiB       gc.collect()
+    26     61.6 MiB      0.0 MiB       return w, w_r
+This is strange as it behaves differently the first time and the second time. We do not observe this increase in memory with Ridge. Could that be a memory leak ?

@@ -1,0 +1,106 @@
+seanrich commented on 15 Jun 2017
+My operating system is (include version):
+Gentoo 4.8.17-hardened-r2
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+https://certbot.eff.org/#gentoo-nginx
+I ran this command and it produced this output:
+certbot renew --dry-run
+Exception ignored in: <bound method ClientNetwork.__del__ of <acme.client.ClientNetwork object at 0x7faec2bf1f60>>
+Traceback (most recent call last):
+  File "/usr/lib64/python3.4/site-packages/acme/client.py", line 522, in __del__
+    self.session.close()
+  File "/usr/lib64/python3.4/site-packages/requests/sessions.py", line 689, in close
+    for v in self.adapters.values():
+  File "/usr/lib64/python3.4/_collections_abc.py", line 512, in __iter__
+    for key in self._mapping:
+  File "/usr/lib64/python3.4/collections/__init__.py", line 91, in __iter__
+    curr = root.next
+
+ReferenceError: weakly-referenced object no longer exists
+Certbot's behavior differed from what I expected because:
+There was an exception
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+The log /var/log/letsencrypt/letsencrypt.log does not show any errors.
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+user nginx nginx;
+worker_processes 1;
+
+error_log /var/log/nginx/error_log info;
+
+events {
+        worker_connections 1024;
+        use epoll;
+}
+
+http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        log_format main
+                '$remote_addr - $remote_user [$time_local] '
+                '"$request" $status $bytes_sent '
+                '"$http_referer" "$http_user_agent" '
+                '"$gzip_ratio"';
+
+        client_header_timeout 10m;
+        client_body_timeout 10m;
+        send_timeout 10m;
+
+        connection_pool_size 256;
+        client_header_buffer_size 1k;
+        large_client_header_buffers 4 2k;
+        request_pool_size 4k;
+
+        gzip off;
+
+        output_buffers 1 32k;
+        postpone_output 1460;
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+
+        keepalive_timeout 75 20;
+
+        ignore_invalid_headers on;
+
+        index index.html;
+
+        server {
+                listen 0.0.0.0;
+                server_name <redacted>;
+
+                access_log /var/log/nginx/<redacted>.access_log main;
+                error_log /var/log/nginx/<redacted>.error_log info;
+
+                root /var/www/www.<redacted>.com;
+
+                if ($scheme != "https") {
+                    return 301 https://$host$request_uri;
+                } # managed by Certbot
+
+
+                # Redirect non-https traffic to https
+                # if ($scheme != "https") {
+                #     return 301 https://$host$request_uri;
+                # } # managed by Certbot
+
+        }
+
+        # SSL example
+        server {
+                listen 0.0.0.0:443;
+                server_name <redacted>;
+
+                ssl on;
+                ssl_certificate /etc/letsencrypt/live/<redacted>.com/fullchain.pem; # managed by Certbot
+                ssl_certificate_key /etc/letsencrypt/live/<redacted>.com/privkey.pem; # managed by Certbot
+
+                access_log /var/log/nginx/<redacted>.ssl_access_log main;
+                error_log /var/log/nginx/<redacted>.ssl_error_log info;
+
+                root /var/www/www.<redacted>.com;
+
+        }
+}

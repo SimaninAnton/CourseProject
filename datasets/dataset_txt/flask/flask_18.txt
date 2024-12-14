@@ -1,0 +1,64 @@
+axc450 commented on 16 Dec 2019 •
+edited
+Expected Behavior
+Flask app should start normally. Im not sure where stdout/stderr go when running as a Windows service, but it should not crash.
+Example service wrapper
+import servicemanager
+import socket
+import sys
+import win32event
+import win32service
+import win32serviceutil
+import os
+
+class Service(win32serviceutil.ServiceFramework):
+    _svc_name_ = "Name"
+    _svc_display_name_ = "Display Name"
+    _svc_description_ = "Description"
+
+    def __init__(self, args):
+        win32serviceutil.ServiceFramework.__init__(self, args)
+        self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
+        socket.setdefaulttimeout(60)
+
+    def SvcStop(self):
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        win32event.SetEvent(self.hWaitStop)
+        self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+
+    def SvcDoRun(self):
+        os.chdir(os.path.dirname(__file__))
+        from . import __main__
+        __main__.app.run(port=8080, host="0.0.0.0")
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(Service)
+        servicemanager.StartServiceCtrlDispatcher()
+    else:
+        win32serviceutil.HandleCommandLine(Service)
+__main__ just contains a basic flask app.
+This might be a problem with click or pywin32.
+I am using the below monkey patch in __main__ to avoid this issue. It would be nice if I didnt have to do this or there was a better workaround (or even a fix!).
+# Stops app from crashing when started as a service
+flask.cli.show_server_banner = lambda *args: None
+Actual Behavior
+Actual stack trace
+Traceback (most recent call last):
+  File "C:\test\ui.py", line 31, in SvcDoRun
+    __main__.main(port=8080, host="0.0.0.0")
+  File "C:\test\ui\__main__.py", line 28, in SvcDoRun
+    app.run(**args)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python37\lib\site-packages\flask\app.py", line 938, in run
+    cli.show_server_banner(self.env, self.debug, self.name, False)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python37\lib\site-packages\flask\cli.py", line 629, in show_server_banner
+    click.echo(message)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python37\lib\site-packages\click\utils.py", line 260, in echo
+    file.write(message)
+AttributeError: 'NoneType' object has no attribute 'write'
+Environment
+Python version: 3.7
+Flask version: 1.02
+Werkzeug version: 0.14.1
+Related Issue: top2topii/FlaskServiceWin32#1

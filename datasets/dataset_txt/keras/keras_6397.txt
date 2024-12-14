@@ -1,0 +1,83 @@
+AlexAlifimoff commented on 24 Nov 2015
+Hey all,
+Working on my first project in Keras, attempting to reimplement this paper: http://arxiv.org/pdf/1509.00685v2.pdf
+My code is:
+#from future import *
+from keras.models import Sequential, Graph
+from keras.layers.core import Dense, Activation, Reshape, Lambda, Flatten
+from keras.layers.recurrent import GRU
+from keras.layers.embeddings import Embedding
+import theano.tensor as T
+import theano
+# define parameters intuitively, then translate to notation
+# this is unnecessary, but helps with understanding
+# during the initial construction of the network.
+word_embedding_size = 20
+hidden_layer_size = 10
+context_length = 5
+vocabulary_size = 3 # need to get this from training data... but using this as a stand-in for testing the model
+
+# We are going to use the same notation as the paper.
+D = word_embedding_size  # size of the word embeddings
+H = hidden_layer_size # hidden layer size
+C = context_length 
+V = vocabulary_size
+
+print("Building model...")
+
+# We start with two seperate tensor streams for processing y and x respectively.
+# Stream is something I made up, not sure if that's a technical term
+model = Graph()
+
+# Elements of model
+E = Embedding(V, D, input_length=C)
+U = Dense(H, activation='tanh') #GRU(H, activation='tanh')
+V_ = Dense(V)
+
+model.add_input('y_c',(C,)) # our context... C is size of context, we don't include size V, since we just pass indexes of words in...
+model.inputs['y_c'].input = T.imatrix()
+model.add_input('x', (None, ))
+model.inputs['x'].input = T.imatrix()
+
+ # y processing side of the model
+model.add_node( E, 'y_c~', input='y_c' ) # output dimension (nb_samples, C) --> (nb_samples, C, D)
+model.add_node( Reshape( dims=(C*D,) ), 'y_c~reshaped', input='y_c~') # here we reshape to a single     vector of C*D # elements per example
+model.add_node( U, 'h', input='y_c~reshaped' )
+model.add_node( V_, 'V_', input='h' )
+
+# now we build the bag of words encoder...
+model.add_node( Embedding(V, H), 'bow_f', input='x')
+
+model.add_node( Reshape(dims = (H,)), 'bow_f_reshaped', input='bow_f')
+model.add_node( Dense(V), 'W', input='bow_f_reshaped' )
+
+def exp(X):
+    return T.exp(X)
+
+model.add_node( Lambda(exp, output_shape), 'final', inputs=['V_', 'W'], merge_mode='sum')
+
+# output... we sum the two components of our model
+model.add_output('output', input='final')
+
+model.compile('sgd', {'output': 'mse'})
+
+print("Model built and compiled")
+
+y = [ [1, 2, 3, 4, 5] ]
+x = [ [2, 3, 4] ]
+
+model.predict( {'y_c': y, 'x': x } )
+The model compiles successfully, but I'm getting the following error when I try to test it on a simple example.
+Building model...
+Model built and compiled
+Traceback (most recent call last):
+  File "abstractive_sentence_summarizer.py", line 75, in <module>
+    model.predict( {'y_c': y, 'x': x } )
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-    packages/keras/models.py", line 695, in predict
+    outs = self._predict_loop(self._predict, ins, batch_size, verbose)
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/keras/models.py", line 254, in _predict_loop
+    ins_batch = slice_X(ins, batch_ids)
+  File "/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/keras/models.py", line 58, in slice_X
+    return [x[start] for x in X]
+TypeError: list indices must be integers, not list
+Sorry if this is an obvious question. I did my due diligence in researching before posting and couldn't seem to find an answer.

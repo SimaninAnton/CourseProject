@@ -1,0 +1,59 @@
+Contributor
+ozabluda commented on 6 Jan 2018 •
+edited
+With N=2, the code below produces wrong population variance (0.47084832), while the correct one is 1.0. I am pretty sure (due to experiments with N=2,3,4... and code inspection) that this is due to current code using wrong "variance of the sample" 1/N, biased estimator instead of correct unbiased "sample variance" estimator (1/(N-1), which for N=2 is exactly 2x smaller.
+This is contrary to the "Batch Normalization" paper (https://arxiv.org/abs/1502.03167), where Algorithm 2, step 10 uses unbiased estimator:
+Var[x] ← m/(m−1) E_B[σ_B^2]
+and everywhere else the paper consistently uses Var[x], not E[Var[B]] or something (although "Batch renormalization" paper has it garbled).
+The reason we don't typically see the manifestation of the bug is because typically N is larger, and we normalize across the whole feature map (but we should see is for small N for Dense layers).
+I am pretty sure it's a Keras bug, not a TF bug (except in the docs), because TF unfathomably delegates updating running averages to the user.
+# Script for reproducing a BatchNormalization2 bug
+# https://gist.github.com/ozabluda/84c36af4ced13f060524f743c7fe65c5
+# https://github.com/keras-team/keras/issues/8982
+
+from keras.models import Sequential, Model
+from keras.layers import Dense, BatchNormalization, Input, concatenate
+import numpy as np
+
+m = Sequential([
+    BatchNormalization(input_shape=(1,),
+                       center=True,
+                       scale=True,
+                       gamma_initializer='one',  # variance
+                       beta_initializer='zero',    # mean
+                       moving_mean_initializer='zero',
+                       moving_variance_initializer='one',
+                       epsilon=0.00001,
+                       #momentum=0.
+    ),
+])
+m.summary()
+print(m.layers[0].weights)
+N=2
+
+x  = np.random.normal(loc=0, scale=1, size=10000)
+print(np.var(x, axis=None), np.mean(x, axis=None))
+y  = x
+
+m.compile(optimizer='sgd', loss='mse')
+print("Before evaluate:", m.evaluate(x,y))
+print(np.array(m.layers[0].get_weights()).ravel())
+
+m.fit(x, y, verbose=1, epochs=2, shuffle=False, batch_size=N,
+      validation_data=(x,y))
+
+print("After evaluate:", m.evaluate(x,y), m.predict(x))
+print(np.array(m.layers[0].get_weights()).ravel())
+Output
+[<tf.Variable 'batch_normalization_1/gamma:0' shape=(1,) dtype=float32_ref>, <tf.Variable 'batch_normalization_1/beta:0' shape=(1,) dtype=float32_ref>, <tf.Variable 'batch_normalization_1/moving_mean:0' shape=(1,) dtype=float32_ref>, <tf.Variable 'batch_normalization_1/moving_variance:0' shape=(1,) dtype=float32_ref>]
+('Before evaluate/predict:', 2.4932038522607058e-11)
+[ 1.  0.  0.  1.]
+Train on 10000 samples, validate on 10000 samples
+Epoch 1/2
+10000/10000 [==============================] - 22s 2ms/step - loss: 0.6948 - val_loss: 0.0484
+Epoch 2/2
+10000/10000 [==============================] - 23s 2ms/step - loss: 0.6938 - val_loss: 0.0484
+10000/10000 [==============================] - 1s 54us/step
+('After evaluate/predict:', 0.048399086749553677)
+[ 0.54530275 -0.13030723 -0.06153991  0.47084832]
+1

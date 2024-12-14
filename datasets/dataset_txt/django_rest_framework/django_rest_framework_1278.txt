@@ -1,0 +1,92 @@
+bmampaey commented on 20 Feb 2016
+I have a django project, with a lot of apps, each one having a single model but it always have the same name (which is not a problem for django). I want to make a RESTful api for them, but I can't seem to do it right.
+My code is a little too long to post here, so I made a simple django project "rest_test" to demonstrate it.
+I have 2 apps, app1 and app2, within each one a Model called Record:
+app1/models.py
+from __future__ import unicode_literals
+from django.db import models
+class Record(models.Model):
+    name = models.TextField(null=True, blank=True)
+app2/models.py
+from __future__ import unicode_literals
+from django.db import models
+class Record(models.Model):
+    name = models.TextField(null=True, blank=True)
+And within each app, I have one Serializer and one Viewset for the Record model:
+app1/views.py
+from rest_framework import serializers, viewsets
+from .models import Record
+
+class RecordSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Record
+
+class RecordViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Record.objects.all()
+    serializer_class = RecordSerializer
+app2/views.py
+from rest_framework import serializers, viewsets
+from .models import Record
+
+class RecordSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Record
+
+class RecordViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Record.objects.all()
+    serializer_class = RecordSerializer
+And finally the Router and the urls:
+rest_test/urls.py
+from django.conf.urls import url, include
+from django.contrib import admin
+from rest_framework import routers
+
+router = routers.DefaultRouter()
+
+import app1.views
+router.register(r'app1', app1.views.RecordViewSet)
+
+import app2.views
+router.register(r'app2', app2.views.RecordViewSet)
+
+urlpatterns = [
+    url(r'^admin/', admin.site.urls),
+    url(r'^api/', include(router.urls)),
+]
+I created a single record with the admin in each app: "app1 record1" and "app2 record1"
+With that setting, the url http://127.0.0.1:8000/api/ responds with:
+{
+    "app1": "http://127.0.0.1:8000/api/app2/",
+    "app2": "http://127.0.0.1:8000/api/app2/"
+}
+Notice how it is the same url for the 2 viewsets.
+And http://127.0.0.1:8000/api/app1/ responds with:
+[
+    {
+        "url": "http://127.0.0.1:8000/api/app2/1/",
+        "name": "app1 record1"
+    }
+]
+Notice that the url of the app1 record points to the app2 record.
+I also tried to specify the base_name when registering the viewsets but it is not much better:
+rest_test/urls.py
+# Everything the same but 
+import app1.views
+router.register(r'app1', app1.views.RecordViewSet, base_name='app1')
+
+import app2.views
+router.register(r'app2', app2.views.RecordViewSet, base_name='app2')
+With that setting, the url http://127.0.0.1:8000/api/ responds with:
+{
+    "app1": "http://127.0.0.1:8000/api/app1/",
+    "app2": "http://127.0.0.1:8000/api/app2/"
+}
+Now the urls seems correct. But when I try to open one of the url, for example http://127.0.0.1:8000/api/app1/, I get the following error message:
+Exception Type: ImproperlyConfigured
+Exception Value: Could not resolve URL for hyperlinked relationship using view name "record-detail". You may have failed to include the related model in your API, or incorrectly configured the lookup_field attribute on this field.
+The full code and db is available as a github repository at https://github.com/bmampaey/rest_test
+
+My setup is django 1.9.2 and rest framework 3.3.2
+Any help on what I am doing wrong would be greatly appreciated.
+Benjamin
+PS: I did a small edit as I made a typo, but my problem is still here.

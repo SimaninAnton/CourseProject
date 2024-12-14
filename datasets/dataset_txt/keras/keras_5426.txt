@@ -1,0 +1,67 @@
+Froskekongen commented on 19 Apr 2016
+There appears to be a bug in the make_predict_function for the tensorflow backend. The following error message appears for me when trying to call model.predict(...)
+self._make_predict_function()
+  File "/usr/local/lib/python3.4/dist-packages/keras/engine/training.py", line 679, in _make_predict_function
+    **self._function_kwargs)
+  File "/usr/local/lib/python3.4/dist-packages/keras/backend/tensorflow_backend.py", line 615, in function
+    return Function(inputs, outputs, updates=updates)
+  File "/usr/local/lib/python3.4/dist-packages/keras/backend/tensorflow_backend.py", line 589, in __init__
+    with tf.control_dependencies(self.outputs):
+  File "/usr/local/lib/python3.4/dist-packages/tensorflow/python/framework/ops.py", line 3192, in control_dependencies
+    return get_default_graph().control_dependencies(control_inputs)
+  File "/usr/local/lib/python3.4/dist-packages/tensorflow/python/framework/ops.py", line 2993, in control_dependencies
+    c = self.as_graph_element(c)
+  File "/usr/local/lib/python3.4/dist-packages/tensorflow/python/framework/ops.py", line 2291, in as_graph_element
+    raise ValueError("Tensor %s is not an element of this graph." % obj)
+ValueError: Tensor Tensor("Sigmoid_2:0", shape=(?, 17), dtype=float32) is not an element of this graph.
+This does not happen when using the theano backend.
+Notes: The model is loaded from json, and is defined as follows:
+    seq1=Input(dtype='int32',shape=(400,),name='input_text')
+    seq2=Input(dtype='int32',shape=(20,),name='input_titles')
+
+    embeddeding=Embedding(max_features,embedding_dims,dropout=0.3)
+
+    encoding_1=embeddeding(seq1)
+    encoding_2=embeddeding(seq2)
+
+    filter_lengths = [1,3,6]
+
+
+    def max_1d(X):
+        return K.max(X, axis=1)
+    convs1=[]
+    convs2=[]
+    for fl in filter_lengths:
+
+        conv1=Convolution1D(nb_filter=nb_filter,
+                        filter_length=fl,
+                        border_mode='valid',
+                        activation='relu',
+                        subsample_length=1)(encoding_1)
+        conv1=Lambda(max_1d, output_shape=(nb_filter,))(conv1)
+        convs1.append(conv1)
+
+        conv2=Convolution1D(nb_filter=nb_filter,
+                        filter_length=fl,
+                        border_mode='valid',
+                        activation='relu',
+                        subsample_length=1)(encoding_2)
+        conv2=Lambda(max_1d, output_shape=(nb_filter,))(conv2)
+        convs2.append(conv2)
+
+    m=merge([*convs1,*convs2],mode='concat')
+    m=Highway(activation='relu')(m)
+    m=Highway(activation='relu')(m)
+    m=Dropout(0.5)(m)
+    hovedkategori_loss=Dense(labsHovedKat.shape[1],activation='sigmoid',name='hovedkategori')(m)
+
+    m1=merge([hovedkategori_loss,m],mode='concat')
+    underkategori_loss=Dense(labsUnderKat.shape[1],activation='sigmoid',name='underkategori')(m1)
+
+    model=Model(input=[seq1,seq2],output=[hovedkategori_loss,underkategori_loss])
+    model.compile(optimizer='adam',loss='binary_crossentropy',metrics={'hovedkategori':'accuracy','underkategori':'accuracy'})
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+14

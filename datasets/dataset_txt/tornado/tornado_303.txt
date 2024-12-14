@@ -1,0 +1,60 @@
+zxwild commented on 2 Aug 2017 •
+edited
+Hi,
+I want to perform 100 requests at the same time by easy way with yield [ <list of futures> ].
+But this method performs only 10 requests at the time!
+I prepared a short example which demostrates it, just run and you'll see requests which are performed by portions of 10 requests at the time.
+Tested with debian stretch and ubuntu 16.04 with the same results.
+Python 3.6.1,
+tornado==4.5.1
+from datetime import datetime
+import tornado.ioloop
+import tornado.gen
+import tornado.web
+from tornado.httpclient import AsyncHTTPClient
+
+
+# the same for tornado and curl clients
+# AsyncHTTPClient.configure('tornado.curl_httpclient.CurlAsyncHTTPClient')
+http_client = AsyncHTTPClient()
+
+
+class MainHandler(tornado.web.RequestHandler):
+
+    @tornado.gen.coroutine
+    def get(self, **kwargs):
+        yield self.write('<html><pre>')
+        yield tornado.gen.sleep(5)
+        yield self.finish('long page test</pre></html>')
+
+
+def make_app():
+    return tornado.web.Application([
+        tornado.web.url('^/test', MainHandler),
+    ])
+
+
+@tornado.gen.coroutine
+def long_request(n):
+    print('long_request {n} start'.format(n=n))
+
+    response = yield http_client.fetch('http://127.0.0.1:8000/test')
+    yield tornado.gen.sleep(5)
+
+    print('{date} long_request {n} finish, size {size}'.format(
+        date=datetime.now(), n=n, size=len(response.body))
+    )
+
+
+@tornado.gen.coroutine
+def requests_handler():
+    print('Requests handler started')
+    yield [long_request(n) for n in range(100)]
+    print('Requests handler finished')
+
+
+app = make_app()
+app.listen(8000, '127.0.0.1')
+
+tornado.ioloop.IOLoop.current().add_callback(callback=requests_handler)
+tornado.ioloop.IOLoop.current().start()

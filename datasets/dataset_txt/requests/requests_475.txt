@@ -1,0 +1,66 @@
+sztomi commented on Oct 17, 2017
+I'm trying to download a binary gzip file with a GET request.
+Expected Result
+When I download a gzip binary file I would expect the file to be the same size and content as it is on the server.
+Actual Result
+The file is uncompressed without any indication and written with a different size and contents.
+Reproduction Steps
+def download_file_chunked(url, filename, user, password):
+  req = requests.get(url, auth=(user, password), stream=True)
+  total_size = int(req.headers.get('content-length', 0)); 
+  with open(filename, "wb") as f:
+    for chunk in req.iter_content(1024): 
+      if chunk:
+        f.write(chunk)
+Some headers in the response:
+{
+  'Date': 'Tue, 17 Oct 2017 10:07:37 GMT', 
+  'Server': 'Apache/ProXad [Jul 22 2015 14:50:04]', 
+  'Connection': 'close', 'Accept-Ranges': 'bytes', 
+  'Content-Length': '17762', 
+  'Content-Type': 'application/x-gzip', 
+  'Content-Encoding': 'gzip'
+}
+It seems that requests is not only automatically decoding the response (which is gzip-encoded), but also jumps on the gzip data in the response and decodes that as well. This is very counter-intuitive and hard to debug. I found that the following works:
+def download_file_copyfileobj(url, filename, user, password):
+  import shutil
+  req = requests.get(url, auth=(user, password), stream=True)
+  print(req.headers)
+  with open(filename, "wb") as f:
+    req.raw.decode_content = False
+    shutil.copyfileobj(req.raw, f)
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "1.9"
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.2"
+  },
+  "platform": {
+    "release": "16.7.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "1010006f",
+    "version": "17.3.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020cf"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}

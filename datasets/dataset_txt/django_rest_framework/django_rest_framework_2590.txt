@@ -1,0 +1,31 @@
+swfiua commented on 6 Mar 2014
+I am using model inheritance in my django app (it seemed like a good idea at the time).
+I have one model which inherits from another and has a foreign key to an object from the base class:
+from django.db import models
+
+class Component(models.Model):
+      name = models.CharField(max_length=200)
+
+class Widget(Component):
+       add_on = models.ForeignKey(Component, related_name='add_on')
+I am using the rest framework ModelSerializer.
+When I try to create a new widget through the rest api I get an error, saying that the add_on field cannot be null.
+Things seem to be going wrong in rest_framework.serializers.ModelSerializer.restore_object()
+This code:
+        # Reverse fk or one-to-one relations
+        for (obj, model) in meta.get_all_related_objects_with_model():
+            field_name = obj.field.related_query_name()
+            if field_name in attrs:
+                related_data[field_name] = attrs.pop(field_name)
+ends up deleting 'add_on' from the attrs. Later in the method a Widget instance is created and returned, where the code calls instance.full_clean() and that generates the error.
+I am out of my depth at this point and not sure whether the problem is with get_all_realated_objects_with_model() not handling model inheritance properly or whether this is the rest_framework not taking account of the inheritance.
+I was able to work around this by over-riding restore_object like this, but again out of my depth and feeling like this is very much a hack:
+    def restore_object(self, attrs, instance=None):
+
+        instance = super(WidgetSerializer, self).restore_object(attrs, instance)
+
+        instance.loss = instance._related_data['add_on']
+        del instance._related_data['add_on']
+
+        return instance
+Using django 1.5 and django rest framework 2.3.8

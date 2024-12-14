@@ -1,0 +1,33 @@
+mwaddoups commented on 25 Apr 2017 •
+edited
+Hi all,
+I think the current way ImageDataGenerator works does not lend itself to building easy workflows with image data. Particularly, the rescale and centering parameters - I don't think these should live in the generator.
+Imagine that I have labelled training data so I build a simple generator:
+train_datagen = ImageDataGenerator(
+    rescale = 1/255,
+    samplewise_center=True,
+    horizontal_flip=True,
+    vertical_flip=True,
+)
+
+## Train model 
+## ...
+model.fit_generator(
+    train_datagen.flow(X_train, y_train, batch_size=25), ... # etc...
+)
+Once I've trained this model I want to be able to run it on test data. Obviously for test data you don't want to apply transformations, so I am essentially using this generator as a pre-processor:
+test_datagen = ImageDataGenerator(
+    rescale = 1/255,
+    samplewise_center=True,
+)
+If I then want to treat this as a pre-processor because I can hold all my images in memory, I end up writing code like:
+z_X, z_Y = next(test_datagen.flow(X_test, y_test, batch_size=X_test.shape[0]))
+
+### Get predictions and do something with them
+model.predict(z_X)
+This feels awkard, but okay. But if I'm working on a problem where I want to make predictions without having the labels, I have to come up with a more convoluted method
+z_X, _ = next(test_datagen.flow(X_unknown, np.zeros(len(X_unknown)), batch_size=X_unknown.shape[0]))
+And, worse, because this generator is randomized, z_X is not in the same order as X_unknown so I cannot link this back to the original information about what image the data came from. I can solve this with shuffle=False but at this point it feels like misuse.
+Does anyone have better ways of handling this? If not, I would propose that we take the strict pre-processing out of ImageDataGenerator and put it in something like an ImageDataPreprocessor instance. This would preserve order and make all these operations feel much more natural when working in-memory.
+I haven't used this for out-of-memory work but I would guess they have the same issue with a random test generator causing them to lose context to names of images.
+I'm fine to work on a PR for this if people think it's valuable.

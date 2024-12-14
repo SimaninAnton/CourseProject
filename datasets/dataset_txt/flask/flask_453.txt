@@ -1,0 +1,75 @@
+LionelR commented on 16 Feb 2018
+After tables creation, I want to populate them with initial datas (fixtures). For that I use sqlalchemy.event like in the code below. But in DEV mode, the automatic reloader "removes" these fixtures and lets the tables empty.
+import os
+
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy, event
+
+db = SQLAlchemy()
+
+
+class Test(db.Model):
+    __tablename__ = 'test_table'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String, unique=True, nullable=False)
+
+
+INITIAL_TABLES = {
+    Test: [
+        {'name': 'NAME1'},
+        {'name': 'NAME2'},
+        {'name': 'NAME3'},
+    ],
+}
+
+
+def initial_datas():
+    def create(param):
+        def callee(table, connection, **kwargs):
+            for values in INITIAL_TABLES[param]:
+                t = param(**values)
+                db.session.add(t)
+        return callee
+
+    for table_class in INITIAL_TABLES:
+        event.listen(table_class.__table__, 'after_create', create(table_class))
+
+    db.session.commit()
+
+
+class Config(object):
+    ENV = 'dev'
+    DEBUG = True
+    DB_NAME = 'test.db'
+    APP_DIR = os.path.abspath(os.path.dirname(__file__))
+    PROJECT_ROOT = os.path.abspath(os.path.join(APP_DIR, os.pardir))
+    DB_PATH = os.path.join(PROJECT_ROOT, DB_NAME)
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///{0}'.format(DB_PATH)
+    SQLALCHEMY_TRACK_MODIFICATIONS = True
+
+
+if __name__ == '__main__':
+    app = Flask(__name__)
+    app.config.from_object(Config)
+    # if os.path.exists(Config.DB_PATH):
+    #     print('drop db')
+    #     os.remove(Config.DB_PATH)
+    app.app_context().push()
+    db.init_app(app=app)
+    initial_datas()
+    db.create_all(app=app)
+    print(Test.query.all())
+
+    app.run()
+The resulting output shows the table is empty after reload:
+[<Test 1>, <Test 2>, <Test 3>]
+ * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+ * Restarting with stat
+[]
+ * Debugger is active!
+ * Debugger PIN: 110-171-224
+As a fix, app.run(use_reloader=False) does the trick, or uncommenting the last lines for dropping the db...
+Environment
+Python version: 3.5
+Flask version: last
+Werkzeug version: last

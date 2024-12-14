@@ -1,0 +1,65 @@
+schulter commented on 23 Mar 2017
+Hello,
+I experience a strange behavior when training my CNN on the Theano backend.
+While architecture and input data are relatively generic, I get errors when either the batch size becomes large (100 is already way too large) or when the number of filters is increased.
+The error I get is the following:
+Train on 6 samples, validate on 1 samples
+Epoch 1/2
+1/6 [====>.........................] - ETA: 0s - loss: 0.3922 - acc: 1.0000Traceback (most recent call last):
+  File "graph_cnn.py", line 58, in <module>
+    model.fit(training_feature_maps, y_train, batch_size=batch_size, epochs=2, validation_data=(testing_feature_maps, y_test), shuffle=True)
+  File "/home/sasse/.local/lib/python2.7/site-packages/keras/models.py", line 845, in fit
+    initial_epoch=initial_epoch)
+  File "/home/sasse/.local/lib/python2.7/site-packages/keras/engine/training.py", line 1485, in fit
+    initial_epoch=initial_epoch)
+  File "/home/sasse/.local/lib/python2.7/site-packages/keras/engine/training.py", line 1140, in _fit_loop
+    outs = f(ins_batch)
+  File "/home/sasse/.local/lib/python2.7/site-packages/keras/backend/theano_backend.py", line 1096, in __call__
+    return self.function(*inputs)
+  File "/home/sasse/.local/lib/python2.7/site-packages/theano/compile/function_module.py", line 898, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/home/sasse/.local/lib/python2.7/site-packages/theano/gof/link.py", line 325, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/home/sasse/.local/lib/python2.7/site-packages/theano/compile/function_module.py", line 884, in __call__
+    self.fn() if output_subset is None else\
+RuntimeError: c_extract: Some CudaNdarray has dim 4 on broadcastable dimension 2
+Apply node that caused the error: GPU_mrg_uniform{CudaNdarrayType(float32, 3D),inplace}(<CudaNdarrayType(float32, vector)>, MakeVector{dtype='int64'}.0)
+Toposort index: 53
+Inputs types: [CudaNdarrayType(float32, vector), TensorType(int64, vector)]
+Inputs shapes: [(92160,), (3,)]
+Inputs strides: [(1,), (8,)]
+Inputs values: ['not shown', array([   1, 1050,    4])]
+Outputs clients: [['output'], [GpuElemwise{Composite{Cast{float32}(LT(i0, i1))}}[(0, 0)](GPU_mrg_uniform{CudaNdarrayType(float32, 3D),inplace}.1, CudaNdarrayConstant{[[[ 0.5]]]})]]
+From the error message, I guess that this has to do with the uniform drawing from Theanos mersenne random generator.
+I worked with that in the past (directly on Theano, though) in a project on convolutional RBMs and had some problems when the matrices to draw samples from were large. So, my guess is that the random generator flattens the array and when it becomes too large, just throws a run-time error.
+That would explain why it's failing when increasing either the number of filters or the batch-size.
+What generates the error:
+batch_size = 20
+shape = (batch_size, training_feature_maps.shape[1], training_feature_maps.shape[2])
+model = Sequential()
+model.add(Conv1D(filters=64, kernel_size=15, padding="valid", batch_input_shape=shape, kernel_constraint=maxnorm(3)))
+model.add(Activation('relu'))
+model.add(Dropout(rate=0.5))
+model.add(MaxPooling1D(pool_size=2))
+model.add(Flatten())
+model.add(Dense(128, kernel_constraint=maxnorm(3)))
+model.add(Activation('relu'))
+model.add(Dense(2))
+model.add(Activation('softmax'))
+print (model.summary())
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.fit(training_feature_maps, y_train, batch_size=batch_size, epochs=20)
+where training_feature_maps is a tensor of shape (26600, 1050, 4) of dtype uint8
+The pasted code works fine but increasing batch_size to 100 yields an error.
+Please let me know if you need a code example using some numpy random matrices.
+I am running on a TITAN X with CUDA 8.0.44 and cuDNN 5105 and run the script with:
+THEANO_FLAGS=mode=FAST_RUN,device=gpu,allow_gc=False python2 graph_cnn.py
+I got this to work now (smaller batches) but I think it would be nice to figure out when the uniform op starts failing and why and maybe include that in the graph construction. Because the summary always looks fine.
+Thanks,
+Roman
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

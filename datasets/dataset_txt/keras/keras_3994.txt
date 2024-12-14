@@ -1,0 +1,50 @@
+oarriaga commented on 4 Nov 2016
+Hello everyone,
+I am currently trying to implement image captioning in Vinyals style. However, when I zero pad the features of the image; through a Lambda layer, so I can change the initial state of LSTM by summing it to the word embedding (Merge layer) I end up having the problem that batch seems to work only for a value of 1.
+EMBEDDING_DIM = 100
+MAX_CAPTION_LENGTH = 32
+VOCABULARY_SIZE = 10000 #len(words)
+batch_nb = 1
+
+tensor_shape = Input(shape=(3,224, 224))
+base_model = VGG19(weights='imagenet', include_top=False, input_tensor=tensor_shape)
+for layer in base_model.layers:
+    layer.trainable = False
+
+image_model = Sequential()
+image_model.add(base_model)
+image_model.add(Flatten())
+image_model.add(Dense(EMBEDDING_DIM, activation='relu'))
+
+def zero_pad_features(x):
+    y = K.zeros(shape=(MAX_CAPTION_LENGTH-1,EMBEDDING_DIM))
+    return K.concatenate((x,y),axis=0)
+
+image_model.add(Lambda(zero_pad_features,output_shape=(MAX_CAPTION_LENGTH,EMBEDDING_DIM)))
+
+language_model = Sequential()
+language_model.add(Embedding(input_dim=VOCABULARY_SIZE, output_dim=EMBEDDING_DIM, input_length=MAX_CAPTION_LENGTH, mask_zero=True))
+
+model = Sequential()
+model.add(Merge([image_model,language_model],mode='sum'))
+model.add(LSTM(125, return_sequences=True))
+model.add(TimeDistributed(Dense(VOCABULARY_SIZE,activation='softmax')))
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop',metrics=['accuracy'])
+print('Starting training')
+model.fit([images, x_sequences], y, batch_size=batch_nb, nb_epoch=1, verbose=1)
+
+img = np.ones((1,3,224,224))
+caption = np.ones((1,32))
+print(model.predict([img,caption]))
+Whenever I change the value of batch_nb to something else it displays the following error
+ GpuElemwise. Input dimension mis-match. Input 1 (indices start at 0) has shape[1] == 32, but the output's size on that axis is 34.
+Apply node that caused the error: GpuElemwise{add,no_inplace}(GpuDimShuffle{x,0,1}.0, GpuReshape{3}.0)
+Toposort index: 438
+Inputs types: [CudaNdarrayType(float32, (True, False, False)), CudaNdarrayType(float32, 3D)]
+Inputs shapes: [(1, 34, 100), (3, 32, 100)]
+Inputs strides: [(0, 100, 1), (3200, 100, 1)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[GpuReshape{2}(GpuElemwise{add,no_inplace}.0, TensorConstant{[ -1 100]})]]
+I believe that the error Inputs shapes: [(1, 34, 100), (3, 32, 100)] is indicating that the input images are taking the second dimension as the batch dimension instead of taking the first dimension.
+Thanks for taking the time,
+Sincerely Octavio

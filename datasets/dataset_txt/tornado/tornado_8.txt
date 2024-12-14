@@ -1,0 +1,76 @@
+lujinke commented on 27 Nov 2019 •
+edited
+related to #2271
+OS:centos 7
+python: 2.7
+tornado: 4.5.3 (not fix this issue as claimed)
+[2019-11-27 14:10:26.584][ERROR][iostream.py:554]:Uncaught exception, closing connection.
+    Traceback (most recent call last):
+      File "/usr/lib64/python2.7/site-packages/tornado/iostream.py", line 523, in _handle_events
+        self._handle_write()
+      File "/usr/lib64/python2.7/site-packages/tornado/iostream.py", line 872, in _handle_write
+        del self._write_buffer[:self._write_buffer_pos]
+    BufferError: Existing exports of data: object cannot be re-sized
+[2019-11-27 14:10:26.585][ERROR][ioloop.py:638]:Exception in callback None
+    Traceback (most recent call last):
+      File "/usr/lib64/python2.7/site-packages/tornado/ioloop.py", line 888, in start
+        handler_func(fd_obj, events)
+      File "/usr/lib64/python2.7/site-packages/tornado/stack_context.py", line 277, in null_wrapper
+        return fn(*args, **kwargs)
+      File "/usr/lib64/python2.7/site-packages/tornado/iostream.py", line 523, in _handle_events
+        self._handle_write()
+      File "/usr/lib64/python2.7/site-packages/tornado/iostream.py", line 872, in _handle_write
+        del self._write_buffer[:self._write_buffer_pos]
+    BufferError: Existing exports of data: object cannot be re-sized
+[2019-11-27 14:10:26.587][ERROR][acl.py:186]:Traceback (most recent call last):
+      File "/home/dba/dba/dbas/handler/globals.py", line 734, in wrapper
+        return fn(*args, **kwargs)
+      File "/home/dba/dba/dbas/handler/acl.py", line 92, in func_wrapper
+        return func(self)
+      File "/home/dba/dba/dbas/handler/instancehandler.py", line 26, in get
+        instance_type=instance_type, envs=data["envs"]
+      File "/usr/lib64/python2.7/site-packages/tornado/web.py", line 782, in render
+        self.finish(html)
+      File "/usr/lib64/python2.7/site-packages/tornado/web.py", line 992, in finish
+        self.flush(include_footers=True)
+      File "/usr/lib64/python2.7/site-packages/tornado/web.py", line 953, in flush
+        return self.request.connection.write(chunk, callback=callback)
+      File "/usr/lib64/python2.7/site-packages/tornado/http1connection.py", line 437, in write
+        self._pending_write = self.stream.write(self._format_chunk(chunk))
+      File "/usr/lib64/python2.7/site-packages/tornado/iostream.py", line 406, in write
+        self._handle_write()
+      File "/usr/lib64/python2.7/site-packages/tornado/iostream.py", line 847, in _handle_write
+        assert self._write_buffer_size >= 0
+    AssertionError
+here is my code:
+i try to make the http request async, so i use a wrapper and ThreadPoolExecutor, in the wrapper i submit the request to the ThreadPoolExecutor as the following:
+def async(f):
+    @tornado.web.asynchronous
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        def callback(future):
+            try:
+                future.result()
+            except Exception, e:
+                logger.error(e)
+
+        AsyncExecutor.executor.submit(
+            partial(f, *args, **kwargs)
+        ).add_done_callback(
+            lambda future: tornado.ioloop.IOLoop.instance().add_callback(
+                partial(callback, future)))
+
+    return wrapper
+The add_callback method is said thread safe to use in other threads as claimed in the tornado code:
+        Calls the given callback on the next I/O loop iteration.
+
+        It is safe to call this method from any thread at any time,
+        except from a signal handler.  Note that this is the **only**
+        method in `IOLoop` that makes this thread-safety guarantee; all
+        other interaction with the `IOLoop` must be done from that
+        `IOLoop`'s thread.  `add_callback()` may be used to transfer
+        control from other threads to the `IOLoop`'s thread.
+
+        To add a callback from a signal handler, see
+        `add_callback_from_signal`.
+Great appreciate if someone can tell what's wrong here with my code.

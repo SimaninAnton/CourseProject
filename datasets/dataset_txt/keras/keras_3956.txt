@@ -1,0 +1,105 @@
+Horsmann commented on 10 Nov 2016 •
+edited
+Hi,
+I have been experimenting with using model.predict() to run some predictions manually rather than evaluating them directly with model.evaluate() because I need the predicted values and not just the overall accuracy.
+When computing the accuracy manually I noticed that the accuracy keras' calculates in evaluate() is not correct. Is there a bug in the accuracy calculation?
+Below a self-contained runnable minimal example that shows the difference (the example tests on the training data):
+import numpy as np
+from keras.preprocessing import sequence
+from keras.models import Sequential
+from keras.layers import Dense, Activation, Embedding, TimeDistributed, Bidirectional
+from keras.layers import LSTM
+import json
+from keras.utils import np_utils
+
+np.set_printoptions(threshold=np.nan)
+
+def mapWords2Integer(input, startIdx=0):
+    map = {}
+    for s in input:
+        for w in s:
+            if w not in map:
+               map[w]=startIdx
+               startIdx+=1
+
+    out = []
+    for s in input:
+        out_s = []
+        for w in s:
+            out_s.append(map[w])
+        out.append(out_s)
+    return map, out
+
+tokens = [
+    ['Great', 'Western', 'said', 'it', 'had', 'a', 'sharp', 'increase', 'in', 'margins', 'in', 'the', 'recent', 'third', 'quarter', '.'],
+    ['Margins', 'are', 'the', 'difference', 'between', 'the', 'yield', 'on', 'the', 'company', 's', 'earning', 'assets', 'and', 'its', 'own', 'cost', 'of', 'funds', '.'],
+    ['But', 'a', 'reduction', 'in', 'one-time', 'gains', 'on', 'the', 'sale', 'of', 'various', 'assets', 'and', 'an', 'increase', 'in', 'the', 'company', 's', 'provision', 'for ', 'loan', 'losses', 'held', 'down', 'the', 'earnings', 'gain', ', ', 'the', 'company', 'said', '.']
+]
+
+labels = [
+    ['NNP', 'NNP', 'VBD', 'PRP', 'VBD', 'DT', 'JJ', 'NN', 'IN', 'NNS', 'IN', 'DT', 'JJ', 'JJ', 'NN', '.'],
+    ['NNS', 'VBP', 'DT', 'NN', 'IN', 'DT', 'NN', 'IN', 'DT', 'NN', 'POS', 'VBG', 'NNS', 'CC', 'PRP$', 'JJ', 'NN', 'IN', 'NNS', '.'],
+    ['CC', 'DT', 'NN', 'IN', 'JJ', 'NNS', 'IN', 'DT', 'NN', 'IN', 'JJ', 'NNS', 'CC', 'DT', 'NN', 'IN', 'DT', 'NN', 'POS', 'NN', 'IN', 'NN', 'NNS', 'VBD', 'RP', 'DT', 'NNS', 'NN', ',', 'DT', 'NN', 'VBD', '.']
+]
+
+
+longest_sequence = max(len(s) for s in (tokens))
+
+valMap, valInt = mapWords2Integer(tokens,1)
+labMap, labelInt = mapWords2Integer(labels,1)
+
+vocabSize=len(valMap)
+
+padValInt = sequence.pad_sequences(valInt, maxlen=longest_sequence)
+padLabInt = sequence.pad_sequences(labelInt, maxlen=longest_sequence)
+
+maximal_value = max([ys for sent in padLabInt for ys in sent])+1
+
+train_label = np.array([np_utils.to_categorical(seq, maximal_value) for seq in padLabInt])
+
+EMBEDDING_DIM=100
+
+model = Sequential()
+model.add(Embedding(vocabSize+1, EMBEDDING_DIM,mask_zero=True))
+model.add(Bidirectional(LSTM(EMBEDDING_DIM, return_sequences=True)))
+model.add(TimeDistributed(Dense(maximal_value)))
+model.add(Activation('relu'))
+
+# try using different optimizers and different optimizer configs
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
+model.fit(padValInt, train_label, nb_epoch=1)
+score, acc = model.evaluate(padValInt, train_label)
+print('Accuracy calculated by Keras:', acc*100)
+
+#########################
+##### Manual Accuracy ###
+#########################
+correct=0.0
+incorrect=0.0
+inversed_label_map = {v: k for k, v in labMap.items()}
+for k in range(0, len(padValInt)):
+    s = padValInt[k]
+    out = model.predict(s)
+    predLabels = []
+    for e in out:
+        for c in e:
+            x = np.argmax(c)
+            pl = inversed_label_map.get(x)
+            predLabels.append(pl)
+
+    #throw away the padded, leading zeros
+    fromIdx = (len(predLabels)-len(labels[k]))
+    predLabels = predLabels[fromIdx:]
+
+    for i in range(0, len(labels[k])):
+
+        if labels[k][i] == predLabels[i]:
+            correct+=1
+        else:
+            incorrect+=1
+
+acc = correct / (correct+incorrect) * 100
+print("Manually calculated accuracy: ", acc)

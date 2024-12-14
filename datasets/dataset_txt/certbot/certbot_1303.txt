@@ -1,0 +1,21 @@
+laran commented on 27 Mar 2017
+If I'm not mistaken, here's the line where certbot generates the signature that is used on the server to verify integrity of a JWSObject:
+certbot/acme/acme/jose/jws.py
+Line 233 in 8011fb2
+ signature = alg.sign(key.key, cls._msg(protected, payload)) 
+Certbot seems to deviate from the ACME spec in terms of the structure of the requests. In the spec the nonce is in the header and there is just the protected, payload and signature fields. The requests from certbot however have only the nonce in the protected field and have the header attributes separately, not Base64Url encoded, as just plain JSON.
+I'm working with the JOSE implementation from nimbusds.
+Here's the line where the signing input is created:
+https://bitbucket.org/connect2id/nimbus-jose-jwt/src/a730749c3831e429617d0cb4203303b36edfc6f2/src/main/java/com/nimbusds/jose/JWSObject.java?at=master&fileviewer=file-view-default#JWSObject.java-204
+Here's where that method is called:
+https://bitbucket.org/connect2id/nimbus-jose-jwt/src/a730749c3831e429617d0cb4203303b36edfc6f2/src/main/java/com/nimbusds/jose/JWSObject.java?at=master&fileviewer=file-view-default#JWSObject.java-165
+This line of code is invoked just a few lines above that call:
+https://bitbucket.org/connect2id/nimbus-jose-jwt/src/a730749c3831e429617d0cb4203303b36edfc6f2/src/main/java/com/nimbusds/jose/JWSObject.java?at=master&fileviewer=file-view-default#JWSObject.java-151
+The JWSHeader.parse() method that's called validates that the header contains an "alg" attribute:
+https://bitbucket.org/connect2id/nimbus-jose-jwt/src/a730749c3831e429617d0cb4203303b36edfc6f2/src/main/java/com/nimbusds/jose/JWSHeader.java?at=master&fileviewer=file-view-default#JWSHeader.java-631
+Putting the pieces together:
+certbot generates a signature based on a protected field with only a nonce (no alg or other information)
+nimbus-jose-jwt checks the signature based on the header, which must contain the alg.
+based on the ACME spec (https://tools.ietf.org/html/draft-ietf-acme-acme-04#section-5.2), the protected field should contain all of the information that certbot puts in the header AND the nonce
+The net result is that verification doesn't work properly without some contortions on the server side.
+I hope this all makes sense. Are there plans to bring certbot in line with the acme spec?

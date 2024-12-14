@@ -1,0 +1,167 @@
+petmo commented on Oct 28, 2017
+Description
+Hello! I'm trying to run some code written a year ago or so, but I seem to run into an error when I run try to fit the data provided to GridSearchCV. I tried running the same data through a randomized parameter optimizer, and got the same error. Changing the entries in ytest to integers instead of strings doesn't seem to helper either.
+Steps/Code to Reproduce
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn import model_selection
+from sklearn.metrics import make_scorer
+from sklearn.decomposition import PCA, FastICA
+from sklearn.pipeline import Pipeline
+
+feature_len = 36
+
+clf = RandomForestClassifier(n_estimators = 200, random_state = 1, class_weight = 'balanced')
+params = {'clf__max_features': ['auto', 'log2'],
+                 'dm_reduce__n_components': np.arange(5, feature_len, np.around(feature_len/5))}
+jobs = 1
+scorer = make_scorer(accuracy_score)
+
+Xtest = np.random.random((179,feature_len))
+ytest = [['Win','Defeat','Draw'][np.random.randint(3)] for _ in range(179)]
+cv_sets_test = model_selection.StratifiedShuffleSplit(n_splits = 5, test_size = 0.20, random_state = 5)
+cv_sets_test.get_n_splits(Xtest, ytest)
+
+pca = PCA()
+dm_reduction = pca
+
+#Define pipeline of dm reduction and classifier
+estimators = [('dm_reduce', dm_reduction), ('clf', clf)]
+pipeline = Pipeline(estimators)
+
+#Grid search over pipeline and return best classifier
+grid_obj = model_selection.GridSearchCV(pipeline, param_grid = params, scoring = scorer, cv = cv_sets_test, n_jobs = jobs)
+grid_obj.fit(Xtest, ytest)
+best_pipe = grid_obj.best_estimator_
+Expected Results
+Actual Results
+TypeError                                 Traceback (most recent call last)
+<ipython-input-11-3543a8fcf60e> in <module>()
+     31 #Grid search over pipeline and return best classifier
+     32 grid_obj = model_selection.GridSearchCV(pipeline, param_grid = params, scoring = scorer, cv = cv_sets_test, n_jobs = jobs)
+---> 33 grid_obj.fit(Xtest, ytest)
+     34 best_pipe = grid_obj.best_estimator_
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/model_selection/_search.py in fit(self, X, y, groups, **fit_params)
+    637                                   error_score=self.error_score)
+    638           for parameters, (train, test) in product(candidate_params,
+--> 639                                                    cv.split(X, y, groups)))
+    640 
+    641         # if one choose to see train score, "out" will contain train score info
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/parallel.py in __call__(self, iterable)
+    777             # was dispatched. In particular this covers the edge
+    778             # case of Parallel used with an exhausted iterator.
+--> 779             while self.dispatch_one_batch(iterator):
+    780                 self._iterating = True
+    781             else:
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/parallel.py in dispatch_one_batch(self, iterator)
+    623                 return False
+    624             else:
+--> 625                 self._dispatch(tasks)
+    626                 return True
+    627 
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/parallel.py in _dispatch(self, batch)
+    586         dispatch_timestamp = time.time()
+    587         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+--> 588         job = self._backend.apply_async(batch, callback=cb)
+    589         self._jobs.append(job)
+    590 
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/_parallel_backends.py in apply_async(self, func, callback)
+    109     def apply_async(self, func, callback=None):
+    110         """Schedule a func to be run"""
+--> 111         result = ImmediateResult(func)
+    112         if callback:
+    113             callback(result)
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/_parallel_backends.py in __init__(self, batch)
+    330         # Don't delay the application, to avoid keeping the input
+    331         # arguments in memory
+--> 332         self.results = batch()
+    333 
+    334     def get(self):
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/parallel.py in __call__(self)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/parallel.py in <listcomp>(.0)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/model_selection/_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, return_n_test_samples, return_times, error_score)
+    456             estimator.fit(X_train, **fit_params)
+    457         else:
+--> 458             estimator.fit(X_train, y_train, **fit_params)
+    459 
+    460     except Exception as e:
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/pipeline.py in fit(self, X, y, **fit_params)
+    246             This estimator
+    247         """
+--> 248         Xt, fit_params = self._fit(X, y, **fit_params)
+    249         if self._final_estimator is not None:
+    250             self._final_estimator.fit(Xt, y, **fit_params)
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/pipeline.py in _fit(self, X, y, **fit_params)
+    211                 Xt, fitted_transformer = fit_transform_one_cached(
+    212                     cloned_transformer, None, Xt, y,
+--> 213                     **fit_params_steps[name])
+    214                 # Replace the transformer of the step with the fitted
+    215                 # transformer. This is necessary when loading the transformer
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/externals/joblib/memory.py in __call__(self, *args, **kwargs)
+    360 
+    361     def __call__(self, *args, **kwargs):
+--> 362         return self.func(*args, **kwargs)
+    363 
+    364     def call_and_shelve(self, *args, **kwargs):
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/pipeline.py in _fit_transform_one(transformer, weight, X, y, **fit_params)
+    579                        **fit_params):
+    580     if hasattr(transformer, 'fit_transform'):
+--> 581         res = transformer.fit_transform(X, y, **fit_params)
+    582     else:
+    583         res = transformer.fit(X, y, **fit_params).transform(X)
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/decomposition/pca.py in fit_transform(self, X, y)
+    346 
+    347         """
+--> 348         U, S, V = self._fit(X)
+    349         U = U[:, :self.n_components_]
+    350 
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/decomposition/pca.py in _fit(self, X)
+    390         # Call different fits for either full or truncated SVD
+    391         if svd_solver == 'full':
+--> 392             return self._fit_full(X, n_components)
+    393         elif svd_solver in ['arpack', 'randomized']:
+    394             return self._fit_truncated(X, n_components, svd_solver)
+
+~/Library/Python/3.5/lib/python/site-packages/sklearn/decomposition/pca.py in _fit_full(self, X, n_components)
+    439         # The sigma2 maximum likelihood (cf. eq. 12.46)
+    440         if n_components < min(n_features, n_samples):
+--> 441             self.noise_variance_ = explained_variance_[n_components:].mean()
+    442         else:
+    443             self.noise_variance_ = 0.
+
+TypeError: slice indices must be integers or None or have an __index__ method
+Versions
+Darwin-14.5.0-x86_64-i386-64bit
+Python 3.5.1 (v3.5.1:37a07cee5969, Dec 5 2015, 21:12:44)
+[GCC 4.2.1 (Apple Inc. build 5666) (dot 3)]
+NumPy 1.13.3
+SciPy 0.19.1
+Scikit-Learn 0.19.1

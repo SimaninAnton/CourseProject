@@ -1,0 +1,57 @@
+cia05rf commented on Dec 6, 2019
+Description
+TypeError: Singleton array array(True) cannot be considered a valid collection.
+Steps/Code to Reproduce
+Found when running RandomizedSearchCV with LightGBM. Previously worked fine. Latest update requires that all the **fit_params be checked for 'slicability'. Difficult when some fit params are things like early_stopping_rounds = 5.
+#Import the modules
+import lightgbm as lgb
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import GridSearchCV
+
+#Create parameters grid
+#Create fixed parameters
+mod_fixed_params = {
+    'boosting_type':'gbdt'
+    ,'random_state':0
+    ,'silent':False
+    ,'objective':'multiclass'
+    ,'num_class':np.unique(y_train)
+    ,'min_samples_split':200 #Should be between 0.5-1% of samples
+    ,'min_samples_leaf':50
+    ,'subsample':0.8
+}
+search_params = {
+    'fixed':{
+        'cv':3
+        ,'n_iter':80
+        ,'verbose':True
+        ,'random_state':0
+    }
+    ,'variable':{
+        'learning_rate':[0.1,0.01,0.005]
+        ,'num_leaves':np.linspace(10,1010,100,dtype=int)
+        ,'max_depth':np.linspace(2,22,10,dtype=int)
+    }
+}
+fit_params = {
+    'verbose':True
+    ,'eval_set':[(X_valid,y_valid)]
+    ,'eval_metric':lgbm_custom_loss
+    ,'early_stopping_rounds':5
+}
+
+#Setup the model
+lgb_mod = lgb.LGBMClassifier(**mod_fixed_params)
+#Add the search grid
+seed = np.random.seed(0)
+gbm = RandomizedSearchCV(lgb_mod,search_params['variable'],**search_params['fixed'])
+#Fit the model
+gbm.fit(X_train,y_train,**fit_params)
+print('Best parameters found by grid search are: {}'.format(gbm.best_params_))
+I've traced the error through and it starts in model_selection/_search.py ln652
+-->
+Expected Results
+Expected to run the LightGBM wthrough RandomSearchGrid
+Actual Results
+TypeError: Singleton array array(True) cannot be considered a valid collection.
+Versions

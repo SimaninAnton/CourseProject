@@ -1,0 +1,71 @@
+jclerman commented on Aug 3, 2016 •
+edited
+Description
+I am getting a warning when using F1 score with average set to binary, pos_label set to a value (an integer corresponding to a class label) and expecting multiclass data.
+As best I can tell, this code in sklearn/metrics/classification.py (in master as of today) is the cause of the issue:
+if average == 'binary' and (y_type != 'binary' or pos_label is None): warnings.warn('The defaultweightedaveraging is deprecated, ' 'and from version 0.18, use of precision, recall or ' 'F-score with multiclass or multilabel data or ' 'pos_label=None will result in an exception. ' 'Please set an explicit value foraverage, one of ' '%s. In cross validation use, for instance, ' 'scoring="f1_weighted" instead of scoring="f1".' % str(average_options), DeprecationWarning, stacklevel=2) average = 'weighted'
+I would expect that it is acceptable to use average=='binary' with multiclass data, so long as pos_label is set - that seems to be the point.
+Steps/Code to Reproduce
+Apologies for the length here; the key part is near the bottom.
+NOTE that y_train is a 1-D array of integers, ranging from 1 to 6, which serve as my class labels.
+`# #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+import sys
+import time
+from sklearn.metrics import make_scorer, f1_score
+target_label=6
+my_f1_scorer = make_scorer(f1_score, pos_label=target_label, average='binary')
+read in training/testing data here; commented out for brevity
+y_train = train_array[:,1]
+X_train = train_array[:,2:]
+y_test = test_array[:,1]
+X_test = test_array[:,2:]
+from sklearn.preprocessing import StandardScaler
+sc = StandardScaler()
+X_train_std = sc.fit_transform(X_train)
+X_test_std = sc.transform(X_test)
+PCA done here; commented out for brevity
+X_train_pca = X_train_std.dot(w)
+X_test_pca = X_test_std.dot(w)
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+HL_sizes=(10,)
+pipe_mlp = Pipeline([
+('mlp', MLPClassifier(random_state=1,
+algorithm='adam',
+activation='logistic',
+hidden_layer_sizes=HL_sizes,
+max_iter=3000,
+))
+])
+from sklearn.model_selection import validation_curve
+param_range = [1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0]
+param_name = 'alpha'
+train_scores, test_scores = validation_curve(estimator=pipe_mlp,
+X=X_train,
+y=y_train,
+cv=5,
+n_jobs=6,
+param_name='mlp__'+param_name,
+param_range=param_range,
+scoring=my_f1_scorer,
+verbose=2)
+`
+Expected Results
+I expect training and testing scores to be populated into train_scores and test_scores - and indeed, those matrices are populated, though I can't be sure that I can trust the answers given the warnings being shown.
+Actual Results
+During the call to validation_curve, I see warnings repeatedly, particularly the 2nd one below:
+/ME/document_classification/py35_sklearn18/build/scikit-learn/sklearn/metrics/classification.py:1124: UndefinedMetricWarning: F-score is ill-defined and being set to 0.0 in labels with no predicted samples.
+'precision', 'predicted', average, warn_for)
+/ME/document_classification/py35_sklearn18/build/scikit-learn/sklearn/metrics/classification.py:806: DeprecationWarning: The default weighted averaging is deprecated, and from version 0.18, use of precision, recall or F-score with mu
+lticlass or multilabel data or pos_label=None will result in an exception. Please set an explicit value for average, one of (None, 'micro', 'macro', 'weighted', 'samples'). In cross validation use, for instance, scoring="f1_weighted"
+instead of scoring="f1".
+sample_weight=sample_weight)
+Versions
+Linux-3.4.63-2.44-xen-x86_64-with-SuSE-12.2-x86_64
+Python 3.5.0 (default, May 25 2016, 10:17:29)
+[GCC 4.7.1 20120723 [gcc-4_7-branch revision 189773]]
+NumPy 1.11.0
+SciPy 0.18.0
+Scikit-Learn 0.18.dev0

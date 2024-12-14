@@ -1,0 +1,76 @@
+ziyigogogo commented on 6 Dec 2018 •
+edited
+Hi there,
+I recently studied the keras implementation of Mask-Rcnn from MatterPort. One thing really fun in their code is the way they implements their complex loss functions.I will quickly illustarate their steps to better explain my question.
+Normally data generator in keras requires 2 return values: inputs and targets, however in their codes:
+  ...
+  inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
+        batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
+  targets= []
+  yields inputs, targets
+  ...
+The outputs is an empty list here, because in their network structrue they did not use "y_true", becuase their way implement the loss. If the outputs is not empty there will be a error throw by keras:
+  ValueError: ('Error when checking model target: expected no data, but got:', [array(XXXX)]）
+To pass the ground-truth values in inputs here, they can then get those value by:
+ # Inputs
+ input_image = KL.Input(shape=[None, None, 3], name="input_image")
+ input_image_meta = KL.Input(shape=[config.IMAGE_META_SIZE], name="input_image_meta")
+ if mode == "training":
+     # RPN GT
+     input_rpn_match = KL.Input(shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
+     ...
+ 
+     # Detection GT (class IDs, bounding boxes, and masks)
+     # 1. GT Class IDs (zero padded)
+     input_gt_class_ids = KL.Input(shape=[None], name="input_gt_class_ids", dtype=tf.int32)
+Notice the if-branch here, this is necessary since in "inference" mode, we only have "image" as Input. And we pass the gts in inputs instead of targets is because as far as i know we can only access the input from "fit_generator". In other words, we don't know how to get the "y_true" from the return value "targets" as normal loss function do. This will introduce some complex during coding, for example, we should compile the model in "training" and "inference" mode separately.
+So here are my first 2 questions:
+Is there a way we can access the "targets" values from generator so that we don't have to pass the needed gts in Inputs as a workaround which will absolutely reduce the coding complexity in this situation.
+if not, how keras handle the inputs properly? by order? For example lets define inputs = ["a","b",...], targets = 1 in generator, then in model define part, the first KL.Input() get the value "a" and the KL.Input() get the value "b" and so on?
+Then in their network model building:
+They first build a layer graph like this( do not have to read this carefully just for clarify):
+ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
+
+  target_class_ids = K.reshape(target_class_ids, (-1,))
+  mask_shape = tf.shape(target_masks)
+  target_masks = K.reshape(target_masks, (-1, mask_shape[2], mask_shape[3]))
+  ...
+  y_true = tf.gather(target_masks, positive_ix)
+  y_pred = tf.gather_nd(pred_masks, indices)
+  ...
+  loss = K.switch(tf.size(y_true) > 0,
+      K.binary_crossentropy(target=y_true, output=y_pred),
+      tf.constant(0.0))
+  loss = K.mean(loss)
+  return loss 
+And then add these loss graphs as the last several layers of the model:
+ ...
+ mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
+         [target_mask, target_class_ids, mrcnn_mask]
+ ...
+ outputs = [..., mask_loss,...]
+ ...
+ model = KM.Model(inputs, outputs, name='mask_rcnn')
+In this way, they found a way to pass multiple params(target_masks, target_class_ids, pred_masks in this case) instead of only (y_true, y_pred)
+Compile loss to the model:
+ loss_names = [...,"mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss",...]
+ for name in loss_names:
+     layer = self.keras_model.get_layer(name)
+     if layer.output in self.keras_model.losses:
+         continue
+     loss = (
+             tf.reduce_mean(layer.output, keepdims=True)
+             * self.config.LOSS_WEIGHTS.get(name, 1.))
+     self.keras_model.add_loss(loss)
+
+ # Add L2 Regularization
+ # Skip gamma and beta weights of batch normalization layers.
+ reg_losses = [
+     keras.regularizers.l2(self.config.WEIGHT_DECAY)(w) / tf.cast(tf.size(w), tf.float32)
+     for w in self.keras_model.trainable_weights
+     if 'gamma' not in w.name and 'beta' not in w.name]
+ self.keras_model.add_loss(tf.add_n(reg_losses))
+This is the most intersting part , as we can see here, we can add regularization to these loss at one place without add it as a kwargs such as "kernel_regularizer" at every layer of the network
+And here are my last 2 questions:
+Is this a good/proper way to add regularization? Is there any bads i didnot see here?
+Since we call add_loss() multiple time here(our layer loss and l2 reg loss), how is the final total loss computed? The sum of all losses added by add_loss() function?_

@@ -1,0 +1,127 @@
+Contributor
+reidsanders commented on 15 Jun 2016 •
+edited
+I've tried disabling my .theanorc and .bashrc to make sure I didn't have some unfortunate setting. This can also be reproduced with the examples, eg mnist_mlp.py . I've unsuccessfully tried setting the learning rate very low, setting theano optimizer=none, using cpu, disabling fastmath, and trying different keras and python versions.
+My keras.json:
+{
+    "image_dim_ordering": "th",
+    "floatx": "float32",
+    "backend": "theano",
+    "epsilon": 1e-07
+}
+To reproduce with simplest example, set:
+KERAS_BACKEND=theano
+THEANO_FLAGS=mode=NanGuardMode
+and then run:
+import numpy as np
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation
+
+n_points = 100
+x = np.linspace(0, 2, n_points)
+y = np.array([0] * int(n_points / 2) + list(x[:int(n_points / 2)])) * 2
+
+np.random.seed(0)
+model = Sequential()
+model.add(Dense(output_dim=1, input_dim=1, init="normal"))
+model.add(Activation("relu"))
+model.compile(loss='mean_squared_error', optimizer='rmsprop')
+
+X_train = np.array(x, ndmin=2).T
+Y_train = np.array(y, ndmin=2).T
+model.fit(X_train,
+          Y_train,
+          nb_epoch=20,
+          verbose=1
+          )
+Output:
+python simple_keras.py 
+Using Theano backend.
+Using gpu device 0: GeForce 940M (CNMeM is enabled with initial size: 90.0% of memory, cuDNN 4007)
+Epoch 1/20
+Traceback (most recent call last):
+  File "simple_keras.py", line 25, in <module>
+    verbose=1
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/keras/models.py", line 408, in fit
+    sample_weight=sample_weight)
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/keras/engine/training.py", line 1079, in fit
+    callback_metrics=callback_metrics)
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/keras/engine/training.py", line 797, in _fit_loop
+    outs = f(ins_batch)
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/keras/backend/theano_backend.py", line 525, in __call__
+    return self.function(*inputs)
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/theano/compile/function_module.py", line 862, in __call__
+    self.fn() if output_subset is None else\
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/theano/gof/vm.py", line 411, in __call__
+    self.callback_input(k, self.storage_map[k][0])
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/theano/compile/nanguardmode.py", line 284, in nan_check_input
+    do_check_on(value, None)
+  File "/home/rs/.virtualenvs/ai-gym/lib/python3.5/site-packages/theano/compile/nanguardmode.py", line 269, in do_check_on
+    raise AssertionError(msg)
+AssertionError: Inf detected
+Big value detected
+NanGuardMode found an error in an input of the graph.
+If nanguardmode prints the whole node traceback:
+Node:
+GpuElemwise{Composite{(i0 - ((i1 * i2) / (i3 + sqrt(clip(i4, i5, i6)))))}}[(0, 0)](dense_1_b, GpuDimShuffle{x}.0, GpuCAReduce{add}{1,0}.0, CudaNdarrayConstant{[  9.99999994e-09]}, GpuElemwise{Composite{((i0 * i1) + (i2 * sqr(i3)))}}[(0, 1)].0, CudaNdarrayConstant{[ 0.]}, CudaNdarrayConstant{[ inf]})
+The input variable that cause problem:
+GpuElemwise{Composite{(i0 - ((i1 * i2) / (i3 + sqrt(clip(i4, i5, i6)))))}}[(0, 0)] [id A] ''   
+ |dense_1_b [id B]
+ |GpuDimShuffle{x} [id C] ''   
+ | |<CudaNdarrayType(float32, scalar)> [id D]
+ |GpuCAReduce{add}{1,0} [id E] ''   
+ | |GpuElemwise{Composite{(((i0 * i1 * i2) / i3) + ((i0 * i1 * i2 * sgn(i4)) / i3))}}[(0, 2)] [id F] ''   
+ |   |GpuDimShuffle{x,x} [id G] ''   
+ |   | |GpuFromHost [id H] ''   
+ |   |   |Elemwise{Cast{float32}} [id I] ''   
+ |   |     |Shape_i{0} [id J] ''   
+ |   |       |activation_1_sample_weights [id K]
+ |   |GpuDimShuffle{0,x} [id L] ''   
+ |   | |GpuFromHost [id M] ''   
+ |   |   |activation_1_sample_weights [id K]
+ |   |GpuElemwise{Composite{((i0 * (i1 + Abs(i1))) - i2)}}[(0, 2)] [id N] ''   
+ |   | |CudaNdarrayConstant{[[ 0.5]]} [id O]
+ |   | |GpuElemwise{Add}[(0, 0)] [id P] ''   
+ |   | | |GpuDot22 [id Q] ''   
+ |   | | | |GpuFromHost [id R] ''   
+ |   | | | | |dense_input_1 [id S]
+ |   | | | |dense_1_W [id T]
+ |   | | |GpuDimShuffle{x,0} [id U] ''   
+ |   | |   |dense_1_b [id B]
+ |   | |GpuFromHost [id V] ''   
+ |   |   |activation_1_target [id W]
+ |   |GpuElemwise{Mul}[(0, 0)] [id X] ''   
+ |   | |GpuDimShuffle{x,x} [id Y] ''   
+ |   | | |GpuFromHost [id Z] ''   
+ |   | |   |Elemwise{Cast{float32}} [id BA] ''   
+ |   | |     |Shape_i{0} [id BB] ''   
+ |   | |       |dense_input_1 [id S]
+ |   | |GpuDimShuffle{x,x} [id BC] ''   
+ |   | | |GpuCAReduce{add}{1} [id BD] ''   
+ |   | |   |GpuElemwise{Composite{Cast{float32}(NEQ(i0, i1))},no_inplace} [id BE] ''   
+ |   | |     |GpuFromHost [id M] ''   
+ |   | |     |CudaNdarrayConstant{[ 0.]} [id BF]
+ |   | |GpuDimShuffle{x,x} [id BG] ''   
+ |   |   |GpuFromHost [id BH] ''   
+ |   |     |Elemwise{Cast{float32}} [id BI] ''   
+ |   |       |Shape_i{1} [id BJ] ''   
+ |   |         |dense_1_W [id T]
+ |   |GpuElemwise{Add}[(0, 0)] [id P] ''   
+ |CudaNdarrayConstant{[  9.99999994e-09]} [id BK]
+ |GpuElemwise{Composite{((i0 * i1) + (i2 * sqr(i3)))}}[(0, 1)] [id BL] ''   
+ | |GpuDimShuffle{x} [id BM] ''   
+ | | |<CudaNdarrayType(float32, scalar)> [id BN]
+ | |<CudaNdarrayType(float32, vector)> [id BO]
+ | |GpuDimShuffle{x} [id BP] ''   
+ | | |GpuElemwise{sub,no_inplace} [id BQ] ''   
+ | |   |CudaNdarrayConstant{1.0} [id BR]
+ | |   |<CudaNdarrayType(float32, scalar)> [id BN]
+ | |GpuCAReduce{add}{1,0} [id E] ''   
+ |CudaNdarrayConstant{[ 0.]} [id BF]
+ |CudaNdarrayConstant{[ inf]} [id BS]
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

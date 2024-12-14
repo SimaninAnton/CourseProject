@@ -1,0 +1,32 @@
+jssebastian commented on 18 Nov 2011
+Not sure if this is already fixed in the latest release. Seems related to this discussion:
+http://librelist.com/browser//flask/2011/6/29/psa-routing-redirect-behavior/
+..but this was apparently fixed in 0.7.1.
+I am getting an endless redirect loop when doing the following:
+@app.route('/loop', defaults={"a":"Hello", "b":"World"})
+@app.route('/loop.<b>', defaults={"a":"Hello"})
+@app.route('/loop/<a>', defaults={"b":"World"})
+@app.route('/loop/<a>.<b>')
+def endless_loop(a, b):
+    return "%s %s" % (a, b)
+(In case you are interested, in my application b is a file extension that specifies my API's output format)
+This is what happens when you visit /loop:
+127.0.0.1 - - [16/Nov/2011 17:16:35] "GET /loop HTTP/1.1" 301 -
+127.0.0.1 - - [16/Nov/2011 17:16:35] "GET /loop.World HTTP/1.1" 301 -
+127.0.0.1 - - [16/Nov/2011 17:16:35] "GET /loop HTTP/1.1" 301 -
+127.0.0.1 - - [16/Nov/2011 17:16:35] "GET /loop.World HTTP/1.1" 301 -
+A good workaround for my use case was to simply disable the redirection for defaults:
+app.url_map.redirect_defaults = False
+This is ok in my case since I am developing an API that does not need or want to be indexed by search engines, but for normal websites it would be suboptimal.
+The smallest test case I could produce that triggers the bug is the following:
+@app.route('/loop2', defaults={"a":"Hello", "b":"World"}) 
+@app.route('/loop2/<a>', defaults={"b":"World"})
+def endless_loop2(a, b):
+    return "%s %s" % (a, b)
+127.0.0.1 - - [16/Nov/2011 17:15:31] "GET /loop2 HTTP/1.1" 301 -
+127.0.0.1 - - [16/Nov/2011 17:15:31] "GET /loop2/Hello HTTP/1.1" 301 -
+127.0.0.1 - - [16/Nov/2011 17:15:31] "GET /loop2 HTTP/1.1" 301 -
+127.0.0.1 - - [16/Nov/2011 17:15:31] "GET /loop2/Hello HTTP/1.1" 301 -
+I am running the packaged version of flask from ubuntu oneiric:
+python-flask 0.7.2-1
+python-werkzeug 0.6.2-1

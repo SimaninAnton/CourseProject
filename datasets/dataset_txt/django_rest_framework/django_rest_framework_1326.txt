@@ -1,0 +1,39 @@
+chpmrc commented on 20 Jan 2016
+Hello, the requests.Request class encapsulates a Django's HttpRequest under the attribute _request. This can yield to some frustration until the user digs into the source code to find out what's going on.
+This is what happened to me: I'm writing a custom serializer with pagination. To do so I extend the class CursorPagination and override paginate_queryset for my needs. In one of my main serializer's SerializerMethodFields I pass the request object from the context by calling paginate_queryset(queryset, request=my_request). Everything works perfectly but, of course, the next and previous links use the request's path to build the absolute URI.
+I wanted to override this behavior to generate a custom URI (e.g. if I paginate comments within a post, what I want is /posts/123/comments/?cursor=..., not /posts/?cursor=...) to have the "Show more..." feature. So I started replacing request.path on the fly, then request.path_info, then even request.META['PATH_INFO'] out of desperation. None of this worked.
+In the debugger I made sure that all the aforementioned properties were correctly set and they were. But, for some reason, the build_absolute_uri and get_full_path methods were ignoring these changes (e.g. /posts/ as in the example above). I check the type of the request object and it says rest_framework.requests.Request.
+So I start digging into DRF's source and I find this:
+# rest_framework/requests.py@Request
+
+def __getattribute__(self, attr):
+        """
+        If an attribute does not exist on this instance, then we also attempt
+        to proxy it to the underlying HttpRequest object.
+        """
+        try:
+            return super(Request, self).__getattribute__(attr)
+        except AttributeError:
+            info = sys.exc_info()
+            try:
+                return getattr(self._request, attr)
+            except AttributeError:
+                six.reraise(info[0], info[1], info[2].tb_next)
+I'm sure there is a rationale for not extending HttpRequest but this caused a few "huh?!" moments. In fact, because of [1], doing request.path, obviously, creates a new attribute in the object and there is absolutely no clue about it. Just to make it clear with a few lines of code:
+ipdb> mod_request.path
+u'/api/posts/'
+ipdb> mod_request.path == mod_request._request.path
+True
+ipdb> mod_request.path is mod_request._request.path
+True
+ipdb> mod_request.path = "/api/posts/123/comments/"
+ipdb> mod_request.path is mod_request._request.path
+False
+ipdb> mod_request._request.path
+u'/api/posts/'
+ipdb>
+Apologies if this has been discussed already or if it's a duplicate (couldn't find a similar issue though). Thank you for your attention.
+Refs:
+[1] https://docs.python.org/2.7/tutorial/classes.html#odds-and-ends
+Related:
+[a] #2771

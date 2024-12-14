@@ -1,0 +1,45 @@
+mmx64bits commented on Nov 15, 2017
+After setting a download middleware that uses Selenium webdriver to get website content:
+class SeleniumMiddleware(object):
+class SeleniumMiddleware(object):
+    def process_request(self, request, spider):=
+        driver = webdriver.Chrome()
+        driver.get(request.url)
+        WebDriverWait(driver, 20).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'a')))
+
+        body = driver.page_source
+        url = driver.current_url
+        driver.quit()
+        return HtmlResponse(url, body=body, encoding='utf-8', request=request)
+with the settings below on the spider
+    custom_settings = dict(
+        BOT_NAME="x1"
+        , ROBOTSTXT_OBEY = False
+        , AUTOTHROTTLE_TARGET_CONCURRENCY=0.1
+        , HTTPCACHE_ENABLED=True
+        , HTTPCACHE_EXPIRATION_SECS=0
+        , HTTPCACHE_DIR='httpcache'
+        , HTTPCACHE_IGNORE_HTTP_CODES=[]
+        , HTTPCACHE_STORAGE='scrapy.extensions.httpcache.FilesystemCacheStorage'
+        , DOWNLOADER_MIDDLEWARES = {
+            'mySpider.middlewares.SeleniumMiddleware': 1000,
+        },
+    )
+The spider works well and scrapy caches the web pages and yields the items:
+    # ...
+    def parse(self, response):
+        options = response.xpath("//select[@id='specialism']/option/@value").extract()
+        for option in options:
+            if option != "":
+                option = option.replace(" ", "+")
+
+                url = "{}?searchTerm=&specialism={}".format(response.url, option)
+                yield Request(url, self.parse_page)
+    # ...
+when relaunching the crawl from the cache an error is logged:
+raise NotSupported("Response content isn't text") at line: response.xpath(...)
+when debugging the response is of type: <class 'scrapy.http.response.Response'>
+and the response.body displays correctly the html page
+Going back to the cache, scrapy seems to store scraped web pages as raw HTML without compression. Whereas, it caches the same page as a binary gzipped file if we were using scrapy without the selenium middleware.<class 'scrapy.http.response.Response'>
+Note: i changed the middleware order from 534 to 1000 in order to be sure the HTTP cache middleware processes the webdriver response.
+Can't find any clue on solving this error

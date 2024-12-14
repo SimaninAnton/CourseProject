@@ -1,0 +1,25 @@
+rgarcia commented on 7 Sep 2011
+I'm playing around with tornado.gen, and it seems to croak on callbacks that are triggered with keyword arguments. Specifically, asyncmongo sends an "error" keyword argument to the callback you specify. The tornado.gen.Task class's callback() method isn't set up to handle this. Here is the relevant code:
+class BaseHandler(tornado.web.RequestHandler):
+    @property
+    def db(self):
+        if not hasattr(self, '_db'):
+            self._db = asyncmongo.Client(pool_id='request_handlers',
+                                             host=options.mongo_host,
+                                             port=options.mongo_port,
+                                             dbname=options.mongo_db)
+        return self._db
+
+class UserHandler(BaseHandler):
+    @tornado.web.asynchronous
+    @tornado.gen.engine
+    def get(self,user_id):
+        response = yield tornado.gen.Task(self.db.users.find,{'_id':user_id},limit=1)
+        if len(response) != 1:
+            self.set_status(400)
+            self.write({'error': 'no user with this id'})
+            return
+        self.write(dict((k,response[0][k]) for \
+                            k in [ 'first_name', 'last_name', 'email' ]))
+the error: "TypeError: callback() got an unexpected keyword argument 'error'"
+I'm hacking around trying to figure out a fix to this, but I still haven't wrapped my head around the gen.py code. I tried just adding a **kwargs argument to the callback() function, but that didn't work (the Runner loop timed out). this is similar to the hack I used to make this code work with swirl.

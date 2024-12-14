@@ -1,0 +1,142 @@
+rathann commented on 10 Jan 2019
+Steps to reproduce the problem:
+On Fedora develoment branch (F30/rawhide), I installed all dependencies and ran:
+$ /usr/bin/python3 setup.py build '--executable=/usr/bin/python3 -s'
+...
+$ pytest-3 --lf -v 
+================================================= test session starts ==================================================
+platform linux -- Python 3.7.2, pytest-3.9.3, py-1.7.0, pluggy-0.8.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /builddir/build/BUILD/mitmproxy-82bc8c7ca2b946e7f022b92ab16ced2924feb284, inifile: setup.cfg
+plugins: xdist-1.25.0, forked-0.2, asyncio-0.9.0
+collected 1427 items / 1422 deselected                                                                                 
+run-last-failure: rerun previous 5 failures
+
+test/mitmproxy/net/test_tcp.py::TestServerCipherList::test_echo FAILED
+test/mitmproxy/net/test_tcp.py::TestServerCurrentCipher::test_echo FAILED
+test/mitmproxy/net/test_tcp.py::TestClientCipherListError::test_echo FAILED
+test/mitmproxy/net/test_tcp.py::TestDHParams::test_dhparams FAILED
+test/mitmproxy/net/test_tls.py::TestMasterSecretLogger::test_log FAILED
+
+======================================================= FAILURES =======================================================
+____________________________________________ TestServerCipherList.test_echo ____________________________________________
+
+self = <test.mitmproxy.net.test_tcp.TestServerCipherList object at 0x7f51c6c43c18>
+
+    def test_echo(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            c.convert_to_tls(sni="foo.com")
+            expected = b"['AES256-GCM-SHA384']"
+>           assert c.rfile.read(len(expected) + 2) == expected
+E           assert b"['TLS_AES_256_GCM_SHA38" == b"['AES256-GCM-SHA384']"
+E             At index 2 diff: 84 != 65
+E             Left contains more items, first extra item: 51
+E             Full diff:
+E             - b"['TLS_AES_256_GCM_SHA38"
+E             ?     ----   -   ^   ^
+E             + b"['AES256-GCM-SHA384']"
+E             ?           ^   ^     +++
+
+test/mitmproxy/net/test_tcp.py:429: AssertionError
+__________________________________________ TestServerCurrentCipher.test_echo ___________________________________________
+
+self = <test.mitmproxy.net.test_tcp.TestServerCurrentCipher object at 0x7f51c6cb74a8>
+
+    def test_echo(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            c.convert_to_tls(sni="foo.com")
+>           assert b'AES256-GCM-SHA384' in c.rfile.readline()
+E           assert b'AES256-GCM-SHA384' in b"('TLS_AES_256_GCM_SHA384', 256, 'TLSv1.3')"
+E            +  where b"('TLS_AES_256_GCM_SHA384', 256, 'TLSv1.3')" = <bound method Reader.readline of <mitmproxy.net.tcp.Reader object at 0x7f51c6cb7550>>()
+E            +    where <bound method Reader.readline of <mitmproxy.net.tcp.Reader object at 0x7f51c6cb7550>> = <mitmproxy.net.tcp.Reader object at 0x7f51c6cb7550>.readline
+E            +      where <mitmproxy.net.tcp.Reader object at 0x7f51c6cb7550> = <mitmproxy.net.tcp.TCPClient object at 0x7f51c6cb75f8>.rfile
+
+test/mitmproxy/net/test_tcp.py:449: AssertionError
+_________________________________________ TestClientCipherListError.test_echo __________________________________________
+
+self = <test.mitmproxy.net.test_tcp.TestClientCipherListError object at 0x7f51c6ca89b0>
+
+    def test_echo(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            with pytest.raises(Exception, match="cipher specification"):
+>               c.convert_to_tls(sni="foo.com", cipher_list="bogus")
+E               Failed: DID NOT RAISE <class 'Exception'>
+
+test/mitmproxy/net/test_tcp.py:475: Failed
+______________________________________________ TestDHParams.test_dhparams ______________________________________________
+
+self = <test.mitmproxy.net.test_tcp.TestDHParams object at 0x7f51c63ca908>
+
+    def test_dhparams(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            c.convert_to_tls()
+            ret = c.get_current_cipher()
+>           assert ret[0] == "DHE-RSA-AES256-SHA"
+E           AssertionError: assert 'TLS_AES_256_GCM_SHA384' == 'DHE-RSA-AES256-SHA'
+E             - TLS_AES_256_GCM_SHA384
+E             + DHE-RSA-AES256-SHA
+
+test/mitmproxy/net/test_tcp.py:613: AssertionError
+___________________________________________ TestMasterSecretLogger.test_log ____________________________________________
+
+self = <test.mitmproxy.net.test_tls.TestMasterSecretLogger object at 0x7f51c6ca82b0>
+tmpdir = local('/tmp/pytest-of-mockbuild/pytest-6/test_log0')
+
+    def test_log(self, tmpdir):
+        testval = b"echo!\n"
+        _logfun = tls.log_master_secret
+    
+        logfile = str(tmpdir.join("foo", "bar", "logfile"))
+        tls.log_master_secret = tls.MasterSecretLogger(logfile)
+    
+        c = TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            c.convert_to_tls()
+            c.wfile.write(testval)
+            c.wfile.flush()
+            assert c.rfile.readline() == testval
+            c.finish()
+    
+            tls.log_master_secret.close()
+            with open(logfile, "rb") as f:
+>               assert f.read().count(b"CLIENT_RANDOM") == 2
+E               AssertionError: assert 6 == 2
+E                +  where 6 = <built-in method count of bytes object at 0x55c2e7455140>(b'CLIENT_RANDOM')
+E                +    where <built-in method count of bytes object at 0x55c2e7455140> = b'\r\nCLIENT_RANDOM 4d21b2b5aba1b94055f5e27a6bbc61ac633ecc0d49674a30001202fb0f7fe4de 000000000000000000000000000000000...0001202fb0f7fe4de 170efebbe61c05e385c4cb72a01e5a6753c279664b9001905e707d73385733b82b2900c23b3cbba4e6d6d8d1fb7e3f42\r\n'.count
+E                +      where b'\r\nCLIENT_RANDOM 4d21b2b5aba1b94055f5e27a6bbc61ac633ecc0d49674a30001202fb0f7fe4de 000000000000000000000000000000000...0001202fb0f7fe4de 170efebbe61c05e385c4cb72a01e5a6753c279664b9001905e707d73385733b82b2900c23b3cbba4e6d6d8d1fb7e3f42\r\n' = <built-in method read of _io.BufferedReader object at 0x7f51c99a1728>()
+E                +        where <built-in method read of _io.BufferedReader object at 0x7f51c99a1728> = <_io.BufferedReader name='/tmp/pytest-of-mockbuild/pytest-6/test_log0/foo/bar/logfile'>.read
+
+test/mitmproxy/net/test_tls.py:46: AssertionError
+Any other comments? What have you tried so far?
+I don't know if it's relevant, but Fedora 30 comes with click-7.0 and sortedcontainers-2.1.0, so I had to patch these in setup.py:
+diff -up a/setup.py.v b/setup.py
+--- a/setup.py  2019-01-09 22:01:18.106375874 +0100
++++ b/setup.py    2019-01-09 22:01:32.514534469 +0100
+@@ -64,7 +64,7 @@ setup(
+         "blinker>=1.4, <1.5",
+         "brotlipy>=0.7.0,<0.8",
+         "certifi>=2015.11.20.1",  # no semver here - this should always be on the last release!
+-        "click>=6.2, <7",
++        "click>=6.2,<7.1",
+         "cryptography>=2.1.4,<2.5",
+         "h2>=3.0.1,<4",
+         "hyperframe>=5.1.0,<6",
+@@ -77,7 +77,7 @@ setup(
+         "pyparsing>=2.1.3,<2.4",
+         "pyperclip>=1.6.0,<1.8",
+         "ruamel.yaml>=0.15,<0.16",
+-        "sortedcontainers>=1.5.4,<2.1",
++        "sortedcontainers>=1.5.4,<2.2",
+         "tornado>=4.3,<5.2",
+         "urwid>=2.0.1,<2.1",
+         "wsproto>=0.12.0,<0.13.0",
+System information
+Build from git master, commit 82bc8c7 .
+Mitmproxy: 5.0.0.dev
+Python:    3.7.2
+OpenSSL:   OpenSSL 1.1.1 FIPS  11 Sep 2018
+Platform:  Linux-4.19.13-300.fc29.x86_64-x86_64-with-fedora-30-Rawhide

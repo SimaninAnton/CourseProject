@@ -1,0 +1,48 @@
+andrewbaxter commented on 17 Sep 2014
+It looks like django's smart_text converts None to u'None'. If null=True is not specified, the field gets ''. I think ideally the value should be deserialized to None, but '' would be an improvement.
+Django-1.7
+djangorestframework-2.4.2
+from django.db import models
+from rest_framework import routers
+from rest_framework import serializers
+from rest_framework import viewsets
+from rest_framework.test import APITestCase
+from rest_framework.reverse import reverse
+
+class MyModel(models.Model):
+    opt_desc = models.TextField(null=True, blank=True)
+
+class MySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MyModel
+        fields = ('id', 'opt_desc')
+        read_only_fields = ('id',)
+
+class MyViewSet(viewsets.ModelViewSet):
+    queryset = MyModel.objects.all()
+    serializer_class = MySerializer
+
+router = routers.DefaultRouter()
+router.register(r'mymodel', MyViewSet)
+
+class TestMyModel(APITestCase):
+    def test_deserialize(self):
+        self.client.post(reverse('mymodel-list'), data={'opt_desc': None}, format='json')
+        self.assertEqual(MyModel.objects.all()[0].opt_desc, None)
+Result:
+./manage.py test mymodel.models
+Creating test database for alias 'default'...
+F
+======================================================================
+FAIL: test_deserialize (mymodel.models.TestMyModel)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/.../mymodel/mymodel/models.py", line 27, in test_deserialize
+    self.assertEqual(MyModel.objects.all()[0].opt_desc, None)
+AssertionError: u'None' != None
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)
+Destroying test database for alias 'default'...

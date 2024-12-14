@@ -1,0 +1,28 @@
+psv-git commented on 16 May 2019 •
+edited
+Im using PageNumberPagination in my project now.
+1) Pagination class use "url" instead of "path".
+Django docs say "url" will be deprecated soon.
+"url" pass GET arguments to "request.query_params", but "path" pass it to "**kwargs"
+class PageNumberPagination(BasePagination):
+    def paginate_queryset(self, queryset, request, view=None):
+        ....  
+        page_number = request.query_params.get(self.page_query_param, 1)  
+        ....  
+This line ignoring request params in "**kwargs", so urls like
+path("get/objects/from-page/<int:page>", ObjectViewSet.as_view({"get": "list"}))
+will not be paginated.
+I found solution for my case:
+class ObjectViewSet(GenericViewSet):
+    def list(self, request, *args, **kwargs):
+        ....  
+        page_number = kwargs.get("page", None)  
+        self.request.query_params._mutable = True  
+        self.request.query_params.update({"page": page_number})  
+        self.request.query_params._mutable = False  
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        ....
+But i think its really not good. Is this a bug? Can you change this behavior?

@@ -1,0 +1,37 @@
+puppystack commented on 8 Apr 2018
+I tend to have use cases where I wish to "dispatch" to methods based on things other than the request method itself (such as headers or potentially arguments). I find that in an APIView it's necessary to create a custom base with a copied/pasted version of the library's dispatch method as I want it to do the initialisation, finalisation and exception handling flow etc.. and amend it, eg:
+class MyAPIView(APIView):
+
+    def get_handler(self, request, *args, **kwargs):
+        """ 
+        return a reference to the actual method to be called
+        by default do what `dispatch` normally did
+        """
+        if request.method.lower() in self.http_method_names:
+            handler = getattr(self, request.method.lower(),
+                                  self.http_method_not_allowed)
+        else:
+            handler = self.http_method_not_allowed
+
+        return handler
+
+    def dispatch(self, request, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        request = self.initialize_request(request, *args, **kwargs)
+        self.request = request
+        self.headers = self.default_response_headers  # deprecate?
+        try:
+            self.initial(request, *args, **kwargs)
+            handler = self.get_handler(request, *args, **kwargs) # get handler here...
+            response = handler(request, *args, **kwargs)
+        except Exception as exc:
+            response = self.handle_exception(exc)
+
+        self.response = self.finalize_response(request, response, *args, **kwargs)
+        return self.response
+That way I can leave all the existing machinery in place and do something simple like:
+class ChildView(MyAPIView):
+    def get_handler(self, request, *args, **kwargs):
+        return getattr(self, kwargs['action'], self.http_method_not_allowed)
+Of course, it may not be as useful a change as I think, or there's a much better and established way of doing it that I've not noticed (which I'd be more than happy to be educated about), but thought I'd throw the idea out there.

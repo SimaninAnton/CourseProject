@@ -1,0 +1,54 @@
+beef9999 commented on 2 Apr 2015
+Ubuntu 14.04 and 12.04 (all tested), 64bit
+pip install tornado (ver 4.1)
+curl -X POST -v -k https://remote_ip:8080
+Error as below:
+ERROR:tornado.application:Exception in callback (<socket._socketobject object at 0x7fb670a4ad00>, <function null_wrapper at 0x7fb670a05aa0>)
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/tornado/ioloop.py", line 840, in start
+    handler_func(fd_obj, events)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/stack_context.py", line 275, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/netutil.py", line 223, in accept_handler
+    callback(connection, address)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/tcpserver.py", line 225, in _handle_connection
+    do_handshake_on_connect=False)
+  File "/usr/local/lib/python2.7/dist-packages/tornado/netutil.py", line 470, in ssl_wrap_socket
+    return ssl.wrap_socket(socket, **dict(context, **kwargs))
+  File "/usr/lib/python2.7/ssl.py", line 489, in wrap_socket
+    ciphers=ciphers)
+  File "/usr/lib/python2.7/ssl.py", line 243, in __init__
+    ciphers)
+SSLError: _ssl.c:295: Both the key & certificate files must be specified
+My server code looks like this:
+import tornado
+import tornado.web
+import tornado.httpserver
+import tornado.ioloop
+
+class Docker(tornado.web.RequestHandler):
+    def post(self, *args, **kwargs):
+        self.write('1\n')
+
+application = tornado.web.Application(
+    handlers=[
+        (r'/', Docker),
+    ],
+    debug=True,
+)
+
+if __name__ == '__main__':
+    ssl_options={'certfile': 'certificate.crt',
+                 'keyfile': 'privateKey.key'},
+    srv = tornado.httpserver.HTTPServer(application, xheaders=True, ssl_options=ssl_options)
+    srv.bind(8080)
+    srv.start()
+    tornado.ioloop.IOLoop.instance().start()
+Note that I use openssl to generate the certificate and key file:
+openssl genrsa -out privkey.pem 2048
+openssl req -new -x509 -key privkey.pem -out cacert.pem -days 1095
+Especially, when I added one key into the ssl_options dict, cert_reqs=ssl.CERT_NONE, enven more strange error appeared:
+File /usr/local/lib/python2.7/dist-packages/tornado/netutil.py:
+return ssl.wrap_socket(socket, **dict(context, **kwargs))
+dictionary update sequence element #0 has length 1 2 is required
+I'm really desperate to make my tornado app work properly under HTTPS, could you help?

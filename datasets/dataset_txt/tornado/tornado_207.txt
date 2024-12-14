@@ -1,0 +1,99 @@
+sam-falvo commented on 31 Mar 2018
+This is not a duplicate issue to #517, because I'm forcing the server to close the connection first. Apparently twice, but this is actually a separate issue.
+So far as I'm able to tell by spelunking through the code in Tornado, it unconditionally is supposed to call on_finish. However, I'm showing no evidence this call is being made. None of my logs contains any on_finish or on_connection_close output.
+I'm running the following code in my web-app for testing purposes:
+class HealthHandler(CorsMixin, V3Handler):                                                                                                                                                    
+                                                                                                                                                                                              
+    """                                                                                                                                                                                       
+    This class handles GETs to /.  This serves two purposes:                                                                                                                                  
+    for programmers, it's a nice cheat-sheet to create your own handler                                                                                                                       
+    classes with; and, for operations, it's a convenient health-check.                                                                                                                        
+    If the server responds, we know that the V3 event loop is up.                                                                                                                             
+    """                                                                                                                                                                                       
+                                                                                                                                                                                              
+    CORS_ORIGIN = '*'                                                                                                                                                                         
+    CORS_METHODS = 'GET'                                                                                                                                                                      
+                                                                                                                                                                                              
+    def get(self):                                                                                                                                                                            
+        LOG.info("Health checked")
+        self._ok("Health check OK")                                                                                                                                                           
+The V3Handler class is defined like so:
+class V3Handler(RequestHandler):                                                                                                                                                              
+    """                                                                                                                                                                                       
+    This class provides a common handler base class for all V3 handlers.                                                                                                                      
+    It enhances RequestHandler with the following features:                                                                                                                                   
+                                                                                                                                                                                              
+    - Standard responses for API endpoints, including both error and success                                                                                                                  
+      methods.                                                                                                                                                                                
+                                                                                                                                                                                              
+    - Standardized request logging.                                                                                                                                                           
+    """                                                                                                                                                                                       
+                                                                                                                                                                                              
+    # V3Handler-specific logic                                                                                                                                                                
+                                                                                                                                                                                              
+    def _log(self, meth, status, msg):                                                                                                                                                        
+        self.set_status(status)                                                                                                                                                               
+        self.write(msg)                                                                                                                                                                       
+        meth("{}".format(msg))                                                                                                                                                                
+        self.finish()                                                                                                                                                                         
+                                                                                                                                                                                              
+    def _error(self, msg, status=404):                                                                                                                                                        
+        self._log(LOG.error, status, err(msg))                                                                                                                                                
+                                                                                                                                                                                              
+    def _exception(self, msg, status=500):                                                                                                                                                    
+        self._log(LOG.exception, status, err(msg))                                                                                                                                            
+                                                                                                                                                                                              
+    def _ok(self, msg=None):                                                                                                                                                                  
+        self.write(ok(msg))                                                                                                                                                                   
+        self.finish()                                                                                                                                                                         
+                                                                                                                                                                                              
+    def missing_field(self, term):                                                                                                                                                            
+        self._exception(missing_field(term))                                                                                                                                                  
+                                                                                                                                                                                              
+    def not_live_system(self):                                                                                                                                                                
+        self._error(                                                                                                                                                                          
+            "The given serial or token combination "                                                                                                                                          
+            "is not associated with a live system."                                                                                                                                           
+        )                                                                                                                                                                                     
+                                                                                                                                                                                              
+    def no_data(self, qualifier=None):                                                                                                                                                        
+        self._error(                                                                                                                                                                          
+            "No data found{}".format(" for {}".format(qualifier) if qualifier else "")                                                                                                        
+        )                                                                                                                                                                                     
+                                                                                                                                                                                              
+    def method_not_allowed(self):                                                                                                                                                             
+        self._error("Method not allowed", status=405)                                                                                                                                         
+                                                                                                                                                                                              
+    # overriding RequestHandler methods                                                                                                                                                       
+                                                                                                                                                                                              
+    def prepare(self):                                                                                                                                                                        
+        method = self.request.method                                                                                                                                                          
+        url = self.request.path                                                                                                                                                               
+        source = self.request.remote_ip                                                                                                                                                       
+        LOG.info("{} - {} {}".format(source, method, url))                                                                                                                                    
+                                                                                                                                                                                              
+    def finish(self, *args, **kw_args):                                                                                                                                                       
+        print("FINISH!!")                                                                                                                                                                     
+        self.on_finish()                                                                                                                                                                      
+        return super(V3Handler, self).finish(*args, **kw_args)                                                                                                                                
+                                                                                                                                                                                              
+    def on_finish(self):                                                                                                                                                                      
+        print("FINI")                                                                                                                                                                         
+        LOG.info("FINI.")                                                                                                                                                                     
+When I issue a curl command to GET the / endpoint, I receive back a response and the HTTP connection closes, as one would expect. I also find the following on the log output:
+2018-03-30 12:29:22,225 - __main__ - INFO - Health checked
+FINISH!!
+FINI
+2018-03-30 12:29:22,225 - src.server.generic_handler - INFO - FINI.
+FINISH!!
+FINI
+2018-03-30 12:29:22,231 - src.server.generic_handler - INFO - FINI.
+Looks like everything is working correctly; however, if I remove the invokation of self.on_finish() in my override of finish, the resulting logs are produced instead, clearly showing that on_finish is not being called by the finish method, and apparently contradicting the source listing:
+2018-03-30 12:28:54,339 - __main__ - INFO - Health checked
+FINISH!!
+FINISH!!
+In my project's requirements.txt file, I have the following listed:
+tornado==4.5.3
+tornado_cors==0.6.0
+What steps must I take to reliably get on_finish called?
+Thanks for any help you can provide. If you need more information from me, I'd be happy to help provide it if I can.

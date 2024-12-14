@@ -1,0 +1,50 @@
+quxiaowei commented on 25 Sep 2016
+I'm pretty new to tornado, I tried to write a simple socket server with tornado.
+@gen.coroutine worked well for me, then i tried native coroutine.
+it report error:
+Traceback (most recent call last):
+  File "socket_server-tornado.py", line 43, in <module>
+    ioloop.add_future(run(), empty)
+  File "/usr/local/lib/python3.5/site-packages/tornado/ioloop.py", line 593, in add_future
+    assert is_future(future)
+AssertionError
+sys:1: RuntimeWarning: coroutine 'run' was never awaited
+doesn't add_future accept native coroutine? if not, how should i add coroutine into the loop.
+from tornado import gen
+from tornado import concurrent
+from tornado.ioloop import IOLoop
+from concurrent.futures import ThreadPoolExecutor
+import socket
+
+_addr_ = ('', 50007)
+
+executor = ThreadPoolExecutor(10)
+
+def empty():pass
+
+async def run():
+    while True:
+        print("waiting for connecting")
+        conn, addr = await concurrent.run_on_executor(s.accept, executor=executor)
+        print('connected', addr)
+        IOLoop.current().add_future(echo(conn), empty)
+
+async def echo(conn):
+    with conn:
+        while True:
+            print("waiting for input:")
+            data = await concurrent.run_on_executor(conn.recv, 1024, executor=executor)
+            print("recieved:", data)
+            data = b'echo:'+data
+            await gen.Task(executor.submit, conn.send, data)
+
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(_addr_)
+    s.listen(1)
+
+    ioloop = IOLoop.current()
+    ioloop.add_future(run(), empty)
+    ioloop.start()

@@ -1,0 +1,23 @@
+Member
+kmike commented on Apr 20, 2016 •
+edited
+Sometime Request needs information about the response to be sent correctly. There are at least 2 use cases:
+URL encoding depends on response encoding (see #1923);
+relative URLs should be resolved based on response.url or its base url (see #548).
+I think the current API is not good enough. The most obvious code is not correct:
+for url in response.xpath("//a/@href").extract():
+    yield scrapy.Request(url, self.parse)
+To do that correctly user has to write the following:
+for url in response.xpath("//a/@href").extract():
+    yield scrapy.Request(response.urljoin(url), self.parse, encoding=response.encoding)
+Or this:
+for link in LinkExtractor().extract_links(response):
+    yield scrapy.Request(link.url, self.parse, encoding=response.encoding)
+LinkeExtractor solution has gotchas, e.g. canonicalize_url is called by default and fragments are removed. It means that e.g. Ajax crawlable URLs are not handled (no escaped_fragment even if a website supports it); it also makes it harder to use Scrapy with scrapy-splash which can handle fragments.
+This all is too easy to get wrong; I think just documenting these gotchas is not good enough for a framework - it should make the easiest way to write something the correct way. IMHO in the API shouldn't require user to instantiate weird objects or pass response encoding:
+for url in response.xpath("//a/@href").extract():
+    something.send_request(url, self.parse)
+This can be implemented if we provide a method on Response to send new requests.
+A related use case is async def functions or methods (#1144 (comment)): it is not possible to yield Requests in async def functions, so adding a request should be either a method of self or a method of response if we want to support async def callbacks.
+FormRequest.from_response(response, ...) can also be written as something like response.submit(...).
+👍 3

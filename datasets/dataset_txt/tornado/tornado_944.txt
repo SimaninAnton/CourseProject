@@ -1,0 +1,57 @@
+awicenec commented on 11 Jun 2013
+This is reporting a slight HTTP/1.0 incompatibility.
+Excerpt from the http://www.w3.org/Protocols/HTTP/1.0/draft-ietf-http-spec.html#Request:
+A request message from a client to a server includes, within the first line of that message, the method to be applied to
+ the resource, the identifier of the resource, and the protocol version in use. For backwards compatibility with the
+ more limited HTTP/0.9 protocol, there are two valid formats for an HTTP request:
+
+       Request        = Simple-Request | Full-Request
+
+       Simple-Request = "GET" SP Request-URI CRLF
+
+       Full-Request   = Request-Line              ; Section 5.1
+                        *( General-Header         ; Section 4.3
+                         | Request-Header         ; Section 5.2
+                         | Entity-Header )        ; Section 7.1
+                        CRLF
+                        [ Entity-Body ]           ; Section 7.2
+
+If an HTTP/1.0 server receives a Simple-Request, it must respond with an HTTP/0.9 Simple-Response. An HTTP/1.0
+ client capable of receiving a Full-Response should never generate a Simple-Request.
+The Simple-Request is currently not supported by tornado and even worse it keeps completely silent about the cause (no Warning nor Error raised). Most other web-servers I've tried do support the Simple-Request. My use case is being able to just using plain telnet to get a very fast response from a server, typing as little as possible like in the example below. As stated in the standard the server responds with a Simple-Response (HTTP/0.9, no header):
+telnet 127.0.0.1 5432
+Trying 127.0.0.1...
+Connected to localhost.
+Escape character is '^]'.
+GET /
+
+Hello World
+Connection closed by foreign host.
+In order to achieve the above I've modified the tornado httpserver.py like:
+63,64c63,67
+<            request.write("HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s" % (
+<                          len(message), message))
+
+---
+>      if request.version != "HTTP/0.9":
+>                request.write("HTTP/1.1 200 OK\r\n")
+>          request.write("Content-Length: %d\r\n\r\n" % (
+>                          len(message))
+>      request.write(message, request.version)
+292c295,302
+<                 method, uri, version = start_line.split(" ")
+
+---
+>       sline = start_line.split(" ")
+>       if len(sline) == 3:
+>                     method, uri, version = sline
+>       elif len(sline) == 2:
+>           method, uri = sline
+>           version = "HTTP/0.9" # Fallback
+>       else:
+>           raise ValueError
+293a304
+>       print("ValueError in HTTP Header!")
+294a306,307
+>             except:
+>                 print("Unexpected error:", sys.exc_info()[0])

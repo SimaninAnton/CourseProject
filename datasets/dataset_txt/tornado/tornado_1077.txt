@@ -1,0 +1,32 @@
+Contributor
+ghost commented on 4 May 2012
+The current implementation of certificate checking used by SimpleAsyncHTTPClient will not match "dotted" subdomains to a wildcard SSL certificate.
+The problem arises in the _dnsname_to_pat function in simple_httpclient.py. The function expands a "" fragment in a wildcard certificate (e.g. ".s3.amazonaws.com") to a non-empty dotless fragment, used for regex matching of the hostname.
+Hence, for a bucket on AWS S3 with the url https://dotted.bucket.name.s3.amazonaws.com, the sub-subdomain dotted.bucket.name will not match the "*.s3.amazonaws.com" wildcard certificate.
+Using Amazon's own python client code, and other clients I've tested, dotted subdomains validates to the wildcard certificate without problems.
+The issue could be resolved by replacing
+def _dnsname_to_pat(dn):
+    pats = []
+    for frag in dn.split(r'.'):
+        if frag == '*':
+            # When '*' is a fragment by itself, it matches a non-empty dotless
+            # fragment.
+            pats.append('[^.]+')
+        else:
+            # Otherwise, '*' matches any dotless fragment.
+            frag = re.escape(frag)
+            pats.append(frag.replace(r'\*', '[^.]*'))
+    return re.compile(r'\A' + r'\.'.join(pats) + r'\Z', re.IGNORECASE)
+with
+def _dnsname_to_pat(dn):
+    pats = []
+    for frag in dn.split(r'.'):
+        if frag == '*':
+            # When '*' is a fragment by itself, it matches a non-empty
+            # fragment.
+            pats.append('.+')
+        else:
+            # Otherwise, '*' matches any dotless fragment.
+            frag = re.escape(frag)
+            pats.append(frag.replace(r'\*', '[^.]*'))
+    return re.compile(r'\A' + r'\.'.join(pats) + r'\Z', re.IGNORECASE)

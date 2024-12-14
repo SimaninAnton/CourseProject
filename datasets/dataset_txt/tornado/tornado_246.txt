@@ -1,0 +1,30 @@
+Contributor
+polygon commented on 29 Jan 2018 •
+edited
+I am not sure if this is an actual issue in the code or with my deployment, but it caused me some head-scratching.
+I am using Tornado as an API webserver for an embedded system. It also serves a small web application using the StaticFileHandler. To fix issues with caching browsers, I subclassed the StaticFileHandler to send Cache-Control headers like so:
+class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
+    def set_extra_headers(self, path):
+        self.set_header('Cache-control', 'no-cache, must-revalidate, max-age=0')
+The problem I am seeing is that, despite the browser sending a different Etag than the server calculates, the server still sends a 304. I dug a bit into the code and found the following:
+def should_return_304(self):
+    """Returns True if the headers indicate that we should return 304.
+
+    .. versionadded:: 3.1
+    """
+    if self.check_etag_header():
+        return True
+
+    # Check the If-Modified-Since, and don't send the result if the
+    # content has not been modified
+    ims_value = self.request.headers.get("If-Modified-Since")
+    if ims_value is not None:
+        date_tuple = email.utils.parsedate(ims_value)
+        if date_tuple is not None:
+            if_since = datetime.datetime(*date_tuple[:6])
+            if if_since >= self.modified:
+                return True
+
+    return False
+Essentially, this seems to return 304 if either Etag headers match or the If-Modified-Since date the client sent is later than the file on the server. Is this how it should be? The browser sends a different hash, the server knows that the versions do not match but still sends a 304 because the date is newer? It feels like the server should not send a 304 when one property does not match.
+The issue might be specific to the system here since the dates there are not very reliable. But I had it several times now that the data on the server was updated but it kept sending 304 despite an Etag mismatch because of the If-Modified-Since headers.

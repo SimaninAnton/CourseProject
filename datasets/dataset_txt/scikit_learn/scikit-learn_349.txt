@@ -1,0 +1,136 @@
+Contributor
+chkoar commented on Aug 8, 2019 •
+edited
+Description
+I have trained an MLPClassifier in my local machine, I have serialized it using joblib and I have packed it inside a docker image that is based on alpine:3.10 in order to deploy it in production. The classifier works as expected in my machine. Also, if I run the docker container in my machine it works as expected. When the docker image is deployed in production using Kubernetes (AWS EKS) the classifier makes non-sense predictions. For instance I let it to classify the same input when running the docker image in my machine and when running exact the same image in Kubernetes and gave me different output.
+Apart from that, for some unknown reason the following makes wrong predictions in Kubernetes:
+pipe.predict_proba(X).round(3)
+But the following it works (it gives the same predictions as in my local machine, either using the same image or the code directly):
+np.array([pipe.predict_proba([x])[0].round(3).tolist() for x in X])
+That lead me to make a simple experiment in order to see what is happening.
+The following code ran directly in my machine, in docker container that is running in my machine using docker for desktop and in AWS EKS using the same image as before.
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.neural_network import MLPClassifier as MLP
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+X, y = make_classification(random_state=0, n_samples=10, n_features=4)
+pipe = make_pipeline(
+    StandardScaler(), MLP(random_state=0, hidden_layer_sizes=(10,), max_iter=100)
+)
+pipe.fit(X, y)
+print(pipe.predict_proba(X).round(3))
+
+print(np.array([pipe.predict_proba([x])[0].round(3).tolist() for x in X]))
+These are the results from my machine and docker container that is running in my machine:
+[[0.751 0.249]
+ [0.541 0.459]
+ [0.794 0.206]
+ [0.696 0.304]
+ [0.553 0.447]
+ [0.51  0.49 ]
+ [0.759 0.241]
+ [0.727 0.273]
+ [0.51  0.49 ]
+ [0.533 0.467]]
+
+[[0.751 0.249]
+ [0.541 0.459]
+ [0.794 0.206]
+ [0.696 0.304]
+ [0.553 0.447]
+ [0.51  0.49 ]
+ [0.759 0.241]
+ [0.727 0.273]
+ [0.51  0.49 ]
+ [0.533 0.467]]
+These are the results from the docker container that is running in AWS EKS:
+[[0.541 0.459]
+ [0.628 0.372]
+ [0.532 0.468]
+ [0.662 0.338]
+ [0.639 0.361]
+ [0.745 0.255]
+ [0.54  0.46 ]
+ [0.653 0.347]
+ [0.693 0.307]
+ [0.615 0.385]]
+
+[[0.737 0.263]
+ [0.565 0.435]
+ [0.678 0.322]
+ [0.611 0.389]
+ [0.576 0.424]
+ [0.831 0.169]
+ [0.72  0.28 ]
+ [0.63  0.37 ]
+ [0.756 0.244]
+ [0.553 0.447]]
+Also, the learnt models are different.
+Model from my machine:
+[array([[ 1.69966956e-01,  2.14984780e-01,  2.30157952e-01,
+          2.88944056e-03, -2.00007765e-01,  1.01844109e-01,
+         -1.37863241e-02,  4.25004157e-01,  5.84142458e-01,
+         -2.50371920e-01],
+        [ 2.79016905e-01,  1.07024247e-01, -3.96665159e-04,
+          4.61465736e-01, -4.66393170e-01, -4.54377047e-01,
+         -5.31920014e-01,  5.23452835e-01,  3.91281607e-01,
+          3.93045988e-01],
+        [ 7.31090042e-01,  3.23733013e-01,  4.25939137e-02,
+          2.73813618e-01, -5.97671109e-01,  9.55956943e-02,
+         -3.72036076e-01,  4.94257576e-01,  3.92749677e-03,
+         -1.86173620e-01],
+        [-1.99087180e-01,  2.94171852e-01,  4.12687905e-02,
+          1.87628610e-02, -7.33043762e-01,  6.17029480e-02,
+          6.40086954e-02,  6.51681602e-02,  5.60177318e-01,
+          1.40711969e-01]]), array([[ 0.22929969],
+        [-0.0063743 ],
+        [ 0.83498057],
+        [-0.49182135],
+        [-0.5343956 ],
+        [-0.41684054],
+        [ 0.1370124 ],
+        [-0.28730132],
+        [ 0.03959397],
+        [-0.35352269]])]
+Model from Kubernetes:
+[array([[ 0.09501617,  0.28626604,  0.14223075,  0.06395667, -0.12187851,
+          0.17736004, -0.13226401,  0.53511774,  0.59027589, -0.25582818],
+        [ 0.36685689,  0.0362033 ,  0.08884185,  0.55894869, -0.55557715,
+         -0.54552873, -0.60409981,  0.4243101 ,  0.3813303 ,  0.40964517],
+        [ 0.64821453,  0.39433736, -0.04746369,  0.36700877, -0.51156054,
+          0.18085084, -0.50068786,  0.59746207,  0.01166175, -0.18921701],
+        [-0.2878976 ,  0.36729264, -0.04627028,  0.09466505, -0.65886391,
+          0.13017507,  0.11436963,  0.16240034,  0.56442478,  0.13897955]]),
+ array([[ 0.0068091 ],
+        [-0.19406962],
+        [ 0.62413976],
+        [-0.49920422],
+        [-0.38095645],
+        [-0.40492239],
+        [ 0.33266905],
+        [-0.3107602 ],
+        [ 0.04361344],
+        [-0.34449752]])]
+This is happening just for MLPClassifier. I tried the same code using LogisticRegression and RandomForestClassifier and the results are consistent.
+Any ideas or directions?
+Docker Image Versions
+System:
+    python: 3.7.3 (default, May  3 2019, 11:24:39)  [GCC 8.3.0]
+executable: /usr/bin/python3.7
+   machine: Linux-4.14.123-111.109.amzn2.x86_64-x86_64-with
+
+BLAS:
+    macros:
+  lib_dirs:
+cblas_libs: cblas
+
+Python deps:
+       pip: 19.1.1
+setuptools: 41.0.1
+   sklearn: 0.21.2
+     numpy: 1.16.2
+     scipy: 1.3.0
+    Cython: 0.29.10
+    pandas: 0.24.1

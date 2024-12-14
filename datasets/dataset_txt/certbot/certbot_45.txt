@@ -1,0 +1,16 @@
+Member
+bmw commented on 6 Nov 2019 •
+edited
+Unfortunately we had to revert dropping Python 3.4 support due to a bug. We definitely want to do this so I think we should fix the bug and unrevert the code.
+Below is my understanding of the problem, but I wasn't able to 100% verify this so whoever takes this issue should do so.
+I believe this bug is hit when a certbot-auto user on a RHEL 6 based system upgrades certbot-auto to a version that no longer supports Python 3.4 and certbot-auto delays rebootstrapping either because --non-interactive wasn't provided on the command line, we cannot non-interactively rebootstrap on this OS, or certbot-auto is not connected to a terminal. After rebootstrapping is skipped the first time, on subsequent runs certbot-auto will crash with output like:
+WARNING: couldn'\''t find Python 3.5+ to check for updates.
+Traceback (most recent call last):
+  File "<stdin>", line 16, in <module>
+  File "/usr/lib64/python3.4/distutils/version.py", line 58, in __lt__
+    c = self._cmp(other)
+  File "/usr/lib64/python3.4/distutils/version.py", line 176, in _cmp
+    if self.version != other.version:
+AttributeError: '\''StrictVersion'\'' object has no attribute '\''version'\'''
+I think what's happening is here if Python 2.7 or Python 3.5+ isn't installed, REMOTE_VERSION will not have been set a few lines above. CompareVersions is passed an empty string as its third argument which causes the Python script there to crash which in turn causes all of certbot-auto to crash because that command exited with a non-zero status. This only happens when the version number in certbot-auto doesn't end in .dev0 like it usually does, because .dev0 in the version string causes CompareVersions to exit before getting to the problematic code.
+If this is correct, I think the fix is just skipping calling CompareVersions when REMOTE_VERSION is unset for any reason.

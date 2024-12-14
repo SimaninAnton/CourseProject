@@ -1,0 +1,82 @@
+rcasero commented on 12 Dec 2018 •
+edited
+Hi,
+Not sure this can be labelled as a bug, but it's problematic. BatchNormalization seems to silently produce NaN weights when training a multi_gpu_model if the training dataset size is not a multiple of batch_size.
+For example, with a training dataset (1825, 401, 401, 3), validation dataset (140, 401, 401, 3), epochs=1, batch_size=16, gpu_number=2
+    # instantiate model
+    with tf.device('/cpu:0'):
+        # DenseNet121: blocks=[6, 12, 24, 16]
+        base_model = densenet.DenseNet121(include_top=False, weights=None,
+                                       input_shape=(401, 401, 3), pooling='avg')
+        x = Dense(units=1, activation='sigmoid', name='fc1')(base_model.output)
+        model = Model(inputs=base_model.input, outputs=x)
+
+    # compile model
+    parallel_model = multi_gpu_model(model, gpus=gpu_number)
+    parallel_model.compile(loss={'fc1': 'binary_crossentropy'},
+                           optimizer='Adadelta',
+                           metrics={'fc1': ['acc']})
+
+    # train model
+    tic = datetime.datetime.now()
+    parallel_model.fit(train_onecell_im,
+                       {'fc1': (train_onecell_dice >= quality_threshold).astype(np.float32)},
+                       validation_data=(test_onecell_im,
+                                        {'fc1': (test_onecell_dice >= quality_threshold).astype(np.float32)}),
+                       batch_size=batch_size, epochs=epochs, initial_epoch=0)
+    toc = datetime.datetime.now()
+    print('Training duration: ' + str(toc - tic))
+The training apparently goes fine
+Train on 1825 samples, validate on 140 samples
+Epoch 1/1
+1825/1825 [==============================] - 108s 59ms/step - loss: 0.6604 - acc: 0.6323 - val_loss: 0.6932 - val_acc: 0.4643
+Training duration: 0:02:08.115762
+but the weights have NaNs, e.g.
+model.get_layer('conv1/bn').get_weights()
+[array([1.0001292 , 1.        , 0.9996672 , 0.9999442 , 1.000509  ,
+       1.0001016 , 1.0002009 , 1.0004678 , 0.9999988 , 0.999962  ,
+       1.0003603 , 1.0001667 , 0.9999296 , 0.9999381 , 1.00001   ,
+       0.99967813, 0.9999821 , 0.99981546, 0.9999899 , 1.0002408 ,
+       0.9999446 , 0.9999995 , 0.99989605, 1.0000395 , 1.0000094 ,
+       0.9999432 , 0.999968  , 0.99994946, 0.9997129 , 1.0000957 ,
+       0.99997395, 1.000016  , 0.99995   , 0.99981534, 0.99984217,
+       0.9999743 , 0.99999624, 1.0005921 , 1.0001019 , 1.000008  ,
+       0.99993116, 0.99998087, 0.9999631 , 0.9999878 , 0.9999804 ,
+       1.0003394 , 0.999895  , 0.9997747 , 0.9999677 , 0.99998355,
+       1.000003  , 0.9998863 , 0.9999338 , 0.9998308 , 1.0000825 ,
+       1.000022  , 0.9999998 , 0.9997648 , 1.0000801 , 1.000631  ,
+       1.0000259 , 0.9996165 , 1.0001084 , 0.9996289 ], dtype=float32), array([ 0.00369794, -0.00307915, -0.0148356 ,  0.01176912, -0.00456085,
+        0.00461122,  0.00392016, -0.00510793, -0.00388927,  0.00678776,
+       -0.0033672 ,  0.0020039 ,  0.00688829,  0.00877651,  0.00838199,
+       -0.0217527 , -0.00673187, -0.01623467,  0.00523926, -0.0005527 ,
+        0.00700372, -0.00372984, -0.01347521, -0.00636716,  0.00206494,
+        0.00884918, -0.00814271, -0.00801541, -0.02038615,  0.00171547,
+        0.00709944, -0.00221861,  0.00538696, -0.01515745, -0.01330438,
+        0.00306095,  0.00399868, -0.0049634 , -0.00725381,  0.00373429,
+       -0.01107734, -0.00610222, -0.00854702, -0.00504343, -0.0080514 ,
+       -0.00920443,  0.00863727, -0.01750346,  0.00656873, -0.00534429,
+        0.00434025, -0.01352841, -0.00819136, -0.01453205, -0.00043049,
+       -0.00257635, -0.00448346, -0.01370949,  0.00355583, -0.00480247,
+        0.00179911, -0.01858746, -0.00059417, -0.0123234 ], dtype=float32), array([nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan],
+      dtype=float32), array([nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan,
+       nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan],
+      dtype=float32)]
+I think this happens because the training dataset of 1825 gets split into sets of batch_size=16. So there's going to be a set of 1 training image, and maybe that doesn't work with BatchNormalization.
+Inference with the trained model gives
+foo = model.predict(test_onecell_im)
+
+foo
+array([[nan],
+       [nan],
+       [nan],
+...
+       [nan],
+       [nan]], dtype=float32)
+A solution is to make sure that the number of training images is a multiple of batch_size.

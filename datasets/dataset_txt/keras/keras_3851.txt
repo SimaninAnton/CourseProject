@@ -1,0 +1,86 @@
+nazandr commented on 23 Nov 2016
+import csv
+from keras.preprocessing import text as prep
+from keras.models import Sequential
+from keras.layers import Dense, Activation, Dropout, Embedding, LSTM
+from keras.layers import Convolution1D, GlobalMaxPooling1D, Merge
+from keras.optimizers import RMSprop
+from keras.utils import np_utils
+from keras.callbacks import ModelCheckpoint
+import numpy as np
+
+f = open('/Users/andrey/Projects/News-parser/vocab.txt').read().lower()
+csvfile = open('/Users/andrey/Projects/News-parser/habr.csv')
+dataSet = csv.DictReader(csvfile)
+
+xTrain = []
+yTrain = []
+xLink = []
+
+vocab = prep.text_to_word_sequence(f)
+
+def text2vec(text):
+    bow = prep.text_to_word_sequence(text)
+    vec = []
+    for i in bow:
+        if i in vocab:
+            n = vocab.index(i)
+            vec.append(n)
+    while len(vec) < 30:
+        vec.append(0)   
+    return vec
+
+lenVocab = len(vocab)
+print (lenVocab)
+
+
+print('Model compiling...')
+modelLink = Sequential()
+modelLink.add(Embedding(lenVocab, 128, input_length=30))
+modelLink.add(Convolution1D(30, 3, border_mode='valid'))
+
+modelTitle = Sequential()
+modelTitle.add(Embedding(lenVocab, 128, input_length=30))
+modelTitle.add(Convolution1D(30, 3, border_mode='valid'))
+
+model = Sequential()
+
+model.add(Merge([modelLink, modelTitle], mode='concat', concat_axis=1))
+model.add(GlobalMaxPooling1D())
+model.add(Dense(150, activation='relu'))
+model.add(Dense(1, activation='sigmoid'))
+model.compile(loss='binary_crossentropy',
+              optimizer='adam')
+
+print('Vectorization...')
+for row in dataSet:
+    a = row['title'].lower()
+    b = row['link'].lower()
+    a = text2vec(a)
+    b = text2vec(b)
+    xLink.append(b)
+    xTrain.append(a)
+    yTrain.append(int(row['rate']))
+
+print(len(xTrain))
+xLink = np.reshape(xLink, (len(xLink), 30))
+print (xLink[1])
+print (xLink[2])
+xLink = xLink / float(lenVocab)
+xTrain = np.reshape(xTrain, (len(xTrain), 30))
+xTrain = xTrain / float(lenVocab)
+yTrain = np.reshape(yTrain, (len(yTrain),1))
+
+print('Start model training...')
+
+for i in range(15):
+    print(i)
+    model.fit([xTrain, xLink], yTrain, nb_epoch=1, batch_size=32)
+
+    model.save_weights('/Users/andrey/Projects/News-parser/cnn-weights.h5')
+before predicting give
+[[ 0.40467674]]
+[[ 0.40467674]]
+[[ 0.40467674]]
+[[ 0.40467674]]
+to different vectors

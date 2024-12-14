@@ -1,0 +1,85 @@
+Contributor
+agamemnonc commented on Aug 20, 2019 •
+edited
+Description
+The Pipeline documentation states that:
+All estimators in a pipeline, except the last one, must be transformers (i.e. must have a transform method). The last estimator may be any type (transformer, classifier, etc.)
+However, trying to use GridSearchCV with a Pipeline that only includes transformers will fail (in the hypothetical scenario that you are trying to select hyper-parameters for a transformer only; this can be useful if the transformer in question is a post-processing step that takes some hyper-parameters).
+Steps/Code to Reproduce
+For instance, the following (dumb example) will raise an error:
+from sklearn.preprocessing import MinMaxScaler
+
+
+Y = np.random.randn(1000,2)
+Y = np.clip(X, 0., 1.)
+X = 3. * Y
+
+pipe = Pipeline(steps=[
+    ('sc', MinMaxScaler())
+])
+
+param_grid = {'sc__feature_range': [(0., 1.), (0., 5.), (3., 10.)]}
+
+gs = GridSearchCV(
+    estimator=pipe,
+    param_grid=param_grid,
+    scoring='r2',
+    cv=3
+)
+gs.fit(X, Y)
+print(gs.best_params_)
+Output:
+AttributeError: 'MinMaxScaler' object has no attribute 'predict'
+However, if you include a dumb estimator that simply passes its input to the output at the end of the pipeline, it will run with no issues:
+from sklearn.base import BaseEstimator
+from sklearn.preprocessing import MinMaxScaler
+
+
+class PassThroughEstimator(BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def predict(self, X, y=None):
+        return X
+
+
+Y = np.random.randn(1000,2)
+Y = np.clip(X, 0., 1.)
+X = 3. * Y
+
+pipe = Pipeline(steps=[
+    ('sc', MinMaxScaler()),
+    ('pse', PassThroughEstimator())
+])
+
+param_grid = {'sc__feature_range': [(0., 1.), (0., 5.), (3., 10.)]}
+
+gs = GridSearchCV(
+    estimator=pipe,
+    param_grid=param_grid,
+    scoring='r2',
+    cv=3
+)
+gs.fit(X, Y)
+print(gs.best_params_)
+Output:
+{'sc__feature_range': (0.0, 1.0)}
+I realise that this is not a common case (needing to only fit a transformer with hyper-parameters), but is this intended behaviour?
+On a related note, is it possible to include a post-processing transformer (e.g. smoothing for time-series regression or even a scaler in case the target has been pre-processed) at the end of a Pipeline and still be able to use GridSearchCV? According to the documentation it shouldn't be, since in that case not all layers preceding the last one are transformers. See also #4143.
+Versions
+System:
+python: 3.6.8 |Anaconda, Inc.| (default, Feb 21 2019, 18:30:04) [MSC v.1916 64 bit (AMD64)]
+executable: C:\Users\nak142\Miniconda3\envs\myo\python.exe
+machine: Windows-10-10.0.18362-SP0
+BLAS:
+macros:
+lib_dirs:
+cblas_libs: cblas
+Python deps:
+pip: 19.1.1
+setuptools: 41.0.1
+sklearn: 0.21.2
+numpy: 1.16.4
+scipy: 1.2.1
+Cython: 0.29.12
+pandas: 0.24.2

@@ -1,0 +1,443 @@
+huaxz1986 commented on 19 Nov 2018
+First, I write an simple cnn-net, all works ok.
+def dl_cnn_classify(project_id,experiment_id,training_job_id,dataset_id,problem,num_class,layers_num,
+             batch_size,num_epoch,img_size,weight_decay=1e-4,baseMapNum=32):
+  '''
+
+  :param project_id: project id
+  :param experiment_id: experiment id
+  :param training_job_id:training job id
+  :param dataset_id: dataset id
+  :param problem: task problem
+  :param num_class: 类别数量
+  :param layers_num: 层的数量
+  :param batch_size: batch size
+  :param num_epoch: 多少个 epoch
+  :param img_size: 图片尺寸
+  :param weight_decay: l2 权重衰减系数
+  :param baseMapNum: 特征图个数
+  :return:
+  '''
+  num_epoch = 10
+  redis_client = RedisClient()
+
+  #################################3
+  K.set_image_data_format('channels_last')
+  K.manual_variable_initialization(True)
+  K.set_learning_phase(1)
+  ################################## 配置参数 #########################
+  PretrainParams={}
+  cluster_spec = tf.estimator.RunConfig().cluster_spec.as_dict()
+  Logger.get_logger().info('cluster_spec:%s'%cluster_spec)
+
+  ######### 分布式训练配置 ###########
+  PretrainParams['ps_hosts'] =  cluster_spec['ps']
+  PretrainParams['worker_hosts'] = cluster_spec['worker']
+  PretrainParams['job_name'] = tf.estimator.RunConfig().task_type
+  PretrainParams['task_index'] = tf.estimator.RunConfig().task_id
+  ############# 数据相关 #########
+  PretrainParams['checkpoint_dir'] = storage_helper.get_pretrain_checkpoint_dir('cnn_layers_%s'%layers_num, training_job_id)
+  img_dir, _ = storage_helper.get_img_dataset_dir(dataset_id)  # 获取存放图片、tfrecord 的目录
+  PretrainParams['dataset_dir'] = img_dir
+  PretrainParams['batch_size'] = batch_size
+  PretrainParams['num_epoch'] = num_epoch
+  PretrainParams['serve_output_dir'] = storage_helper.get_model_dir(training_job_id)+'/export/Servo/%s'%(int(time.time()))
+  PretrainParams['num_class'] = num_class
+
+  Logger.get_logger().info('PretrainParams:%s'%PretrainParams)
+  ### 移除 ###
+  if 'TF_CONFIG' in os.environ:
+    del os.environ['TF_CONFIG']
+
+  if 'master' in cluster_spec:
+    del cluster_spec['master']
+
+  ########################### 模型 ###########################
+  cluster = tf.train.ClusterSpec(cluster_spec)
+  server = tf.train.Server(cluster,
+                           job_name=PretrainParams['job_name'],
+                           task_index=PretrainParams['task_index'],
+                           config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=True),
+                           )
+  if PretrainParams['job_name']=='ps':
+      server.join()
+  elif PretrainParams['job_name']=='worker':
+    with tf.device(tf.train.replica_device_setter(
+        worker_device="/job:worker/task:%d" % PretrainParams['task_index'],
+        cluster=cluster)):
+      ####### 添加数据集 ##########
+      dataset_maker = DatasetMaker(img_dir,
+                                   target_size=img_size,
+                                   batch_size=PretrainParams['batch_size'],
+                                   epoch=PretrainParams['num_epoch'],
+                                   class_mode='categorical',
+                                   num_class=PretrainParams['num_class'],
+                                   num_worker=len(PretrainParams['worker_hosts']),
+                                   worker_idx=PretrainParams['task_index'])
+      train_next_examples, train_next_labels = dataset_maker.make_train_dataset()
+      validation_next_imgs, validation_next_labels = dataset_maker.make_validation_dataset()
+
+    ###################### 配置模型 ####################
+
+    global_step = tf.train.get_or_create_global_step()
+
+    ################### 创建网络结构       ###################
+    Logger.get_logger().info('create model')
+    model = Sequential()
+    for i in range(0, layers_num):
+      if i == 0:
+        model.add(Conv2D(baseMapNum, (3, 3), padding='same', kernel_regularizer=regularizers.l2(weight_decay),
+                         input_shape=[img_size[0], img_size[1], 3]))
+      else:
+        model.add(Conv2D(baseMapNum, (3, 3), padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+
+      model.add(Activation('relu'))
+      model.add(BatchNormalization())
+      model.add(Conv2D(baseMapNum, (3, 3), padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+      model.add(Activation('relu'))
+      model.add(BatchNormalization())
+      model.add(MaxPooling2D(pool_size=(2, 2)))
+      model.add(Dropout(0.2))
+
+    model.add(Flatten())
+    model.add(Dense(PretrainParams['num_class'], activation='softmax'))
+
+    predictions2 = model(train_next_examples)
+    train_loss = tf.reduce_mean(
+      tf.keras.losses.categorical_crossentropy(tf.cast(train_next_labels, tf.float32), predictions2))
+    train_acc, train_acc_op = tf.metrics.accuracy(labels=tf.argmax(train_next_labels, 1),
+                                                  predictions=tf.argmax(predictions2, 1))
+    ##### 优化器
+    train_op = tf.train.AdamOptimizer(1e-3).minimize(train_loss, global_step=global_step)
+    Logger.get_logger().info(model.summary())
+    ############ 添加 summary # summary 必须在构建计算图完成之后
+    tf.summary.scalar('train_loss', train_loss)
+    tf.summary.scalar('train_accuracy', train_acc)
+    summary_op = tf.summary.merge_all()
+    init_op = tf.global_variables_initializer()
+
+    Logger.get_logger().info('train model')
+    ############# 训练 ##########
+    global_max_step = PretrainParams['num_epoch']*dataset_maker.train_steps_per_epoch
+    Logger.get_logger().info('global_max_step:%s\tnum_epoch:%s\ttrain_steps_per_epoch:%s'%(
+      global_max_step,PretrainParams['num_epoch'],dataset_maker.train_steps_per_epoch))
+    hooks = [tf.train.StopAtStepHook(last_step=global_max_step),]
+    scaffold = tf.train.Scaffold(init_op=init_op) if summary_op is None else\
+               tf.train.Scaffold(init_op=init_op,summary_op=summary_op)
+    with tf.train.MonitoredTrainingSession(master=server.target,
+                                           is_chief=(PretrainParams['task_index'] == 0),
+                                           checkpoint_dir=PretrainParams['checkpoint_dir'],
+                                           hooks=hooks,
+                                           chief_only_hooks=[SaveAtEndHook(input_tensor=train_next_examples,
+                                                                           output_tensor=predictions2,
+                                                                           save_dir=PretrainParams[
+                                                                             'serve_output_dir'])],
+                                           scaffold=scaffold,
+                                           config=tf.ConfigProto(allow_soft_placement=True,
+                                                  log_device_placement=True,
+                                                  device_filters=['/job:ps','/job:worker'],
+                                                  ),
+                                           max_wait_secs=300,
+                                           save_checkpoint_secs=300,
+                                           ) as sess:
+        K.set_session(sess)
+        while not sess.should_stop():
+          try:
+            _, _, train_accuracy, train_loss_value, step_value = sess.run([train_op, train_acc_op, train_acc, train_loss, global_step])
+            no_epoch = step_value//dataset_maker.train_steps_per_epoch
+          
+          except tf.errors.OutOfRangeError:
+            break
+          except Exception as e:
+            Logger.get_logger().info('train error:%s'%str(e))
+            return
+Then, I use pretrained model, the predict prob of mnist is all the same,ant the prob is all about 1/10。
+def get_img_label_batch(img_generator):
+  '''
+  从生成器中生成图片和标签
+  :param img_generator: 一个 DirectoryIterator 对象
+  :return: (batch_img,batch_label)
+  '''
+  for (batch_img,batch_label) in img_generator:
+    yield batch_img,batch_label
+def sample_num(img_dir):
+  '''
+  获取图片样本数量
+  :param img_dir: 图片目录
+  :return:  图片数量
+  '''
+  img_no = 0
+  for label_dir in os.listdir(img_dir):
+    no=len(os.listdir('%s/%s'%(img_dir,label_dir)))
+    img_no+=no
+  return  img_no
+class DatasetMaker:
+  '''
+  数据集创建
+  '''
+  def __init__(self,img_dir,target_size,batch_size,epoch,class_mode,num_class,num_worker,worker_idx):
+    '''
+    初始化方法
+    :param img_dir: 图片文件夹
+    :param target_size: 目标尺寸。(height, width)
+    :param batch_size: batch size
+    :param epoch: epoch
+    :param class_mode: 类别模式。 "categorical", "binary" 之一。
+    :param num_class: 类别数量。
+    :param num_worker: worker 数量
+    :param worker_idx: worker id
+    '''
+    self._img_dir = img_dir
+    self._target_size = target_size
+    self._batch_size = batch_size
+    self._epoch = epoch
+    self._class_mode = class_mode
+    self._num_class = num_class
+    self._num_worker = num_worker
+    self._worker_idx = worker_idx
+  def _make_dataset(self,img_dir_sub,imagedata_generator,shard,epoch):
+    '''
+    创建 dataset
+    :param img_dir_sub: 具体的图片文件夹 (train/validation)
+    :param imagedata_generator: 图片生成器，一个 ImageDataGenerator对象
+    :param epoch: epoch。训练集和验证集的 epoch 不同。
+    :param shard: 是否执行 shard。 验证集和测试集不同。
+    :return: tf.data.Dataset 对象
+    '''
+    img_generator = imagedata_generator.flow_from_directory(img_dir_sub,
+                                                            target_size=self._target_size,
+                                                            batch_size=self._batch_size,
+                                                            class_mode=self._class_mode)
+
+    label_shape = tf.TensorShape([None,self._num_class]) if self._class_mode == 'categorical' else tf.TensorShape([None])
+    dataset = tf.data.Dataset.from_generator(lambda img_generator=img_generator: get_img_label_batch(img_generator),
+                                             output_types=(tf.float32,tf.float32),
+                                             output_shapes=(tf.TensorShape([None,self._target_size[0],self._target_size[1],3]),
+                                                            label_shape))
+    if epoch>1:
+      dataset=dataset.repeat(epoch)
+    if shard:
+      dataset=dataset.shard(self._num_worker,self._worker_idx)
+    return dataset
+  def make_train_dataset(self):
+    img_dir_sub = '%s/train'%self._img_dir
+    img_num = sample_num(img_dir_sub)
+    self.train_steps_per_epoch = int(math.ceil(img_num*1.0/self._batch_size))
+    Logger.get_logger().info('train_steps_per_epoch:%s'%self.train_steps_per_epoch)
+
+    train_datagen = ImageDataGenerator(
+      rescale=1. / 255,
+      # shear_range=0.2,
+      # zoom_range=0.2,
+      horizontal_flip=True)
+    dataset = self._make_dataset(img_dir_sub,train_datagen,epoch=self._epoch,shard=True)
+    iterator = dataset.make_one_shot_iterator()
+    next_examples, next_labels = iterator.get_next()
+    return next_examples, next_labels
+  def make_validation_dataset(self):
+    img_dir_sub = '%s/validation' % self._img_dir
+    img_num = sample_num(img_dir_sub)
+    self.validation_steps_per_epoch = int(math.ceil(img_num * 1.0 / self._batch_size))
+    Logger.get_logger().info('validation_steps_per_epoch:%s' % self.validation_steps_per_epoch)
+
+    validation_datagen = ImageDataGenerator(
+      rescale=1. / 255
+    )
+    dataset = self._make_dataset(img_dir_sub, validation_datagen,epoch=1,shard=False)
+    iterator = dataset.make_one_shot_iterator()
+    next_examples, next_labels = iterator.get_next()
+    return next_examples, next_labels
+
+class SaveAtEndHook(tf.train.SessionRunHook):
+  def __init__(self,input_tensor,output_tensor,save_dir):
+    self._input_tensor = input_tensor
+    self._output_tensor = output_tensor
+    self._save_dir = save_dir
+
+  def end(self,session):
+    if os.path.exists(self._save_dir):
+      Logger.get_logger().info('already save model.')
+      return
+
+    Logger.get_logger().info('begin save model.')
+    tf.get_default_graph()._unsafe_unfinalize()
+
+    builder = tf.saved_model.builder.SavedModelBuilder(self._save_dir)
+    classification_signature = tf.saved_model.signature_def_utils.build_signature_def(
+      inputs={
+        tf.saved_model.signature_constants.CLASSIFY_INPUTS:
+          tf.saved_model.utils.build_tensor_info(self._input_tensor)},
+      outputs={
+        tf.saved_model.signature_constants.CLASSIFY_OUTPUT_SCORES:
+          tf.saved_model.utils.build_tensor_info(self._output_tensor),
+      },
+      method_name=tf.saved_model.signature_constants.CLASSIFY_METHOD_NAME
+    )
+    prediction_signature = tf.saved_model.signature_def_utils.build_signature_def(
+      inputs={'inputs': tf.saved_model.utils.build_tensor_info(self._input_tensor)},
+      outputs={'scores': tf.saved_model.utils.build_tensor_info(self._output_tensor),
+               'class_ids': tf.saved_model.utils.build_tensor_info(tf.argmax(self._output_tensor, axis=-1))
+               },
+      method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME
+    )
+    builder.add_meta_graph_and_variables(
+      session, [tf.saved_model.tag_constants.SERVING],
+      signature_def_map={
+        'predict_output': prediction_signature,
+        tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: classification_signature
+      },
+      main_op=tf.tables_initializer(),
+      strip_default_attrs=True,
+      clear_devices=True,
+    )
+    builder.save()
+    Logger.get_logger().info('end save model.')
+    tf.get_default_graph().finalize()
+
+ 
+
+def pretrain(project_id,experiment_id,training_job_id,dataset_id,problem,num_class,pretrain_model_name,
+             batch_size,num_epoch,img_size):
+  '''
+
+  :param training_job_id:training job id
+  :param pretrain_model_name: pretrain model name
+  :param experiment_id: experiment id
+  :param img_size: 图片尺寸
+  :return:
+  '''
+  num_epoch=10
+  redis_client = RedisClient()
+  #################################3
+  K.set_image_data_format('channels_last')
+  K.manual_variable_initialization(True)
+  K.set_learning_phase(1)
+  ################################## 配置参数 #########################
+  PretrainParams={}
+  cluster_spec = tf.estimator.RunConfig().cluster_spec.as_dict()
+  Logger.get_logger().info('cluster_spec:%s'%cluster_spec)
+
+  ######### 分布式训练配置 ###########
+  PretrainParams['ps_hosts'] =  cluster_spec['ps']
+  PretrainParams['worker_hosts'] = cluster_spec['worker']
+  PretrainParams['job_name'] = tf.estimator.RunConfig().task_type
+  PretrainParams['task_index'] = tf.estimator.RunConfig().task_id
+  ############# 数据相关 #########
+  PretrainParams['checkpoint_dir'] = storage_helper.get_pretrain_checkpoint_dir(pretrain_model_name, training_job_id)
+  img_dir, _ = storage_helper.get_img_dataset_dir(dataset_id)  # 获取存放图片、tfrecord 的目录
+  PretrainParams['dataset_dir'] = img_dir
+  PretrainParams['batch_size'] = batch_size
+  PretrainParams['num_epoch'] = num_epoch
+  PretrainParams['serve_output_dir'] = storage_helper.get_model_dir(training_job_id)+'/export/Servo/%s'%(int(time.time()) )
+  PretrainParams['num_class'] = num_class
+
+  PretrainParams['model_file'] = '%s/%s.model'%(storage_helper.get_pretrain_dir(),pretrain_model_name)
+  PretrainParams['weight_file'] = '%s/%s.h5' % (storage_helper.get_pretrain_dir(), pretrain_model_name)
+
+  Logger.get_logger().info('PretrainParams:%s'%PretrainParams)
+  ### 移除 ###
+  if 'TF_CONFIG' in os.environ:
+    del os.environ['TF_CONFIG']
+
+  if 'master' in cluster_spec:
+    del cluster_spec['master']
+
+  ########################### 模型 ###########################
+  cluster = tf.train.ClusterSpec(cluster_spec)
+  server = tf.train.Server(cluster,
+                           job_name=PretrainParams['job_name'],
+                           task_index=PretrainParams['task_index'],
+                           config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=True),
+                           )
+  if PretrainParams['job_name'] == 'ps':
+    server.join()
+  elif PretrainParams['job_name'] == 'worker':
+    with tf.device(tf.train.replica_device_setter(
+        worker_device="/job:worker/task:%d" % PretrainParams['task_index'],
+        cluster=cluster)):
+      ####### 添加数据集 ##########
+      dataset_maker = DatasetMaker(img_dir,
+                                   target_size=img_size,
+                                   batch_size=PretrainParams['batch_size'],
+                                   epoch=PretrainParams['num_epoch'],
+                                   class_mode='categorical',
+                                   num_class=PretrainParams['num_class'],
+                                   num_worker=len(PretrainParams['worker_hosts']),
+                                   worker_idx=PretrainParams['task_index'])
+      train_next_examples, train_next_labels = dataset_maker.make_train_dataset()
+      validation_next_imgs, validation_next_labels = dataset_maker.make_validation_dataset()
+
+    ###################### 配置模型 ####################
+
+    global_step = tf.train.get_or_create_global_step()
+
+    ################### 创建网络结构       ###################
+    Logger.get_logger().info('create model')
+    Logger.get_logger().info('load pre_train model')
+    base_model = MobileNet(include_top=False)#model_from_json(open(PretrainParams['model_file'], 'r').read())
+    # for layer in base_model.layers:
+    #   layer.trainable = True
+    ######## 添加自定义结构 #########
+    x = base_model.output  # 输出
+    x = GlobalAveragePooling2D()(x)  # 添加池化层
+    x = Dense(1024, activation='relu')(x)  # 添加全连接层
+    predictions = Dense(PretrainParams['num_class'], activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)  # 待训练的模型
+   
+    predictions2 = model(train_next_examples)
+    train_loss = tf.reduce_mean(
+      tf.keras.losses.categorical_crossentropy(tf.cast(train_next_labels, tf.float32), predictions2))
+    train_acc, train_acc_op = tf.metrics.accuracy(labels=tf.argmax(train_next_labels, 1),
+                                                  predictions=tf.argmax(predictions2, 1))
+    ##### 优化器
+    train_op = tf.train.AdamOptimizer(1e-3).minimize(train_loss, global_step=global_step)
+    Logger.get_logger().info(model.summary())
+    ############ 添加 summary # summary 必须在构建计算图完成之后
+    tf.summary.scalar('train_loss', train_loss)
+    tf.summary.scalar('train_accuracy', train_acc)
+    summary_op = tf.summary.merge_all()
+    init_op = tf.global_variables_initializer()
+
+    Logger.get_logger().info('train model')
+    ############# 训练 ##########
+    global_max_step = PretrainParams['num_epoch'] * dataset_maker.train_steps_per_epoch
+    Logger.get_logger().info('global_max_step:%s\tnum_epoch:%s\ttrain_steps_per_epoch:%s' % (
+      global_max_step, PretrainParams['num_epoch'], dataset_maker.train_steps_per_epoch))
+    hooks = [tf.train.StopAtStepHook(last_step=global_max_step), ]
+    scaffold = tf.train.Scaffold(init_op=init_op) if summary_op is None else \
+      tf.train.Scaffold(init_op=init_op, summary_op=summary_op)
+    with tf.train.MonitoredTrainingSession(master=server.target,
+                                           is_chief=(PretrainParams['task_index'] == 0),
+                                           checkpoint_dir=PretrainParams['checkpoint_dir'],
+                                           hooks=hooks,
+                                           chief_only_hooks=[SaveAtEndHook(input_tensor=train_next_examples,
+                                                                           output_tensor=predictions2,
+                                                                           save_dir=PretrainParams[
+                                                                             'serve_output_dir'])],
+                                           scaffold=scaffold,
+                                           config=tf.ConfigProto(allow_soft_placement=True,
+                                                                 log_device_placement=True,
+                                                                 device_filters=['/job:ps', '/job:worker'],
+                                                                 ),
+                                           max_wait_secs=300,
+                                           save_checkpoint_secs=300,
+                                           ) as sess:
+      K.set_session(sess)
+      # Logger.get_logger().info('load weight file')
+      # tf.get_default_graph()._unsafe_unfinalize()
+      # base_model.load_weights(PretrainParams['weight_file'])
+      tf.get_default_graph().finalize()
+      time.sleep(10)
+      while not sess.should_stop():
+        try:
+          _, _, train_accuracy, train_loss_value, step_value = sess.run(
+            [train_op, train_acc_op, train_acc, train_loss, global_step])
+          no_epoch = step_value // dataset_maker.train_steps_per_epoch
+         
+        except tf.errors.OutOfRangeError:
+          break
+        except Exception as e:
+          Logger.get_logger().info('train error:%s' % str(e))
+          redis_client.add_pretrain_metric(req_str='%s|%s' % ('worker_done', PretrainParams['task_index']),
+                                           task_id=training_job_id)  # worker_done
+          return

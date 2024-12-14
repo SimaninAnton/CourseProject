@@ -1,0 +1,35 @@
+tzickel commented on Apr 8, 2016
+Checked on python 2.7. Unfortunately httpbin does not support 307 post redirects and thus it is not easy to test this issue in requests test suite currently.
+Anyhow the issue seems to be with the stream being already over when the redirects tries to read it again. The response should be an exception if a stream is inputed and it's redirected (although this is known only in httplib).
+example code:
+from flask import Flask, request, redirect, url_for
+import requests
+import io
+
+app = Flask('test')
+
+
+@app.route('/redirect/', methods=['POST'])
+def redirect():
+  response = app.make_response('')
+  response.status_code = 307
+  response.headers['Location'] = 'http://localhost:5000/'
+  return response
+
+
+@app.route('/', methods=['POST'])
+def index():
+  return request.get_data()
+
+
+if __name__ == "__main__":
+  import threading
+  def loop():
+    app.run()
+  t = threading.Thread(target=loop)
+  t.daemon = True
+  t.start()
+  if requests.post('http://localhost:5000/redirect/', data='hey').text != 'hey':
+    raise Exception()
+  if requests.post('http://localhost:5000/redirect/', data=io.BytesIO('hey')).text != 'hey': # <-- This code gets stuck
+    raise Exception()

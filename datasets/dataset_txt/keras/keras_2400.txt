@@ -1,0 +1,49 @@
+Contributor
+mptorr commented on 12 May 2017 •
+edited
+Keras 2.0.3, Theano 0.9
+My model uses the Unet architecture and I can successfully run a multiclass semantic segmentation (5 classes), with sample_weights to correct for class imbalance. I'm now trying to use data augmentation on this task. My images and masks are 64 x 64 and stored in numpy arrays (imgs_train and mask_train)
+        data_gen_args = dict(featurewise_center=False,
+                             featurewise_std_normalization=False,
+                             rotation_range=90.,
+                             width_shift_range=0.1,
+                             height_shift_range=0.1,
+                             zoom_range=0.2)
+
+        image_datagen = ImageDataGenerator(**data_gen_args)
+        mask_datagen = ImageDataGenerator(**data_gen_args)
+
+        seed = 42
+        image_datagen.fit(imgs_train, augment=True, seed=seed)
+        mask_datagen.fit(mask_train, augment=True, seed=seed)
+
+        image_generator = image_datagen.flow(imgs_train, seed=seed)
+
+        mask_generator = mask_datagen.flow(mask_train, seed=seed)
+        mask_generator.x = to_categorical(mask_generator.x, CLASSES)
+        mask_generator.x = np.reshape(mask_generator.x, (number_of_imgs, 64 * 64, 5))
+
+        train_generator = (image_generator, mask_generator, sample_weights)
+
+        h = model.fit_generator(train_generator, steps_per_epoch=2000, epochs=EPOCHS)
+Passing a tuple containing image_generator and mask_generator objects and sample weights to fit_generator throw this error:
+Exception in thread Thread-1:
+Traceback (most recent call last):
+File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/threading.py", line 914, in _bootstrap_inner
+self.run()
+File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/threading.py", line 862, in run
+self._target(*self._args, **self._kwargs)
+File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/engine/training.py", line 606, in data_generator_task
+generator_output = next(self._generator)
+TypeError: 'tuple' object is not an iterator
+Traceback (most recent call last):
+File "/Users/.../src/train.py", line 211, in
+train()
+File "/Users/.../src/train.py", line 177, in train
+h = model.fit_generator(train_generator, steps_per_epoch=2000, epochs=EPOCHS)
+File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/legacy/interfaces.py", line 88, in wrapper
+return func(*args, **kwargs)
+File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/engine/training.py", line 1852, in fit_generator
+str(generator_output))
+ValueError: output of generator should be a tuple (x, y, sample_weight) or (x, y). Found: None
+Is anyone able to share how I could implement data augmentation with pixel wise segmentation, while using sample weights?

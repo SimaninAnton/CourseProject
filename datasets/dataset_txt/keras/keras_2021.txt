@@ -1,0 +1,68 @@
+tsnowak commented on 1 Jul 2017
+Issue
+I have found that HDF5Matrix does not close the .h5 file after opening (this can be clearly seen in the given link), which prevents shuffling or later manipulation of the given file.
+Background
+I've recently been working on a training framework in Keras/TF using an .h5 file with two groups, images and labels, which contain data sets images and labels respectively. The motivation for using h5py is to be able to handle data sets that won't fit into memory.
+For training, I shuffle the .h5 file and save it as a new file (in case original order is important), let's call this new shuffled file shuffled.h5. For handling epochs and epoch-to-epoch shuffling I do the following:
+for epoch in range(0,epochs):
+    print('')
+    shuffled_file, x, y = utils.shuffle_h5(datafile, x_ds, y_ds, write_batch=10000)
+    self._base_model.fit(HDF5Matrix(shuffled_file, x), HDF5Matrix(shuffled_file, y), epochs=1,\
+        batch_size=batch_size, validation_split=.1, callbacks=callback_list, shuffle='batch')
+Here:
+shuffled_file is the name shuffled.h5
+x is the h5py.Dataset within shuffled.h5 which contains the images
+y is the h5py.Dataset within shuffled.h5 which contains the labels
+The Error
+When I try to use the above, the following is output:
+Shuffling cifar100.h5 into shuffled-cifar100.h5 - (0-100/100)
+Train on 90 samples, validate on 10 samples
+Epoch 1/1
+64/90 [====================>.........] - ETA: 1s - loss: 10.3659 - acc: 0.0000e+00Epoch 00000: val_loss improved from inf to 16.11810, saving model to /bigolepath/weights/train-vgg16_weights.h5
+90/90 [==============================] - 7s - loss: 12.0276 - acc: 0.0000e+00 - val_loss: 16.1181 - val_acc: 0.0000e+00
+Traceback (most recent call last):
+  File "main.py", line 62, in <module>
+    model.train('cifar100.h5', 'images/images', 'labels/labels')
+  File "/bigolepath/src/vgg16.py", line 542, in train
+    h5f = h5py.File(s_file,'w')
+  File "/bigolepath/env/local/lib/python2.7/site-packages/h5py/_hl/files.py", line 271, in __init__
+    fid = make_fid(name, mode, userblock_size, fapl, swmr=swmr)
+  File "/bigolepath/env/local/lib/python2.7/site-packages/h5py/_hl/files.py", line 107, in make_fid
+    fid = h5f.create(name, h5f.ACC_TRUNC, fapl=fapl, fcpl=fcpl)
+  File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2840)
+  File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2798)
+  File "h5py/h5f.pyx", line 98, in h5py.h5f.create (/tmp/pip-nCYoKW-build/h5py/h5f.c:2284)
+IOError: Unable to create file (Unable to truncate a file which is already open)
+Attempted Fix
+In order to close the left open 'shuffled.h5' file so that I might reshuffle the original .h5 file and write to 'shuffled.h5' again I tried finding all existing h5py.Files and closing them with:
+for epoch in range(0,epochs):
+    print('')
+    s_file, x, y = utils.shuffle_h5(datafile, x_ds, y_ds, write_batch=10000)
+    self._base_model.fit(HDF5Matrix(s_file, x), HDF5Matrix(s_file, y), epochs=1,\
+        batch_size=batch_size, validation_split=.1, callbacks=callback_list, shuffle='batch')
+    ## garbage collect and try to close any open instances of h5py.File
+    for obj in gc.get_objects():
+        if isinstance(obj, h5py.File):
+            try:
+                 obj.close()
+            except:
+                 pass
+But it appears that HDF5Matrix relies on that file remaining open.
+Shuffling cifar100.h5 into shuffled-cifar100.h5 - (0-100/100)
+Traceback (most recent call last):
+  File "main.py", line 62, in <module>
+    model.train('cifar100.h5', 'images/images', 'labels/labels')
+  File "/bigolepath/src/vgg16.py", line 539, in train
+    self._base_model.fit(HDF5Matrix(s_file, x), HDF5Matrix(s_file, y), epochs=1,\
+  File "bigolepath/env/local/lib/python2.7/site-packages/keras/utils/io_utils.py", line 53, in __init__
+    self.data = f[dataset]
+  File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2840)
+  File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2798)
+  File "/bigolepath/env/local/lib/python2.7/site-packages/h5py/_hl/group.py", line 169, in __getitem__
+    oid = h5o.open(self.id, self._e(name), lapl=self._lapl)
+  File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2840)
+  File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2798)
+  File "h5py/h5o.pyx", line 190, in h5py.h5o.open (/tmp/pip-nCYoKW-build/h5py/h5o.c:3734)
+ValueError: Not a location (Invalid object id)
+Conclusion
+Regardless of whether I am going about training via .h5 files the wrong way (if I am please offer suggestions) I believe that each .h5 file opened by Keras should be closed so that they me used later in a users code.

@@ -1,0 +1,40 @@
+ice-phoenix commented on 17 Dec 2015
+The following script fails.
+import keras
+
+from keras.models import *
+from keras.layers import *
+from keras.layers.core import *
+
+encoder = containers.Sequential([Dense(10, input_dim=100), Dense(2)])
+decoder = containers.Sequential([Dense(2, input_dim=10), Dense(100)])
+
+model = Sequential()
+model.add(AutoEncoder(encoder=encoder, decoder=decoder, output_reconstruction=False))
+model.add(Dense(1))
+
+model.compile(loss='binary_crossentropy', optimizer='sgd')
+[ice-phoenix@niobium ml]$ python auto_encoder_bug.py 
+Using Theano backend.
+Using gpu device 0: GeForce GTX 960 (CNMeM is disabled)
+Traceback (most recent call last):
+  File "auto_encoder_bug.py", line 14, in <module>
+    model.add(Dense(1))
+  File "/usr/lib/python3.5/site-packages/Keras-0.3.0-py3.5.egg/keras/layers/containers.py", line 68, in add
+  File "/usr/lib/python3.5/site-packages/Keras-0.3.0-py3.5.egg/keras/layers/core.py", line 82, in set_previous
+  File "/usr/lib/python3.5/site-packages/Keras-0.3.0-py3.5.egg/keras/layers/core.py", line 1162, in output_shape
+AttributeError: 'Sequential' object has no attribute 'previous'
+The problem is that AutoEncoder.output_shape is defined as follows:
+class AutoEncoder(Layer):
+    ...
+    @property
+    def output_shape(self):
+        if self.output_reconstruction:
+            return self.encoder.previous.output_shape
+        else:
+            return self.decoder.previous.output_shape
+and containers.Sequential does not define previous.
+It could be fixed in several ways:
+Define AutoEncoder.output_shape via encoder.output_shape / decoder.output_shape
+Introduce previous property to containers.Sequential (does not fix things when AutoEncoder is the first layer in the net as there'll be no previous layer)
+I could try to work on this after getting some feedback on what would be the best way to fix this.

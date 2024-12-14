@@ -1,0 +1,84 @@
+TQuy commented on 17 May 2019
+I cannot reproduce my result on the test set. When I load the weight back, my model doesn't work consistently
+I've run my code on google colab, based on the paper "Neural Architectures for Named Entity Recognition"
+I have added the code to fix some initializers
+import numpy as np
+import tensorflow as tf
+import random as rn
+import os
+os.environ['PYTHONHASHSEED'] ='0'
+np.random.seed(42)
+rn.seed(12345)
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+from keras import backend as K
+tf.set_random_seed(1234)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
+My mode is bellow:
+def building_ner(num_lstm_layer, num_hidden_node, num_hidden_node_char, dropout, droupout_char, time_step, time_step_char,\
+                vector_length, vector_length_char, output_length): 
+    char_inputs = Input(shape=(time_step, time_step_char, vector_length_char), name='char_input')
+    inputs = [char_inputs]
+    char_mask = Masking(mask_value = 0.0, input_shape = (time_step_char, vector_length_char))(char_inputs)
+    char_embeddings = TimeDistributed(Bidirectional(LSTM(units=num_hidden_node_char,return_sequences = False, dropout = droupout_char,\
+                                                            recurrent_dropout = droupout_char),\
+                                                            merge_mode='concat'))(char_mask)                                                      
+    word_inputs = Input(shape = (time_step, vector_length), name = 'word_input')  
+    inputs.append(word_inputs)
+    word_embeddings = keras.layers.concatenate([char_embeddings, word_inputs])
+    z = Masking(mask_value = 0.0)(word_embeddings)
+    for i in range(num_lstm_layer - 1):
+        z = Bidirectional(LSTM(units=num_hidden_node, return_sequences=True, dropout = dropout, recurrent_dropout = dropout))(z)
+    z = Bidirectional(LSTM(units=num_hidden_node, return_sequences=True, dropout = dropout, recurrent_dropout = dropout),\
+                             merge_mode='concat')(z)
+    z = TimeDistributed(Dense(output_length))(z)
+    crf = CRF(units = output_length, learn_mode = 'join', test_mode = 'viterbi', sparse_target=False)
+    pred = crf(z)
+    model = Model(inputs=inputs, outputs=pred)
+    model.compile('adam', loss=crf_loss, metrics=[crf_viterbi_accuracy])
+    return model
+ner_model = building_ner(num_lstm_layer, num_hidden_node, num_hidden_node_char, dropout, droupout_char, max_length, max_length_char, \
+                                    vector_length, vector_length_char, output_length)
+I use data generator for train,dev and test set
+def data_generator(word_list, pos_id_list, chunk_id_list, tag_id_list, steps_per_epoch):
+    while True:
+        for i in range(steps_per_epoch):
+            word_list_batch = word_list[i*batch_size:(i+1)*batch_size]
+            pos_id_list_batch = pos_id_list[i*batch_size:(i+1)*batch_size]
+            chunk_id_list_batch = chunk_id_list[i*batch_size:(i+1)*batch_size]
+            tag_id_list_batch = tag_id_list[i*batch_size:(i+1)*batch_size]
+            ## Create embedded matrixes
+            word_batch = construct_tensor_word(word_list_batch, unknown_embedd, en_model, embedd_dim,\
+                                                                    max_length)
+            char_batch = construct_tensor_char(word_list_batch, unknown_embedd_char, char_dict, embedd_dim_char, \
+                                                max_length, max_length_char)
+            pos_batch = construct_tensor_onehot(pos_id_list_batch, max_length, dim_pos)
+            chunk_batch = construct_tensor_onehot(chunk_id_list_batch, max_length, dim_chunk)
+            tag_batch = construct_tensor_onehot(tag_id_list_batch, max_length, dim_tag)
+            input_batch = np.concatenate((word_batch, pos_batch), axis = 2)
+            input_batch = np.concatenate((input_batch, chunk_batch), axis = 2)
+            output_batch = tag_batch
+            yield([char_batch, input_batch], output_batch)
+train_generator = data_generator(word_list_train, pos_id_list_train, chunk_id_list_train, tag_id_list_train, steps_per_epoch_train)
+dev_generator = data_generator(word_list_dev, pos_id_list_dev, chunk_id_list_dev, tag_id_list_dev, steps_per_epoch_dev)
+test_generator = data_generator(word_list_test, pos_id_list_test, chunk_id_list_test, tag_id_list_test, steps_per_epoch_test)
+vector_length = embedd_dim + dim_pos + dim_chunk
+vector_length_char = embedd_dim_char
+output_length = dim_tag
+The code I use to train, test and load the weights back is bellow:
+ner_model.load_weights(path + '/model/checkpoint-07-0.9972.h5')
+# ner_model = load_model(path + '/model/checkpoint-13-1.00.h5', custom_objects = custom_objects)
+# ner_model = load_model(path + '/model/ner_fasttext_model.h5', custom_objects=custom_objects)
+print(ner_model.summary())
+
+early_stopping = EarlyStopping(monitor='val_crf_viterbi_accuracy', patience=patience, restore_best_weights=False)
+filepath = path + '/model/checkpoint-1-{epoch:02d}-{val_crf_viterbi_accuracy:.4f}.h5'
+checkpoint = ModelCheckpoint(filepath, monitor='val_crf_viterbi_accuracy', verbose=1, save_best_only=False, save_weights_only = True)
+callbacks_list = checkpoint
+# history = ner_model.fit_generator(train_generator, steps_per_epoch = steps_per_epoch_train, epochs=40,\
+#             validation_data = dev_generator, validation_steps = steps_per_epoch_dev, callbacks = [early_stopping, callbacks_list])
+print('Testing model...')
+predicts=[]
+# ner_model.save(path + '/model/ner_fasttext_model.h5')
+answer_1 = ner_model.predict_generator(test_generator, steps = steps_per_epoch_test)
+But the first time I run, the result is 95%. After resetting runtime, and load the model back, the result is not consistent, and only 93% or 92%. Can anyone point out what is wrong

@@ -1,0 +1,72 @@
+Pinank commented on 13 Oct 2016
+I have made APIs in Django and uploading a file from the IOS app. I'm passing file by converting it into data using multipart request. It's uploading fine from the Postman but while posting from application, i'm getting following error,
+{
+    "userProfilePicture":["The submitted data was not a file.
+                         Check the encoding type on the form."]
+}
+Can anybody help me with this out?
+Code:
+models.py
+from __future__ import unicode_literals
+from django.db import models
+import datetime
+
+def upload_location(instance, fileName):
+    extension       = fileName.split('.')[-1]
+    random_string   = 'IMG-' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename        = "images/" + UserImages._meta.app_label + "/" + random_string + "."  + extension
+    return filename
+
+class UserImages(models.Model):
+    userId                  = models.AutoField(primary_key=True, db_column="user_id")
+userProfilePicture      = models.ImageField (
+    "Profile Picture", 
+    upload_to = upload_location,
+    db_column="user_profile_picture",
+    blank=True
+    )
+serializers.py
+from rest_framework import serializers
+from .models import UserImages
+
+class UserImageSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = UserImages
+views.py
+from django.shortcuts import render
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.generics import  ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from .serializers import UserImageSerializer
+from .models import UserImages
+
+class UserImageUpload(ListCreateAPIView):
+    serializer_class = UserImageSerializer
+    queryset = UserImages.objects.all()
+
+class UserImageUpdate(RetrieveUpdateDestroyAPIView):
+    serializer_class = UserImageSerializer
+urls.py
+from django.conf.urls import url
+from django.contrib import admin
+from .views import UserImageUpload, UserImageUpdate
+
+urlpatterns = [
+    url(r'^user-create/$', UserImageUpload.as_view()),
+    url(r'^user-update/(?P<pk>[0-9]+)/$', UserImageUpdate.as_view()),
+];
+Making post/put request.
+Here is the API calling code of IOS
+    AFHTTPRequestOperationManager *manager = [AFHTTPRequestOperationManager manager];
+    manager.requestSerializer = [AFHTTPRequestSerializer serializer];
+    manager.responseSerializer = [AFJSONResponseSerializer serializer];
+    NSURLRequest *request = [manager.requestSerializer multipartFormRequestWithMethod:@"POST" URLString:@"http://192.168.0.116:8001/user-create/" parameters:nil constructingBodyWithBlock:^(id<AFMultipartFormData> formData) {
+        [formData appendPartWithFormData:imageData name:@"userProfilePicture"];
+    } error:&error];
+    AFHTTPRequestOperation *operation = [manager HTTPRequestOperationWithRequest:request success:^(AFHTTPRequestOperation *operation, id responseObject) {
+        NSLog(@"%@", responseObject);
+    } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
+        NSLog(@"%@", [[NSString alloc] initWithData:operation.responseData encoding:NSUTF8StringEncoding]);
+    }];
+    [manager.operationQueue addOperation:operation];

@@ -1,0 +1,76 @@
+Singletoned commented on Nov 1, 2017 •
+edited
+Summary.
+Using the requests-wsgi-adapter code, deleting cookies (eg using httpbin) doesn't work. I wrote a test that demonstrates it: https://github.com/Singletoned/requests-wsgi-adapter/blob/feature/delete-cookies/tests.py#L77
+The equivalent code using requests and httpbin.org works fine, but using requests, requests-wsgi-adapter and httpbin as a wsgi app, it fails to delete the cookie.
+# This works as expected
+
+import requests
+
+session = requests.Session()
+
+response = session.get("http://httpbin.org/cookies/set?flim=flam&flooble=flumble")
+print(response.json())
+assert response.json()['cookies'] == {'flooble': 'flumble', 'flim': 'flam'}
+
+response = session.get("http://httpbin.org/cookies/delete?flim=flam")
+print(response.json())
+assert response.json()['cookies'] == {'flooble': 'flumble'}
+I imagine the fact that is doesn't work is a result of the interface between requests and requests-wsgi-adapter, but I can't work out what is going wrong. Any help investigating this would be greatly appreciated.
+I wonder if it might be something to do with the cookie domain...
+Expected Result
+I expect the flim cookie to not be in the response anymore.
+Actual Result
+Rather than deleting the cookie it appears to do nothing.
+Reproduction Steps
+# pip install httpbin requests-wsgi-adapter
+# This fails
+import httpbin
+import requests
+
+from wsgiadapter import WSGIAdapter
+
+session = requests.session()
+session.mount('http://localhost', WSGIAdapter(app=httpbin.app))
+session.get(
+    "http://localhost/cookies/set?flimble=floop&flamble=flaap")
+response = session.get("http://localhost/cookies")
+assert response.json() == {
+    'cookies': {'flimble': 'floop', 'flamble': 'flaap'}}
+response = session.get(
+    "http://localhost/cookies/delete?flimble")
+result = response.json()
+expected = {'cookies': {'flamble': 'flaap'}}
+assert result == expected, result
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.2"
+  },
+  "platform": {
+    "release": "16.7.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.1"
+  },
+  "system_ssl": {
+    "version": "100020cf"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}

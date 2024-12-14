@@ -1,0 +1,49 @@
+sinjax commented on 27 Jul 2016 •
+edited
+Hey All,
+First off thanks for all the amazing work on keras.
+I've been using it on and off for a year now and I'm really enjoying the way keras makes me think about the problems I've been modeling.
+Right, so I have a keras install on a 32 core machine. When running a seq2seq like this:
+self.model = Sequential()
+self.model.add(Embedding(len(self.vocab), embedding_size,mask_zero=True))
+self.model.add(LSTM(hidden_size)) 
+self.model.add(Dense(hidden_size))
+self.model.add(Activation('relu'))
+self.model.add(RepeatVector(max_sentence_length))
+self.model.add(LSTM( hidden_size, return_sequences=True))
+self.model.add(TimeDistributed(Dense(len(self.vocab))))
+self.model.add(Activation('softmax'))
+self.model.compile(loss='categorical_crossentropy', optimizer='adam')
+I do a top and I see CPU usage to be around 3200% and average load hovers around 18 to 20.
+So this seems to parallelize.
+However, when running a relatively simple model like this:
+def my_merge(parts):
+  a, b, c = parts
+  d = K.sqrt(K.sum(K.square(a + b - c), axis=2))
+  return d
+a = Input(shape=(1,), dtype='int32')
+b = Input(shape=(1,), dtype='int32')
+c = Input(shape=(1,), dtype='int32')
+self.emb1 = Embedding(emb1_size, embedding_dims, W_constraint=unitnorm())
+self.emb2 = Embedding(emb2_size, embedding_dims)
+
+a_embed = self.emb1(a)
+b_embed = self.emb2(b)
+c_embed = self.emb1(c)
+
+final_layer = merge([a_embed, b_embed, c_embed], mode=my_merge, output_shape=(1,))
+model = Model(input=[left, relation, right], output=final_layer, name=name)
+I do a top and I see CPU usage is around 100% and average load hovers around 1 or 1.08.
+So this does not seem to parallelize
+In terms of their input both models are fed via a generator.
+Am i wrong to expect parallelism here? My assumption was an operation level parallelism
+and seeing as all I'm doing here is summation it feels like that should parallise efficiently,
+is this not correct?
+To be fair, this relatively simple model seems to scale fairly well to huge batch sizes.
+Still, I wonder if i'm missing a trick here.
+Also I'm experimenting with more complex variations of this simple model, things that include
+a couple dot products in the merge applied on outputs of another embedding layer, and still I don't seem to get any multi-core usage
+If it helps, emb1_size can go as high as 30 million and emb2 size around 1000 or so.
+I'm using the theano backend.
+The seq2seq model is being trained on batch sizes of 1024 while with the embedding model batches of 1024 seem to take the same time as batches of 100k!
+Thanks!

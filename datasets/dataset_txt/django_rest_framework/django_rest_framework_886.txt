@@ -1,0 +1,44 @@
+dbinetti commented on 10 Mar 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+With:
+# models.py
+class Alpha(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    public_name = models.CharField(
+        max_length=255,
+    )
+
+
+class AlphaPrivate(models.Model):
+    alpha = models.OneToOneField(
+        'Alpha',
+        on_delete=models.CASCADE,
+        primary_key=True,
+        parent_link=True,
+    )
+
+    private_name = models.CharField(
+        max_length=255,
+    )
+Attempt to render a schema with normal schema_view
+Expected behavior
+Renders schema.
+Actual behavior
+Raises UnboundLocalError
+Investigation
+The most direct cause of the error is that there is a Try/Except block at L531 of schemas.py that tries to get a field from the model that doesn't exist. This throws an Exception, but there is a pass in the except block which just allows things to keep going, producing the error when the next line of code attempts to access the uninstantiated variable. (Sorry for the "duh" explanation, but it is odd that there would be a pass there -- perhaps some debugging code that wasn't removed?)
+Anyway, the model._meta.get_field(variable) at L532 fails because the variable being checked (which is returned by uritemplate.variables()) is 'id' and there is no field named 'id' in this model; the field being used as the actual id is 'alpha', which is a OneToOneField set as a primary key and parent link.
+I'm using AlphaPrivate to maintain some private information with different permissions that would otherwise be part of Alpha -- hence the primary_key=True and parent_link=True in the above. Now I should mention that I'm unsure if I'm misconfiguring things in some way by using the above approach. That's why I haven't supplied a test: it seems just as likely that I am not doing things in the right way as I've found a legit bug.
+Happy to expand further if necessary.

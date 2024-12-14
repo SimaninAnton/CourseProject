@@ -1,0 +1,118 @@
+schmolze commented on 30 Apr 2017
+I'm trying to learn a regression problem. The data is mostly one-hot encoded categorical variables, one continuous. The target output is a probability (0-1). Here is the code:
+def read_lines(filename):
+ lines = []
+
+ with open(filename) as file:
+  for line in file:
+   line = line.strip()
+   lines.append(line)
+
+ return lines
+
+
+# read target survival probabilities and patient IDs
+targets = np.loadtxt("../survival/target_probs.txt", delimiter=",")
+
+all_patient_ids = read_lines("../survival/target_patient_ids.txt")
+
+
+# read available patient IDs and variable names
+patient_ids = read_lines("clinical_patient_ids.txt")
+var_names = read_lines("clinical_var_names.txt")
+
+# only use available cases
+pt_idxs = [all_patient_ids.index(x) for x in patient_ids]
+
+targets = targets[pt_idxs]
+
+# determine number of cases for 60/10/30 train/val/test split
+n_cases = len(patient_ids)
+n_train = int(round(n_cases*.6))
+n_val = int(round(n_cases*.1))
+n_test = int(round(n_cases*.3))
+
+
+# extract training, val, and test patient IDs
+train_patient_ids = patient_ids[:n_train]
+val_patient_ids = patient_ids[n_train:n_train+n_val]
+test_patient_ids = patient_ids[n_train+n_val:]
+
+Y_train = targets[:n_train]
+Y_val = targets[n_train:n_train+n_val]
+Y_test = targets[n_train+n_val:n_cases]
+
+# load data
+data = np.loadtxt("clinical_data.txt", delimiter=",")
+
+# preprocess
+min_max_scaler = preprocessing.MinMaxScaler()
+
+min_max_scaler.fit(data)
+
+data = min_max_scaler.transform(data)
+
+# set up  model architecture
+model = Sequential()
+
+model.add(Dense(32, activation="relu", input_dim=len(var_names),
+ kernel_regularizer=regularizers.l2(0.01)))
+model.add(Dropout(0.2))
+model.add(Dense(20, activation="relu", kernel_regularizer=regularizers.l2(0.01)))
+model.add(Dropout(0.2))
+model.add(Dense(16, activation="relu", kernel_regularizer=regularizers.l2(0.01)))
+model.add(Dropout(0.2))
+model.add(Dense(16, activation="relu", kernel_regularizer=regularizers.l2(0.01)))
+model.add(Dropout(0.2))
+model.add(Dense(1, activation="sigmoid", kernel_regularizer=regularizers.l2(0.01)))
+
+X_train = data[:n_train]
+X_val = data[n_train:n_train+n_val]
+X_test = data[n_train+n_val:n_cases]
+
+# train on clinical data
+early_stop = EarlyStopping(monitor="val_loss", patience=5)
+
+reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2,
+ patience=2, min_lr=0.001)
+
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+
+model.compile(loss="mse", optimizer="sgd", metrics=["mse"])
+
+hist = model.fit(X_train, Y_train, validation_data=(X_val, Y_val), 
+ epochs=1000, batch_size=32, callbacks=[reduce_lr, early_stop])
+
+
+preds = model.predict(X_test)
+
+evals = model.evaluate(X_test, Y_test)
+
+print(evals)
+print(preds[0:10])
+
+# summarize history for loss
+plt.plot(hist.history["loss"])
+plt.plot(hist.history["val_loss"])
+plt.title("model loss")
+plt.ylabel("loss")
+plt.xlabel("epoch")
+plt.legend(["train", "val"], loc="upper left")
+plt.show()
+It sure seems to be learning something:
+But print(preds[0:10]) gives:
+[[ 0.87765867]
+ [ 0.87765765]
+ [ 0.87766296]
+ [ 0.87765878]
+ [ 0.87765783]
+ [ 0.87765902]
+ [ 0.87765855]
+ [ 0.87765938]
+ [ 0.87766141]
+ [ 0.87766016]]
+Even though print(evals) gives a loss and mse of:
+[0.012566652174742577, 0.0076035054909729212]
+It even does that when I call model.predict() on training data.
+I've tried no regularization, more regularization, different optimizers, different learning rates, mean/std normalization, less depth, more depth, all with the same result.
+Any ideas?

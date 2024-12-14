@@ -1,0 +1,57 @@
+Contributor
+ipod825 commented on 8 Aug 2015
+Update: the code fails only on gpu
+I am doing an experiment requiring a special topology. So I choose to use Graph.
+But I got some problem when adopting add_node function.
+A simplified topology of my case is:
+X0 -> D0 -> Combo -> SoftMax -> Output
+X1 -> D1 -/
+where there are two input channel X0, X1.
+I need to concatenate D0 and D1 in Combo layer.
+If only X0 is used, every thing goes fine. However, if X1 is added, the code fails and I do not know how to fix that with the error message.
+Here's my code, changing couldRun to False makes the code fails.
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from keras.models import Graph
+from keras.layers.core import Dense, Activation
+from keras.utils import np_utils, generic_utils
+import numpy as np
+
+#Changing this to False results in fail of the code
+couldRun = True
+
+input_dim=5
+nb_sample=256
+nb_class = 4
+
+X=np.zeros((2,nb_sample, input_dim)) #Two channel: X0, X1
+y=np.zeros((nb_sample,1))
+
+if __name__ == '__main__':
+
+    ##Topology
+    #X0 -> D0 -> Combo -> SoftMax -> Output
+    #X1 -> D1 -/
+
+    model = Graph()
+    model.add_input(name='X0')
+    model.add_node(Dense(input_dim, 1), name='D0', input='X0')
+
+    if couldRun:
+        model.add_node(Dense(1, nb_class), name='Combo', input='D0', merge_mode='concat')
+    else:
+        #This does not work
+        model.add_input(name='X1')
+        model.add_node(Dense(input_dim, 1), name='D1', input='X1')
+        model.add_node(Dense(2, nb_class), name='Combo', inputs=['D0', 'D1'], merge_mode='concat')
+
+
+    model.add_node(Activation('softmax'), name='Softmax', input='Combo')
+    model.add_output(name='output', input='Softmax')
+
+    model.compile('sgd', {'output':'categorical_crossentropy'})
+    model.fit({
+        'X0':X[0,:,:],
+        'X1':X[1,:,:],
+        'output':np_utils.to_categorical(y, nb_classes=nb_class)
+        })

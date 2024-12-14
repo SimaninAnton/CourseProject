@@ -1,0 +1,33 @@
+peterbe commented on 25 May 2011
+I can quite easily re-produce this. I change my name on Google Accounts to something that has non-ascii characters in it (Peter Bängtsson) and then authenticate on my app on a request handler that uses the tornado.auth.GoogleMixin and I get this error:
+Traceback (most recent call last):
+  File "/Users/peterbe/virtualenvs/worklog/lib/python2.6/site-packages/tornado/web.py", line 884, in _execute
+    getattr(self, self.request.method.lower())(*args, **kwargs)
+  File "/Users/peterbe/virtualenvs/worklog/lib/python2.6/site-packages/tornado/web.py", line 965, in wrapper
+    return method(self, *args, **kwargs)
+  File "/Users/peterbe/dev/TORNADO/worklog/apps/main/handlers.py", line 1713, in get
+    self.get_authenticated_user(self.async_callback(self._on_auth))
+  File "/Users/peterbe/virtualenvs/worklog/lib/python2.6/site-packages/tornado/auth.py", line 728, in get_authenticated_user
+    OpenIdMixin.get_authenticated_user(self, callback)
+  File "/Users/peterbe/virtualenvs/worklog/lib/python2.6/site-packages/tornado/auth.py", line 99, in get_authenticated_user
+    method="POST", body=urllib.urlencode(args))
+  File "/usr/local/Cellar/python2.6/2.6.6/lib/python2.6/urllib.py", line 1269, in urlencode
+    v = quote_plus(str(v))
+UnicodeEncodeError: 'ascii' codec can't encode characters in position 1-2: ordinal not in range(128)
+The offending method that gets it wrong is this:
+def get_authenticated_user(self, callback):
+    """Fetches the authenticated user data upon redirect.
+
+    This method should be called by the handler that receives the
+    redirect from the authenticate_redirect() or authorize_redirect()
+    methods.
+    """
+    # Verify the OpenID response via direct request to the OP
+    args = dict((k, v[-1]) for k, v in self.request.arguments.iteritems())
+    args["openid.mode"] = u"check_authentication"
+    url = self._OPENID_ENDPOINT
+    http = httpclient.AsyncHTTPClient()
+    http.fetch(url, self.async_callback(
+        self._on_authentication_verified, callback),
+        method="POST", body=urllib.urlencode(args))
+I would suggest a patch that converts v[-1] to a byte string from utf-8 but the utility functions for to- and from unicode has changed so much lately that I don't know which is which.

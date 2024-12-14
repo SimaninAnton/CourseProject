@@ -1,0 +1,91 @@
+anMabbe commented on 27 Jun 2016 •
+edited
+I am using the function fit_generator with different generators for training and testing. These generators, albeit different, are calling the same Keras model.
+Here is a minimal example (the code is useless as both train and test generators are the same)
+import numpy as np
+
+from keras.layers.core import Masking, Dense, TimeDistributedDense
+
+from keras.layers.recurrent import GRU
+from keras.models import Sequential
+
+model = Sequential()
+model.add(Masking(mask_value = 0.0, input_shape = (10,2)))
+model.add(GRU(2, consume_less = 'gpu', return_sequences = False))
+model.add(Dense(2, activation = 'softmax'))
+model.summary()
+
+modelBis = Sequential()
+modelBis.add(Masking(mask_value = 0.0, input_shape = (10,2)))
+modelBis.add(GRU(2, consume_less = 'gpu', return_sequences = True))
+modelBis.add(TimeDistributedDense(2))
+
+y = np.asarray([[0,1] for i in range(10)])
+def generatorTrain():
+    while 1:
+        x = np.random.rand(10,10,2)
+        prediction = modelBis.predict(x)
+        yield prediction, y
+
+def generatorTest():
+    while 1:
+        x = np.random.rand(10,10,2)
+        prediction = modelBis.predict(x)
+        yield prediction, y
+
+genTrain = generatorTrain()
+genTest = generatorTest()
+
+model.compile('sgd','mse')
+model.fit_generator(genTrain, 100, 10, validation_data = genTest, nb_val_samples=100)
+After a few epochs, this gives rise to the following error.
+Exception in thread Thread-8:
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/threading.py", line 801, in __bootstrap_inner
+    self.run()
+  File "/usr/lib/python2.7/threading.py", line 754, in run
+    self.__target(*self.__args, **self.__kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 404, in data_generator_task
+    generator_output = next(generator)
+  File "<stdin>", line 4, in generatorTest
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 459, in predict
+    return self.model.predict(x, batch_size=batch_size, verbose=verbose)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1126, in predict
+    batch_size=batch_size, verbose=verbose)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 846, in _predict_loop
+    batch_outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 518, in __call__
+    return self.function(*inputs)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 871, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/usr/local/lib/python2.7/dist-packages/theano/gof/link.py", line 314, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 859, in __call__
+    outputs = self.fn()
+  File "/usr/local/lib/python2.7/dist-packages/theano/scan_module/scan_op.py", line 951, in rval
+    r = p(n, [x[0] for x in i], o)
+  File "/usr/local/lib/python2.7/dist-packages/theano/scan_module/scan_op.py", line 940, in <lambda>
+    self, node)
+  File "theano/scan_module/scan_perform.pyx", line 76, in theano.scan_module.scan_perform.perform (/home/riminder/.theano/compiledir_Linux-3.19--generic-x86_64-with-Ubuntu-14.04-trusty-x86_64-2.7.11-64/scan_perform/mod.cpp:1863)
+TypeError: an integer is required
+Apply node that caused the error: forall_inplace,gpu,scan_fn}(Shape_i{1}.0, GpuSubtensor{int64:int64:int8}.0, Subtensor{int64:int64:int8}.0, GpuIncSubtensor{InplaceSet;:int64:}.0, GpuIncSubtensor{InplaceSet;:int64:}.0, gru_2_W, GpuSubtensor{::, int64::}.0, GpuSubtensor{::, :int64:}.0, GpuDimShuffle{x,0}.0)
+Toposort index: 42
+Inputs types: [TensorType(int64, scalar), CudaNdarrayType(float32, 3D), TensorType(int8, (False, False, True)), CudaNdarrayType(float32, 3D), CudaNdarrayType(float32, (True, False, False)), CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, row)]
+Inputs shapes: ['No shapes', 'No shapes', 'No shapes', (10, 10, 2), 'No shapes', (2, 6), 'No shapes', 'No shapes', 'No shapes']
+Inputs strides: ['No strides', 'No strides', 'No strides', (20, 2, 1), 'No strides', (6, 1), 'No strides', 'No strides', 'No strides']
+Inputs values: [None, None, None, 'not shown', None, 'not shown', None, None, None]
+Outputs clients: [[GpuSubtensor{int64:int64:int8}(forall_inplace,gpu,scan_fn}.0, ScalarFromTensor.0, ScalarFromTensor.0, Constant{1})], []]
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 656, in fit_generator
+    max_q_size=max_q_size)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1412, in fit_generator
+    max_q_size=max_q_size)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1474, in evaluate_generator
+    'or (x, y). Found: ' + str(generator_output))
+Exception: output of generator should be a tuple (x, y, sample_weight) or (x, y). Found: None
+Any idea what is going wrong ?

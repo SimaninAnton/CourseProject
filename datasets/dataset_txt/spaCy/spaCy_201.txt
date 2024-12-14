@@ -1,0 +1,63 @@
+Collaborator
+adrianeboyd commented on 30 Oct 2019 •
+edited
+How to reproduce the behaviour
+The new alignment method from @tamuhey is very nice (#4526) but it doesn't allow substitutions, which is problem for some of our corpora with minor differences between the raw texts and token orths in things like quotes. Ideally we would require that the token orths exactly match the texts, but since we do have some slightly noisy corpora, I think we need to keep using the old align, or at least a method that allows some noise.
+Comparing the new and old align functions was very useful because it brought our attention to the old alignment code, which has some bugs we can fix:
+j2i_multi is incorrect (from #4525). The problem is that _get_missing() isn't symmetric, modifies miss regions as it's working, and doesn't quite backtrack enough when alignments aren't found (I think, anyway). It could probably be rewritten, but a quick solution is to call it twice with reversed arguments to get i2j_multi and j2i_multi separately, since the first returned alignment i2j_multi (which is all we use in spacy.gold, as far as I know) is correct.
+The Levenshtein distance costs are different with and without substitutions (old vs. new). An example:
+words1 = ["a", "b", "cd"]
+words2 = ["ab", "c", "d"]
+The old alignment code says the cost is 3 (3 substitutions) and the new alignment code says it's 6 (3 insertions and 3 deletions).
+The old alignment produces this:
+cost:         3
+i2j:          [-1  1 -1]
+j2i:          [-1  1 -1]
+i2j_multi:    {}
+j2i_multi:    {}
+New alignment:
+cost:         6
+i2j:          [-1 -1 -1]
+j2i:          [-1 -1 -1]
+i2j_multi:    {0: 0, 1: 0}
+j2i_multi:    {1: 2, 2: 2}
+Looking at the previous example, I think that the results for i2j are a little unexpected for the old alignment. I think it's odd that tokens of the same length count as substitutions while tokens of different lengths don't and that's the only thing taken into consideration.
+spaCy/spacy/_align.pyx
+Lines 107 to 112 in c2f5f9f
+ for i in range(i2j.shape[0]): 
+     if i2j[i] >= 0 and len(S[i]) != len(T[i2j[i]]): 
+         i2j[i] = -1 
+ for j in range(j2i.shape[0]): 
+     if j2i[j] >= 0 and len(T[j]) != len(S[j2i[j]]): 
+         j2i[j] = -1 
+This might (nearly) work for the kind of punctuation noise present in the English data, but I wouldn't be surprised if there are some strange alignments for other corpora.
+I think this could be solved in a few ways, either by increasing the cost of substitution in the Levenshtein calculation in most cases or modifying the "unaligned" filtering for i2j to be a little more sophisticated.
+I think a custom substitution cost would be the most general way to handle this, with a cost that's higher than insert+deletion for everything except certain character classes like punctuation. I kind of hesitate to have much language-specific or writing system-specific code here, but maybe it's a good idea to limit the kinds of noise in the data to some degree and not allow just any same-length string substitutions.
+The simple alignment does not consider multiple equivalent alignments and the multi alignments do not find partial alignments (see #4569).
+words1 = ["a", "b", "c", "d", "d", "e"]
+words2 = ["ab", "d", "e"]
+cost:       4
+i2j:        [-1, -1, -1,  1, -1,  2]
+j2i:        [-1,  3,  5]
+i2j_multi:  {}
+j2i_multi:  {}
+The first d is aligned and the equivalent alignment with the second d is not considered. The multi alignment does not find ab within a b c. I suspect that handling this well is going to get too complicated.
+This is more GoldParse than the align code, but subtoks can lead to incorrect NER labels, including None in some cases. I haven't looked at the details yet, but here's an example:
+284 T Token subtok None
+285 o Token subtok None
+286 k Token subtok None
+287 e Token subtok None
+288 n Token compound:nn None
+289 令 令牌 subtok I-PRODUCT
+290 牌 令牌 nmod:prep L-PRODUCT
+In a document with a leading space (that I introduced and could normalize, but this still shouldn't happen), the first space is included into subtok and shouldn't be:
+0   USBKey subtok B-PRODUCT
+1 U USBKey subtok I-PRODUCT
+2 S USBKey subtok I-PRODUCT
+3 B USBKey subtok I-PRODUCT
+4 K USBKey subtok I-PRODUCT
+5 e USBKey subtok I-PRODUCT
+6 y USBKey nsubj L-PRODUCT
+Minor issues
+There's no need for separate fill_i2j() and fill_j2i() functions. fill_j2i() is just fill_i2j(matrix.transpose()).
+1

@@ -1,0 +1,44 @@
+mikofski commented on 15 May 2017 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+create a model with a OneToOneField
+class SpecialUser(models.Model):
+    special_user = models.OneToOneField(
+    User,
+    on_delete=models.CASCADE,
+    primary_key=True,
+    related_name="+")
+Then create a mode serializer.
+class SpecialUserSerializer(ModelSerializer):
+    class Meta:
+        model = SpecialUser
+        fields = '__all__'
+Now view the serializer
+SpecialUserSerializer():
+    special_user = ModelField(
+        model_field=<django.db.models.fields.related.OneToOneField: special_user>,
+        validators=[<UniqueValidator(queryset=SpecialUser.objects.all())>]
+    )
+Now try to serialize a new user:
+s = SpecialUserSerializer(data={'special_user': 2})
+s.is_valid()  # True
+s.save()
+ValueError: Cannot assign "2": "SpecialUser.special_user" must be a "User" instance.
+for full stacktrace see pastebin
+Expected behavior
+I would expect that the model serializer would treat the one-to-one field same as a foreign key and create a PrimaryKeyRelatedField instead of the model field. If I do this explicitly then the serializer works as expected:
+class SpecialUserSerializer(ModelSerializer):
+    special_user = PrimaryKeyRelatedField(queryset=User.objects.all())
+    class Meta:
+        model = SpecialUser
+        fields = '__all__'
+Actual behavior
+If you don't explicitly create the primary key related field in the serializer then you cannot use the primary key to serialize the object because Django complains that you must use a model not an integer, nor can you use a nested serialization of the one-to-one related model because then DRF complains that you must use an integer.
+I would like to post a pull request to fix this myself, but it will take a little time. I don't think this is so urgent, since the work around is so easy. In fact, maybe I'm missing something totally obvious and this works as intended?

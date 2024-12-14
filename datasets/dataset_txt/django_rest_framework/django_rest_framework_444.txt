@@ -1,0 +1,27 @@
+tleewu commented on 23 Mar 2018 •
+edited
+django-rest-framework/rest_framework/serializers.py
+Line 957 in 5e6abfb
+ instance.save() 
+I had a question about this line. Couldn't this theoretically run into a race condition if two parallel threads called update on the same instance? One save would override the other save.
+I wonder if a solution like this would prevent this from happening as often.
+    def update(self, instance, validated_data):
+        raise_errors_on_nested_writes('update', self, validated_data)
+        info = model_meta.get_field_info(instance)
+        update_fields = []
+
+        # Simply set each attribute on the instance, and then save it.
+        # Note that unlike `.create()` we don't need to treat many-to-many
+        # relationships as being a special case. During updates we already
+        # have an instance pk for the relationships to be associated with.
+
+        for attr, value in validated_data.items():
+            update_fields.append(attr)
+            if attr in info.relations and info.relations[attr].to_many:
+                field = getattr(instance, attr)
+                field.set(value)
+            else:
+                setattr(instance, attr, value)
+        instance.save(update_fields=update_fields)
+
+        return instance

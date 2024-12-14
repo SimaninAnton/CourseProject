@@ -1,0 +1,67 @@
+Contributor
+dbonadiman commented on 15 Oct 2015
+Hello everyone,
+I open this post to present some new APIs and types of model i have in mind, before start working on them in order to understand: are they feasible? are they needed? or simply understand if it is the best way to do this stuff.
+Nesting Models
+Edit: Just realised that under certain circumstance that is actually possible using: Containers
+The first idea is about nesting models. Models and layer have in common the fact that both of them takes an array or a tensor in input and produces another tensor as output so it should be feasible to do something like:
+seq1 = Sequential()
+seq1.add(Dense(10))
+seq1.add(Activation('relu'))
+seq1.add(Dense(10))
+seq1.add(Activation('relu'))
+
+seq2 = Sequential()
+seq2.add(Dense(40))
+seq2.add(Activation('relu'))
+seq2.add(Dense(10))
+seq2.add(Activation('relu'))
+
+model = Graph()
+model.add_input(name='input1', input_shape=(10,))
+model.add_input(name='input2', input_shape=(40,))
+model.add_node(seq1, name='sequential1', input='input1')
+model.add_node(seq2, name='sequential2', input='input2')
+model.add_node(Dense(50), name='out', inputs=['sequential1','sequential2'])
+model.add_output(name = 'output', input ='out')
+At the current stage it is possible to implement the same model completely in the Graph model so this is an API change that only changes how the model presents itself visually. I presented this changes because it allows another possibility that i will highlight in point 2.
+TimeDistributedModels
+The only way to deal with variable size sequences in Keras at the moment is by using recurrent neural networks or pad the input sequences until (that sometimes is quite problematic). But in practices it is theoretically possible to deal with variables size inputs in a simpler way that sometimes is effective at least as recurrent networks, the sliding window model.
+Here is a simple example, take a sentence in the form:
+Keras is a powerful framework
+And the task is to assign a tag for each word, for example a model that spot the word Keras (A really dumb task to be honest).
+so the sentence is converted as array of indexes:
+[1, 2, 3, 4, 5]
+Now we can feed it one word at the time to our model and predict the output as binary.
+so we need to split it in vector of dimension 1 and feed it to the network one word at the time
+model = Sequential()
+model.add(Embedding(10, 50) input_lenght=1)
+model.add(...)
+...
+model.add(...)
+model.add(Activation('sigmoid'))
+now assume that to spot Keras we need at least one word on the left and one word on the right of the target word. So we pad the sequence.
+[0, 1, 2, 3, 4, 5, 0]
+and convert it to a to dimensional input
+[[0, 1, 2], [1, 2, 3], ..., [4, 5, 0]]
+again each of this vector needs to be fed one by one to the network.
+Now assume that we have this new kind of model lets call it TimeDistributedModel and that the API modification in point 1 is implemented.
+We can simply:
+tdmodel = TimeDistributed(time_axis=1)
+tdmodel.add(model)
+That will simply apply the model defined above over a time dimension and produces at each step a sequence.
+In the case the point 1 is not implemented it is possible to add the layer directly to the model.
+model = TimeDistributed(time_axis=1)
+model.add(Embedding(10, 50) input_lenght=1)
+model.add(...)
+...
+model.add(...)
+model.add(Activation('sigmoid'))
+Unleash the power of Convolutions
+The sliding window model it is not the only kind of model that is used to deal with the variable size of sentence but even convolutional ones. We can implement that is by implementing the k-MaxPooling layer that differs from MaxPooling1D for the fact that all the output it is not subsampled by a factor but the k-Max values for each filter are taken, by doing that the output of a convolution-maxpooling (of any size) is (k, nb_filters) and do not depends on the length of the input sequence.
+What these modification allows me to do in practice?
+Below i will post some papers that would be easily implemented given the discussed modification.
+NLP (almost) from scratch
+Learning Character-level Representations for Part-of-Speech Tagging
+A Convolutional Neural Network for Modelling Sentences
+What do you think? Is it feasible to some extend?

@@ -1,0 +1,148 @@
+Goldrush12 commented on Jul 6, 2019
+I want to run multiple spiders from a script and retrieve the output of the spiders to process it inside the script. To accomplish this, I wrote the following code based on a Stackoverflow thread.
+The issue I'm facing is that the function spider_results() only returns a list of the last item over and over again instead of a list with all the found items. When I run the same spider manually with the scrapy crawl command, I get the desired output. The output of the script, the manual json output and the spider itself are below.
+from scrapy import signals
+from scrapy.crawler import CrawlerProcess
+from scrapy.utils.project import get_project_settings
+from circus.spiders.circus import MySpider
+
+from scrapy.signalmanager import dispatcher
+
+
+def spider_results():
+    results = []
+
+    def crawler_results(signal, sender, item, response, spider):
+        results.append(item)
+        
+
+    dispatcher.connect(crawler_results, signal=signals.item_passed)
+
+    process = CrawlerProcess(get_project_settings())
+    process.crawl(MySpider)
+    process.start()  # the script will block here until the crawling is finished
+    return results
+
+
+if __name__ == '__main__':
+    print(spider_results())
+Script output:
+{'away_odds': 1.44,
+ 'away_team': 'Los Angeles Dodgers',
+ 'event_time': datetime.datetime(2019, 6, 8, 2, 15),
+ 'home_odds': 2.85,
+ 'home_team': 'San Francisco Giants',
+ 'last_update': datetime.datetime(2019, 6, 6, 20, 58, 41, 655497),
+ 'league': 'MLB'}, {'away_odds': 1.44,
+ 'away_team': 'Los Angeles Dodgers',
+ 'event_time': datetime.datetime(2019, 6, 8, 2, 15),
+ 'home_odds': 2.85,
+ 'home_team': 'San Francisco Giants',
+ 'last_update': datetime.datetime(2019, 6, 6, 20, 58, 41, 655497),
+ 'league': 'MLB'}, {'away_odds': 1.44,
+ 'away_team': 'Los Angeles Dodgers',
+ 'event_time': datetime.datetime(2019, 6, 8, 2, 15),
+ 'home_odds': 2.85,
+ 'home_team': 'San Francisco Giants',
+ 'last_update': datetime.datetime(2019, 6, 6, 20, 58, 41, 655497),
+ 'league': 'MLB'}]
+Json output with scrapy crawl:
+[{"home_team": "Los Angeles Angels", "away_team": "Seattle Mariners", "event_time": "2019-06-08 02:07:00", "home_odds": 1.58, "away_odds": 2.4, "last_update": "2019-06-06 20:48:16", "league": "MLB"},
+{"home_team": "San Diego Padres", "away_team": "Washington Nationals", "event_time": "2019-06-08 02:10:00", "home_odds": 1.87, "away_odds": 1.97, "last_update": "2019-06-06 20:48:16", "league": "MLB"},
+{"home_team": "San Francisco Giants", "away_team": "Los Angeles Dodgers", "event_time": "2019-06-08 02:15:00", "home_odds": 2.85, "away_odds": 1.44, "last_update": "2019-06-06 20:48:16", "league": "MLB"}]
+My Spider:
+from scrapy.spiders import Spider
+from ..items import MatchItem
+import json
+import datetime
+import dateutil.parser
+
+class MySpider(Spider):
+    name = 'first_spider'
+
+    start_urls = ["https://websiteXYZ.com"]
+
+    def parse(self, response):
+        item = MatchItem()
+
+        timestamp = datetime.datetime.utcnow()
+        
+        response_json = json.loads(response.body)
+
+        for event in response_json["el"]:
+            for team in event["epl"]:
+                if team["so"] == 1: item["home_team"] = team["pn"]
+                if team["so"] == 2: item["away_team"] = team["pn"]
+
+            for market in event["ml"]:
+                if market["mn"] == "Match result":
+                    item["event_time"] = dateutil.parser.parse(market["dd"]).replace(tzinfo=None)
+                    for outcome in market["msl"]:
+                        if outcome["mst"] == "1": item["home_odds"] = outcome["msp"]
+                        if outcome["mst"] == "X": item["draw_odds"] = outcome["msp"]
+                        if outcome["mst"] == "2": item["away_odds"] = outcome["msp"]
+
+                if market["mn"] == 'Moneyline':
+                    item["event_time"] = dateutil.parser.parse(market["dd"]).replace(tzinfo=None)
+                    for outcome in market["msl"]:
+                        if outcome["mst"] == "1": item["home_odds"] = outcome["msp"]
+                        #if outcome["mst"] == "X": item["draw_odds"] = outcome["msp"]
+                        if outcome["mst"] == "2": item["away_odds"] = outcome["msp"]
+                    
+                            
+            item["last_update"] = timestamp
+            item["league"] = event["scn"]
+            
+            yield item
+Based on a reply I got on Stackoverflow, I created the following two scrips:
+controller.py
+from klein import route, run
+from scrapy import signals
+from scrapy.crawler import CrawlerRunner
+from my_project.spiders.my_spider import My_Spider
+import json
+
+
+class MyCrawlerRunner(CrawlerRunner):
+    """
+    Crawler object that collects items and returns output after finishing crawl.
+    """
+    def crawl(self, crawler_or_spidercls, *args, **kwargs):
+        # keep all items scraped
+        self.items = []
+
+        # create crawler (Same as in base CrawlerProcess)
+        crawler = self.create_crawler(crawler_or_spidercls)
+
+        # handle each item scraped
+        crawler.signals.connect(self.item_scraped, signals.item_scraped)
+
+        # create Twisted.Deferred launching crawl
+        dfd = self._crawl(crawler, *args, **kwargs)
+
+        # add callback - when crawl is done cal return_items
+        dfd.addCallback(self.return_items)
+        return dfd
+
+    def item_scraped(self, item, response, spider):
+        self.items.append(item)
+
+    def return_items(self, result):
+        return self.items
+
+def return_spider_output(output):
+    return json.dumps([dict(item) for item in output])
+
+def spider_controller():
+    runner = MyCrawlerRunner()
+    spider = My_Spider()
+    deferred = runner.crawl(spider)
+    deferred.addCallback(return_spider_output)
+    return deferred
+main_script.py
+from controller import spider_controller
+
+print(spider_controller())
+But this just prints:
+<Deferred at 0x7f9dda5232e8>
+What's wrong with my code? I have been trying to find a solution for this problem for weeks now. Reddit and Stackoverflow weren't helpful.

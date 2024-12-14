@@ -1,0 +1,31 @@
+urtzurd commented on 5 Feb 2014
+I came across a very tricky scenario using a model serializer to update a list of objects triggering an integrity error from the database. Not sure if this may be considered a bug or the way I'm using the serializers is not the best and there is a cleaner work around.
+Imagine that you have an API that authenticates the user with a token and a model that has a reference to the user_id. The API won't allow to specify the user field for obvious security reasons, and it will be automatically filled by the view using the pre_save hook, for example:
+def pre_save(self, asset_status):
+    asset_status.user = self.request.user
+Now add some integrity restrictions to the model, referencing the user field. Those will be skipped by the full_clean method in the serializer, as the user is not in the fields list.
+class AssetStatus(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL)
+    name = models.CharField(max_length=30)
+    color = models.CharField(max_length=6)
+    priority = models.SmallIntegerField()
+
+    class Meta:
+        unique_together = (('user', 'name'), ('user', 'priority'))
+Imagine that you make a bulk update request setting the allow_add_remove parameter to True and you want to delete an already existing entry (you don't pass it in the request) and want to create a new one triggering the same integrity restriction, for example in the request:
+        {
+            'name': 'Error',
+            'color': '#FF0000',
+            'priority': 2
+        }
+And in the DB you have:
+        {
+            'id': 1,
+            'name': 'Warning',
+            'color': '#FFFF00',
+            'priority': 2
+        }
+This will raise an integrity error when saving the model instances, as the bulk update won't check the uniqueness (the user field is not in the serializer fields, thus skipped). It will first try saving the new instance and then delete the stale one from de DB.
+The exception could be avoided performing the deletion of the stale instances first and then create/update the other ones. It could be argued that the real problem is that the unique_together validation should be triggered and if you want to use the same priority value, you should update the already existing instance.
+This scenario can be simplified to a model with a unique restriction. If you are trying to delete an instance and creating a new one triggering both the restriction on the same value, should this be valid situation? It doesn't clash if the existing instance is deleted first and the new one is created afterwards... but the validator should only perform the uniqueness validation if there is no other instance with the same value for that field in the list of objects to be deleted.
+What are your thoughts?

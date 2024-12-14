@@ -1,0 +1,106 @@
+rsmith31415 commented on 23 Jul 2015
+I believe this is an old issue in which overriding get_new_ioloop in AsyncHTTPTestCase throws AttributeError: 'NoneType' object has no attribute done when there are more than one test in the class (that is, the first test actually passes correctly but other tests output the previous error). This is a sample code:
+import tornado.web
+import tornado.gen
+import tornado.websocket
+import tornado.httpserver
+import tornado.ioloop 
+
+import json
+import time
+
+from tornado.testing import gen_test
+from tornado.testing import AsyncHTTPTestCase
+from tornado import websocket
+
+class EchoWebSocket(tornado.websocket.WebSocketHandler):
+    def open(self):
+        print("WebSocket opened")
+
+    def on_message(self, message):
+        message = json.loads(message)
+
+        tornado.ioloop.IOLoop.current().add_callback(lambda: self.write_message(message))
+
+    def on_close(self):
+        print("WebSocket closed")
+
+
+class Application(tornado.web.Application):
+    def __init__(self):
+
+        handlers = [
+            (r'/websocket', EchoWebSocket),
+        ]
+        settings = {
+            'debug': True,
+        }
+
+        tornado.web.Application.__init__(self, handlers, **settings)
+
+
+if __name__ == '__main__':
+    tornado.options.parse_command_line()
+    app = Application()
+    app.listen(8000)
+
+    try:
+        tornado.ioloop.IOLoop.current().start()
+    except:
+        pass
+    finally:
+        tornado.ioloop.IOLoop.current().stop()
+
+class TestEchoWebSocket(AsyncHTTPTestCase):
+    def get_app(self):
+        self.application = Application()
+        return self.application
+
+    def get_new_ioloop(self):
+        return tornado.ioloop.IOLoop.current()
+
+    def setUp(self):
+        super(TestEchoWebSocket, self).setUp()
+
+    def tearDown(self):
+        tornado.ioloop.IOLoop.current().stop()
+
+    @gen_test()
+    def test_websocket_1(self):
+        url = "ws://localhost:%d/websocket" % self.get_http_port()
+        ws = yield websocket.websocket_connect(url, io_loop=self.io_loop)
+        data = {'value': '1'}
+        data = json.dumps(data)
+        ws.write_message(data)
+        response = yield ws.read_message()
+        response = json.loads(response)
+        self.assertEqual(response['value'], "1")
+
+    @gen_test
+    def test_websocket_2(self):
+        url = "ws://localhost:%d/websocket" % self.get_http_port()
+        ws = yield websocket.websocket_connect(url, io_loop=self.io_loop)
+        data = {'value': '1'}
+        data = json.dumps(data)
+        ws.write_message(data)
+        response = yield ws.read_message()
+        response = json.loads(response)
+        self.assertEqual(response['value'], "1")
+.E
+======================================================================
+ERROR: test_websocket_2 (tornado_addcallback_test2.TestEchoWebSocket)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/user/anaconda/envs/tornado-environment/lib/python2.7/site-packages/tornado/testing.py", line 120, in __call__
+    result = self.orig_method(*args, **kwargs)
+  File "/home/user/anaconda/envs/tornado-environment/lib/python2.7/site-packages/tornado/testing.py", line 503, in post_coroutine
+    timeout=timeout)
+  File "/home/user/anaconda/envs/tornado-environment/lib/python2.7/site-packages/tornado/ioloop.py", line 419, in run_sync
+    if not future_cell[0].done():
+AttributeError: 'NoneType' object has no attribute 'done'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.013s
+
+FAILED (errors=1)
+I don't think this is related to websockets, but that is what I have to reproduce this issue. I tried to use tornado.ioloop.IOLoop.current() instead of tornado.ioloop.IOLoop.instance() but the problem remains. I also tried to see if tornado.ioloop.IOLoop.current().add_callback(lambda: self.write_message(message)) was somehow related but using self.write_message(message) throws the same error. How can I fix this issue?

@@ -1,0 +1,26 @@
+Vlad-Shcherbina commented on 29 Jun 2017
+When flask.render_template_string() is invoked with the same template string multiple times, it still compiles it on every invocation. This makes it pretty much unusable in any application where performance is of any concern.
+As a dirty workaround, I use memoized version.
+It only makes sense if template strings are not generated dynamically, but that sounds like a reasonable assumption.
+import flask.globals
+import flask.templating
+
+_compiled_templates = {}
+
+def memoized_render_template_string(source, **context):
+    """Same as flask.render_template_string(), but does not recompile.
+
+    No cache expiration.
+    Assumes that Jinja environment configuration does not change at runtime.
+    """
+    ctx = flask.globals._app_ctx_stack.top
+    ctx.app.update_template_context(context)
+    jinja_env = ctx.app.jinja_env
+    k = jinja_env, source
+    if k in _compiled_templates:
+        template = _compiled_templates[k]
+    else:
+        template = _compiled_templates[k] = jinja_env.from_string(source)
+    return flask.templating._render(template, context, ctx.app)
+Perhaps this problem should be addressed in the actual implementation of render_template_string()?
+I'm not sure what would be the proper way to do it, though.

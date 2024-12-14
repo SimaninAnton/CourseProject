@@ -1,0 +1,97 @@
+ghpaetzold commented on 25 May 2017 •
+edited
+Hello,
+I'm trying to create a model using the functional API that includes parallel convolutions and LSTMs. Here's the code:
+pool_length = 4
+ngram_sizes = range(2, 5)
+layers = 2
+layer_size = 5
+filter_count = 5
+output_size = 100
+
+src_input = Input(shape=(20,), dtype='int32', name='src_input')
+src_embed = Embedding(500, 50, input_length=20)(src_input)
+
+lstm_f = LSTM(layer_size, return_sequences=True, go_backwards=False)(src_embed)
+lstm_b = LSTM(layer_size, return_sequences=True, go_backwards=True)(src_embed)
+for i in range(0, layers-2):
+  lstm_f = LSTM(layer_size, return_sequences=True, go_backwards=False)(lstm_f)
+  lstm_b = LSTM(layer_size, return_sequences=True, go_backwards=True)(lstm_b)
+
+lstm_f = LSTM(layer_size, return_sequences=False, go_backwards=False)(lstm_f)
+lstm_b = LSTM(layer_size, return_sequences=False, go_backwards=True)(lstm_b)
+
+src_convs = []
+for size in ngram_sizes:
+  conv_size = Convolution1D(filter_count, size, border_mode='same', input_shape=src_embed.shape, name='src_conv_'+str(size))(src_embed)
+  conv_size = MaxPooling1D(pool_length=pool_length, border_mode='valid', name='src_maxpool_'+str(size))(conv_size)
+  conv_size = Dropout(0.25)(conv_size)
+  conv_size = Flatten()(conv_size)
+  src_convs.append(conv_size)
+  
+convmerge = merge(src_convs, mode='concat')
+lstmmerge = merge([lstm_f, lstm_b], mode='concat')
+final_merge = merge([convmerge, lstmmerge], mode='concat')
+
+all_out = Dense(output_size, activation='linear', name='out')(final_merge)
+model = Model(input=[src_input], output=[all_out])
+
+model.compile(optimizer='rmsprop', loss={'out': 'mean_squared_error'})
+
+print 'Saving...'
+model_file = './test'
+yaml_string = model.to_yaml()
+open(model_file+'.yaml', 'w').write(yaml_string)
+model.save_weights(model_file+'.h5', overwrite=True)
+
+print 'Loading...'
+model = model_from_yaml(open(model_file+'.yaml').read())
+model.load_weights(model_file+'.h5')
+The model is saved successfully, but upon loading I get this error:
+Traceback (most recent call last):
+  File "test_saving.py", line 61, in <module>
+    model = model_from_yaml(open(model_file+'.yaml').read())
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 202, in model_from_yaml
+    config = yaml.load(yaml_string)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/__init__.py", line 71, in load
+    return loader.get_single_data()
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 39, in get_single_data
+    return self.construct_document(node)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 48, in construct_document
+    for dummy in generator:
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 571, in construct_python_object
+    state = self.construct_mapping(node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 208, in construct_mapping
+    return BaseConstructor.construct_mapping(self, node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 133, in construct_mapping
+    value = self.construct_object(value_node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 90, in construct_object
+    data = constructor(self, tag_suffix, node)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 610, in construct_python_object_new
+    return self.construct_python_object_apply(suffix, node, newobj=True)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 593, in construct_python_object_apply
+    value = self.construct_mapping(node, deep=True)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 208, in construct_mapping
+    return BaseConstructor.construct_mapping(self, node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 133, in construct_mapping
+    value = self.construct_object(value_node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 88, in construct_object
+    data = constructor(self, node)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 482, in construct_python_tuple
+    return tuple(self.construct_sequence(node))
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 118, in construct_sequence
+    for child in node.value]
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 95, in construct_object
+    for dummy in generator:
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 571, in construct_python_object
+    state = self.construct_mapping(node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 208, in construct_mapping
+    return BaseConstructor.construct_mapping(self, node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 133, in construct_mapping
+    value = self.construct_object(value_node, deep=deep)
+  File "/usr/local/lib/python2.7/dist-packages/yaml/constructor.py", line 63, in construct_object
+    "found unconstructable recursive node", node.start_mark)
+yaml.constructor.ConstructorError: found unconstructable recursive node
+  in "<string>", line 20494, column 54:
+     ...                  mode_instance: &id443 !!python/object/new:thean ...
+And yes, I tried using JSON but it does not work either. Does anyone know how to deal with that?

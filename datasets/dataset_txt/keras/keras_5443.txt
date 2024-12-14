@@ -1,0 +1,80 @@
+Contributor
+braingineer commented on 18 Apr 2016
+Whenever I try to unroll an LSTM layer in my model (which is of max size 7), it throws an error. Also, this only happens when unroll is set to True.
+ File "/home/cogniton/research/code/keras/keras/engine/topology.py", line 485, in __call__                                                                     
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)                                                                                         
+  File "/home/cogniton/research/code/keras/keras/engine/topology.py", line 543, in add_inbound_node                                                             
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)                                                                                        
+  File "/home/cogniton/research/code/keras/keras/engine/topology.py", line 148, in create_node                                                                  
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))                                                                        
+  File "/home/cogniton/research/code/keras/keras/layers/custom.py", line 322, in call                                                                           
+    y = self.layer.call(x)                                                                                                                                      
+  File "/home/cogniton/research/code/keras/keras/layers/recurrent.py", line 227, in call                                                                        
+    input_length=input_shape[1])                                                                                                                                
+  File "/home/cogniton/research/code/keras/keras/backend/theano_backend.py", line 636, in rnn                                                                   
+    output, states = step_function(inputs[i], states) 
+  File "/home/cogniton/research/code/keras/keras/layers/recurrent.py", line 743, in step  
+    B_U = states[2] 
+IndexError: list index out of range
+I don't anything that can reproduce it yet, but I was wondering about the structure/flow of the RNN.
+In the last line of the error, line 743 of recurrent, it has the step function access the states array with indices 0-3. However, every place I can find it, the LSTM is never given a 4-length array for states. Am I missing some trace of the logic?
+to summarize my understanding of the trace:
+inside the lstm step which has the line throwing the error
+def step(self, x, states):
+    h_tm1 = states[0]
+    c_tm1 = states[1]
+    B_U = states[2]
+    B_W = states[3]
+.2. inside theano backend K.rnn which calls this step function
+if unroll:
+    indices = list(range(input_length))
+    if go_backwards:
+        indices = indices[::-1]
+
+    successive_outputs = []
+    successive_states = []
+    states = initial_states
+    for i in indices:
+        output, new_states = step_function(inputs[i], states)
+.3. the lstm call to K.rnn
+        if self.stateful:
+            initial_states = self.states
+        else:
+            initial_states = self.get_initial_states(x)
+        constants = self.get_constants(x)
+        preprocessed_input = self.preprocess_input(x)
+
+        last_output, outputs, states = K.rnn(self.step, preprocessed_input,
+                                             initial_states,
+                                             go_backwards=self.go_backwards,
+                                             mask=mask,
+                                             constants=constants,
+                                             unroll=self.unroll,
+                                             input_length=input_shape[1])
+.4. the creation of initial states which is the cause for the error
+    def get_initial_states(self, x):
+        # build an all-zero tensor of shape (samples, output_dim)
+        initial_state = K.zeros_like(x)  # (samples, timesteps, input_dim)
+        initial_state = K.sum(initial_state, axis=1)  # (samples, input_dim)
+        reducer = K.zeros((self.input_dim, self.output_dim))
+        initial_state = K.dot(initial_state, reducer)  # (samples, output_dim)
+        initial_states = [initial_state for _ in range(len(self.states))]
+        return initial_states
+.5. LSTM's build which sets the self.states which is what determines the length of the initial_states array
+    def build(self, input_shape):
+        self.input_spec = [InputSpec(shape=input_shape)]
+        input_dim = input_shape[2]
+        self.input_dim = input_dim
+
+        if self.stateful:
+            self.reset_states()
+        else:
+            # initial states: 2 all-zero tensors of shape (output_dim)
+            self.states = [None, None]
+.6. finally, for a full trace, inside my layer in custom.py, where self.layer is an LSTM
+    def call(self, x, mask=None):
+        input_shape = self.input_spec[0].shape
+        x = K.reshape(x, (-1,) + input_shape[-2:]) # (batch * d1 * ... * dn-2, dn-1, dn)
+        y = self.layer.call(x)
+        output_shape = self.get_output_shape_for(input_shape)
+        return K.reshape(y, output_shape)

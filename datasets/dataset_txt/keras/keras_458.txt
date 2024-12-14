@@ -1,0 +1,140 @@
+sekti92 commented on 15 Jan 2019 •
+edited
+Hello guys, I am trying to make a face recognition with VGG16 pretrained model in Keras.
+However the training did not increase the accuracy.
+I only have 46 data training, 26 validation, and 12 classes
+How to increase the accuracy ? Thanks.
+This is my actual code:
+from keras.applications.vgg16 import VGG16
+from keras.preprocessing import image
+from keras.applications.vgg16 import preprocess_input
+from keras.layers import Input, Flatten, Dense, Dropout
+from keras.models import Model, Sequential
+from keras import backend as K
+import numpy as np
+import matplotlib.pyplot as plt
+
+# dimensions of our images.
+from keras.preprocessing.image import ImageDataGenerator
+
+img_width, img_height = 224, 224
+
+train_data_dir = 'database/train'
+validation_data_dir = 'database/validation'
+nb_train_samples = 46
+nb_validation_samples = 26
+epochs = 50
+batch_size = 2
+
+if K.image_data_format() == 'channels_first':
+    input_shape = (3, img_width, img_height)
+else:
+    input_shape = (img_width, img_height, 3)
+
+#Get back the convolutional part of a VGG network trained on ImageNet
+vgg_conv = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+vgg_conv.summary()
+print('VGG Pretrained Model loaded.')
+
+#Create your own input format (here 3x200x200)
+model = Sequential()
+model.add(vgg_conv)
+
+#Add the fully-connected layers
+model.add(Flatten())
+model.add(Dense(4096, activation='relu', name='fc1'))
+model.add(Dropout(0.3))
+model.add(Dense(4096, activation='relu', name='fc2'))
+model.add(Dropout(0.3))
+model.add(Dense(12, activation='relu', name='prediction'))
+
+#In the summary, weights and layers from VGG part will be hidden, but they will be fit during the training
+model.summary()
+
+
+# this is the augmentation configuration we will use for training
+train_datagen = ImageDataGenerator(
+    rescale=1. / 224,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True)
+
+# this is the augmentation configuration we will use for testing:
+# only rescaling
+test_datagen = ImageDataGenerator(rescale=1. / 224)
+
+train_generator = train_datagen.flow_from_directory(
+    train_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='categorical')
+
+validation_generator = test_datagen.flow_from_directory(
+    validation_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='categorical')
+
+# compile model
+# model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizers.RMSprop(lr=2e-4), metrics=['accuracy'])
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+
+# Train the model
+history = model.fit_generator(
+    train_generator,
+    steps_per_epoch=nb_train_samples / batch_size,
+    epochs=epochs,
+    validation_data=validation_generator,
+    validation_steps=nb_validation_samples / batch_size)
+
+# Save the model
+model.save('vgg16_pretrained_2.h5')
+
+
+
+# Check Performance
+acc = history.history['acc']
+val_acc = history.history['val_acc']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+epochs = range(len(acc))
+
+plt.plot(epochs, acc, 'b', label='Training acc')
+plt.plot(epochs, val_acc, 'r', label='Validation acc')
+plt.title('Training and validation accuracy')
+plt.legend()
+
+plt.figure()
+
+plt.plot(epochs, loss, 'b', label='Training loss')
+plt.plot(epochs, val_loss, 'r', label='Validation loss')
+plt.title('Training and validation loss')
+plt.legend()
+
+plt.show()
+On the 7 epoch the accuracy still the same:
+Epoch 7/50
+ 1/23 [>.............................] - ETA: 50s - loss: 16.1181 - acc: 0.0000e+00
+ 2/23 [=>............................] - ETA: 49s - loss: 8.0590 - acc: 0.5000
+ 3/23 [==>...........................] - ETA: 46s - loss: 10.7454 - acc: 0.3333
+ 4/23 [====>.........................] - ETA: 44s - loss: 12.0886 - acc: 0.2500
+ 5/23 [=====>........................] - ETA: 42s - loss: 12.8945 - acc: 0.2000
+ 6/23 [======>.......................] - ETA: 40s - loss: 12.0886 - acc: 0.2500
+ 7/23 [========>.....................] - ETA: 37s - loss: 12.6642 - acc: 0.2143
+ 8/23 [=========>....................] - ETA: 35s - loss: 12.0886 - acc: 0.2500
+ 9/23 [==========>...................] - ETA: 33s - loss: 11.6408 - acc: 0.2778
+10/23 [============>.................] - ETA: 30s - loss: 12.0886 - acc: 0.2500
+11/23 [=============>................] - ETA: 28s - loss: 12.4549 - acc: 0.2273
+12/23 [==============>...............] - ETA: 26s - loss: 12.7602 - acc: 0.2083
+13/23 [===============>..............] - ETA: 23s - loss: 13.0185 - acc: 0.1923
+14/23 [=================>............] - ETA: 21s - loss: 12.6642 - acc: 0.2143
+15/23 [==================>...........] - ETA: 19s - loss: 12.8945 - acc: 0.2000
+16/23 [===================>..........] - ETA: 16s - loss: 12.5923 - acc: 0.2188
+17/23 [=====================>........] - ETA: 14s - loss: 12.7997 - acc: 0.2059
+18/23 [======================>.......] - ETA: 11s - loss: 12.5363 - acc: 0.2222
+19/23 [=======================>......] - ETA: 9s - loss: 12.7248 - acc: 0.2105
+20/23 [=========================>....] - ETA: 7s - loss: 12.8945 - acc: 0.2000
+21/23 [==========================>...] - ETA: 4s - loss: 13.0480 - acc: 0.1905
+22/23 [===========================>..] - ETA: 2s - loss: 13.1875 - acc: 0.1818
+23/23 [==============================] - 63s 3s/step - loss: 13.3149 - acc: 0.1739 - val_loss: 13.6384 - val_acc: 0.1538

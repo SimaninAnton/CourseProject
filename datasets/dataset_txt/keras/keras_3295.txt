@@ -1,0 +1,94 @@
+xisnu commented on 6 Feb 2017 •
+edited
+I am trying to implement a simple BLSTM-CTC model using Keras (backend Tensorflow). I am testing this with a small dataset of online handwriting samples (316 Train data with 10 distinct characters and 4 words). each of these samples have 401 timesteps and at each timestep I have 16 features. So the input is a Numpy array of dimension [316,401,16]. My network is implemented successfully as suggested by this example. My code is as follows
+def ctc_lambda_func(self,args):
+        y_pred, labels, input_length, label_length = args
+        # the 2 is critical here since the first couple outputs of the RNN
+        # tend to be garbage:
+        y_pred = y_pred[:, 2:, :]
+        return K.ctc_batch_cost(labels, y_pred, input_length, label_length)
+
+self.inputlayer=Input(name='input', shape=[timesteps,features], dtype='float32')
+self.labels = Input(name='the_labels', shape=[maxstringlen], dtype='float32')
+self.input_length = Input(name='input_length', shape=[1], dtype='int64')
+self.label_length = Input(name='label_length', shape=[1], dtype='int64')
+self.lstm_1 = LSTM(rnn_size, return_sequences=True, init='he_normal', name='LSTM1')(self.inputlayer)
+self.lstm_1b = LSTM(rnn_size, return_sequences=True, go_backwards=True, init='he_normal', name='LSTM1_b')(self.inputlayer)
+self.gru1_merged = merge([self.lstm_1, self.lstm_1b], mode='sum')
+self.out=TimeDistributed(Dense(nbclasses,name="dense2",activation="softmax"))(self.gru1_merged)
+        
+self.loss_out = Lambda(self.ctc_lambda_func, output_shape=(1,), name='ctc')([self.out, self.labels, self.input_length, self.label_length])
+self.optimizer = RMSprop(lr=0.001, rho=0.9, epsilon=1e-08, decay=0.0)
+self.final=Model(input=[self.inputlayer,self.labels,self.input_length,self.label_length],output=self.loss_out)
+self.final.compile(loss={'ctc': lambda y_true, out: out}, optimizer=self.optimizer)
+This network is compiled successfully. Now I am running it and saving with
+for e in range(nbepochs):
+            self.final.fit(x,y,batch_size=64,nb_epoch=1,verbose=1)
+            self.final.save_weights("weights.h5")
+#Loading with the following lines after creating the network again
+self.final.load_weights("weights.h5")
+When I am running the training everything is working fine. The CTC error is reducing as expected. But when I am trying to load the model from a previous state then it is not restoring from the last saved state.
+Say I have executed 10 epochs
+Epoch 1/1
+316/316 [==============================] - 2s - loss: 11.5716     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.2032     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.1163     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.9920     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.9337     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.8708     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.7654     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.7335     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.6119     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.4657     
+Model saved
+But when I am loading it again
+Epoch 1/1
+316/316 [==============================] - 2s - loss: 12.5233     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.8969     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.7075     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.5625     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.4145     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.2987     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.1833     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 11.0691     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.9600     
+Model saved
+Epoch 1/1
+316/316 [==============================] - 1s - loss: 10.8676     
+Model saved
+Clearly there is something wrong as the loaded model is not starting from an error around 10.4657. I also tried to save the whole model with save() and load_model() which gave me an error "KeyError: CTC Lambda Func not found".
+I am totally in dark. Is the Lmbda layer creating any problem? Please help if possible. Thank you for your time.

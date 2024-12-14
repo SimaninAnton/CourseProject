@@ -1,0 +1,90 @@
+ocolluphid commented on 11 Aug 2017
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Is there a way to join a custom generator with the Keras ImageDataGenerator?
+Suppose I'm using the following generator that creates bags of images for a multi-instance learning task:
+def img_bag_gen(imgs_X, meta_X, Y1, Y2, bag_size, bag_list):
+
+    '''
+    INPUTS:
+    - X: Must be preprocessed array of size (n_points, features)
+    - Y: Must be one-hot encoded array of size (n_points, classes)
+    '''
+    synth_bag_label = random.choice(bag_list)
+
+    # Create array of indices of all images that match the synth_bag_label
+    label_idx_all = [index for index, val in enumerate(bag_list) if val == synth_bag_label]
+    label_idx_rand = np.random.choice(label_idx_all, bag_size)
+
+    # Randomly pick b indices from label_idx_all, b = bag_size
+    bag_imags = imgs_X[label_idx_rand,:]
+    bag_Y1 = Y1[label_idx_rand,:]
+    bag_Y2 = Y2[label_idx_rand,:]
+    bag_X = meta_X[label_idx_rand,:]
+
+    return bag_imags, bag_Y1, bag_Y2, bag_X
+
+def bag_generator(imgs_X, meta_X, Y1, Y2, batch_size, bag_size, bag_list):
+
+    '''
+    INPUTS:
+    - X: Must be preprocessed array of size (n_points, features)
+    - Y: Must be one-hot encoded array of size (n_points, classes)
+    '''
+
+    while True:
+
+        # Create empty arrays to contain batch of features and labels
+
+        bag_imags_list = []
+        bag_meta_X_list = []
+        bag_Y1_list = []
+        bag_Y2_list = []
+
+        for i in range(batch_size):
+        # choose random index in features
+            bag_imags, bag_Y1, bag_Y2, bag_meta_X = img_bag_gen(imgs_X, meta_X, Y1, Y2, bag_size, bag_list)
+
+            # Collect every bag and bag label generated in a list for future stacking
+            bag_imags_list.append(bag_imags)
+            bag_meta_X_list.append(bag_meta_X)
+            bag_Y1_list.append(bag_Y1)
+            bag_Y2_list.append(bag_Y2)
+
+        # Stack the bags of images along the second axis (i.e. Pythonic first axis)
+        # Lists of bags stacked = batch
+        # Axis = 1 stack bc we want [bag_dim, batch_size, rows, cols, channels]
+        bag_imags_batch = np.stack(bag_imags_list, axis=1)
+        bag_meta_X_batch = np.stack(bag_meta_X_list, axis=1)
+        bag_Y1_batch = np.stack(bag_Y1_list, axis=1)
+        bag_Y2_batch = np.stack(bag_Y2_list, axis=1)
+
+        # Create dict to hold different bag instances
+        dict_bag_img = {}
+
+        for b in range(bag_size):
+            dict_bag_img["X_batch_{}".format(b)] = bag_imags_batch[b,:] #remember the first index represents the bag_idx
+
+        # Since the metadata info and labels stay the same throughout the bag, picking the first one is enough
+        meta_X_batch = bag_meta_X_batch[0]
+        label_Y1_batch = bag_Y1_batch[0]
+        label_Y2_batch = bag_Y2_batch[0]
+
+        # Combine dict of bag_instances to list of bag_instances for the images
+        final_bag_img = list(dict_bag_img.values())
+
+        '''
+        - create size-2 tuple of lists to match up with with X and Y later
+        - alternative full tuple: yield (final_bag_img.append(meta_X_batch), [label_Y1_batch, label_Y2_batch])
+        '''
+        # yield ({'imgs': final_bag_img, 'metadata': meta_X_batch}, {'dmgs': label_Y1_batch, 'tparts': label_Y2_batch})
+
+        yield (final_bag_img, label_Y1_batch)
+Is there a way to send the output of this generator to the ImageDataGenerator in order to leverage its preprocessing capabilities? Would this involve the use of generator.send() features and how would structure it since ImageDataGenerator takes full datasets? I want to avoid turning to the full_dataset = batch size hack because that throws off the epoch counter when you use Callbacks, but if that's the only way please let me know.
+Thanks a lot!

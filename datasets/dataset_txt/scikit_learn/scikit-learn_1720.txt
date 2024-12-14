@@ -1,0 +1,73 @@
+Borda commented on Nov 29, 2017
+I need to work on different python version of the same system and package versions
+Description
+I noticed that there is no guarantee of compatibility across sklearn version nor architecture, but it seems that there is neither compatibility across python versions
+I have simple kmeans that I train and export in py2 and want to use also in py3 but it says that the model is not trained and even more for retraining there are missing some internal representations
+Steps/Code to Reproduce
+training code
+import numpy as np
+from sklearn import cluster
+
+locations = np.random.random((250, 2)) * 5
+
+kmean = cluster.KMeans(n_clusters=60, verbose=True)
+kmean.fit(locations)
+np.savez(open('filename.npz', 'wb'), dict(kmeans=kmean, data=locations))
+
+dump = np.load(open('filename.npz', 'rb'))
+dump = dict(dump[dump.files[0]].tolist())
+dump['kmeans'].predict(locations)
+
+from sklearn.externals import joblib
+joblib.dump(kmean, 'filename.pkl')
+kmean2 = joblib.load('filename.pkl')
+kmean2.predict(locations)
+prediction code
+import numpy as np
+
+try:  # for py3
+    dump = np.load('filename.npz', encoding='bytes')
+    dump = dict(dump[dump.files[0]].tolist())
+    dump = {str(k.decode('utf-8')): dump[k] for k in dump}
+except:  # for py2
+    dump = np.load(open('filename.npz', 'rb'))
+    dump = dict(dump[dump.files[0]].tolist())
+    # dump = {str(k): dump[k] for k in dump}
+
+dump['kmeans'].predict(dump['data'])
+dump['kmeans'].fit(dump['data'])
+dump['kmeans'].predict(dump['data'])
+
+from sklearn.externals import joblib
+kmean = joblib.load('filename.pkl')
+
+kmean.predict(dump['data'])
+kmean.fit(dump['data'])
+kmean.predict(dump['data'])
+Expected Results
+predicted values or at least option to retrain model
+Actual Results
+not trained model:
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/dist-packages/IPython/core/interactiveshell.py", line 2885, in run_code
+    exec(code_obj, self.user_global_ns, self.user_ns)
+  File "<ipython-input-2-d6f7fad3d86c>", line 1, in <module>
+    dump['kmeans'].predict(dump['data'])
+  File "/usr/local/lib/python3.5/dist-packages/sklearn/cluster/k_means_.py", line 955, in predict
+    check_is_fitted(self, 'cluster_centers_')
+  File "/usr/local/lib/python3.5/dist-packages/sklearn/utils/validation.py", line 690, in check_is_fitted
+    raise _NotFittedError(msg % {'name': type(estimator).__name__})
+sklearn.exceptions.NotFittedError: This KMeans instance is not fitted yet. Call 'fit' with appropriate arguments before using this method.
+not compatible:
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/dist-packages/IPython/core/interactiveshell.py", line 2885, in run_code
+    exec(code_obj, self.user_global_ns, self.user_ns)
+  File "<ipython-input-3-2cb7b6e4f231>", line 1, in <module>
+    dump['kmeans'].fit(dump['data'])
+  File "/usr/local/lib/python3.5/dist-packages/sklearn/cluster/k_means_.py", line 879, in fit
+    random_state = check_random_state(self.random_state)
+AttributeError: 'KMeans' object has no attribute 'random_state'
+Versions
+python: 2.7.12 and 3.5.2
+nympy: 1.13.1
+scikit-learn: 0.18.1

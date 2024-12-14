@@ -1,0 +1,31 @@
+Contributor
+matt-jordan commented on Dec 5, 2015
+This is a bit of a weird one, and I'm fairly certain the server is misbehaving slightly, but since I have less control over that:
+When issuing a request with the following:
+        response = requests.post(url,
+            auth=HTTPDigestAuth('admin', 'foobar'))
+The server returns back a challenge with the following WWW-Authenticate header:
+reply: 'HTTP/1.1 401 Unauthorized\r\n'
+header: Server: nginx
+header: Date: Sat, 05 Dec 2015 02:08:43 GMT
+header: Content-Type: text/html; charset=utf-8
+header: Content-Length: 188
+header: Connection: keep-alive
+header: WWW-Authenticate: Digest realm="foobar_api_auth", qop="", nonce="a12059eaaad0b86ece8f62f04cbafed6", algorithm="MD5", stale="false"
+Note the qop header with an empty value. That doesn't appear to be valid per RFC 2617:
+  qop-value         = "auth" | "auth-int" | token
+That being said, RFC 2617 does specify that unrecognised values MUST be ignored. Instead, it looks like requests drops the entire authorization header:
+        if qop is None:
+            respdig = KD(HA1, "%s:%s" % (nonce, HA2))
+        elif qop == 'auth' or 'auth' in qop.split(','):
+            noncebit = "%s:%s:%s:%s:%s" % (
+                nonce, ncvalue, cnonce, 'auth', HA2
+                )
+            respdig = KD(HA1, noncebit)
+        else:
+            # XXX handle auth-int.
+            return None
+This results in the following being sent back to the challenge:
+send: 'POST /json HTTP/1.1\r\nHost: foo.com\r\nContent-Length: 94\r\nAccept-Encoding: gzip, deflate\r\nAccept: */*\r\nUser-Agent: python-requests/2.8.1\r\nConnection: keep-alive\r\nContent-Type: application/json\r\nAuthorization: None\r\n\r\n{"data": "more}'
+I'd be more than happy to work on a PR for this issue, but would like to confirm that a PR that updates the handling of qop to be tolerant to unrecognized tokens/characters would be acceptable. Arguably, the server should be omitting the qop header completely, but RFC compliance in requests would probably make it more tolerant to misbehaving servers like this one.
+Thanks!

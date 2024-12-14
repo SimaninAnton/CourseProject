@@ -1,0 +1,17 @@
+mtschammer commented on 4 Dec 2014
+The update method on ModelSerializer makes sure that the data doesn't contain nested writable fields of the BaseSerializer variety, as per the documentation. However, it doesn't actually assert this by looking at the passed validated_attrs. Instead, it does this by looking at self.fields:
+assert not any(
+            isinstance(field, BaseSerializer) and not field.read_only
+            for field in self.fields.values()
+This means that even if we pop() the data of the nested serializer (as shown in the changelog example), the assertion still fails. This makes it necessary to call explicitly delete the field from self.fields:
+def update(self, instance, validated_attrs):
+        try:
+            # Removing user data - not wanted for an update.
+            validated_attrs.pop('user')
+            self.fields.__delitem__('user') # This shouldn't be necessary.
+        except KeyError:
+            pass
+
+        return super(CustomerSerializer, self).update(instance=instance, validated_attrs=validated_attrs)
+By the time it gets to update, the data has already been validated. So you should be able to assume that any fields not present can be ignored, no?
+In short, I'd say that it shouldn't trigger the error if the field isn't in the validated_attrs.

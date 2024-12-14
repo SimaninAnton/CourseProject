@@ -1,0 +1,171 @@
+aGHz commented on 20 May 2015
+TL;DR
+We need to specify --ciphers-server 'RC4-SHA' if we want to connect to this IIS server, 'ALL' causes ECONNRESET when reading from the stream. However, using 'ALL' in openssl s_client is able to negotiate into RC4-SHA just fine.
+Not entirely sure if there's any problem, as netlib seems to just pass the cipher list to OpenSSL, but I'm asking here in case anyone has any idea that I can't see.
+I'm also posting here instead of netlib because if there's no clear solution (we really don't want to force RC4-SHA on all our connections), I'm planning to make a PR to enable per-host cipher lists in the same way we have per-host client cert files. So I want to ask what you think about that
+Details
+We're using mitmdump to collect all traffic between our server and third-party servers, and we've encountered a strange situation. Unfortunately I can't share details but I'll try to provide complete diagnostics and can also perform any test you may need.
+The remote is an IIS server that seems to understand nothing but SSLv3 with the RC4-SHA cipher. We've arrived at this conclusion using a combination of brute-forcing mitmdump parameters and openssl s_client.
+So we enabled SSLv3 with mitmdump --ssl-version-server all, and then we could at least connect to the remote server. However, we're getting ECONNRESET when we try to read from the connection:
+<ip>:60920: clientconnect
+<ip>:60920: request
+  -> CONNECT <remote domain>:443 HTTP/1.1
+<ip>:60920: Set new server address: <remote domain>:443
+<ip>:60920: serverconnect
+  -> <remote domain>:443
+------ setting ciphers to: ALL
+<ip>:60920: Received CONNECT request to SSL port. Upgrading to SSL...
+<ip>:60920: Establish SSL
+  -> with client
+  -> with server (sni: None)
+<ip>:60920: SNI received: <remote domain>
+<ip>:60920: (server reconnect follows)
+<ip>:60920: serverdisconnect
+  -> <remote domain>:443
+<ip>:60920: Set new server address: <remote domain>:443
+<ip>:60920: serverconnect
+  -> <remote domain>:443
+------ setting ciphers to: ALL
+<ip>:60920: Establish SSL
+  -> with server (sni: <remote domain>)
+<ip>:60920: Upgrade to SSL completed.
+<ip>:60920: request
+  -> GET <path> HTTP/1.1
+---------- server_conn.send
+---------- server_conn.send done
+~~~ from_stream
+~~~ read_response
+***** read_response
+!!!!!!!!!!! SSL.SysCallError
+!!!!!!!!!!! (104, 'ECONNRESET')
+<ip>:60920: error in server communication: NetLibSSLError('',)
+<ip>:60920: (server reconnect follows)
+<ip>:60920: serverdisconnect
+  -> <remote domain>:443
+<ip>:60920: Set new server address: <remote domain>:443
+<ip>:60920: serverconnect
+  -> <remote domain>:443
+------ setting ciphers to: ALL
+<ip>:60920: Establish SSL
+  -> with server (sni: <remote domain>)
+---------- server_conn.send
+---------- server_conn.send done
+~~~ from_stream
+~~~ read_response
+***** read_response
+!!!!!!!!!!! SSL.SysCallError
+!!!!!!!!!!! (104, 'ECONNRESET')
+<ip>:60920: error in server communication: NetLibSSLError('',)
+<ip>:60920: TCP connection closed unexpectedly.
+<ip> GET https://<remote domain><path>
+    accept: */*
+    host: <remote domain>
+    Connection: keep-alive
+
+ << TCP connection closed unexpectedly.
+<ip>:60920: clientdisconnect
+<ip>:60920: serverdisconnect
+  -> <remote domain>:443
+Forcing the connection to use RC4-SHA with mitmdump --ssl-version-server all --ciphers-server 'RC4-SHA' works like a charm:
+<ip>:61058: clientconnect
+<ip>:61058: request
+  -> CONNECT <remote domain>:443 HTTP/1.1
+<ip>:61058: Set new server address: <remote domain>:443
+<ip>:61058: serverconnect
+  -> <remote domain>:443
+------ setting ciphers to: RC4-SHA
+<ip>:61058: Received CONNECT request to SSL port. Upgrading to SSL...
+<ip>:61058: Establish SSL
+  -> with client
+  -> with server (sni: None)
+<ip>:61058: SNI received: <remote domain>
+<ip>:61058: (server reconnect follows)
+<ip>:61058: serverdisconnect
+  -> <remote domain>:443
+<ip>:61058: Set new server address: <remote domain>:443
+<ip>:61058: serverconnect
+  -> <remote domain>:443
+------ setting ciphers to: RC4-SHA
+<ip>:61058: Establish SSL
+  -> with server (sni: <remote domain>)
+<ip>:61058: Upgrade to SSL completed.
+<ip>:61058: request
+  -> GET <path> HTTP/1.1
+---------- server_conn.send
+---------- server_conn.send done
+~~~ from_stream
+~~~ read_response
+***** read_response
+***** read_response 1
+***** read_response 2
+***** read_response 3
+***** read_response 4
+***** read_response 5
+***** read_response 6
+~~~ read_response done
+~~~ HTTPResponse
+~~~ HTTPResponse done
+<ip>:61058: response
+  -> HTTP/1.1 200 OK
+Publishing request to <remote domain>
+<ip> GET https://<remote domain><path>
+    accept: */*
+    host: <remote domain>
+    Connection: keep-alive
+
+ << 200 OK 30.42kB
+    Content-Length: 31147
+    Content-Type: text/xml
+    Server: Microsoft-IIS/7.0
+    X-Powered-By: ARR/2.5
+    X-Powered-By: ASP.NET
+    Date: Tue, 19 May 2015 21:02:54 GMT
+As far as I can tell, netlib does nothing more with the cipher list than send it over to openssl, but when I try openssl s_client -connect <remote domain>:443 -ssl3 -cipher ALL it seems to be negotiating the cipher just fine:
+CONNECTED(00000003)
+depth=1 C = BE, O = GlobalSign nv-sa, CN = GlobalSign Organization Validation CA - SHA256 - G2
+verify error:num=20:unable to get local issuer certificate
+verify return:0
+
+---
+Certificate chain
+ 0 s:<snip>
+   i:/C=BE/O=GlobalSign nv-sa/CN=GlobalSign Organization Validation CA - SHA256 - G2
+ 1 s:/C=BE/O=GlobalSign nv-sa/CN=GlobalSign Organization Validation CA - SHA256 - G2
+   i:/C=BE/O=GlobalSign nv-sa/OU=Root CA/CN=GlobalSign Root CA
+
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+<snip>
+-----END CERTIFICATE-----
+subject=<snip>
+issuer=/C=BE/O=GlobalSign nv-sa/CN=GlobalSign Organization Validation CA - SHA256 - G2
+
+---
+No client certificate CA names sent
+
+---
+SSL handshake has read 2693 bytes and written 502 bytes
+
+---
+New, TLSv1/SSLv3, Cipher is RC4-SHA
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+SSL-Session:
+    Protocol  : SSLv3
+    Cipher    : RC4-SHA
+    Session-ID: <snip>
+    Session-ID-ctx:
+    Master-Key: <snip>
+    Key-Arg   : None
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    Start Time: 1432068374
+    Timeout   : 7200 (sec)
+    Verify return code: 20 (unable to get local issuer certificate)
+
+---
+(and then manually send HTTP commands that work fine).

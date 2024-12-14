@@ -1,0 +1,23 @@
+Contributor
+GPhilo commented on 24 May 2017
+Keras version: 2.0.4 (backend is tensorflow, but it's irrelevant)
+Premise: I have looked again and again at the library code and I think I am certain of this problem, but I might be missing something, so check my reasoning. I also, to the best of my googling skill, believe that the behaviour is undocumented.
+My use case: I want to predict the labels of a big dataset of images and I want to associate each label with the corresponding filename.
+My code:
+model = InceptionV3(weights='imagenet')
+datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
+generator = datagen.flow_from_directory(dataset_dir,
+                                        target_size=(299,299),
+                                        batch_size=batch_size,
+                                        class_mode=None,
+                                        shuffle=False)
+preds = model.predict_generator(generator, len(generator.filenames)//batch_size, workers=5)
+Note how it's important that the order of the lables in preds matches the order of the filenames in generator.filenames. I want to use multiple workers to build the queue because with just one worker the GPU stalls between batches.
+The expected behaviour: predict_generator spawns 5 worker threads that put batches in a queue in the same order as they are produced by the generator.
+The issue: I believe there is a possibility for batch shuffling when batches are enqueued in GeneratorEnqueuer::data_generator_task(). Reshuffling happens, for example, in the following sequence of events.
+In data_generator_task():
+worker_1 calls next(self._generator) and gets batch_1, then gets suspended.
+worker_2 calls next(self._generator) and gets batch_2.
+worker_2 enqueues batch_2.
+worker_1 resumes execution and enqueues batch_1.
+The two batches have been swapped, so the predictions do not match the corresponding filenames anymore.

@@ -1,0 +1,121 @@
+ParikhKadam commented on 21 Dec 2018 •
+edited
+I am using K.map_fn() in my custom loss function where I am passing both y_true and y_pred of shape (None, None) as elems argument of this function. But when the function specified in map_fn is called, elements obtained in that function are of different shapes. And that's the problem.
+Here's the example:
+My custom loss function:
+def negative_avg_log_error(y_true, y_pred):
+
+    def sum_of_log_probabilities(true_and_pred):
+        y_true, y_pred = true_and_pred
+        print(K.int_shape(y_true))
+        print(K.int_shape(y_pred))
+        start_index = int(y_true[0])
+        end_index = int(y_true[1])
+        start_probability = y_pred[start_index]
+        end_probability = y_pred[end_index]
+        return K.log(start_probability) + K.log(end_probability)
+
+    print(K.int_shape(y_true))
+    print(K.int_shape(y_pred))
+    batch_probability_sum = K.map_fn(lambda x: sum_of_log_probabilities(x), elems=[y_true, y_pred], dtype='float32')
+    return -K.mean(batch_probability_sum, axis=1)
+Code from which this loss function is called:
+model.compile(loss=negative_avg_log_error, optimizer='adadelta', metrics='loss')
+Error log:
+(None, None)
+(None, None)
+(None,)
+(None, 1)
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-15-807b6d06a435> in <module>()
+----> 1 model.compile(loss=negative_avg_log_error, optimizer='adadelta', metrics='loss')
+
+C:\Python36\lib\site-packages\keras\engine\training.py in compile(self, optimizer, loss, metrics, loss_weights, sample_weight_mode, weighted_metrics, target_tensors, **kwargs)
+    331                 with K.name_scope(self.output_names[i] + '_loss'):
+    332                     output_loss = weighted_loss(y_true, y_pred,
+--> 333                                                 sample_weight, mask)
+    334                 if len(self.outputs) > 1:
+    335                     self.metrics_tensors.append(output_loss)
+
+C:\Python36\lib\site-packages\keras\engine\training_utils.py in weighted(y_true, y_pred, weights, mask)
+    401         """
+    402         # score_array has ndim >= 2
+--> 403         score_array = fn(y_true, y_pred)
+    404         if mask is not None:
+    405             # Cast the mask to floatX to avoid float64 upcasting in Theano
+
+E:\Deep Learning Material\IMP for Project\model\scripts\loss_function.py in negative_avg_log_error(y_true, y_pred)
+     16     print(K.int_shape(y_true))
+     17     print(K.int_shape(y_pred))
+---> 18     batch_probability_sum = K.map_fn(lambda x: sum_of_log_probabilities(x), elems=[y_true, y_pred], dtype='float32')
+     19     return -K.mean(batch_probability_sum, axis=1)
+
+C:\Python36\lib\site-packages\keras\backend\tensorflow_backend.py in map_fn(fn, elems, name, dtype)
+   4229         Tensor with dtype `dtype`.
+   4230     """
+-> 4231     return tf.map_fn(fn, elems, name=name, dtype=dtype)
+   4232 
+   4233 
+
+C:\Python36\lib\site-packages\tensorflow\python\ops\functional_ops.py in map_fn(fn, elems, dtype, parallel_iterations, back_prop, swap_memory, infer_shape, name)
+    457         back_prop=back_prop,
+    458         swap_memory=swap_memory,
+--> 459         maximum_iterations=n)
+    460     results_flat = [r.stack() for r in r_a]
+    461 
+
+C:\Python36\lib\site-packages\tensorflow\python\ops\control_flow_ops.py in while_loop(cond, body, loop_vars, shape_invariants, parallel_iterations, back_prop, swap_memory, name, maximum_iterations, return_same_structure)
+   3230       ops.add_to_collection(ops.GraphKeys.WHILE_CONTEXT, loop_context)
+   3231     result = loop_context.BuildLoop(cond, body, loop_vars, shape_invariants,
+-> 3232                                     return_same_structure)
+   3233     if maximum_iterations is not None:
+   3234       return result[1]
+
+C:\Python36\lib\site-packages\tensorflow\python\ops\control_flow_ops.py in BuildLoop(self, pred, body, loop_vars, shape_invariants, return_same_structure)
+   2950       with ops.get_default_graph()._mutation_lock():  # pylint: disable=protected-access
+   2951         original_body_result, exit_vars = self._BuildLoop(
+-> 2952             pred, body, original_loop_vars, loop_vars, shape_invariants)
+   2953     finally:
+   2954       self.Exit()
+
+C:\Python36\lib\site-packages\tensorflow\python\ops\control_flow_ops.py in _BuildLoop(self, pred, body, original_loop_vars, loop_vars, shape_invariants)
+   2885         flat_sequence=vars_for_body_with_tensor_arrays)
+   2886     pre_summaries = ops.get_collection(ops.GraphKeys._SUMMARY_COLLECTION)  # pylint: disable=protected-access
+-> 2887     body_result = body(*packed_vars_for_body)
+   2888     post_summaries = ops.get_collection(ops.GraphKeys._SUMMARY_COLLECTION)  # pylint: disable=protected-access
+   2889     if not nest.is_sequence(body_result):
+
+C:\Python36\lib\site-packages\tensorflow\python\ops\control_flow_ops.py in <lambda>(i, lv)
+   3199         cond = lambda i, lv: (  # pylint: disable=g-long-lambda
+   3200             math_ops.logical_and(i < maximum_iterations, orig_cond(*lv)))
+-> 3201         body = lambda i, lv: (i + 1, orig_body(*lv))
+   3202 
+   3203     if context.executing_eagerly():
+
+C:\Python36\lib\site-packages\tensorflow\python\ops\functional_ops.py in compute(i, tas)
+    446       """
+    447       packed_values = input_pack([elem_ta.read(i) for elem_ta in elems_ta])
+--> 448       packed_fn_values = fn(packed_values)
+    449       nest.assert_same_structure(dtype or elems, packed_fn_values)
+    450       flat_fn_values = output_flatten(packed_fn_values)
+
+E:\Deep Learning Material\IMP for Project\model\scripts\loss_function.py in <lambda>(x)
+     16     print(K.int_shape(y_true))
+     17     print(K.int_shape(y_pred))
+---> 18     batch_probability_sum = K.map_fn(lambda x: sum_of_log_probabilities(x), elems=[y_true, y_pred], dtype='float32')
+     19     return -K.mean(batch_probability_sum, axis=1)
+
+E:\Deep Learning Material\IMP for Project\model\scripts\loss_function.py in sum_of_log_probabilities(true_and_pred)
+      8         print(K.int_shape(y_true))
+      9         print(K.int_shape(y_pred))
+---> 10         start_index = int(y_true[0])
+     11         end_index = int(y_true[1])
+     12         start_probability = y_pred[start_index]
+
+TypeError: int() argument must be a string, a bytes-like object or a number, not 'Tensor'
+I am currently focusing on:
+In negative_avg_log_error() => K.int_shape(y_true)=(None, None) and K.int_shape(y_pred)=(None, None)
+In sum_of_log_probabilities() => K.int_shape(y_true)=(None,) and K.int_shape(y_pred)=(None, 1)
+But I think that the shape of both these tensors in sum_of_log_probabilities() should be (None, ).
+Need help as understanding this will help me solve this error.

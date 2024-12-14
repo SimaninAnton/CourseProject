@@ -1,0 +1,66 @@
+szhem commented on Mar 5, 2016
+Hi there,
+I'd like to export json items (I have not implemented any scrapy.Item because the response is in json itself) without any escaping with the following custom exporter
+class UnicodeJsonLinesItemExporter(JsonLinesItemExporter):
+    def __init__(self, file, **kwargs):
+        super(UnicodeJsonLinesItemExporter, self).__init__(file, **kwargs)
+        self.file = file
+        self.encoder = ScrapyJSONEncoder(ensure_ascii=False, encoding="utf-8")
+However not all of the types of items can be exported as expected, for example, the following snippets behaves in the scrapy shell differently (please notice there is umlaut within item - u'välue2')
+Item is exported as expected
+>>> exporter=UnicodeJsonLinesItemExporter(sys.stdout)
+>>> exporter.export_item({u'field1':u'value1',u'field2':{u'field22':u'välue2'}})
+{"field2": {"field22": "välue2"}, "field1": "value1"}
+Item cannot be exported
+>>> exporter=UnicodeJsonLinesItemExporter(sys.stdout)
+>>> exporter.export_item({u'field1':u'value1',u'field2':u'välue2'})
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+  File "/temp/build_venv/local/lib/python2.7/site-packages/scrapy/exporters.py", line 89, in export_item
+self.file.write(self.encoder.encode(itemdict) + '\n')
+  File "/usr/lib/python2.7/json/encoder.py", line 204, in encode
+return ''.join(chunks)
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 2: ordinal not in range(128)
+As I understand correctly the issue is within BaseItemExporter
+class BaseItemExporter(object):
+    ...
+    def serialize_field(self, field, name, value):
+        serializer = field.get('serializer', self._to_str_if_unicode)
+        return serializer(value)
+    ...
+    def _to_str_if_unicode(self, value):
+        return value.encode(self.encoding) if isinstance(value, unicode) else value
+    ...
+    def _get_serialized_fields(self, item, default_value=None, include_empty=None):
+    ...
+        for field_name in field_iter:
+            if field_name in item:
+                field = {} if isinstance(item, dict) else item.fields[field_name]
+                value = self.serialize_field(field, field_name, item[field_name])
+            else:
+                value = default_value
+
+            yield field_name, value
+In the first case {u'field1':u'value1',u'field2':{u'field22':u'välue2'}} value of field2 isn't a json, and value is not encoded and exported as expected.
+In the second case {u'field1':u'value1',u'field2':u'välue2'} value of field2 is unicode and it is encoded so that exporting fails.
+I can override serialize_field method like the following
+class UnicodeJsonLinesItemExporter(JsonLinesItemExporter):
+    def __init__(self, file, **kwargs):
+        super(UnicodeJsonLinesItemExporter, self).__init__(file, **kwargs)
+        self.file = file
+        self.encoder = ScrapyJSONEncoder(ensure_ascii=False, encoding="utf-8")
+
+    def _noop(self, value):
+        return value
+
+    def serialize_field(self, field, name, value):
+        serializer = field.get('serializer', self._noop)
+        return serializer(value)
+and then everything works as expected
+>>> exporter = UnicodeJsonLinesItemExporter(sys.stdout)
+>>> exporter.export_item({u'field1':u'value1',u'field2':u'välue2'})
+{"field2": "välue2", "field1": "value1"}
+>>>
+>>> exporter.export_item({u'field1':u'value1',u'field2':{u'field22':u'välue2'}})
+{"field2": {"field22": "välue2"}, "field1": "value1"}
+but I'm wondering whether it is an expected behavior of BaseItemExporter to use _to_str_if_unicode to reencode the item values or not?

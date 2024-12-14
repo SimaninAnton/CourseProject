@@ -1,0 +1,125 @@
+LucasRoesler commented on 18 Jun 2015
+I am currently writing a serializer that bridges the SCIM http://www.simplecloud.info/ schema to my user model. To handle some of the field serialization, for instance SCIM has a emails list but my models has a single email value, I wrote some custom serializer fields. But the validation failed on the custom fields.
+For example, my original email field was:
+class SCIMEmailField(serializers.Field):
+
+    def to_representation(self, obj):
+        """
+        Convert our single email value to a list compliying with SCIM
+        """
+        return [
+            {'value': obj.email, 'type': 'other', 'primary': True}
+        ]
+
+
+    def to_internal_value(self, data):
+        """
+        Extract the primary email value.
+
+        Note that validators are run after `to_internal_value`
+        """
+        if not isinstance(data, list):
+            raise serializers.ValidationError('emails must be a list.')
+
+        primary_email = next(
+            (x.get('value') for x in data if x.get('primary')), None)
+
+        if primary_email is None:
+            raise serializers.ValidationError(
+                'At least one email must be marked as primary.')
+
+        return primary_email
+But when I would do something like
+d = {
+  "schemas": [
+    "urn:ietf:params:scim:schemas:core:2.0:User"
+  ],
+  "id": "2819c223-7f76-453a-919d-413861904646",
+  "externalId": "701984",
+  "userName": "bjensen@example.com",
+  "name": {
+    "formatted": "Ms. Barbara J Jensen III",
+    "familyName": "Jensen",
+    "givenName": "Barbara"
+  },
+  "emails": [
+    {
+      "value": "bjensen@example.com",
+      "type": "work",
+      "primary": true
+    },
+    {
+      "value": "babs@jensen.org",
+      "type": "home"
+    }
+  ],
+  "preferredLanguage": "en-US",
+  "locale": "en-US",
+  "timezone": "America/Los_Angeles",
+  "active": true,
+  "meta": {
+    "resourceType": "User",
+    "created": "2010-01-23T04:56:22Z",
+    "lastModified": "2011-05-13T04:42:34Z",
+    "version": "W/\"a330bc54f0671c9\"",
+    "location": "https://example.com/v2/Users/2819c223-7f76-453a-919d-413861904646"
+  }
+}
+
+class SCIM2Serializer(serializers.ModelSerializer):
+    id = serializers.ReadOnlyField()
+    userName = serializers.EmailField(source='email', read_only=True)
+
+    # writable fields
+    emails = SCIMEmailField(source='*')
+    active = serializers.BooleanField(source='is_active')
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'active', 'name', 'userName', 'emails',
+        )
+
+serializer.SCIM2Serializer(data=d).is_valid()
+I get a ValueError: need more than 1 value to unpack
+/home/vagrant/.virtualenvs/eventboard/local/lib/python2.7/site-packages/rest_framework/serializers.pyc in is_valid(self, raise_exception)
+    185         if not hasattr(self, '_validated_data'):
+    186             try:
+--> 187                 self._validated_data = self.run_validation(self.initial_data)
+    188             except ValidationError as exc:
+    189                 self._validated_data = {}
+
+/home/vagrant/.virtualenvs/eventboard/local/lib/python2.7/site-packages/rest_framework/serializers.pyc in run_validation(self, data)
+    365             return data
+    366
+--> 367         value = self.to_internal_value(data)
+    368         try:
+    369             self.run_validators(value)
+
+/home/vagrant/.virtualenvs/eventboard/local/lib/python2.7/site-packages/rest_framework/serializers.pyc in to_internal_value(self, data)
+    408                 pass
+    409             else:
+--> 410                 set_value(ret, field.source_attrs, validated_value)
+    411
+    412         if errors:
+
+/home/vagrant/.virtualenvs/eventboard/local/lib/python2.7/site-packages/rest_framework/fields.pyc in set_value(dictionary, keys, value)
+     93     """
+     94     if not keys:
+---> 95         dictionary.update(value)
+     96         return
+     97
+
+/home/vagrant/.virtualenvs/eventboard/lib/python2.7/_abcoll.pyc in update(*args, **kwds)
+    545                 self[key] = other[key]
+    546         else:
+--> 547             for key, value in other:
+    548                 self[key] = value
+    549         for key, value in kwds.items():
+
+ValueError: need more than 1 value to unpack
+I was finally able to correct this by changing my to_internal_value to
+       return {
+            'email': primary_email
+        }
+But this doesn't seem to match the example in http://www.django-rest-framework.org/api-guide/fields/#custom-fields Should the documentation be updated or did I find some sort of special case?

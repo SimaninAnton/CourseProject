@@ -1,0 +1,40 @@
+akheron commented on 18 Sep 2015
+I have an application that needs to inject some read only fields to model instances before serialization. If there are multiple instances (list view), I'd also like to do it in bulk for all the instances, because the data injecting involves querying a database, and doing it all in bulk is the most efficient way. If an instance was created or updated, the data needs to be injected after that.
+It seems to me that a hook doesn't exist for this purpose. Ideally, it would go after the perform_create() call in CreateModelMixin and perform_update() in UpdateModelMixin. In ListModelMixin and RetrieveModelMixin, the correct place is before the get_serializer() call.
+Currently, I use the following hackish view mixin to make the processing happen in the right place:
+class ProcessInstancesMixin(object):
+    def get_serializer(self, instance=None, **kwds):
+        if instance is None:
+            # create
+            pass
+        elif kwds.get('data'):
+            # update
+            pass
+        else:
+            # list or retrieve
+            if kwds.get('many', False):
+                instance = self.process_instances(instance)
+            else:
+                instance = self.process_instance(instance)
+
+        return super().get_serializer(instance, **kwds)
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        self.process_instance(serializer.instance)
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        self.process_instance(serializer.instance)
+
+    # Override process_instances and optionally process_instance in
+    # subclasses
+
+    def process_instances(self, instances):
+        return instances
+
+    def process_instance(self, instance):
+        # By default, run through process_instances as a list and take
+        # the first result
+        return self.process_instances([instance])[0]
+One could argue whether it's actually the serializer's job to do this kind of processing, but doing the operations in bulk would be much harder that way. I also think that it's the view's responsibility to fetch the data for serialization, e.g. pagination is done in the view rather than the serializer.

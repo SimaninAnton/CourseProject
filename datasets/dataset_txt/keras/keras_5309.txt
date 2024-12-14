@@ -1,0 +1,30 @@
+Contributor
+joelthchao commented on 29 Apr 2016 •
+edited
+Might be a solution for #2548 and #2521
+Sometimes we may need to do something more than printing metrics after evaluation in every end of epoch. For example, visualization, testing and printing customize information without ruin progress bar, however, the callbacks execution order is almost fixed in the code:
+# in training.py
+callbacks = [cbks.BaseLogger()] + callbacks + [self.history]
+if verbose:
+    callbacks += [cbks.ProgbarLogger()]
+callbacks = cbks.CallbackList(callbacks)
+Define callback execution order may expose too much implementation details for user, which makes Keras too complicated. I think we can add on_evaluate_end for Callback and CallbackList.
+# class Callback
+def on_evaluate_end(self, epoch, logs={}):
+    pass
+
+# class CallbackList
+def on_evaluate_end(self, epoch, logs={}):
+    for callback in self.callbacks:
+        callback.on_evaluate_end(epoch, logs)
+and add the entry point to _fit_loop
+# _fit_loop() in training.py 
+callbacks.on_epoch_end(epoch, epoch_logs)
+if do_validation:
+    callbacks.on_evaluate_end(epoch, epoch_logs)
+if callback_model.stop_training:
+    break
+Then users can have more flexibility on building their callbacks.
+(Of course we can add on_evaluate_begin as well.)
+2
+1

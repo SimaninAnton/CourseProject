@@ -1,0 +1,23 @@
+Contributor
+pasky commented on 9 Nov 2016
+We are using the stock ResNet50 model and would like to use it as one component in a larger model built with the functional API. However, when we just apply the model produced by ResNet50 on a Keras variable, say
+i = Input((3, 224, 224))
+x = ResNet50(include_top=False)(i)
+x = Dense(2, activation='softmax')(x)
+m = Model(i, x)
+we get the error:
+Exception: You are attempting to share a same `BatchNormalization` layer across different data flows. This is not possible. You should use `mode=2` in `BatchNormalization`, which has a similar behavior but is shareable (see docs for a description of the behavior).
+I understand the purpose of the check, but it triggers a false positive here. All layers of the model are re-called with new input in case the model is used as a whole on a variable, but then it doesn't mean BatchNormalization is used twice in the computational graph but that the new call overrides the old one.
+As a super-dirty workaround, we do:
+        for layer in self.model.layers:
+            # This is a workaround for a BatchNormalization guard in
+            # Keras 1.1.x that verifies that a BatchNormalization is not
+            # shared across two parallel computation flows, i.e. called
+            # twice with different input.  This happens when we call the 
+            # whole model on some (x) in an outside, but that use
+            # is okay and this is a false positive, so silence that check.
+            # .called_with shouldn't be used for anything else in Keras.
+            layer.called_with = None
+I'm not sure what the proper solution is here, but I'd recommend at least changing that exception to just a warning since there are legitimate use-cases it blocks.
+I think people have hit the same issue in #4118 and #3903, though less clearly explained there.
+3

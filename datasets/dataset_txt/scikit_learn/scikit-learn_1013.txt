@@ -1,0 +1,99 @@
+Contributor
+bauks commented on Oct 9, 2018
+Description
+np.mean and np.sum encounter floating point issues when the last axis is not summed, as described here:
+numpy/numpy#11331
+numpy/numpy#9393
+Note that specifying dtype=np.float64 when calling np.mean or np.sum with axis=0 is one solution to this issue.
+When a large array with np.float32 dtype is passed to a StandardScaler, _incremental_mean_and_var computes X.sum(axis=0) leading to the means being quite incorrect. If dtype=np.float64 is passed to X.sum as well, we obtain accurate means without a noticeable increase in computational cost.
+Perhaps there are other cases where a user might not want to use a np.float64 partial sum as the dtype here, so I'm not sure the best way to enable this for np.float32. Perhaps exposing a dtype kwarg to the StandardScaler.fit function?
+Steps/Code to Reproduce
+import time
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+
+np.random.seed(0)
+
+for n in [2**25, 3 * 2**24, 2**26]:
+    print 'n=%s'%(n)
+
+    x = np.random.random((n, 2)).astype(np.float32)
+
+    print "numpy mean with axis=0:"
+    print np.mean(x, axis=0)
+
+    print "numpy 1d means:"
+    print [np.mean(x[:, i]) for i in range(2)]
+
+    scaler = StandardScaler()
+    t = time.time()
+    scaler.fit(x)
+    t2 = time.time()
+
+    print "StandardScaler means:"
+    print scaler.mean_
+    print "Fitting took %s seconds"%(t2 - t)
+    print '\n'
+Expected Results
+StandardScaler means should be very close to 0.5
+Actual Results
+n=33554432
+numpy mean with axis=0:
+[0.49992988 0.49995592]
+numpy 1d means:
+[0.49994302, 0.4999527]
+StandardScaler means:
+[0.49992988 0.49995592]
+Fitting took 2.28910398483 seconds
+n=50331648
+numpy mean with axis=0:
+[0.33333334 0.33333334]
+numpy 1d means:
+[0.49997354, 0.5000053]
+StandardScaler means:
+[0.33333333 0.33333333]
+Fitting took 3.45670104027 seconds
+n=67108864
+numpy mean with axis=0:
+[0.25 0.25]
+numpy 1d means:
+[0.5000216, 0.499964]
+StandardScaler means:
+[0.25 0.25]
+Fitting took 4.68357300758 seconds
+Results when specifying dtype=np.float64 in _incremental_mean_and_var
+n=33554432
+numpy mean with axis=0:
+[0.49992988 0.49995592]
+numpy 1d means:
+[0.49994302, 0.4999527]
+StandardScaler means:
+[0.49994307 0.49995223]
+Fitting took 2.25434994698 seconds
+n=50331648
+numpy mean with axis=0:
+[0.33333334 0.33333334]
+numpy 1d means:
+[0.49997354, 0.5000053]
+StandardScaler means:
+[0.49997434 0.50000374]
+Fitting took 3.46430301666 seconds
+n=67108864
+numpy mean with axis=0:
+[0.25 0.25]
+numpy 1d means:
+[0.5000216, 0.499964]
+StandardScaler means:
+[0.50002153 0.49996364]
+Fitting took 4.62323188782 seconds
+Versions
+import platform; print(platform.platform())
+Darwin-17.4.0-x86_64-i386-64bit
+import sys; print("Python", sys.version)
+('Python', '2.7.14 (default, Sep 25 2017, 09:54:19) \n[GCC 4.2.1 Compatible Apple LLVM 9.0.0 (clang-900.0.37)]')
+import numpy; print("NumPy", numpy.version)
+('NumPy', '1.14.2')
+import scipy; print("SciPy", scipy.version)
+('SciPy', '1.0.1')
+import sklearn; print("Scikit-Learn", sklearn.version)
+('Scikit-Learn', '0.19.1')

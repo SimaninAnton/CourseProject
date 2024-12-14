@@ -1,0 +1,39 @@
+jeanm commented on 31 Oct 2019
+While playing with the Italian tokeniser, I have noticed the following odd behaviours:
+The use of Unicode combining diacritical marks throws off the tokeniser. Consider the following example, which is handled correctly:
+from spacy.lang.it import Italian
+nlp = Italian()
+nlp.add_pipe(nlp.create_pipe('sentencizer'))
+
+# ['LATIN SMALL LETTER E WITH GRAVE', 'FULL STOP']
+original = "è."
+list(next(nlp(original).sents))  # Yields: [è, .]  – OK!
+Now if I apply NFD normalisation to my original string, the string still looks the same (è.), but it's actually made up of three characters: E + ` + .. This breaks the tokeniser:
+import unicodedata
+
+# ['LATIN SMALL LETTER E', 'COMBINING GRAVE ACCENT', 'FULL STOP']
+normalised = unicodedata.normalize("NFD", original)
+list(next(nlp(normalised).sents))  # Yields: [è.]  – WRONG!
+I haven't dug into the code, but I imagine what might be happening is that COMBINING GRAVE ACCENT does not count as a word character, which must end up confusing some tokenisation rule.
+Some letters with diacritics are just never split up from the punctuation that follows:
+# OK
+list(next(nlp("è.").sents))  # [è, .]
+list(next(nlp("â.").sents))  # [â, .]
+list(next(nlp("æ.").sents))  # [æ, .]
+list(next(nlp("ç.").sents))  # [ç, .]
+list(next(nlp("ñ.").sents))  # [ñ, .]
+
+# WRONG!
+list(next(nlp("ä.").sents))  # [ä.]
+list(next(nlp("È.").sents))  # [È.]
+list(next(nlp("Ó.").sents))  # [Ó.]
+list(next(nlp("Â.").sents))  # [Â.]
+list(next(nlp("Æ.").sents))  # [Æ.]
+list(next(nlp("Ç.").sents))  # [Ç.]
+list(next(nlp("Ñ.").sents))  # [Ñ.]
+list(next(nlp("Ä.").sents))  # [Ä.]
+Note that none of these examples here in point 2 are using combining diacritics, i.e. len(_) == 2 for all strings above. Again, I haven't delved into the code but I imagine the problem is that certain characters aren't being recognised as letters.
+Info about spaCy
+spaCy version: 2.2.2.dev4
+Platform: Darwin-18.7.0-x86_64-i386-64bit
+Python version: 3.7.3

@@ -1,0 +1,61 @@
+RaffEdwardBAH commented on 3 May 2016
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Trying to get around LabmdaLayer not working, I attempted a simple custom layer.
+class LastStep(Layer):
+    def __init__(self, **kwargs):
+        super(Layer, self).__init__(**kwargs)
+
+    def call(self, x, mask=None):
+        return x[:,-1,:]
+
+    def get_output_shape_for(self, input_shape):
+        shape = list(input_shape)
+        assert len(shape) == 3
+        return tuple((shape[0], shape[2]))
+
+lstm_layer_size = 32
+embed_size = 32
+num_layers = 3
+maxlen = 10
+print('Build model...')
+main_input = Input(shape=(maxlen,), dtype='int32', name='main_input')
+emb = Embedding(257, embed_size, input_length=maxlen)(main_input)
+
+#hidden states from each LSTM
+hs = []
+
+#first layer from embedding only
+hs.append(LSTM(lstm_layer_size, return_sequences=True)(emb))
+for l in range(1, num_layers):
+    l_in = merge([emb, hs[-1]], mode='concat')
+    hs.append(LSTM(lstm_layer_size, return_sequences=True)(l_in))
+
+last_steps = [LastStep()(x) for x in hs]
+merged_penultimate = merge(last_steps, mode='concat')
+loss_out = Dense(1, activation='sigmoid', name='loss_out')(merged_penultimate)
+
+model = Model(input=[main_input], output=[loss_out])
+optimizer = Adam(lr=0.001, clipnorm=grad_clip)
+model.compile(optimizer, loss='binary_crossentropy')
+This fails with the error
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+<ipython-input-8-da16a6eca8bd> in <module>()
+---> 19 last_steps = [LastStep()(x) for x in hs]
+     20 merged_penultimate = merge(last_steps, mode='concat')
+     21 loss_out = Dense(1, activation='sigmoid', name='loss_out')(merged_penultimate)
+
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py in __call__(self, x, mask)
+    436             mask: tensor or list/tuple of tensors.
+    437         '''
+--> 438         if not self.built:
+    439             # raise exceptions in case the input is not compatible
+    440             # with the input_spec specified in the layer constructor
+
+AttributeError: 'LastStep' object has no attribute 'built'
+Which is very confusing, as built is set in the constructor of Layer. If I set the built value myself, the issue just continues to another value that should have been set by the Layer constructor

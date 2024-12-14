@@ -1,0 +1,72 @@
+Jackie-wx commented on 12 Sep 2019 •
+edited
+Hi everyone, I tried to train a dnn model with Keras, but the acc and val_acc I got were very low, could someone give me some advice about how to solve it? Thank you very much in advance! Below is my code.
+import keras
+import numpy as np
+import pandas as pd
+from keras.models import Sequential
+from keras.models import Model
+from keras.layers import Dense, Dropout, Activation, Input
+from keras import optimizers, losses
+from keras.layers.normalization import BatchNormalization
+from keras.callbacks import EarlyStopping
+from keras.utils import np_utils, generic_utils
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
+def load_data_train(path, train=True):
+df = pd.read_csv(path)
+x = df.values.copy()
+if train:
+np.random.shuffle(x)
+x, labels = x[:, 1:-1].astype(np.float32), x[:, -1]
+return x, labels
+else:
+x, ids = x[:, 1:].astype(np.float32), x[:, 0].astype(str)
+return x, ids
+def load_data_test(path):
+df = pd.read_csv(path)
+x = df.values.copy()
+x, labels = x[:, 1:-1].astype(np.float32), x[:, -1]
+return x, labels
+def preprocess_data(x, scaler=None):
+if not scaler:
+scaler = StandardScaler()
+scaler.fit(x)
+x = scaler.transform(x) # another type x = StanderScaler().fit_transferom(x)
+return x, scaler
+def preprocess_labels(labels, encoder=None, categorical=True):
+if not encoder:
+encoder = LabelEncoder()
+encoder.fit(labels)
+y = encoder.transform(labels).astype(np.int32)
+if categorical:
+y = np_utils.to_categorical(y)
+return y, encoder
+print("Loading data...")
+x_train, labels = load_data_train('train.csv', train=True)
+x_train, scaler = preprocess_data(x_train)
+y_train, encoder = preprocess_labels(labels)
+x_test, labels = load_data_test('dev.csv')
+x_test, scaler = preprocess_data(x_test)
+y_test, encoder = preprocess_labels(labels)
+nb_classes = y_train.shape[1]
+print(nb_classes, 'classes')
+dims = x_train.shape[1]
+print(dims, 'dims')
+print("Building model...")
+model = Sequential()
+model.add(Dense(128, activation='relu', input_dim=dims))
+model.add(BatchNormalization())
+model.add(Dropout(0.2))
+model.add(Dense(nb_classes, activation='softmax'))
+early_stopping = EarlyStopping(monitor='val_loss', patience=30, mode='auto', verbose=2)
+sgd = optimizers.SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(optimizer=sgd, loss=losses.mean_squared_logarithmic_error, metrics=['accuracy'])
+print("Training Model... ")
+hist = model.fit(x_train, y_train, epochs=200, batch_size=200, validation_split=0.1)
+score = model.evaluate(x_test, y_test, verbose=2)
+classlabel = model.predict_classes(x_test)
+print("Generating submission...")
+print('Test score: ', score[0])
+print('Test accuracy: ', score[1])
+print(model.summary())

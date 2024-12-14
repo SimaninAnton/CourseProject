@@ -1,0 +1,70 @@
+jblcs commented on 24 Sep 2018
+Checklist
+[🗸] I have verified that that issue exists against the master branch of Django REST framework.
+[🗸] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[🗸] This is not a usage question. (Those should be directed to the discussion group instead.)
+[🗸] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[🗸] I have reduced the issue to the simplest possible case.
+[🗸] I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Problem statement
+I have one model Ad which have User model foreign key.
+class Ad(models.Model):
+    uuid = models.UUIDField(unique=True, default=uuid.uuid4)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Creator')
+Another model for Feedback
+class Feedback(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='feedbacks')
+    rating = models.FloatField(null=False, blank=False)
+Manager used for User is as below:
+class UserManager(models.Manager):
+        def get_queryset(self):
+            return super(ProfileManager, self).get_queryset().annotate(ratings=Avg('feedbacks__rating'))
+Now serializer for User model is as below:
+class UserDetailsSerializer(serializers.ModelSerializer):
+    ratings = serializer.FloatField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = (
+            'username',
+            'email',
+            'ratings',
+        )
+and serializer for Ad model is as below:
+class AdSerializer(serializers.ModelSerializer):
+    created_by = UserDetailsSerializer(read_only=True)
+    
+    class Meta:
+        model = Ad
+        fields =('created_by', 'uuid')
+Expected behavior
+I want something like this
+{
+  "active_page": 1,
+  "count": 500,
+  "next": "http://localhost:8000/api/trade/?limit=5&offset=5",
+  "previous": null,
+  "offset": 0,
+  "limit": 5,
+  "total_pages": 100,
+  "results": [
+    {
+      "uuid": "00df7f19-2a97-415b-ab4b-f4c27cf9392c",
+      "created_by": {
+        "username": "jadav",
+        "email": "Jadav@lcs.com",
+        "ratings": 5.6    <----------- This seems to be aggregated
+      }
+    },
+    {
+      "uuid": "JKdf7f19-2a97-415b-ab4b-f4c27cf9392c",
+      "created_by": {
+        "username": "abc",
+        "email": "abc@lcs.com",
+        "ratings": 6.8
+      }
+    }
+  ]
+}
+How it can be implemented by using DRF
+I tried multiple ways to do this, However I think this should be in DRF's default behaviour

@@ -1,0 +1,45 @@
+aidanlister commented on 17 Jul 2017
+Hello,
+We are seeing some really weird behaviour in our testcase below, with the first test failing (because there's no parser for application/json) but the second test passing? How is it possible the authentication method changes the parser negotiation? I've stepped through the whole codebase and can't work it out.
+class BulkAPITests(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.superuser = AdminFactory()
+
+
+    def test_auth_token(self):
+        self.app = OauthApplicationFactory(user=self.superuser)
+        secret = self.app.client_id + ':' + self.app.client_secret
+        self.auth_headers = {
+            'HTTP_AUTHORIZATION': b'Basic ' + base64.b64encode(secret.encode('utf-8')),
+        }
+        data = {
+            'grant_type': 'password',
+            'username': self.superuser.email,
+            'password': 'password',
+        }
+        response = self.client.post('/api/oauth2/token/', data=data, **self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        resp_json = json.loads(response.content.decode('utf8'))
+        access_token = resp_json['access_token']
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer {}'.format(access_token))
+        self.test_users = [StaffFactory() for x in range(0, 2)]
+        self.test_branches = [BranchFactory() for x in range(0, 3)]
+        post_data = {
+            'ids': [user.id for user in self.test_users],
+            'add_branches': [branch.id for branch in self.test_branches],
+        }
+        response = self.client.patch('/api/v2/users/', data=json.dumps(post_data), content_type='application/json')
+        self.assertEqual(response.status_code, 200, f"{response.content}")
+
+
+    def test_session_based_auth(self):
+        self.client.force_authenticate(user=self.superuser)
+        self.test_users = [StaffFactory() for x in range(0, 2)]
+        self.test_branches = [BranchFactory() for x in range(0, 3)]
+        post_data = {
+            'ids': [user.id for user in self.test_users],
+            'add_branches': [branch.id for branch in self.test_branches],
+        }
+        response = self.client.patch('/api/v2/users/', data=json.dumps(post_data), content_type='application/json')
+        self.assertEqual(response.status_code, 200, f"{response.content}")

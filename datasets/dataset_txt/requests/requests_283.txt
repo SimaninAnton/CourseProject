@@ -1,0 +1,96 @@
+FrancisJen commented on May 10, 2018
+Summary.
+if reqeuests is called in while loop, it always return same value even if data has been updated in database.
+the request content is:
+"res = json.loads(requests.get(url, data, verify=False).text)"
+after stop the call to test_deposit and call again the return value "res = json.loads(requests.get(url, data, verify=False).text)", then the value was updated
+Expected Result
+the return value of res = json.loads(requests.get(url, data, verify=False).text) should be updated immediately because of the value in database has been updated.
+Actual Result
+the return value of res = json.loads(requests.get(url, data, verify=False).text) always be same even if the value in database has been updated.
+Reproduction Steps
+   def test_deposit(self):
+        receipt = self.kovan.send_ether_to_contract(0.0001)
+        self.assertEqual(receipt['status'], 'added', "充值交易进入区块成功")
+
+        txn_receipt = receipt['txn_receipt']
+        block_number = txn_receipt['blockNumber']
+        print(txn_receipt)
+        print('first block is:' + str(block_number))
+
+        # 轮询6个区块来测试着期间充值不到账
+        # current_block_number = self.w3.eth.blockNumber
+        balance_before_deposit = self.test_get_balance()
+        print('before is:' + str(balance_before_deposit))
+
+        count = 0
+        while self.w3.eth.blockNumber < (block_number + 16 - 1) and count < 30:
+            print(self.w3.eth.blockNumber)
+            # # test_get_balance缓存清理
+            # cache_info = self.test_get_balance.cache_info()
+            # print(cache_info)
+            # self.test_get_balance.cache_clear
+
+            # balance_after_deposit = self.test_get_balance()
+            # print(balance_after_deposit)
+            url = self.prefix + 'balance'
+            data = {
+                'address': self.wallet_address
+            }
+            # res = self.run.request(url, 'GET', data=data)
+            res = json.loads(requests.get(url, data, verify=False).text)
+
+            self.assertIn('Success', res['message'], "测试成功")
+            balance_after_deposit = res['data']['result'][0]['tokenAmount']
+            print('after is ' + str(balance_after_deposit))
+
+            self.assertEqual(balance_before_deposit, balance_after_deposit, '未经过6个区块充值不应到账')
+            gc_status = gc.isenabled()
+            print(gc_status)
+
+            # 内存释放
+            del balance_after_deposit
+            gc.collect()
+            time.sleep(10)
+            count = count + 1
+
+        print('到账时间总计花费：' + str(count * 20))
+
+        # if self.w3.eth.blockNumber >= block_number + 6 - 1:
+        #     balance_after_deposit = self.test_get_balance()
+        #     if balance_after_deposit >
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.5"
+  },
+  "platform": {
+    "release": "17.4.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020ff"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}

@@ -1,0 +1,40 @@
+jwldk commented on 18 Jul 2018
+After upgrading to flask 1.0 logging from different apps using DispatcherMiddleware, each log emitted is written to all handlers in the different apps. I assume this caused by app.logger always having the name flask.app, maybe?
+Here is a example:
+from werkzeug.wsgi import DispatcherMiddleware
+from flask import Flask
+from logging.handlers import RotatingFileHandler
+
+
+handler1 = RotatingFileHandler('app1.log')
+app1 = Flask('app1')
+app1.logger.addHandler(handler1)
+
+handler2 = RotatingFileHandler('app2.log')
+app2 = Flask('app2')
+app2.logger.addHandler(handler2)
+
+
+@app1.route("/")
+def hello():
+    app1.logger.error("from app1")
+    return ''
+
+
+@app2.route("/")
+def hello2():
+    app2.logger.error("from app2")
+    return ''
+
+
+app = DispatcherMiddleware(app1, {
+    '/app2': app2
+})
+Run with
+uwsgi --socket 0.0.0.0:8000 --protocol=http -w app --callable app
+And then make a request to / and /app2/. Each error log will be written in both logfiles.
+Environment
+Python version: 3.6.5
+Flask version: 1.0.2
+Werkzeug version: 0.14.1
+My actual app is using current_app.logger with blueprints with the same behaviour, but I assume it the same issue.

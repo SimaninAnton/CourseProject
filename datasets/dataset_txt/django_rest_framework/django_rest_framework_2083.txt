@@ -1,0 +1,39 @@
+stevelacey commented on 13 Jan 2015
+Okay, rubbish issue, I know, sorry, but I can't work out how I am "meant" to implement this in DRF 3 and I figure it'll be useful for someone else anyway:
+from django.core.exceptions import ObjectDoesNotExist
+from acme.accounts.models import Organisation
+from acme.archives.models import Tag
+from rest_framework.relations import SlugRelatedField
+
+class TagRelatedField(SlugRelatedField):
+    """A read-write field that represents a tag and creates it if it does not exist"""
+
+    def to_internal_value(self, data):
+        try:
+            organisation = Organisation.objects.get(
+                code=self.parent.parent.data['organisation']
+            )
+
+            fields = {
+                self.slug_field: data,
+                'organisation': organisation
+            }
+
+            try:
+                tag = self.get_queryset().get(**fields)
+            except ObjectDoesNotExist:
+                tag = Tag(**fields)
+                tag.save()
+            except (TypeError, ValueError):
+                self.fail('invalid')
+
+            return tag
+        except ObjectDoesNotExist:
+            pass
+This just about works in DRF 3.0.1 but is a bit whacky and exhibits one bug I am aware of, and as of 3.0.3 moans about the is_valid stuff and using initial_data instead which I see has changed to stop me doing this because it's whacky.
+The bug I am aware of: stale tags after PUT/PATCH, the response to those requests shows the old tags, but subsequent GETs don't, which I can only assume is because the forms data is populated before the point I am hooking into. I could just patch the form's data... but that is one whack too far IMO.
+My question, is how am I /supposed/ to implement this?
+Tags are exposed like this: {...tags: ['a', 'b', 'c']}
+On create/update of the parent tags that exist are related to it
+On create/update of the parent tags that do not exist are created and related to it.
+All tags are related to an organisation, which is a field (relation) specified on the parent and exposed by a SlugRelatedField

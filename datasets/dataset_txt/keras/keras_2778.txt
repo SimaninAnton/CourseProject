@@ -1,0 +1,59 @@
+dluvizon commented on 31 Mar 2017
+Hi, I'm trying to use InceptionV3 with ImageNet weights, but keras is failing to build the model.
+I'm using Theano as backend.
+Here is my ~/.keras/keras.json:
+{
+    "floatx": "float32",
+    "epsilon": 1e-07,
+    "backend": "theano",
+    "image_data_format": "channels_first"
+}
+The code to reproduce the problem:
+from keras.applications.inception_v3 import InceptionV3
+model = InceptionV3(include_top=False)
+The expected error:
+Traceback (most recent call last):
+  File "/usr/lib/python3.6/site-packages/h5py/_hl/selections.py", line 85, in select
+    int(a)
+TypeError: int() argument must be a string, a bytes-like object or a number, not 'list'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/lib/python3.6/site-packages/keras/applications/inception_v3.py", line 383, in InceptionV3
+    model.load_weights(weights_path)
+  File "/usr/lib/python3.6/site-packages/keras/engine/topology.py", line 2497, in load_weights
+    load_weights_from_hdf5_group(f, self.layers)
+  File "/usr/lib/python3.6/site-packages/keras/engine/topology.py", line 2897, in load_weights_from_hdf5_group
+    original_backend)
+  File "/usr/lib/python3.6/site-packages/keras/engine/topology.py", line 2838, in preprocess_weights_for_loading
+    weights[0] = conv_utils.convert_kernel(weights[0])
+  File "/usr/lib/python3.6/site-packages/keras/utils/conv_utils.py", line 86, in convert_kernel
+    return np.copy(kernel[slices])
+  File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/build/python-h5py/src/h5py-2.7.0/h5py/_objects.c:2837)
+  File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/build/python-h5py/src/h5py-2.7.0/h5py/_objects.c:2795)
+  File "/usr/lib/python3.6/site-packages/h5py/_hl/dataset.py", line 474, in __getitem__
+    selection = sel.select(self.shape, args, dsid=self.id)
+  File "/usr/lib/python3.6/site-packages/h5py/_hl/selections.py", line 90, in select
+    sel[args]
+  File "/usr/lib/python3.6/site-packages/h5py/_hl/selections.py", line 361, in __getitem__
+    raise TypeError("Indexing elements must be in increasing order")
+TypeError: Indexing elements must be in increasing order
+It seems that h5py does not support random indexing.
+I found this solution, but I don't know if it is the best one:
+diff --git a/keras/utils/conv_utils.py b/keras/utils/conv_utils.py
+index 1899f369..da34df90 100644
+--- a/keras/utils/conv_utils.py
++++ b/keras/utils/conv_utils.py
+@@ -83,7 +83,7 @@ def convert_kernel(kernel):
+     slices = [slice(None, None, -1) for _ in range(kernel.ndim)]
+     no_flip = (slice(None, None), slice(None, None))
+     slices[-2:] = no_flip
+-    return np.copy(kernel[slices])
++    return kernel[:].copy()[slices]
+ 
+ 
+ def conv_output_length(input_length, filter_size,
+-- 
+Thank you!

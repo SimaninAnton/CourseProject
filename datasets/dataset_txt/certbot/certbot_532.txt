@@ -1,0 +1,63 @@
+Contributor
+jsoref commented on 28 May 2018 •
+edited
+My operating system is (include version):
+Red Hat Enterprise Linux Server release 6.9 (Santiago)
+Python 2.7 (redhat scl python27)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+certbot-auto (0.24.0)
+I ran this command and it produced this output:
+/root/bin/certbot-auto --no-self-upgrade renew --debug-challenges
+apachectl -S
+Warning: DocumentRoot [/var/lib/letsencrypt/tls_sni_01_page/] does not exist
+VirtualHost configuration:
+...
+127.0.0.1:443          is a NameVirtualHost
+         port 443 namevhost site.example.com (/etc/httpd/conf.d/103-site-ssl-localhost.conf:1)
+         port 443 namevhost XXXX.YYYY.acme.invalid (/etc/httpd/conf.d/le_tls_sni_01_cert_challenge.conf:2)
+wildcard NameVirtualHosts and _default_ servers:
+*:443                  is a NameVirtualHost
+         default server other.example.com (/etc/httpd/conf.d/001-other-ssl.conf:1)
+         port 443 namevhost site.example.com (/etc/httpd/conf.d/003-site-ssl.conf:1)
+         port 443 namevhost site.example.com (/etc/httpd/conf.d/103-site-ssl.conf:1)
+*:80                   is a NameVirtualHost
+         default server other.example.com (/etc/httpd/conf.d/001-other.conf:1)
+         port 80 namevhost site.example.com (/etc/httpd/conf.d/001-site.conf:1)
+cat /etc/httpd/conf.d/le_tls_sni_01_cert_challenge.conf
+<IfModule mod_ssl.c>
+<VirtualHost 127.0.0.1:443>
+    ServerName XXXX.YYYY.acme.invalid
+    UseCanonicalName on
+    SSLStrictSNIVHostCheck on
+
+    LimitRequestBody 1048576
+
+    Include /etc/letsencrypt/options-ssl-apache.conf
+    SSLCertificateFile /var/lib/letsencrypt/ZZZZ.crt
+    SSLCertificateKeyFile /var/lib/letsencrypt/ZZZZ.pem
+
+    DocumentRoot /var/lib/letsencrypt/tls_sni_01_page/
+</VirtualHost>
+
+</IfModule>
+FailedChallenges: Failed authorization procedure. site.example.com (tls-sni-01): urn:acme:error:unauthorized :: The client lacks sufficient authorization :: Incorrect validation certificate for tls-sni-01 challenge. Requested whatever.acme.invalid from IP.AD.DR.ESS:443. Received 2 certificate(s), first certificate had names "other.example.com"
+Certbot's behavior differed from what I expected because:
+It configured a certificate challenge on 127.0.0.1!
+Essentially, the domain is configured on multiple IP addresses (127.0.0.1 and a hostname).
+certbot should either listen on * or all ips listed for the servername (in this case that's only 127.0.0.1) + all ips that the local computer resolves as hostname servername (in this case, this is the path that leads to a routable ip).
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+FailedChallenges: Failed authorization procedure. site.example.com (tls-sni-01): urn:acme:error:unauthorized :: The client lacks sufficient authorization :: Incorrect validation certificate for tls-sni-01 challenge. Requested whatever.acme.invalid from IP.AD.DR.ESS:443. Received 2 certificate(s), first certificate had names "other.example.com"
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+Fwiw, here's my normal -S output (minus a number of other hosts that aren't implicated by the output from certbot:
+127.0.0.1:443          is a NameVirtualHost
+         default server other.example.com (/etc/httpd/conf.d/001-other-ssl-localhost.conf:1)
+         port 443 namevhost site.example.com (/etc/httpd/conf.d/103-site-ssl-localhost.conf:1)
+wildcard NameVirtualHosts and _default_ servers:
+*:443                  is a NameVirtualHost
+         default server other.example.com (/etc/httpd/conf.d/001-other-ssl.conf:1)
+         port 443 namevhost site.example.com (/etc/httpd/conf.d/003-site-ssl.conf:1)
+         port 443 namevhost site.example.com (/etc/httpd/conf.d/103-site-ssl.conf:1)
+*:80                   is a NameVirtualHost
+         default server other.example.com (/etc/httpd/conf.d/001-other.conf:1)
+         port 80 namevhost site.example.com (/etc/httpd/conf.d/001-site.conf:1)

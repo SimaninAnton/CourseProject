@@ -1,0 +1,154 @@
+magiob commented on 16 Aug 2017 •
+edited
+I am trying to imprement the Recurrent CNN of the imdb example for a multiclass text classification problem. Original code is here:
+https://github.com/fchollet/keras/blob/master/examples/imdb_cnn_lstm.py
+The changes I have made are the selected datasets, as it is not a binary classification task anymore (I used my own). So I changed a bit the preprocessing to match the output format of imdb dataset. I use LabelEncoder and then to_categorical to create a binarized matrix. This parts works fine as far as I know.
+The other change I made is in the compile part:
+model.compile(loss='sparse_categorical_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+and the last Dense layer:
+model.add(Dense(nb_classes))
+And finally I replaced the max_features with length of my words feature list:
+max_features = len(words)
+It seems like my layers output mess things up. I get the following error in line 127 at validation_data=(x_test,y_test):
+ValueError: Error when checking target: exoected activation_1 to have shape (None,1) but got array with shape (20418, 598)
+Full code:
+'''Train a recurrent convolutional network on the IMDB sentiment
+classification task.
+Gets to 0.8498 test accuracy after 2 epochs. 41s/epoch on K520 GPU.
+'''
+from __future__ import print_function
+
+from keras.preprocessing import sequence
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Activation
+from keras.layers import Embedding
+from keras.layers import LSTM
+from keras.layers import Conv1D, MaxPooling1D
+from keras.datasets import imdb
+import pandas as pd
+import nltk
+import numpy as np
+from keras.utils import np_utils
+from sklearn.preprocessing import LabelEncoder
+from keras import backend as K
+K.set_image_dim_ordering('tf')
+
+# Embedding
+maxlen = 50
+embedding_size = 128
+
+# Convolution
+kernel_size = 5
+filters = 64
+pool_size = 4
+
+# LSTM
+lstm_output_size = 70
+
+# Training
+batch_size = 30
+epochs = 2
+
+'''
+Note:
+batch_size is highly sensitive.
+Only 2 epochs are needed as the dataset is very small.
+'''
+
+print('Loading data...')
+test = pd.read_json('validate')
+train = pd.read_json('train') 
+
+# tokenizing data
+x_train = train.astype(str).apply(lambda row: nltk.word_tokenize(row["TEXT"]), axis=1)
+y_train = train.REPORT_M
+
+x_test = test.astype(str).apply(lambda row: nltk.word_tokenize(row["TEXT"]), axis=1)
+y_test = test.REPORT_M
+
+print(len(x_train), 'train sequences')
+print(len(x_test), 'test sequences')
+
+#label encoding
+labels = y_train.tolist() + y_test.tolist()
+encoder = LabelEncoder()
+encoded_labels = encoder.fit_transform(labels)
+labels = np_utils.to_categorical(np.asarray(encoded_labels))
+
+#number of classes
+nb_classes = labels.shape[1]
+
+print('Shape of label tensor:', labels.shape)
+
+#dividing train and test labels
+y_train = labels[:len(y_train.tolist())]
+y_test = labels[-len(y_train.tolist()):]
+
+print('Shape of train label tensor:', y_train.shape)
+print('Shape of test label tensor:', y_test.shape)
+
+
+flat_list_train = [item for sublist in x_train.tolist() for item in sublist]
+flat_list_test = [item for sublist in x_test.tolist() for item in sublist]
+
+#unique features list
+words = list(set(flat_list_train+flat_list_test))
+
+# Embedding
+max_features = len(words)
+
+print("converting tokens to indices")
+ for index, item in enumerate(x_train.tolist()):
+     for i, s in enumerate(item):
+         item[i] = words.index(s)
+
+ for index, item in enumerate(x_test.tolist()):
+     for i, s in enumerate(item):
+        item[i] = words.index(s)
+
+
+print('Pad sequences (samples x time)')
+x_train = sequence.pad_sequences(x_train, maxlen=maxlen, dtype='int32')
+x_test = sequence.pad_sequences(x_test, maxlen=maxlen, dtype='int32')
+print('x_train shape:', x_train.shape)
+print('x_test shape:', x_test.shape)
+
+print('Build model...')
+
+model = Sequential()
+model.add(Embedding(max_features, embedding_size, input_length=maxlen))
+model.add(Dropout(0.25))
+model.add(Conv1D(filters,
+                 kernel_size,
+                 padding='valid',
+                 activation='relu',
+                 strides=1))
+model.add(MaxPooling1D(pool_size=pool_size))
+model.add(LSTM(lstm_output_size))
+model.add(Dense(nb_classes))
+model.add(Activation('sigmoid'))
+
+model.compile(loss='sparse_categorical_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+print('Train...')
+model.fit(x_train, y_train,
+          batch_size=batch_size,
+          epochs=epochs,
+          validation_data=(x_test, y_test))
+score, acc = model.evaluate(x_test, y_test, batch_size=batch_size)
+print('Test score:', score)
+print('Test accuracy:', acc)
+
+#K.clear_session()
+import gc
+gc.collect()
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+[X ] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[X ] If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+[X ] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

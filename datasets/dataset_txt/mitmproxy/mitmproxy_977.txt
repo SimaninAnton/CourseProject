@@ -1,0 +1,21 @@
+tgianko commented on 19 Aug 2016
+Hi everybody,
+I am trying to change default mitmproxy behavior. I am writing here in the hope that I would get suggestions on how to do this better.
+So here is what I need. I need to run a couple of checks on a web server after it processes a request. In this project, it is important that request, response, and check are atomic and in that order, i.e., no interleaving requests.
+In my understanding, mitmproxy can generate concurrent requests. While this is what everybody wants and expects from mitmproxy, in my case it creates misattrubution of request<->check.
+So, I decided to make mitmproxy behave like if it is single threaded. This is my first attempt with in mitmproxy 10.1. I used a local lock variable and a decorator to intercept calls to ServerConnection.send. Before releasing the lock, I call a callback of the inline script to do the analysis:
+proxy.ServerConnection._send = proxy.ServerConnection.send
+
+lock = threading.Lock()
+
+def _send_decorator(self, request):
+    with lock:
+        proxy.ServerConnection._send(self, request)
+        for s in master.scripts:
+            nobody_cares,ret = s.run('sync_http_req',request)
+
+proxy.ServerConnection.send = _send_decorator
+This allows me to run a check after mitmproxy sends a request to the upstream server. But I need to run a check also after the response.
+Now, the code above is for 10.1 and I'd like to redo this and finish it for the 0.15.
+Which point of the workflow of mitmproxy do you think I should intercept to place this ugly lock?
+Thanks in advance guys :)

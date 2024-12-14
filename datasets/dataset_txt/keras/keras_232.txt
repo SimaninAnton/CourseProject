@@ -1,0 +1,96 @@
+lminer commented on 14 May 2019
+I'm trying to implement a Subpixel upconvolution layer in Keras. I can train a model without a problem and save it. But I cannot load that model back. I always get an error of the dimensions being wrong.
+The only way it works is if I save the weights, create a new model and then load the weights. But this isn't ideal, though, since the optimizer resets so it's hard to resume training.
+import keras
+import numpy as np
+import tensorflow as tf
+
+class Subpixel(keras.layers.Conv2D):
+
+    def __init__(self,
+                 filters,
+                 kernel_size,
+                 scale,
+                 padding='valid',
+                 data_format='channels_last',
+                 strides=(1, 1),
+                 activation=None,
+                 use_bias=True,
+                 kernel_initializer='he_normal',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs):
+        super().__init__(
+            filters=scale * scale * filters,
+            kernel_size=kernel_size,
+            strides=strides,
+            padding=padding,
+            data_format=data_format,
+            activation=activation,
+            use_bias=use_bias,
+            kernel_initializer=kernel_initializer,
+            bias_initializer=bias_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer,
+            kernel_constraint=kernel_constraint,
+            bias_constraint=bias_constraint,
+            **kwargs)
+        self.scale = scale
+        self.data_format = data_format
+
+    def call(self, inputs):
+        return tf.depth_to_space(super().call(inputs), self.scale)
+
+    def compute_output_shape(self, input_shape):
+        if self.data_format == 'channels_first':
+            b, k, r, c = super().compute_output_shape(input_shape)
+            return b, k // (self.scale ** 2), r * self.scale, c * self.scale
+        else:
+            b, r, c, k = super().compute_output_shape(input_shape)
+            return b, r * self.scale, c * self.scale, k // (self.scale ** 2)
+
+    def get_config(self):
+        config = super(keras.layers.Conv2D, self).get_config()
+        config['filters'] = int(config['filters'] / self.scale * self.scale)
+        config['scale'] = self.scale
+        return config
+
+X = np.random.rand(100, 2, 2, 1)
+y = np.random.rand(100, 4, 4, 1)
+
+inputs = keras.layers.Input(shape=(2, 2, 1))
+x = Subpixel(4, 4, 2, padding='same')(inputs)
+output = keras.layers.Dense(1, activation='sigmoid')(x)
+model = keras.models.Model(inputs, output)
+model.compile(optimizer='sgd',
+                          loss='mean_absolute_error',
+                          metrics=[])
+
+model.fit(X, y)
+model.save('foo.h5')
+foo = keras.models.load_model('foo.h5', custom_objects={'Subpixel': Subpixel})
+I'm using keras 2.2.4 and tensorflow 1.13.1.
+Output is:
+self = TensorShape([Dimension(4), Dimension(4), Dimension(1), Dimension(64)])
+other = TensorShape([Dimension(4), Dimension(4), Dimension(1), Dimension(16)])
+
+    def assert_is_compatible_with(self, other):
+      """Raises exception if `self` and `other` do not represent the same shape.
+    
+      This method can be used to assert that there exists a shape that both
+      `self` and `other` represent.
+    
+      Args:
+        other: Another TensorShape.
+    
+      Raises:
+        ValueError: If `self` and `other` do not represent the same shape.
+      """
+      if not self.is_compatible_with(other):
+>       raise ValueError("Shapes %s and %s are incompatible" % (self, other))
+E       ValueError: Shapes (4, 4, 1, 64) and (4, 4, 1, 16) are incompatible

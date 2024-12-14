@@ -1,0 +1,60 @@
+aezco commented on 23 Jul 2019
+I am doing image classification with CNN-LSTM, although getting a shape dimensions error. Error is about the input layer from 4 dimensions to 5 dimensions. I have image sequences as 224x224x3 dimension of X classes. I would like to apply LSTM on it to classify for every image for each class.
+I have trained a resnet50 to classify images. Although, I removed the last dense layer, to extract features from the trained CNN network. Those extracted features will be used as input in the newly created LSTM with attention mechanism to find out where the focus lies. The predictions will be on videos (extracted frames).
+Image -> extract features (CNN) -> LSTM + Attention (to check where the focus lies during the prediction) -> classify image (output class from N labels)
+I also have some questions:
+– Can I just train the LSTM on image sequences based on classes (for e.g. 1 class has around 300 images) and do predictions later on extracted video frames?
+– In what way can I implement the soft attention mechanism with Keras? Because it looks very difficult with Keras.
+def generator(train_data_dir, img_size, batch_size, val_split):
+  train_datagen = ImageDataGenerator(validation_split=val_split,rescale=1./255) 
+  train_generator = train_datagen.flow_from_directory(
+      train_data_dir,
+      target_size=(img_size, img_size),
+      batch_size=batch_size,
+      color_mode='rgb',
+      shuffle=True,
+      subset='training') # set as training data
+
+  validation_generator = train_datagen.flow_from_directory(
+      train_data_dir, # same directory as training data
+      target_size=(img_size, img_size),
+      color_mode='rgb',
+      shuffle=False,
+      subset='validation') # set as validation data
+
+  return train_generator, validation_generator
+
+
+channels = 3
+classes = 101
+img_size = 224 
+img_seq_length = 10
+
+base_model = load_model(weight_file, custom_objects={'mae':mae})
+last_conv_layer = base_model.get_layer("global_average_pooling2d_1")
+cnn_model = Model(input=base_model.input, output=last_conv_layer.output)
+cnn_model.trainable = False
+
+seq_input = Input(shape=(img_seq_length, img_size, img_size, channels), name='seq_input')
+encoded_frame = TimeDistributed(cnn_model)(seq_input)
+encoded_vid = LSTM(2048)(encoded_frame) 
+lstm = Dropout(0.5)(encoded_vid)
+
+# output
+predictions = Dense(101, activation='softmax', name='pred')(lstm)
+
+model = Model(input=seq_input, output=predictions)
+
+opt = get_optimizer('adam', lr_rate)
+model.compile(loss=['categorical_crossentropy'],
+    optimizer=opt,
+    metrics=['accuracy',"mae"])
+
+model.fit_generator(generator=train_gen,
+                     epochs=EPOCHS,
+                     steps_per_epoch = STEPS_PER_EPOCH,
+                     validation_data=val_gen,
+                     validation_steps = VALIDATION_STEPS,
+                     verbose=1,
+                     callbacks=callbacks)
+Error when checking input: expected input_10 to have 5 dimensions, but got array with shape (64, 224, 224, 3)

@@ -1,0 +1,58 @@
+Contributor
+stephenfin commented on 26 Jan 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I have a number of HyperlinkedModelSerializers. As I'm using manual URL definition, rather than a router, I must manually specify the view_name for each nested resource as part of extra_kwargs.
+class BookSerializer(HyperlinkedModelSerializer):
+
+    class Meta:
+        model = Book
+        fields = ('id', 'url', 'author')
+        read_only_fields = fields
+        extra_kwargs = {
+            'url': {'view_name': 'api-book-detail'},
+            'author': {'view_name': 'api-person-detail'},
+        }
+This will result in an output like so:
+{
+    "id": 1,
+    "url": "http://example.com/api/v1/books/1",
+    "author": "http://example.com/api/v1/authors/1"
+}
+This took me a while to figure out but pretty much works as expected. However, I now wish to provide a little more detail in response by nesting real objects in the response. It would appear that the depth meta key is the correct way to do this, like so:
+class BookSerializer(HyperlinkedModelSerializer):
+
+    class Meta:
+        model = Book
+        fields = ('id', 'url', 'author')
+        read_only_fields = fields
+        depth = 1
+        extra_kwargs = {
+            'url': {'view_name': 'api-book-detail'},
+            'author': {'view_name': 'api-author-detail'},
+        }
+However, this fails.
+Expected behavior
+I would expect to see a nested response like so:
+{
+    "id": 1,
+    "url": "http://example.com/api/v1/books/1",
+    "author": {
+        "id": 1,
+        "url": "http://example.com/api/v1/authors/1",
+        "name": "John Doe",
+        "user": "http://example.com/api/v1/users/1"
+     }
+}
+Actual behavior
+I get an exception like so:
+TypeError: __init__() got an unexpected keyword argument 'view_name'
+If I remove the author field from extra_kwargs, this changes to:
+django.core.exceptions.ImproperlyConfigured: Could not resolve URL for hyperlinked relationship using view name "author-detail". You may have failed to include the related model in your API, or incorrectly configured the `lookup_field` attribute on this field.
+Seeing as these two features work independently, I can't see why they wouldn't work together.

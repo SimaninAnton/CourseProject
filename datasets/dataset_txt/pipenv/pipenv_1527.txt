@@ -1,0 +1,23 @@
+Member
+ncoghlan commented on 24 Feb 2018
+(Breaking out another substep of #1255)
+When a specific package to install is passed to pipenv install, the current logical flow is as follows:
+for each package requested on the command line:
+install the package into the current environment
+if that fails, abort the operation
+update Pipfile with the new or revised dependency
+after all requested packages have been installed, regenerate the lock file (as long as --skip-lock was omitted)
+This creates some opportunities for the environment and the lock file to become inconsistent with each other:
+the individual install commands don't use the lock file as a source of constraints, so they may install different versions of dependencies from those that would be installed when using the lock file
+because the installation happens before the lock file generation, there's a race condition where the lock file generation may see a newer release than the install operation did
+installing individual packages will resolve environment markers inside the virtual environment, while lock file generation will resolve them outside the virtual environment (this point means we may need to resolve #857 before we can safely make the logic change proposed below)
+The proposed change to the installation logic would be as follows:
+for each package requested on the command line:
+check that the requested package is available from one of the source repositories listed in Pipfile
+if it's missing, abort the operation
+don't make any changes to Pipfile until all the requested packages have been checked
+for each package requested on the command line:
+update Pipfile with the new or revised dependency
+update Pipfile with the new pre-release setting (if --pre is specified)
+assuming all requested packages are available and --skip-lock was omitted, regenerate the lock file
+run do_init (just as the command already does for the case where no packages are specified, which means this approach also already handles the --ignore-pipfile and --skip-lock options)

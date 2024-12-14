@@ -1,0 +1,100 @@
+HaydenFaulkner commented on 3 Jun 2017
+Just wondering if someone could shed some light on the following error I get:
+Traceback (most recent call last):
+  File "/home/hayden/.PyCharm2017.1/config/scratches/scratch_5.py", line 29, in <module>
+    x = TimeDistributed(inner_model, input_shape=(10,))(outer_input)
+  File "/usr/local/lib/python3.4/dist-packages/keras/engine/topology.py", line 585, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/usr/local/lib/python3.4/dist-packages/keras/layers/wrappers.py", line 166, in call
+    unroll=False)
+  File "/usr/local/lib/python3.4/dist-packages/keras/backend/theano_backend.py", line 1335, in rnn
+    go_backwards=go_backwards)
+  File "/usr/local/lib/python3.4/dist-packages/theano/scan_module/scan.py", line 773, in scan
+    condition, outputs, updates = scan_utils.get_updates_and_outputs(fn(*args))
+  File "/usr/local/lib/python3.4/dist-packages/keras/backend/theano_backend.py", line 1323, in _step
+    output, new_states = step_function(input, states)
+  File "/usr/local/lib/python3.4/dist-packages/keras/layers/wrappers.py", line 160, in step
+    output = self.layer.call(x)
+  File "/usr/local/lib/python3.4/dist-packages/keras/engine/topology.py", line 2027, in call
+    output_tensors, _, _ = self.run_internal_graph(inputs, masks)
+  File "/usr/local/lib/python3.4/dist-packages/keras/engine/topology.py", line 2259, in run_internal_graph
+    input_shapes = [x._keras_shape for x in inputs]
+  File "/usr/local/lib/python3.4/dist-packages/keras/engine/topology.py", line 2259, in <listcomp>
+    input_shapes = [x._keras_shape for x in inputs]
+AttributeError: 'TensorVariable' object has no attribute '_keras_shape'
+My versions are:
+Python 3.4.3
+Keras 2.0.4
+Theano 0.9.0
+My (simplified) model spec is:
+from keras.layers import Dense, Input, TimeDistributed, Reshape, Lambda, Flatten
+from keras.layers.recurrent import GRU
+from keras.models import Model
+
+seq_len = 20
+batch_size = 4
+
+####### INNER MODEL #######
+# since TimeDist layer cant take multiple inputs needed to merge into one
+inner_input = Input(shape=(10,), batch_shape=(batch_size, 10), name='INNER_INPUT')
+
+a = Lambda(lambda a: a[:, :6], output_shape=(6,), name='INNER_SPLIT_A')(inner_input)
+b = Lambda(lambda a: a[:, 6:], output_shape=(4,), name='INNER_SPLIT_B')(inner_input)  # b used elsewhere
+
+ar = Reshape(target_shape=(2, 3), name='INNER_A_RESHAPED')(a)
+
+a = Flatten()(ar)  # If comment out to disconnect ar = Reshape(), model works fine
+x = Dense(3)(a)
+
+inner_model = Model(inputs=inner_input, outputs=x, name='INNER_MODEL')
+inner_model.summary()
+###### END INNER MODEL #######
+
+###### OUTER MODEL #######
+outer_input = Input(shape=(seq_len, 10)) # OR if remove batch_shape also works
+# outer_input = Input(shape=(seq_len, 10), batch_shape=(batch_size, seq_len, 10))
+x = TimeDistributed(inner_model, input_shape=(10,))(outer_input)
+
+x = GRU(8, return_sequences=False)(x)
+sm = Dense(5, activation='softmax', name='PRED')(x)
+
+model = Model(inputs=outer_input, outputs=sm, name='OUTER_MODEL')
+###### END OUTER MODEL #######
+
+model.summary()
+Producing summaries for the inner and outer models:
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+INNER_INPUT (InputLayer)     (4, 10)                   0         
+_________________________________________________________________
+INNER_SPLIT_A (Lambda)       (4, 6)                    0         
+_________________________________________________________________
+INNER_A_RESHAPED (Reshape)   (4, 2, 3)                 0         
+_________________________________________________________________
+flatten_1 (Flatten)          (4, 6)                    0         
+_________________________________________________________________
+dense_1 (Dense)              (4, 3)                    21        
+=================================================================
+Total params: 21
+Trainable params: 21
+Non-trainable params: 0
+_________________________________________________________________
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 20, 10)            0         
+_________________________________________________________________
+time_distributed_1 (TimeDist (None, 20, 3)             21        
+_________________________________________________________________
+gru_1 (GRU)                  (None, 8)                 288       
+_________________________________________________________________
+PRED (Dense)                 (None, 5)                 45        
+=================================================================
+Total params: 354
+Trainable params: 354
+Non-trainable params: 0
+_________________________________________________________________
+As commented in the code, it only occurs if the Reshape() layers are included AND the batch_shape is specified in the outer_input.
+Does anyone know why this is happening and if it's meant to happen or some sort of bug? I would like to specify the batch_size of the outer input and still have a reshape layer inside.
+Thanks in advance :)

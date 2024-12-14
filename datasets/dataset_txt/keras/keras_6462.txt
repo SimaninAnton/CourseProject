@@ -1,0 +1,71 @@
+Contributor
+MoyanZitto commented on 9 Nov 2015
+Hi it's me again...
+I was trying to build a deep autoencoder, which is a little different to the deep autoencoder showed in keras examples: I need to pre-train the autoencoder and apply fine tune on the pre-trained model. The progress is as follows:
+#Model
+autoEncoder = Sequential()
+
+#PreTrain
+for i in range(4):
+    subModel = Sequential()
+    encoder = Dense(inpNum, hidNum, activation = activation, init = init)
+    decoder = Dense(hidNum, inpNum, activation = activation, init = init)
+    subAutoEncoder=AutoEncoder(encoder=encoder,decoder=decoder,
+output_reconstruction=False)
+    if i==0:
+         subModel.add(noise.GaussianNoise(0.2))
+         subModel.add(subAutoEncoder)
+    else:
+         subModel.add(subAutoEncoder)
+         subModel.compile(optimizer=optimizer, loss='mse')
+         subModel.fit(temp_data, temp_data, batch_size=batch_size, nb_epoch=nb_epoch, shuffle=True, verbose=1)   
+         temp_data = np.asarray(subModel.predict(temp_data,batch_size=batch_size),dtype='float32')
+         inpNum,hidNum = hidNum, inpNum
+         autoEncoder.add(encoder)
+
+
+#Fine Tune
+autoEncoder.compile(optimizer=optimizer,loss='mse')
+autoEncoder.fit(inpData, inpData, batch_size=batch_size, nb_epoch=nb_epoch, shuffle=True, verbose=1)
+And this is the error message, the error happens at Fine Tune process, autoEncoder.compile(optimizer=optimizer,loss='mse') .
+raise UnusedInputError(msg % (inputs.index(i), i.variable, err_msg))
+theano.compile.function_module.UnusedInputError: theano.function was asked to create a function computing outputs given certain inputs, but the provided input variable at index 0 is not part of the computational graph needed to compute the outputs: Elemwise{add,no_inplace}.0.
+It seems that the input variable provided for computing loss at index 0, which is X_train in keras code, is not used. I really don't understand it...
+I know github may not a proper place for such problems, because it's neither a bug report nor a code contribution, but the Googlegroup you provided at Keras Home page is blocked in China. So...I'm really sorry but still need your help, thank you very much!
+π__π
+update:
+Although I still don't know why this problem occurred, but it's GaussianNoise that cause this problem, once I remove the GaussianNoise, the code works.
+= = But I need the GaussianNoise layer ...
+update:
+To fix the problem, just adjust the postion of GaussianNoise..
+for example, this code:
+for i in range(4):
+    subModel = Sequential()
+    encoder = Dense(inpNum, hidNum, activation = activation, init = init)
+    decoder = Dense(hidNum, inpNum, activation = activation, init = init)
+    subAutoEncoder=AutoEncoder(encoder=encoder,decoder=decoder,
+output_reconstruction=False)
+    subModel.add(noise.GaussianNoise(0.2))
+    subModel.add(subAutoEncoder)
+    subModel.compile(optimizer=optimizer, loss='mse')
+    subModel.fit(temp_data, temp_data, batch_size=batch_size, nb_epoch=nb_epoch, shuffle=True, verbose=1)   
+         temp_data = np.asarray(subModel.predict(temp_data,batch_size=batch_size),dtype='float32')
+         inpNum,hidNum = hidNum, inpNum
+         autoEncoder.add(encoder)
+is wrong, but if we move subModel.add(GaussianNoise(0.2)) to the second line in for loop, like this:
+for i in range(4):
+    subModel = Sequential()
+    # the gaussianNoise layer is here now
+    subModel.add(noise.GaussianNoise(0.2))
+    encoder = Dense(inpNum, hidNum, activation = activation, init = init)
+    decoder = Dense(hidNum, inpNum, activation = activation, init = init)
+    subAutoEncoder=AutoEncoder(encoder=encoder,decoder=decoder,
+output_reconstruction=False)
+    #the gaussianNoise layer is no longer here anymore
+    subModel.add(subAutoEncoder)
+    subModel.compile(optimizer=optimizer, loss='mse')
+    subModel.fit(temp_data, temp_data, batch_size=batch_size, nb_epoch=nb_epoch, shuffle=True, verbose=1)   
+         temp_data = np.asarray(subModel.predict(temp_data,batch_size=batch_size),dtype='float32')
+         inpNum,hidNum = hidNum, inpNum
+         autoEncoder.add(encoder)
+Yes it works...This is definitely the oddest bug I ever met.

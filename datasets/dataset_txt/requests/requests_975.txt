@@ -1,0 +1,60 @@
+saveman71 commented on Aug 9, 2016 •
+edited
+Hey there,
+I'm having a pretty specific issue while trying to reproduce the login sequence of a heavy professional website (lots of redirect / cookies involved).
+The login sequence was tested working on Chrome.
+I spent some time debugging and finally tracked down the issue, that is that the server will not accept the Content-Type header that was required on the first request on the first redirect, thus making the second request crash with a 500.
+First request shown in Chrome's dev inspector:
+Second request (first redirect) show in Chrome's dev inspector:
+Notice of how on the second request, no Content-Type header. The presence of a Content-Type header would make the request fail.
+The code (URLs are mangled):
+#!/usr/bin/env python
+
+import requests
+import urllib.parse
+
+headers = {
+    'Origin': 'https://www.example.com',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'en-US,en;q=0.8,fr-FR;q=0.6,fr;q=0.4',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.82 Safari/537.36',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Cache-Control': 'max-age=0',
+    'Referer': 'https://www.example.com/',
+    'Connection': 'keep-alive',
+}
+
+data = 'some_data'
+
+s = requests.Session()
+
+r = s.post('https://www.exampleonanotherdomain.com/openam/UI/Login?realm=front_office&service=EEService&goto=https://www.exampleonanotherdomain.com/ice/rest/aiguillagemp/redirect?dest=',
+           headers=headers, data=data)
+I worked it around by removing the Content-Type header at runtime on the 3rd send (first is the first request header, 2nd is the first request data) to confirm that it was the issue (it was!)
+Patch code added before the request.
+import http.client as http_client
+
+def patch():
+    old_send = http_client.HTTPConnection.send
+    def new_send( self, data ):
+        print(data.decode('utf-8'))
+        if new_send.i == 2:
+            data = '\n'.join([l for l in data.decode('utf-8').split('\n') if not l.startswith('Content-Type:')]).encode('utf-8')
+        print(data.decode('utf-8'))
+        new_send.i += 1
+        return old_send(self, data)
+    new_send.i = 0
+    http_client.HTTPConnection.send = new_send
+    old_read = http_client.HTTPResponse.read
+    def new_read( self , amt):
+        data = old_read(self, amt)
+        print(data)
+        return data
+    http_client.HTTPResponse.read = new_read
+
+patch()
+Any idea of how to solve this one?
+Note: I have no control at all of the remote server.
+Note: I intend to make a lot of requests while being logged in, so the I would like to stay with a session.

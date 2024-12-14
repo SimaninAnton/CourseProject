@@ -1,0 +1,55 @@
+thabaptiser commented on 15 Mar 2019 •
+edited
+I've seen the ~/.bashrc reccomendations for pipenv, but they all require running commands when you move around. I've written a small bash thing that automatically enters/exits/switches your pipenv virtual env based on where you currently are (by looking upwards in your path for the first Pipfile it finds). I'm not very experienced in bash, so LMK if I did anything wrong. Here it is:
+function search_up_pipfile {
+    ORIG_DIRECTORY=$PWD
+    if ! [[ -z $VIRTUAL_ENV ]]; then
+        TEMP_=$(echo $VIRTUAL_ENV | rev | cut -c10- | rev)
+        CURR_PIPENV=${TEMP_##*/}
+    fi
+    while [ $PWD != "/" ]; do
+        if [ -f "Pipfile" ]; then
+            NEW_PIPENV=${PWD##*/}
+            if ! [[ -z $CURR_PIPENV ]]; then
+                if [[ $NEW_PIPENV != $CURR_PIPENV ]]; then
+                    return 1
+                fi
+            fi
+            builtin cd "$ORIG_DIRECTORY"
+            return 0
+        fi
+        builtin cd ..
+    done
+    builtin cd "$ORIG_DIRECTORY"
+    return 1
+}
+
+function activate_or_leave_pipenv {
+    if search_up_pipfile; then
+        if [[ -z $PIPENV_ACTIVE ]] ; then
+            pipenv shell;
+            return
+        fi
+    elif [[ -z $PIPENV_ACTIVE ]] ; then
+        return;
+    elif [ $PIPENV_ACTIVE == 1 ] ; then
+        touch "/tmp/PIPENV_EXIT_DIRECTORY"
+        echo "$(pwd)" >> "/tmp/PIPENV_EXIT_DIRECTORY"
+        exit;
+    fi
+}
+
+function cd {
+    builtin cd "$@"
+    activate_or_leave_pipenv
+    }
+
+function cd_if_exiting_pipenv {
+    if [ -f "/tmp/PIPENV_EXIT_DIRECTORY" ] ; then
+        PIPENV_DIR="$(cat /tmp/PIPENV_EXIT_DIRECTORY)"
+        builtin cd "$PIPENV_DIR"
+        rm "/tmp/PIPENV_EXIT_DIRECTORY"
+    fi
+}
+export PROMPT_COMMAND="cd_if_exiting_pipenv; activate_or_leave_pipenv; $PROMPT_COMMAND"
+I append the current PROMPT_COMMAND so you don't need to worry about overwriting it (I know iTerm shell integration relies on it)

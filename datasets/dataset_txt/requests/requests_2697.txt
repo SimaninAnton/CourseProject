@@ -1,0 +1,61 @@
+davidmytton commented on Oct 18, 2011
+The location header in a 302 redirect response is not being parsed correctly when it has special characters in it.
+/Login.aspx?ReturnUrl=%2f becomes /Login.aspx%3FReturnUrl%3D/
+When followed, this results in a 404 because it's not correct.
+>>> import requests
+>>> r = requests.get('http://affiliatenetwork.ist-apps.com')
+>>> r.status_code
+404
+>>> print r.headers
+{'content-length': '1245', 'x-powered-by': 'ASP.NET', 'date': 'Tue, 18 Oct 2011 09:15:08 GMT', 'content-type': 'text/html', 'connection': 'close', 'server': 'Microsoft-IIS/7.0'}
+>>> r.url
+'http://affiliatenetwork.ist-apps.com/Login.aspx%3FReturnUrl%3D/'
+>>> r.history
+[<Response [302]>]
+>>> r.history[0].headers
+{'content-length': '142', 'x-powered-by': 'ASP.NET', 'x-aspnet-version': '4.0.30319', 'server': 'Microsoft-IIS/7.0', 'connection': 'close', 'location': '/Login.aspx?ReturnUrl=%2f', 'cache-control': 'private', 'date': 'Tue, 18 Oct 2011 10:56:08 GMT', 'content-type': 'text/html; charset=utf-8'}
+curl parses this correctly:
+david@Shibuya ~: curl -v http://affiliatenetwork.ist-apps.com
+* About to connect() to affiliatenetwork.ist-apps.com port 80 (#0)
+*   Trying 94.236.92.60... connected
+* Connected to affiliatenetwork.ist-apps.com (94.236.92.60) port 80 (#0)
+> GET / HTTP/1.1
+> User-Agent: curl/7.21.4 (universal-apple-darwin11.0) libcurl/7.21.4 OpenSSL/0.9.8r zlib/1.2.5
+> Host: affiliatenetwork.ist-apps.com
+> Accept: */*
+> 
+< HTTP/1.1 302 Found
+< Cache-Control: private
+< Content-Type: text/html; charset=utf-8
+< Location: /Login.aspx?ReturnUrl=%2f
+< Server: Microsoft-IIS/7.0
+< X-AspNet-Version: 4.0.30319
+< X-Powered-By: ASP.NET
+< Date: Tue, 18 Oct 2011 11:26:34 GMT
+< Content-Length: 142
+< 
+<html><head><title>Object moved</title></head><body>
+<h2>Object moved to <a href="/Login.aspx?ReturnUrl=%2f">here</a>.</h2>
+</body></html>
+* Connection #0 to host affiliatenetwork.ist-apps.com left intact
+* Closing connection #0
+httplib also parses this correctly:
+>>> conn = httplib.HTTPConnection('affiliatenetwork.ist-apps.com')
+>>> conn.request("GET","/")
+>>> res = conn.getresponse()
+>>> print res.status
+302
+>>> print res.reason
+Found
+>>> print res.getheaders()
+[('content-length', '142'), ('x-powered-by', 'ASP.NET'), ('x-aspnet-version', '4.0.30319'), ('server', 'Microsoft-IIS/7.0'), ('location', '/Login.aspx?ReturnUrl=%2f'), ('cache-control', 'private'), ('date', 'Tue, 18 Oct 2011 10:35:20 GMT'), ('content-type', 'text/html; charset=utf-8')]
+Looks like the problem is caused by https://github.com/kennethreitz/requests/blob/master/requests/models.py#L237
+>>> url = '/Login.aspx?ReturnUrl=%2f'
+>>> o = urlparse.urlparse(url)
+>>> print o
+ParseResult(scheme='', netloc='', path='/Login.aspx', params='', query='ReturnUrl=%2f', fragment='')
+>>> import urllib
+>>> urllib.quote(urllib.unquote(url))
+'/Login.aspx%3FReturnUrl%3D/'
+>>> urllib.unquote(url)
+'/Login.aspx?ReturnUrl=/'

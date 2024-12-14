@@ -1,0 +1,114 @@
+myflyinggip commented on Sep 14, 2015
+Hi guys,
+Not sure if anyone has experienced this, but LogisticRegressionCV seems to have some problems when the predictor matrix for training (e.g., X_train) is sliced from some bigger matrix. Apologies that I might be using some incorrect code markdown below but I'm trying to attach my example code. The code uses the digits data from sklearn. I put three possible ways of getting X_train and feed it into LogisticRegressionCV, labled as 'Safe', 'Dodgy 1' and 'Dodgy 2'. In 'Dodgy 2', for example, I slice X_train from a bigger matrix and then change a different part of the bigger matrix that isn't a part of the sliced result, the resultant AUC changes (from 0.5 to below 0.5).
+I suspect this is because some inappropriate use of underlying memory. Does anyone have any comments? Thanks a lot!
+My example code:
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn import datasets
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+
+import timeit
+import os
+import time
+import datetime
+
+
+
+def main():
+
+    digits = datasets.load_digits()
+    X, y = digits.data, digits.target
+    X = StandardScaler().fit_transform(X)
+    data = np.hstack((np.reshape(y.astype(float), (y.size,1)), X))
+
+    X = data[:, 1:]
+    y = data[:, 0]
+
+
+
+
+    ts = time.time()
+    st = datetime.datetime.fromtimestamp(ts).strftime('%Y%m%d_%H%M%S')
+    result_dir = "../Results/" + st + "/"
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+
+
+    # classify small against large digits
+    y = (y > 4).astype(np.int)
+
+
+
+
+    train_percent = 0.5
+    nTrains = train_percent * y.size
+    X_train = X[:nTrains, :]
+    y_train = y[:nTrains]
+    X_test = X[nTrains:, :]
+    y_test = y[nTrains:]
+
+
+
+    # This has problems if using 'liblinear' as the solver. See below.
+    logistic_reg = LogisticRegressionCV(cv=10, penalty='l2', tol=0.01, solver="liblinear")
+
+
+
+    # Three different choices below
+
+    # Safe: use a copy of the sliced data. This produces a good (as expected) AUC.
+    model = logistic_reg.fit(np.copy(X_train), y_train)
+
+    # # Dodgy 1. use the data sliced from the data matrix directly (reference). This produces an AUC = 0.5.
+    # model = logistic_reg.fit(X_train, y_train)
+
+    # # Dodgy 2. make a copy of the original data matrix, slice X_train from the copy,
+    # # but also change the other part in the copy that's not sliced.
+    # # This makes the result AUC < 0.5
+    # data_copy = np.copy(data)
+    # X_train = data_copy[:nTrains,1:]
+    # data_copy[:,0].fill(0)
+    # model = logistic_reg.fit(X_train, y_train)
+
+
+
+
+    # prediction
+
+    y_pred = model.predict_proba(X_test)
+
+    fpr, tpr, thresholds = roc_curve(y_test, y_pred[:,1])
+    roc_auc = auc(fpr, tpr)
+
+    accuracy = 1 - float(np.sum(np.abs(y_pred[:,1] - y_test))) / y_pred[:,1].size
+    print "accuracy:", accuracy
+
+
+
+    plt.figure()
+    plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic example')
+    plt.legend(loc="lower right")
+
+    plt.savefig(result_dir + "auc.png")
+    plt.show()
+
+
+
+if __name__ == "__main__":
+
+    start_time = timeit.default_timer()
+
+    main()
+
+    elapsed = timeit.default_timer() - start_time
+    print "Time elapsed:",elapsed

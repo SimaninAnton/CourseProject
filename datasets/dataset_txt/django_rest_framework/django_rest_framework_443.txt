@@ -1,0 +1,87 @@
+topmyself commented on 26 Mar 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[ x] I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+hi, there is a problem when I upgrade django-rest-framework from version 3.2.5 to version 3.7.7.
+I use antd Dragger component to upload a file in front-end, the http content is:
+method: POST
+header:
+...
+Content-Length:1159
+Content-Type:multipart/form-data; boundary=----WebKitFormBoundaryAIPiXENxTz9NIWUM
+...
+body:
+------WebKitFormBoundaryAIPiXENxTz9NIWUM
+Content-Disposition: form-data; name="file"; filename="1%2F1%2FF9jM56Cx25PKVd3%2Flicense_test_server_high.conf"
+Content-Type: application/octet-stream
+------WebKitFormBoundaryAIPiXENxTz9NIWUM--
+I use DRF in backend, and my class inherit from ViewSet. In version 3.2.5, I can use request.FILES to get upload file, but when I upgrade to version 3.7.7, request.FILES does not work.
+I read the code, in version 3.2.5, Request has a very important method: _load_method_and_content_type, it will be called when I use request.FILES or any other property method
+def _load_method_and_content_type(self):
+  
+        self._content_type = self.META.get('HTTP_CONTENT_TYPE',
+                                           self.META.get('CONTENT_TYPE', ''))
+
+        self._perform_form_overloading()
+def _perform_form_overloading(self):
+        USE_FORM_OVERLOADING = (
+            self._METHOD_PARAM or
+            (self._CONTENT_PARAM and self._CONTENTTYPE_PARAM)
+        )
+
+        # We only need to use form overloading on form POST requests.
+        if (
+            self._request.method != 'POST' or
+            not USE_FORM_OVERLOADING or
+            not is_form_media_type(self._content_type)
+        ):
+            return
+
+        # At this point we're committed to parsing the request as form data.
+        self._data = self._request.POST
+        self._files = self._request.FILES
+        self._full_data = self._data.copy()
+        self._full_data.update(self._files)
+actually, request.FILES is equal to request._request.FILES.
+In version 3.7.7,
+it will call _load_data_and_files , and then _parse, and then FileUploadParser's parse, and then get_filename.
+def _load_data_and_files(self):
+        if not _hasattr(self, '_data'):
+            self._data, self._files = self._parse()
+def _parse(self):
+        ...
+        try:
+            parsed = parser.parse(stream, media_type, self.parser_context)
+        except Exception:
+            self._data = QueryDict('', encoding=self._request._encoding)
+            self._files = MultiValueDict()
+            self._full_data = self._data
+            raise
+    def parse(self, stream, media_type=None, parser_context=None):
+        parser_context = parser_context or {}
+        request = parser_context['request']
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
+        meta = request.META
+        upload_handlers = request.upload_handlers
+        filename = self.get_filename(stream, media_type, parser_context)
+def get_filename(self, stream, media_type, parser_context):
+        try:
+            return parser_context['kwargs']['filename']
+        except KeyError:
+            pass
+
+        try:
+            meta = parser_context['request'].META
+            disposition = parse_header(meta['HTTP_CONTENT_DISPOSITION'].encode('utf-8'))
+            filename_parm = disposition[1]
+            if 'filename*' in filename_parm:
+                return self.get_encoded_filename(filename_parm)
+            return force_text(filename_parm['filename'])
+        except (AttributeError, KeyError, ValueError):
+            pass
+but, there is no filename in parser_context['kwargs'] and meta does not have 'HTTP_CONTENT_DISPOSITION' key, then raise ParseError.
+finally, in my project I use request._request.FILES instead of request.FILES, it works.

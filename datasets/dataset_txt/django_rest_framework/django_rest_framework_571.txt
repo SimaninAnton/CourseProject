@@ -1,0 +1,43 @@
+antwan commented on 21 Nov 2017
+Following the discussion on #908
+The permissions for OPTIONS (metadata) requests are handled incorrectly in DRF.
+As per the W3C specs, all preflight OPTIONS requests are NOT authenticated, meaning the users will always get a 401 error when preflighting a request for authenticated endpoints, because modern browsers never send this as per the specs :
+Otherwise, make a preflight request. Fetch the request URL from origin source origin using referrer source as override referrer source with the manual redirect flag and the block cookies flag set, using the method OPTIONS, and with the following additional constraints:
+Include an Access-Control-Request-Method header with as header field value the request method (even when that is a simple method).
+If author request headers is not empty include an Access-Control-Request-Headers header with as header field value a comma-separated list of the header field names from author request headers in lexicographical order, each converted to ASCII lowercase (even when one or more are a simple header).
+Exclude the author request headers.
+Exclude user credentials.
+Exclude the request entity body.
+I think this should be the default behaviour here.
+DRF should authorise all OPTIONS request by default for standard permission classes (IsAuthenticated, IsAdminUser, etc) and users may override this when they explicitly need to protect metadata info (infringing the standard CORS compatibility)
+Steps to reproduce :
+views.py
+class MyView(APIView):
+
+    permission_classes = (IsAuthenticated,)
+urls.py
+urlpatterns = [
+    url(r'^myview/', MyView.as_view()),
+]
+console
+http GET http://127.0.0.1:8000/myview/
+HTTP/1.0 401 Unauthorized
+
+http OPTIONS http://127.0.0.1:8000/myview/
+HTTP/1.0 401 Unauthorized
+Expected behaviour
+http GET http://127.0.0.1:8000/myview/
+HTTP/1.0 401 Unauthorized
+
+http OPTIONS http://127.0.0.1:8000/myview/
+HTTP/1.0 200 OK
+Temporary workaroud
+class IsAuthenticated(permissions.IsAuthenticated):
+
+    def has_permission(self, request, view):
+        if request.method == 'OPTIONS':
+            return True
+        return super(IsAuthenticated, self).has_permission(request, view)
+22
+3
+1

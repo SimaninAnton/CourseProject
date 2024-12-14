@@ -1,0 +1,72 @@
+BrashEndeavours commented on 3 Dec 2017
+Issue:
+I am experiencing an issue with becoming overrun with threads produced when I run the below code using fit_generator functionality.
+Attached is a screenshot displaying the # of threads over time at 0.5s intervals.
+I know my code invokes the OrderedEnqueuer functionality, using threads and not processes.
+Placing a debug print in the __init__() fucntion shows that it is created every epoch.
+Questions:
+Can anyone else confirm this issue?
+To watch the threads I used: watch -n 0.5 ps -elfT | grep scriptname
+Is the creation of the OrderedEnqueuer on every epoch normal behaviour?
+Versions:
+Keras (2.1.2, installed from fchollet/keras, 2 Dec 2017)
+Tensorflow (1.4.0)
+Code:
+from keras.layers import Activation
+from keras.layers import Flatten
+from keras.layers import LocallyConnected1D
+from keras.layers import Dropout
+from keras.models import Sequential
+import time
+from keras.utils import Sequence
+import numpy as np
+
+class SequenceGen(Sequence):
+    def __init__(self, batch_size):
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return 10
+
+    def __getitem__(self, idx):
+        batch_x = np.zeros((self.batch_size, 100, 2))
+        batch_y = np.zeros((self.batch_size, 1))
+        time.sleep(0.1)
+        return batch_x, batch_y
+
+    def next(self):
+        while True:
+            for idx in range(len(self)):
+                return self.__getitem__(idx)
+
+data_generator = SequenceGen(batch_size=20000)
+val_generator = SequenceGen(batch_size=20000)
+
+model = Sequential()
+
+model.add(LocallyConnected1D(
+                filters=100,
+                kernel_size=1,
+                input_shape=(100, 2)))
+model.add(Activation('linear'))
+model.add(Dropout(0.25))
+model.add(Flatten())
+model.add(Dense(units=25))
+model.add(Dense(units=1))
+model.add(Activation('linear'))
+
+model.compile(optimizer='rmsprop',loss='mae')
+model.fit_generator(
+                generator=data_generator, 
+                steps_per_epoch=None, # Gets figured out from len(generator)
+                epochs=6000, 
+                verbose=1, 
+                callbacks=[],
+                validation_data=val_generator, 
+                validation_steps=None, # Gets figured out from len(generator) 
+                class_weight=None, 
+                max_queue_size=10, 
+                workers=10,
+                use_multiprocessing=False, 
+                shuffle=False, 
+                initial_epoch=0)

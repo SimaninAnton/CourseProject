@@ -1,0 +1,45 @@
+Contributor
+jfly commented on 15 Nov 2018
+When running pipenv install --system --deploy with pipenv 2018.11.14 on Ubuntu 16.04, I see the following crash:
+Traceback (most recent call last):
+  File "/usr/local/bin/pipenv", line 7, in <module>
+    from pipenv import cli
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/__init__.py", line 47, in <module>
+    from .cli import cli
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/cli/__init__.py", line 3, in <module>
+    from .command import cli
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/cli/command.py", line 18, in <module>
+    from .. import environments
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/environments.py", line 278, in <module>
+    PIPENV_SPINNER_FAIL_TEXT = fs_str(to_text(u"✘ {0}")) if not PIPENV_HIDE_EMOJIS else ("{0}")
+  File "/usr/local/lib/python2.7/dist-packages/pipenv/vendor/vistir/compat.py", line 182, in fs_str
+    return string.encode(_fs_encoding)
+UnicodeEncodeError: 'ascii' codec can't encode character u'\u2718' in position 0: ordinal not in range(128)
+(What follows is some light investigation)
+This new PIPENV_SPINNER_FAIL_TEXT variable seems to have been introduced in 4dac167. The crash is happening in fs_str here:
+pipenv/pipenv/vendor/vistir/compat.py
+Lines 174 to 182 in d9ebad3
+ def fs_str(string): 
+     """Encodes a string into the proper filesystem encoding 
+        Borrowed from pip-tools 
+     """ 
+     if isinstance(string, str): 
+         return string 
+     assert not isinstance(string, bytes) 
+     return string.encode(_fs_encoding) 
+. This crash seems to be happening because sys.getfilesystemencoding() returns "ANSI_X3.4-1968" on Ubuntu 16.04:
+➜  ~ docker run -it ubuntu:16.04
+root@72aab1a9c1e6:/# apt-get update && apt-get install python 
+...
+root@72aab1a9c1e6:/# python
+Python 2.7.12 (default, Nov 12 2018, 14:36:49) 
+[GCC 5.4.0 20160609] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys; print(sys.getfilesystemencoding())
+ANSI_X3.4-1968
+>>> u'\u2718'.encode("ANSI_X3.4-1968")
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+UnicodeEncodeError: 'ascii' codec can't encode character u'\u2718' in position 0: ordinal not in range(128)
+Hope this helps!
+4

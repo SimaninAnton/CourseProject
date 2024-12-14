@@ -1,0 +1,64 @@
+tbagnoli commented on 27 Nov 2018
+I'm using fit_generator passing it separate generators for the training and validation sets, defined as follows:
+# create generator following logic in 
+# https://stackoverflow.com/questions/46647008/keras-aggregated-objective-function
+def grouper(g,x,y, name):
+     while True:
+        for gr in g.unique():
+            # this assigns indices to the entire set of values in g,
+            # the subsects to all the rows in which g == gr
+            indices = g == gr
+            print(name, gr)
+            yield (x[indices],y[indices])
+
+train_generator = grouper(df.loc[df['set'] == 'train', 'batch_id'], X_train, Y_train, "train")
+val_generator = grouper(df.loc[df['set'] == 'val', 'batch_id'], X_val, Y_val, "val")
+The while True ensures that the generators are never "empty", while the following variables control how many times each generator will be iterated during an epoch:
+train_batches = df.loc[df['set'] == 'train', 'batch_id'].nunique()
+val_batches = df.loc[df['set'] == 'val', 'batch_id'].nunique()
+I then call fit_generator as:
+history = fmodel.fit_generator(train_generator, steps_per_epoch=train_batches, 
+                                 validation_data=val_generator,
+                                 validation_steps=val_batches,
+                                 epochs=20, verbose = 2)
+ISSUE
+The output of the first epoch is markedly different from that of epochs >=2.
+For epochs >=2 I get the (expected) behaviour:
+Epoch 2/20
+train 1
+train 2
+...
+train max_train_batches
+val 1
+val 2
+...
+val max_val_batches
+ - 0s - loss: 5.7362 - metric: 0.9580 - val_loss: 6.7697 - val_metric: 1.3246
+But for epoch 1, the output is a bit more random:
+# random jittering between train and validation set batches:
+train val 7691
+7789
+val 7767
+train 7713
+val 7746
+train val7724
+ 7735
+train 7702
+val 7756
+val 7778
+train 7460
+train 7493
+val 7800
+train 7592
+...
+... # then as expected and seen above:
+train 1
+train 2
+...
+train max_train_batches
+val 1
+val 2
+...
+val max_val_batches
+ - 1s - loss: 99.6939 - metric: 6.4464 - val_loss: 6.4747 - val_metric: 1.3762
+As said, the behaviour is only seen during the first epoch, during which it makes the loss function value on the training set during it unrealistically large.

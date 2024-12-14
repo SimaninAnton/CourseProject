@@ -1,0 +1,131 @@
+Contributor
+johannah commented on Oct 20, 2015
+I am seeing an error when running nosetests on a fresh developer build from commit 53bf94c. My environments are managed with Anaconda (environment details at the bottom of this message). I have tried Scipy 0.15 and 0.16 in Python 2.7 and both presented an error message, however, the error is not present in Python 3.4. I was not able to reproduce the error on a different Mac with Yosemite.
+My machine details are as follows:
+OSX El Capitan Xcode 7.0.1
+gcc -v
+Configured with: --prefix=/Applications/Xcode.app/Contents/Developer/usr --with-gxx-include-dir=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/usr/include/c++/4.2.1
+Apple LLVM version 7.0.0 (clang-700.0.72)
+Target: x86_64-apple-darwin15.0.0
+Thread model: posix
+The error:
+======================================================================
+ERROR: sklearn.tests.test_common.test_non_meta_estimators('MDS', <class 'sklearn.manifold.mds.MDS'>)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jhansen/anaconda/lib/python2.7/site-packages/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/utils/testing.py", line 317, in wrapper
+    return fn(*args, **kwargs)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/utils/estimator_checks.py", line 672, in check_estimators_dtypes
+    estimator.fit(X_train, y)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/manifold/mds.py", line 376, in fit
+    self.fit_transform(X, init=init)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/manifold/mds.py", line 414, in fit_transform
+    return_n_iter=True)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/manifold/mds.py", line 229, in smacof
+    similarities = check_array(similarities)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/utils/validation.py", line 409, in check_array
+    _assert_all_finite(array)
+  File "/Users/jhansen/johannah/scikit-learn/sklearn/utils/validation.py", line 65, in _assert_all_finite
+    " or a value too large for %r." % X.dtype)
+ValueError: Input contains NaN, infinity or a value too large for dtype('float32').
+----------------------------------------------------------------------
+Ran 2810 tests in 31.520s
+
+FAILED (SKIP=4, errors=1)
+The error seems to be related to an interdependency between the “LedoitWolf” and “MDS” estimators in test_common.py:test_non_meta_estimators. When LedoitWolf is removed from the testing list, the MDS test passes (see code below).
+from sklearn.decomposition import ProjectedGradientNMF
+from sklearn.cluster.bicluster import BiclusterMixin
+from sklearn.utils.testing import ignore_warnings
+from sklearn.utils.testing import all_estimators
+from sklearn.utils.estimator_checks import (
+    _yield_all_checks)
+
+
+def test_MDS_only():
+    # MDS alone passes
+    estimators = all_estimators()
+    for count, (name, Estimator) in enumerate(estimators):
+        if name not in ["MDS"]:
+            continue
+        if issubclass(Estimator, BiclusterMixin):
+            continue
+        if name.startswith("_"):
+            continue
+        for check in _yield_all_checks(name, Estimator):
+            if issubclass(Estimator, ProjectedGradientNMF):
+                # The ProjectedGradientNMF class is deprecated
+                with ignore_warnings():
+                    yield check, name, Estimator
+            else:
+                yield check, name, Estimator
+
+def test_without_LedoitWolf():
+    # Rerun all estimators, without LedoitWolf - > passes
+    estimators = all_estimators()
+    for count, (name, Estimator) in enumerate(estimators):
+        if name in ["LedoitWolf"]:
+            continue
+        if issubclass(Estimator, BiclusterMixin):
+            continue
+        if name.startswith("_"):
+            continue
+        for check in _yield_all_checks(name, Estimator):
+            if issubclass(Estimator, ProjectedGradientNMF):
+                # The ProjectedGradientNMF class is deprecated
+                with ignore_warnings():
+                    yield check, name, Estimator
+            else:
+                yield check, name, Estimator
+
+def test_bad():
+    # test only the dependent estimators together --> fails
+    estimators = all_estimators()
+    for count, (name, Estimator) in enumerate(estimators):
+        if name not in ["MDS", "LedoitWolf"]:
+            continue
+        if issubclass(Estimator, BiclusterMixin):
+            continue
+        if name.startswith("_"):
+            continue
+        for check in _yield_all_checks(name, Estimator):
+            if issubclass(Estimator, ProjectedGradientNMF):
+                # The ProjectedGradientNMF class is deprecated
+                with ignore_warnings():
+                    yield check, name, Estimator
+            else:
+                yield check, name, Estimator
+Environment versions in 2.7 that failed the test:
+# packages in environment at /Users/jhansen/anaconda/envs/bare27:
+#
+nose                      1.3.7                    py27_0  
+numpy                     1.9.2                    py27_2  
+openssl                   1.0.1k                        1  
+pip                       7.1.2                    py27_0  
+python                    2.7.10                        1  
+readline                  6.2                           2  
+scipy                     0.16.0               np19py27_1  
+setuptools                18.4                     py27_0  
+sqlite                    3.8.4.1                       1  
+tk                        8.5.18                        0  
+wheel                     0.26.0                   py27_1  
+zlib                      1.2.8                         0  
+
+=============================================
+Environment versions in 3.4 that pass the test
+# packages in environment at /Users/jhansen/anaconda/envs/bare34:
+#
+nose                      1.3.7                    py34_0  
+numpy                     1.9.2                    py34_2  
+openssl                   1.0.1k                        1  
+pip                       7.1.2                    py34_0  
+python                    3.4.3                         0  
+readline                  6.2                           2  
+scipy                     0.16.0               np19py34_1  
+setuptools                18.4                     py34_0  
+sqlite                    3.8.4.1                       1  
+tk                        8.5.18                        0  
+wheel                     0.26.0                   py34_1  
+xz                        5.0.5                         0  
+zlib                      1.2.8                         0  

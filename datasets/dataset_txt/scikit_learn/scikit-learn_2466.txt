@@ -1,0 +1,62 @@
+Member
+rth commented on Jan 19, 2017
+In a followup of issue #8213 , it looks like using n_jobs > 1 in Eucledian pairwise_distances makes computations slower instead of speeding them up.
+Steps to reproduce
+from sklearn.metrics import pairwise_distances
+import numpy as np
+
+np.random.seed(99999)
+n_dim = 200
+
+for n_train, n_test in [(1000, 100000),
+                        (10000, 10000),
+                        (100000, 1000)]:
+    print('\n# n_train={}, n_test={}, n_dim={}\n'.format(
+                         n_train, n_test, n_dim))
+
+    X_train = np.random.rand(n_train, n_dim)
+    X_test = np.random.rand(n_test, n_dim)
+
+    for n_jobs in [1, 2]:
+        print('n_jobs=', n_jobs, ' => ', end='')
+
+        %timeit pairwise_distances(X_train, X_test, 'euclidean',
+                                   n_jobs=n_jobs, squared=True)
+which on a 2 core CPU returns,
+# n_train=1000, n_test=100000, n_dim=200
+
+n_jobs= 1  => 1 loop, best of 3: 1.92 s per loop
+n_jobs= 2  => 1 loop, best of 3: 4.95 s per loop
+
+# n_train=10000, n_test=10000, n_dim=200
+
+n_jobs= 1  => 1 loop, best of 3: 1.89 s per loop
+n_jobs= 2  => 1 loop, best of 3: 4.74 s per loop
+
+# n_train=100000, n_test=1000, n_dim=200
+
+n_jobs= 1  => 1 loop, best of 3: 2 s per loop
+n_jobs= 2  => 1 loop, best of 3: 5.6 s per loop
+While for small datasets, it would make sens that the parallel processing would not improve performance due to the multiprocessing etc overhead, this is by no mean a small dataset. And the compute time does not decrease when using e.g. n_jobs=4 on a 4 core CPU.
+This also holds for other number of dimensions,
+n_dim=10
+# n_train=1000, n_test=100000, n_dim=10
+
+n_jobs= 1  => 1 loop, best of 3: 873 ms per loop
+n_jobs= 2  => 1 loop, best of 3: 4.25 s per loop
+n_dim=1000
+# n_train=1000, n_test=100000, n_dim=1000
+
+n_jobs= 1  => 1 loop, best of 3: 6.56 s per loop
+n_jobs= 2  => 1 loop, best of 3: 8.56 s per loop
+Running benchmarks/bench_plot_parallel_pairwise.py also yields similar results,
+This might affect a number of estimators / metrics where pairwise_distances is used.
+Versions
+Linux-4.6.0-gentoo-x86_64-Intel-R-_Core-TM-_i5-6200U_CPU_@_2.30GHz-with-gentoo-2.3
+Python 3.5.2 |Continuum Analytics, Inc.| (default, Jul  2 2016, 17:53:06) 
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+NumPy 1.11.1
+SciPy 0.18.1
+Scikit-Learn 0.18.1
+I also get similar results with scikit-learn 0.17.1
+👍 1

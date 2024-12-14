@@ -1,0 +1,62 @@
+Contributor
+florimondmanca commented on 20 Jun 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Expected behavior
+Assuming:
+We're submitting a POST request through an HTML form in the browsable API
+The form contains a boolean field set to true (ticked checkbox)
+Then in the view, request.data should contain the value of the field as the native Python value True.
+I came across this bug while trying to use request.data in a MyModel.objects.filter() type of operation and got errors from the ORM complaining that the field should have been a boolean but was a string.
+Actual behavior
+The value of the field is present in request.data as a string, i.e. "true".
+Steps to reproduce
+Environment:
+$ python --version
+Python 3.6.0
+$ cat requirements.txt
+django
+git+https://github.com/encode/django-rest-framework.git@master
+and using the default SQLite database.
+Example:
+# models.py
+from django.db import models
+
+class Post(models.Model):
+    modified = models.BooleanField()
+# serializers.py
+from rest_framework import serializers
+from .models import Post
+
+class PostSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Post
+        fields = ('id', 'modified')
+# views.py
+from rest_framework import mixins, viewsets
+from .models import Post
+from .serializers import PostSerializer
+
+class PostViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+
+    def create(self, request, *args, **kwargs):
+        modified = request.data.get('modified')
+        if isinstance(modified, str):
+            raise ValueError(f'{modified}: it is a string!')
+        return super().create(request, *args, **kwargs)
+# urls.py
+from rest_framework.routers import DefaultRouter
+from .views import PostViewSet
+
+router = DefaultRouter()
+router.register('posts', PostViewSet)
+
+urlpatterns = router.urls
+Worth mentioning that the raw data does show a proper JSON boolean value by default, so passing a "true" value there can only be intentional.

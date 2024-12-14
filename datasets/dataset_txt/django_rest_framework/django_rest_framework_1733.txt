@@ -1,0 +1,37 @@
+Agilulfo commented on 1 Jul 2015
+when sending data without all the fields in the model within a put request, I expected to receive a 400 error or to see the non passed field populated with the default values.
+But in this example
+model:
+class CustomerSettings(models.Model):
+    customer = models.OneToOneField(Customer)
+    auto_send_via_email = models.BooleanField(default=False)
+    auto_pay = models.BooleanField(default=False)
+serializer:
+class CustomerSettingsSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = CustomerSettings
+        fields = ('customer', 'auto_pay', 'auto_send_via_email')
+        read_only_fields = ('customer', )
+view:
+class CustomerSettingsView(RetrieveUpdateAPIView):
+    serializer_class = CustomerSettingsSerializer
+    queryset = CustomerSettings.objects
+    lookup_field = 'customer'
+the following test passes showing that auto_send_via_email maintain the value of the old instance
+and the update operation succeed without errors
+    def test_put_customer_settings_partial_data(self):
+        customer_settings = self.customer.customersettings
+        customer_settings.auto_send_via_email = True
+        customer_settings.save()
+
+        data = {'auto_pay': True}
+        put = self.request_factory.put(self.url, data, format='json')
+        put.user = self.user
+        resp = self.view(put, **self.kwargs)
+        customer_settings.refresh_from_db()
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(customer_settings.auto_pay)
+        self.assertTrue(customer_settings.auto_send_via_email)
+Removing the default value from the model for the field auto_send_via_email does not change this behaviour

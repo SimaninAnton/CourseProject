@@ -1,0 +1,48 @@
+MiningPickaxe commented on 16 Oct 2017
+My operating system is (include version):
+Debian Jessie
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+wget https://dl.eff.org/certbot-auto && chmod a+x certbot-auto
+./certbot-auto
+I ran this command and it produced this output:
+certbot-auto certonly --standalone --rsa-key-size 4096 -d thisismysub.domain.de
+Certbot's behavior differed from what I expected because:
+Incorrect validation certificate for tls-sni-01 challenge. Requested xxxxxxxxxxxxxx.xxxxxxxxxxxxxx.acme.invalid from myip:443. Received 2 certificate(s), first certificate had names "anotherdomain.com, www.anotherdomain.com"
+Certificates could not be created.
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+https://privatebin.net/?d275648123115258#RO5Jh5A1NieojXImF74GoBZYhtZdwtDCkC0QbfJodGQ=
+All Domains were censored, ANOTHERDOMAIN is always the same domain, CENSORED DOMAIN is the domain the certificate is for (including subdomain)
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+NGINX:
+server {
+        listen 80;
+        server_name CENSORED DOMAIN;
+        return 301 https://$server_name$request_uri;
+}
+
+
+server {
+        listen 443 ssl http2;
+        server_name CENSORED DOMAIN;
+
+#Following will be turned on as soon as certificate is created, otherwise nginx wont start
+#        ssl on;
+#        ssl_certificate         /etc/letsencrypt/live/CENSORED DOMAIN/fullchain.pem;
+#        ssl_certificate_key     /etc/letsencrypt/live/CENSORED DOMAIN/privkey.pem;
+
+        location / {
+                proxy_pass http://localhost:7257;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_connect_timeout 150;
+                proxy_send_timeout 100;
+                proxy_read_timeout 100;
+                proxy_buffers 4 32k;
+                client_max_body_size 8m;
+                client_body_buffer_size 128k;
+        }
+}
+Other notes
+Nginx was stopped during the whole process, no other processes were using port 443, confirmed with netstat. No A/AAAA record was not used, a CNAME is in the DNS record. Would prefer to not change it to A/AAAA if possible.

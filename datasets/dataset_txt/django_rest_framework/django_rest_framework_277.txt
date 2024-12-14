@@ -1,0 +1,31 @@
+backbohne commented on 20 Nov 2018
+Would it be possible to add support for CallableBool type in composable permissions?
+It seems that Django's is_authenticated returns CallableBool in some situations which will raise this error:
+ERROR 2018-11-20 16:35:33,830 unsupported operand type(s) for &: 'CallableBool' and 'bool'
+Traceback (most recent call last):
+  File "/opt/frontend-server/lib/python3.5/site-packages/rest_framework/views.py", line 483, in dispatch
+    self.initial(request, *args, **kwargs)
+  File "/opt/frontend-server/lib/python3.5/site-packages/rest_framework/views.py", line 401, in initial
+    self.check_permissions(request)
+  File "/opt/frontend-server/lib/python3.5/site-packages/rest_framework/views.py", line 334, in check_permissions
+    if not permission.has_permission(request, self):
+  File "/opt/frontend-server/lib/python3.5/site-packages/rest_framework/permissions.py", line 34, in has_permission
+    self.op2.has_permission(request, view)
+TypeError: unsupported operand type(s) for &: 'CallableBool' and 'bool'
+To avoid it, something like
+def force_bool(attr):
+    if callable(attr):
+        return attr()
+    return attr
+
+class IsAuthenticated(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return force_bool(request.user.is_authenticated) and (
+            request.session.get('is_staff', False) or not(request.user.two_factor) or request.user.is_verified()
+        )
+
+    def has_object_permission(self, request, view, obj):
+        return force_bool(request.user.is_authenticated) and (
+            request.session.get('is_staff', False) or not(request.user.two_factor) or request.user.is_verified()
+        )
+would help for example.

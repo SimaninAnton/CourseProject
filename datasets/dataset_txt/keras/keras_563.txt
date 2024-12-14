@@ -1,0 +1,50 @@
+loretoparisi commented on 5 Dec 2018 •
+edited
+While the signature of fit is
+fit(x=None, y=None, batch_size=None, epochs=1, verbose=1, callbacks=None, validation_split=0.0, validation_data=None, shuffle=True, class_weight=None, sample_weight=None, initial_epoch=0, steps_per_epoch=None, validation_steps=None)
+the fit_generator is
+fit_generator(generator, steps_per_epoch=None, epochs=1, verbose=1, callbacks=None, validation_data=None, validation_steps=None, class_weight=None, max_queue_size=10, workers=1, use_multiprocessing=False, shuffle=True, initial_epoch=0)
+so class_weight is defined for both, the validation_data can have optionally sample weights in the form of tuple (x_val, y_val, val_sample_weights), that will work on validation set only, but the fit_generator has no sample_weight option, i.e. the array of weights for the training samples.
+Why training the model for a given number of epochs (i.e. fit) support sample weighting while training the model on data generated batch-by-batch (i.e. fit_generator) does not?
+At the end of the day fit_generator will use the model.train_on_batch api:
+def fit_generator(model,
+                  generator,
+                  steps_per_epoch=None,
+                  epochs=1,
+                  verbose=1,
+                  callbacks=None,
+                  validation_data=None,
+                  validation_steps=None,
+                  class_weight=None,
+                  max_queue_size=10,
+                  workers=1,
+                  use_multiprocessing=False,
+                  shuffle=True,
+                  initial_epoch=0):
+keras/keras/engine/training_generator.py
+Line 215 in 351e7a9
+ outs = model.train_on_batch(x, y, 
+Now the method train_on_batch support both class_weight than sample_weight parameters:
+keras/keras/engine/training.py
+Line 1172 in 351e7a9
+ def train_on_batch(self, x, y, 
+def train_on_batch(self, x, y,
+                       sample_weight=None,
+                       class_weight=None):
+Now what happens internally here
+keras/keras/engine/training_generator.py
+Line 334 in 351e7a9
+ if len(generator_output) == 2: 
+is like
+if len(generator_output) == 2:
+                x, y = generator_output
+                sample_weight = None
+            elif len(generator_output) == 3:
+                x, y, sample_weight = generator_output
+            else:
+                raise ValueError('Output of generator should be a tuple '
+                                 '(x, y, sample_weight) '
+                                 'or (x, y). Found: ' +
+                                 str(generator_output))
+so a sample_weight is mapped from the generator output when your return the tuple (x_val, y_val, val_sample_weights), so apparently it will be used on the training batch, depending on your generator.
+That said, why the fit_generator is not exposing the sample_weight argument then?

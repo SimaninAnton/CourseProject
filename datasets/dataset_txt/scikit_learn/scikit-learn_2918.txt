@@ -1,0 +1,50 @@
+Contributor
+gojomo commented on Jul 13, 2016 •
+edited
+Description
+sklearn.metrics.brier_score_loss fails with a ValueError at the check...
+scikit-learn/sklearn/metrics/classification.py
+Line 1763 in d6c479f
+ if len(labels) != 2: 
+...if the y_true target values are all the same. But this should work: the Brier score is still defined/calculable in such cases.
+Steps/Code to Reproduce
+Either of the following should plausibly return a correct Brier score of 0.25, rather than raising a ValueError:
+brier_score_loss([0],[0.5])
+brier_score_loss([1],[0.5])
+Expected Results
+No error: correct score returned (in the case of the above, 0.25.)
+Actual Results
+An error like:
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-50-562db2434267> in <module>()
+----> 1 brier_score_loss([0],[0.5])
+
+/Users/scratch/miniconda3/envs/gendev2016/lib/python3.5/site-packages/sklearn/metrics/classification.py in brier_score_loss(y_true, y_prob, sample_weight, pos_label)
+   1787         pos_label = y_true.max()
+   1788     y_true = np.array(y_true == pos_label, int)
+-> 1789     y_true = _check_binary_probabilistic_predictions(y_true, y_prob)
+   1790     return np.average((y_true - y_prob) ** 2, weights=sample_weight)
+
+/Users/scratch/miniconda3/envs/gendev2016/lib/python3.5/site-packages/sklearn/metrics/classification.py in _check_binary_probabilistic_predictions(y_true, y_prob)
+   1706     if len(labels) != 2:
+   1707         raise ValueError("Only binary classification is supported. "
+-> 1708                          "Provided labels %s." % labels)
+   1709 
+   1710     if y_prob.max() > 1:
+
+ValueError: Only binary classification is supported. Provided labels [1].
+(The one other place _check_binary_probabilistic_predictions() is called, calibration.calibration_curve(), may be at risk of a similar error.)
+Versions
+Darwin-13.4.0-x86_64-i386-64bit
+Python 3.5.2 |Continuum Analytics, Inc.| (default, Jul 2 2016, 17:52:12)
+[GCC 4.2.1 Compatible Apple LLVM 4.2 (clang-425.0.28)]
+NumPy 1.11.1
+SciPy 0.17.1
+Scikit-Learn 0.17.1
+Possible Fix
+In brier_score_loss(), the line preceding the call to _check_binary_probabilistic_predictions() already ensures the passed-in labels will always be limited to 0/1 (see
+scikit-learn/sklearn/metrics/classification.py
+Line 1847 in d6c479f
+ y_true = _check_binary_probabilistic_predictions(y_true, y_prob) 
+). Perhaps it could pass these in as an optional labels parameters, to prevent _check_binary_probabilistic_predictions() from making its own assumptions/calculations about labels. (It may be necessary to do something similar in calibration_curve().)

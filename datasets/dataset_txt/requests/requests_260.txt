@@ -1,0 +1,26 @@
+hheimbuerger commented on Jun 1, 2018 •
+edited
+This is a request for best practices, or possibly an improvement of the documentation. I'm aware that I was referred to the StackOverflow tag, but anything around best practices seems quite likely to be "closed as subjective" there.
+I'm wondering what the best practices are around requests and urllib3 for logging HTTP request failures.
+Concretely, I'm making calls to a 3rdparty API with requests in background tasks (non-UI). Of course I leave verify on and I want all API connections to fail if the certificate isn't valid.
+urllib3 seems to have the policy of logging on WARN or even ERROR when something fails, right before raising the exception. My monitoring systems generally notify me when WARNINGs or ERRORs occur, but this immediate logging means I'm losing the distinction between a caught exception and an uncaught exception.
+Does that mean that it is considered "okay" and a safe practice to silence the urllib3.connections logger all the way? It just feels wrong...
+'loggers': {
+    'urllib3.connection': {
+        'level': 'CRITICAL',
+    },
+},
+Is there a design decision to never log anything on ERROR that doesn't also raise an exception? (I can see how this probably should be asked on the urllib3 project.)
+How do other requests users who run tasks in the background handle this balance?
+On a related note, I think the documentation of how to handle these (specific) exceptions could be improved. To handle the certificate issue, here's what I managed to do:
+except requests.exceptions.SSLError as sslexc:   # NOT urllib3.exceptions.SSLError!!!
+    if isinstance(sslexc.message, MaxRetryError):
+        maxretryexc = sslexc.message
+        if isinstance(maxretryexc.reason, urllib3.exceptions.SSLError):   # NOT requests.exceptions.SSLError!!!
+            innersslexc = maxretryexc.reason
+            if isinstance(innersslexc.message, urllib3.packages.ssl_match_hostname._implementation.CertificateError):   # NOT ssl.CertificateError!
+                certexc = innersslexc.message
+                msg = certexc.message
+                logger.info('Certificate validation failed for customer %s: %s' % (customer, msg))
+    raise
+Is there a better way to do this? I found Quickstart: Errors and Exceptions, but not much else, and it doesn't really deal with how to handle fine-grained exceptions.

@@ -1,0 +1,96 @@
+fmfn commented on 31 Aug 2016
+I get the following when trying to train a model (on a CPU) after upgrading to 1.0.8. Interestingly it works if I downgrade to 1.0.7. Perhaps even more surprising is that it works (with 1.0.8) on a ubuntu-GPU setup.
+Traceback (most recent call last):
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/theano/compile/function_module.py", line 859, in __call__
+    outputs = self.fn()
+MemoryError: alloc failed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "./pipeline/train.py", line 162, in <module>
+    validation_data=[Xva, Yva],
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/models.py", line 620, in fit
+    sample_weight=sample_weight)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/engine/training.py", line 1104, in fit
+    callback_metrics=callback_metrics)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/engine/training.py", line 822, in _fit_loop
+    outs = f(ins_batch)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/backend/theano_backend.py", line 672, in __call__
+    return self.function(*inputs)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/theano/compile/function_module.py", line 871, in __call__
+    storage_map=getattr(self.fn, 'storage_map', None))
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/theano/gof/link.py", line 314, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/six.py", line 685, in reraise
+    raise value.with_traceback(tb)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/theano/compile/function_module.py", line 859, in __call__
+    outputs = self.fn()
+MemoryError: alloc failed
+Apply node that caused the error: AllocEmpty{dtype='float32'}(TensorConstant{11}, Elemwise{Composite{Switch(EQ(i0, i1), ((i2 * i0) // (i3 * i0)), i0)}}.0, TensorConstant{25})
+Toposort index: 201
+Inputs types: [TensorType(int64, scalar), TensorType(int64, scalar), TensorType(int64, scalar)]
+Inputs shapes: [(), (), ()]
+Inputs strides: [(), (), ()]
+Inputs values: [array(11), array(-1334), array(25)]
+Outputs clients: [[IncSubtensor{InplaceSet;:int64:}(AllocEmpty{dtype='float32'}.0, Rebroadcast{0}.0, Constant{1})]]
+
+Backtrace when the node is created(use Theano flag traceback.limit=N to make it longer):
+  File "./pipeline/train.py", line 90, in model_loader
+    model, encoder = _get_model()
+  File "./pipeline/train.py", line 65, in _get_model
+    name='decoder_rnn_0')
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/models.py", line 308, in add
+    output_tensor = layer(self.outputs[0])
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/engine/topology.py", line 515, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/engine/topology.py", line 573, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/engine/topology.py", line 150, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/layers/recurrent.py", line 213, in call
+    input_length=input_shape[1])
+  File "/Users/<me>/venvs3/general/lib/python3.5/site-packages/keras/backend/theano_backend.py", line 842, in rnn
+    go_backwards=go_backwards)
+
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+The model is:
+encoder = Sequential(name="encoder")
+encoder.add(
+    Masking(
+        input_shape=(config.Model.maxlen, config.Model.max_features),
+        mask_value=0,
+    )
+)
+encoder.add(
+         LSTM(output_dim=config.Model.lstm_size,
+         return_sequences=False,
+         go_backwards=False,
+         name='encode_rnn_0')
+)
+
+model = Sequential(name='char-auto-encoder')
+model.add(encoder)
+
+# Context
+model.add(
+    RepeatVector(n=config.Model.maxlen,
+                 name='context_vector_repeat')
+)
+
+model.add(
+        LSTM(output_dim=config.Model.lstm_size,
+             return_sequences=True,
+             go_backwards=False,
+             name='decoder_rnn_0')
+)
+
+model.add(
+    TimeDistributed(
+        Dense(
+            output_dim=config.Model.max_features,
+            activation='softmax',
+            name='distribution_over_tokens'
+        ),
+    )
+)

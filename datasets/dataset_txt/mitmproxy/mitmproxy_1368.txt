@@ -1,0 +1,56 @@
+bugi commented on 21 Jul 2015
+I ran into an error that crashed mitmproxy. It looks like something not handling unicode hostnames.
+First, here's a workaround from my inlinescript. Note the str() wrapping the hostname.
+partial diff:
+        -            hp = ( proxy['host'] , int(proxy['port']) )
+        +            hp = ( str(proxy['host']) , int(proxy['port']) )
+context for the diff:
+        server_changed = flow.live.change_server(
+            hp,
+            force=True,
+            persistent_change=True)
+Here's what mitmproxy said:
+mitmproxy has crashed!
+Please lodge a bug report at: https://github.com/mitmproxy/mitmproxy
+127.0.0.1:42455: Traceback (most recent call last):
+  File "/.../venv/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 125, in handle
+    **conn_kwargs).handle_messages()
+  File "/.../venv/lib/python2.7/site-packages/libmproxy/protocol/http.py", line 1033, in handle_messages
+    while self.handle_flow():
+  File "/.../venv/lib/python2.7/site-packages/libmproxy/protocol/http.py", line 1163, in handle_flow
+    (flow.request.host, flow.request.port)):
+  File "/.../venv/lib/python2.7/site-packages/libmproxy/protocol/http.py", line 1476, in process_connect_request
+    self.c.establish_ssl(server=True, client=True)
+  File "/.../venv/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 243, in establish_ssl
+    cert, key, chain_file = self.find_cert()
+  File "/.../venv/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 312, in find_cert
+    ret = self.config.certstore.get_cert(host, sans)
+  File "/.../venv/lib/python2.7/site-packages/netlib/certutils.py", line 329, in get_cert
+    sans),
+  File "/.../venv/lib/python2.7/site-packages/netlib/certutils.py", line 100, in dummy_cert
+    [OpenSSL.crypto.X509Extension("subjectAltName", False, ss)])
+  File "/.../venv/lib/python2.7/site-packages/OpenSSL/crypto.py", line 651, in __init__
+    extension = _lib.X509V3_EXT_nconf(_ffi.NULL, ctx, type_name, value)
+TypeError: initializer for ctype 'char *' must be a str or list or tuple, not unicode
+Here's what curl said:
+$ curl -v --proxy 'http://localhost:8080' 'https://xxx/' --insecure
+* About to connect() to proxy localhost port 8080 (#0)
+*   Trying ::1... Connection refused
+*   Trying 127.0.0.1... connected
+* Connected to localhost (127.0.0.1) port 8080 (#0)
+* Establish HTTP proxy tunnel to xxx:443
+> CONNECT xxx:443 HTTP/1.1
+> Host: xxx:443
+> User-Agent: curl/7.19.7 (x86_64-redhat-linux-gnu) libcurl/7.19.7 NSS/3.13.6.0 zlib/1.2.3 libidn/1.18 libssh2/1.4.2
+> Proxy-Connection: Keep-Alive
+>
+< HTTP/1.0 200 Connection established
+< Content-Length: 0
+<
+* Proxy replied OK to CONNECT request
+* Initializing NSS with certpath: sql:/etc/pki/nssdb
+* warning: ignoring value of ssl.verifyhost
+* NSS error -5938
+* Closing connection #0
+* SSL connect error
+curl: (35) SSL connect error

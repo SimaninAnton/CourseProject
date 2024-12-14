@@ -1,0 +1,60 @@
+Contributor
+oleksandr-pavlyk commented on Jul 15, 2018
+Description
+Coefficients and intercepts found by LogisticRegression's fit is not the actual mathematical argmin.
+Steps/Code to Reproduce
+Generate synthetic data
+import numpy as np
+import sklearn
+from sklearn.datasets import make_classification
+Xm, ym = make_classification(
+    n_samples=1000, n_features=6,
+    n_classes=5, n_informative=6, 
+    n_redundant=0, n_repeated=0, random_state=0)
+Train the data:
+import sklearn.linear_model as lm
+clf = lm.LogisticRegression(penalty='l2', C=0.5, tol=1e-16, max_iter=100000, 
+            multi_class='multinomial', solver='lbfgs', fit_intercept=True, dual=False)
+clf.fit(Xm, ym)
+# clf.n_iter_ is reported to be 23
+Now check the cost function as the norm of the resulting gradient:
+def cost_and_grad(clf, Xm, ym):
+    from sklearn.linear_model.logistic import _multinomial_loss_grad
+    from sklearn.preprocessing import LabelBinarizer
+
+    mn_loss, mn_loss_grad, p = _multinomial_loss_grad(
+        np.hstack((clf.coef_, clf.intercept_[:,np.newaxis])).ravel(),
+        Xm,
+        LabelBinarizer().fit_transform(ym),
+        2., # this parameter is twice the l2 norm value for DAAL
+        np.full((Xm.shape[0],), 1.0/Xm.shape[0])
+    )
+    return mn_loss, mn_loss_grad
+mn_loss, mn_loss_grad = cost_and_grad(clf, Xm, ym)
+print("Multinomial loss: {}, grad norm: {}".format(
+       mn_loss, np.sqrt(np.sum(np.square(mn_loss_grad))) ) )
+Import better values for intercepts and coefficients:
+clf.intercept_ = np.load('optimal_intercept.npy')
+clf.coef_ = np.load('optimal_coeff.npy')
+
+mn_loss, mn_loss_grad = cost_and_grad(clf, Xm, ym)
+print("")
+print("Multinomial loss: {}, grad norm: {}".format(
+        mn_loss, np.sqrt(np.sum(np.square(mn_loss_grad))) ) )
+Expected Results
+The output:
+$ python issue.py
+Scikit-Learn iterations: [23]
+Multinomial loss: 5.304150097727059, grad norm: 4.119495663215655
+
+Multinomial loss: 1.5010439828192643, grad norm: 0.0009998350312434268
+The values of actually computed intercept and coefficients are:
+sk_intercept = np.array([-0.1289913783453458, -0.2883358593953128, -0.5938103322822585, 0.666232515224861, 0.3449050547980587], dtype=np.double)
+sk_coef = np.array([[0.2532115185225979, -0.564607784035576, -0.09185148436991748, 0.42199877685472514, -0.4627325365240686, 0.009403258913720517], [-0.7004364057660323, 0.6620719364153232, -0.05168022653204973, 0.44110959787838344, 0.05340538654348231, 0.3538180297999218], [0.3196864283777904, -0.5796159040175543, 0.6219149721407147, -0.22272833933805442, -0.006261943531613192, -0.6071402894547463], [-0.20795650556526807, 0.405783899345101, -0.10157460021552059, -0.143353209315367, -0.0038348974473526557, 0.02673919014736653], [0.3354949644309113, 0.07636785229270623, -0.37680866102322697, -0.49702682607968646, 0.41942399095955235, 0.21717981059373687]], dtype=np.double)
+Actual Results
+The values of optimal intercept and coeffs:
+opt_intercept=np.array([0.030078999480346123, -0.01254891360272252, -0.044252247165268745, 0.007990838301957393, 0.023731322985693765], dtype=np.double)
+opt_coef = np.array([[0.04310399305640931, -0.0655226161305496, -0.035691617542971205, 0.06585989729415016, -0.07557702284797435, -0.001741845300312745], [-0.1063881905426798, 0.07682972519996521, 0.02556688303589214, 0.0620688276329246, 0.010657442939482408, 0.06660446982217974], [0.032695946721298504, -0.07961203419772807, 0.043757556793231504, -0.03311240772612109, -0.005950938008833036, -0.07084029835786333], [-0.020918583124406764, 0.06464922464524334, 0.013697081000793122, -0.01538292548123347, -0.0008613737026501061, -0.0006612010765095329], [0.05151368339511615, 0.003662549988806318, -0.04732305378120836, -0.07942654221398293, 0.0717387411257123, 0.0066457244182430274]], dtype=np.double)
+Versions
+The quoted actual values were found with Intel (R) DAAL.
+I am using scikit-learn 0.19.1, scipy 1.1.0, numpy 1.14.3 from Intel Distribution for Python.

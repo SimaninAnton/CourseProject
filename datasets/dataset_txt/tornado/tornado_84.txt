@@ -1,0 +1,30 @@
+CNLHC commented on 7 Mar 2019
+Hello,
+This issue maybe relate to #1886
+I want to perform this logic:
+establish tcp connection between a general client and tornado TCPServer
+Server use read_bytes API to get info from client
+Server must read 12 bytes in 3 seconds, otherwise , it will drop data already received and waiting for next 3 sec without close the connect.
+I have try this to implement logic above:
+class SSCServer(TCPServer):
+    async def handle_stream(self,stream:IOStream,address):
+        print("connect from {0:s}:{1:d}".format(address[0],address[1]))
+        loop = IOLoop.current() #type: IOLoop
+        while True:
+            try:
+                if not stream.reading():
+                    dataFuture = stream.read_bytes(12) #type:futures.Future
+                data = await gen.with_timeout(timedelta(seconds=3),dataFuture) 
+                loop.run_in_executor(None,functools.partial(SSCDecoder.SSCDecodeFrame,data))
+                await stream.write(data)
+                
+            except StreamClosedError:
+                print("connection closed from {0:s}:{1:d}".format(address[0],address[1]))
+                break
+
+            except gen.TimeoutError:
+                print("No response in 3 seconds {0:s}:{1:d}".format(address[0],address[1]))
+The TimeoutError will be captured, and connect won't be terminated. But after TimeoutError, the stream won't drop bytes it have read already.
+I think there should be some method to clear the stream RX-buffer which was not well document? Or clean RX-buffer is not supported in current version?
+(using tornado 6.0.1 with python 3.5.3)
+Thanks

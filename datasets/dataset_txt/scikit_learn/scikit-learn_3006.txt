@@ -1,0 +1,74 @@
+Contributor
+proinsias commented on May 15, 2016 •
+edited by TomDLT
+Description
+I'm encountering the same error (ValueError: scoring must return a number, got [...] (<class 'numpy.core.memmap.memmap'>) instead.) as #6147, despite running v0.17.1. This is because I'm creating my own scorer, following the example in this article.
+Steps/Code to Reproduce
+import pandas as pd
+import numpy as np
+from sklearn.cross_validation import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import make_classification
+from functools import partial
+
+def cutoff_predict(clf, X, cutoff):
+    return (clf.predict_proba(X)[:, 1] > cutoff).astype(int)
+
+def perc_diff_score(y, ypred, X=None):
+    values = X[:,0]
+    actual_value = np.sum(np.multiply(y, values))
+    predict_value = np.sum(np.multiply(ypred, values))
+    difference = predict_value - actual_value
+    percent_diff = abs(difference * 100 / actual_value )
+    return -1*percent_diff
+
+def perc_diff_cutoff(clf, X, y, cutoff=None):
+    ypred = cutoff_predict(clf, X, cutoff)
+    return perc_diff_score(y, ypred, X)
+
+def perc_diff_score_cutoff(cutoff):
+    return partial(perc_diff_cutoff, cutoff=cutoff)
+
+clf = RandomForestClassifier()
+X_train, y_train = make_classification(n_samples=int(1e6), n_features=5, random_state=0)
+values = abs(100000 * np.random.randn(len(X_train))).reshape((X_train.shape[0], 1))
+X_train = np.append(values, X_train, 1)
+
+cutoff = 0.1
+validated = cross_val_score(clf, X_train, y_train, scoring=perc_diff_score_cutoff(cutoff),
+                            verbose=3,
+                            n_jobs=-1,
+                            )
+Expected Results
+No error.
+Actual Results
+Same error as in #6147 :
+/home/gillesa/anaconda2/lib/python2.7/site-packages/sklearn/cross_validation.pyc in _score(estimator=ExtraTreesClassifier(bootstrap=False, class_weig..., random_state=None, verbose=0, warm_start=False), X_test=memmap([[  0.,   9.,  56., ...,   1.,   0.,   0....      [  0.,   6.,  57., ...,   1.,   0.,   0.]]), y_test=memmap([0, 0, 0, ..., 0, 0, 0]), scorer=make_scorer(roc_auc_score, needs_threshold=True))
+   1604         score = scorer(estimator, X_test)
+   1605     else:
+   1606         score = scorer(estimator, X_test, y_test)
+   1607     if not isinstance(score, numbers.Number):
+   1608         raise ValueError("scoring must return a number, got %s (%s) instead."
+-> 1609                          % (str(score), type(score)))
+   1610     return score
+   1611
+   1612
+   1613 def _permutation_test_score(estimator, X, y, cv, scorer):
+
+ValueError: scoring must return a number, got 0.671095795498 (<class 'numpy.core.memmap.memmap'>) instead.
+Workaround
+Updated perc_diff_score() as follows to add cast to float.:
+def perc_diff_score(y, ypred, X=None):
+    values = X[:,0]
+    actual_value = np.sum(np.multiply(y, values))
+    predict_value = np.sum(np.multiply(ypred, values))
+    difference = predict_value - actual_value
+    percent_diff = np.float(abs(difference * 100 / actual_value ))
+    return -1*percent_diff
+Versions
+Darwin-15.4.0-x86_64-i386-64bit
+Python 3.5.1 |Anaconda 4.0.0 (x86_64)| (default, Dec 7 2015, 11:24:55)
+[GCC 4.2.1 (Apple Inc. build 5577)]import numpy; print("NumPy", numpy.version)
+NumPy 1.11.0
+SciPy 0.17.0
+Scikit-Learn 0.17.1

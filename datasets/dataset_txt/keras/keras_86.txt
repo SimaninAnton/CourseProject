@@ -1,0 +1,57 @@
+Psychotechnopath commented on 15 Aug 2019
+Today I've ran into some very strange behavior of Keras. When I try to do a classification run on the iris-dataset with a simple model, keras version 1.2.2 gives me +- 95% accuracy, whereas a keras version of 2.2.4 predicts the same class for every training example (leading to an accuracy of +- 35%, as there are three types of iris). The only thing that makes my model predict +-95% accuracy is downgrading keras to a version below 2.0:
+I think it is a problem with Keras, as I have tried the following things, all do not make a difference;
+Switching activation function in the last layer (from Sigmoid to softmax).
+Switching backend (Theano and Tensorflow both give roughly same performance).
+Using a random seed.
+Varying the number of neurons in the hidden layer (I only have 1 hidden layer in this simple model).
+Switching loss-functions.
+Dependencies to reproduce the problem:
+numpy=1.16.4
+pandas=0.25.0
+sk-learn=0.21.2
+theano=1.0.4
+tensorflow=1.14.0
+Below is my code; it's only a short script, and I've included the iris data so the problem should be easily reproduced.
+import pandas as pd
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasClassifier
+from keras.utils import np_utils
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import LabelEncoder
+
+#Load data
+data_frame = pd.read_csv("iris.csv", header=None)
+data_set = data_frame.values
+X = data_set[:, 0:4].astype(float)
+Y = data_set[:, 4]
+
+#Encode class values as integers
+encoder = LabelEncoder()
+encoder.fit(Y)
+encoded_Y = encoder.transform(Y)
+
+# convert integers to dummy variables (i.e. one hot encoded)
+dummy_y = np_utils.to_categorical(encoded_Y)
+
+def baseline_model():
+    #Create & Compile model
+    model = Sequential()
+    model.add(Dense(8, input_dim=4, init='normal', activation='relu'))
+    model.add(Dense(3, init='normal', activation='sigmoid'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    return model
+
+#Create Wrapper For Neural Network Model For Use in scikit-learn
+estimator = KerasClassifier(build_fn=baseline_model, nb_epoch=200, batch_size=5, verbose=0)
+
+#Create kfolds-cross validation
+kfold = KFold(n_splits=10, shuffle=True)
+
+#Evaluate our model (Estimator) on dataset (X and dummy_y) using a 10-fold cross-validation procedure (kfold).
+results = cross_val_score(estimator, X, dummy_y, cv=kfold)
+print("Accuracy: {:2f}% ({:2f}%)".format(results.mean()*100, results.std()*100))
+Rename this file to iris.csv and you're good to go
+iris.txt

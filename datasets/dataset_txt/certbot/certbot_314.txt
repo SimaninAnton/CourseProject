@@ -1,0 +1,16 @@
+Member
+bmw commented on 11 Dec 2018
+The relevant file here is https://github.com/certbot/certbot/blob/master/letsencrypt-auto-source/pieces/dependency-requirements.txt. I think that many of these dependencies haven't been updated in a very long time.
+Doing this unfortunately is a little tricky because:
+Dependencies can be added conditionally using project's arbitrary setup.py files. The dependencies could change based on the Python version or the OS it is run on and this file must contain any possible dependencies we need, otherwise, certbot-auto will blow up if it needs a dependencies we don't have pinned.
+We need to make sure we don't drop support for any non-EOL'd OSes we currently support.
+This will likely uncover new warnings which will cause our tests that error on warnings to fail. This would require fixing up any code in a way that removes the warning but also works with older versions of our dependencies used in our "oldest" tests.
+The way I might do this is running pip install certbot-apache certbot-nginx on many different OSes using their version of both Python 2 and Python 3, running pip freeze and recording the result. Ideally, you should also make sure that the installed copy of Certbot works either by running tests manually or running our integration tests.
+I'd probably keep python-augeas pinned at it's current version because it can have issues finding Augeas in newer versions that don't exist at it's current version.
+After that all of output of pip freeze would need to be combined into a single file with duplicate dependencies removed. Then you can use hashin to get hashes as described at the top of the linked dependency-requirements.txt file.
+Our test farm tests that use certbot-auto should also be run on any changes here which might help us catch problems. If anyone needs help with this piece, please ping me.
+Bonus points should be given if whoever takes this:
+Investigates the changed dependencies' changelogs to look for dropped support we may be relying on.
+Writes a script to automate all of this in the future. Regardless of the approach to packaging we take, this is something we will have to do repeatedly in the future.
+If the latter isn't done now, I think another issue should be open to track doing that going forward.
+@erikrose, you may have some thoughts on this issue and if so, I'd love to hear them.

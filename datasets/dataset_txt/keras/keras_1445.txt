@@ -1,0 +1,66 @@
+Shimingyi commented on 1 Dec 2017 •
+edited
+Now, I have a traind model in Keras, I want to use this model to do something.
+In this case, I know the output of 33-layer, and I want to get the output of 24-layer with tensorflow. In my thinking, if I init the O22 (output of layer 22) with zeros, and I can get a fake-O33 with this network, and the I optimize the loss=(fake-O33 - O33) using tensorflow, I can get a best O22 as input.
+But when I write the code, there are some errors.
+I use this function to get the output from L24 to L33:
+intermediate_tensor_functon = K.function(
+    [model.layers[25].input],
+    [model.layers[33].output]
+)
+# It's how did I get the output, the shape of L25-input is [N, 15, 15, 32]
+
+test_input = np.zeros([1, 15, 15, 32])
+test_output = intermediate_tensor_functon([train_input])[0]
+And then, I define a tensor graph trying to optimize the loss:
+intermediate_tensor_functon = K.function(
+    [model.layers[25].input],
+    [model.layers[33].output]
+)
+
+train_input = tf.Variable(tf.zeros([1, 15, 15, 32]), dtype=tf.float32)
+train_output = intermediate_tensor_functon([train_input])[0]
+loss = tf.reduce_mean(tf.square(real_output - train_output))
+train = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
+init = tf.global_variables_initializer()
+
+with K.get_session() as sess:
+    sess.run(init)
+    for ite_id in range(20000):
+        _ = sess.run(train)
+        print('The loss is %s' % sess.run(loss))
+It's a simple code, but after I run it:
+Traceback (most recent call last):
+  File "/home/rubbly-admin/code/emotion/face_classification/src/get_response.py", line 221, in <module>
+main()
+  File "/home/rubbly-admin/code/emotion/face_classification/src/get_response.py", line 216, in main
+get_deconv(output, int(save_layers[2][0]), int(save_layers[3][0]), emotion_classifier)
+  File "/home/rubbly-admin/code/emotion/face_classification/src/get_response.py", line 154, in get_deconv
+    train_output = intermediate_tensor_functon([train_input, 1])[0]
+  File "/usr/common/anaconda2/envs/tensorflow11/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 2332, in __call__
+**self.session_kwargs)
+  File "/usr/common/anaconda2/envs/tensorflow11/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 786, in run
+run_metadata_ptr)
+  File "/usr/common/anaconda2/envs/tensorflow11/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 965, in _run
+    np_val = np.asarray(subfeed_val, dtype=subfeed_dtype)
+  File "/usr/common/anaconda2/envs/tensorflow11/lib/python2.7/site-packages/numpy/core/numeric.py", line 531, in asarray
+    return array(a, dtype, copy=False, order=order)
+ValueError: setting an array element with a sequence.
+I know it caused by the feed_dict is not an np.array, but I don't know how to solve it. So, why? How can I modify the code?
+Thanks all.
+Update:
+I guess, maybe it's caused by the reasion that this function dont's know the input is a Variable so I try modify the code like this:
+train_input = tf.Variable(tf.zeros([1, 15, 15, 32]), dtype=tf.float32)
+train_output = intermediate_tensor_functon([K.get_session().run(train_input), 1])[0]
+loss = tf.reduce_mean(tf.square(real_output - train_output))
+Before I use 'train_input', I try to run it and get a array so I can get the correct output. But I see this error:
+Traceback (most recent call last):
+  File "/home/rubbly-admin/code/emotion/face_classification/src/get_response.py", line 220, in <module>
+    main()
+  File "/home/rubbly-admin/code/emotion/face_classification/src/get_response.py", line 215, in main
+    get_deconv(output, int(save_layers[2][0]), int(save_layers[3][0]), emotion_classifier)
+  File "/home/rubbly-admin/code/emotion/face_classification/src/get_response.py", line 156, in get_deconv
+    train = tf.train.GradientDescentOptimizer(0.01).minimize(loss, var_list=[train_input])
+  File "/usr/common/anaconda2/envs/tensorflow11/lib/python2.7/site-packages/tensorflow/python/training/optimizer.py", line 322, in minimize
+    ([str(v) for _, v in grads_and_vars], loss))
+ValueError: No gradients provided for any variable, check your graph for ops that do not support gradients, between variables ["<tf.Variable 'Variable:0' shape=(1, 15, 15, 32) dtype=float32_ref>"] and loss Tensor("Mean:0", shape=(), dtype=float64).

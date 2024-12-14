@@ -1,0 +1,52 @@
+jpulec commented on 22 Aug 2015
+I have a model structure that looks like the following:
+class MenuItem(models.Model):
+    ...
+
+class MenuOptionGroup(models.Model):
+    menu_item = models.ForeignKey(MenuItem, related_name='menu_options')
+    ....
+And serializers that look like:
+class MenuOptionGroupSerializer(serializers.ModelSerializer):
+    class Meta:
+        fields = ['menu_item', ...]
+
+class MenuItemSerializer(serializers.ModelSerializer):
+    menu_option_groups = MenuOptionGroupSerializer(many=True)
+
+    def create(self, validated_data):
+        menu_option_groups_data = validated_data.pop('menu_option_groups', [])
+        menu_item = models.MenuItem.objects.create(**validated_data)
+        for menu_option_group in menu_option_groups_data:
+            menu_option_group['menu_item'] = menu_item
+        self.fields['menu_option_groups'].create(menu_option_groups_data)
+        return menu_item
+
+    def update(self, instance, validated_data):
+        menu_option_groups_data = validated_data.pop('menu_option_groups',
+            instance.menu_option_groups.all().values())
+        ...
+        instance.save()
+
+        for menu_option_group in menu_option_groups_data:
+            menu_option_group['menu_item'] = instance
+        self.fields['menu_option_groups'].update(instance.menu_option_groups.all(),
+            filter(lambda group: 'id' in group, menu_option_groups_data))
+        self.fields['menu_option_groups'].create(
+            filter(lambda group: 'id' not in group, menu_option_groups_data))
+        return instance
+For awhile I assumed this worked correctly, where I could create or update a MenuItem with a nested MenuOptionGroup at the same time when the nested MenuOptionGroup did not have a MenuItem id passed, since it hadn't been created yet:
+{
+    <menu_item_data>
+    "menu_option_groups": [
+        {
+            <menu_option_group_data>
+        }
+    ]
+}
+I recently discovered that creation was failing, because validation runs before the create() method of MenuItem and the nested MenuOptionGroup did not have a menu_item defined. However, my updates have been working happily due to:
+if getattr(self.root, 'partial', False):
+    raise SkipField()
+https://github.com/tomchristie/django-rest-framework/blob/490f0c9f3426142aa5b7af50f8f9f01dc1d3fd08/rest_framework/fields.py#L436
+This behavior was very non-obvious, and I don't think (?) is documented anywhere.
+Potentially related to #2585

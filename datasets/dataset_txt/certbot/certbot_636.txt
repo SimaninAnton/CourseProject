@@ -1,0 +1,18 @@
+jvanasco commented on 28 Mar 2018 •
+edited
+I go into a lengthy discussion on this in the letsencrypt forum - https://community.letsencrypt.org/t/problems-flaws-with-base-wildcard-validation/57815
+The basic issue is this:
+When doing a manual DNS challenge for certificate that covers both a registered domain example.com and wildcard *.example.com, the order of operations for writing challenges is serial:
+client creates _acme-challenge.example.com for first auth
+boulder validates via dig (or whatever)
+client creates _acme-challenge.example.com for second auth
+boulder validates via dig (or whatever)
+The problem with this approach is that the first validation tends to cache the TXT entry for _acme-challenge.example.com on many DNS providers for at least the duration of the TTL value.
+This type of behavior should be expected from Enterprise DNS providers - it has been an historic problem with other DNS auth systems for a decade or longer (google site ownership, identity systems, etc).
+Enterprise systems don't function the same as a single BIND server - they are often fronted by a webapp/api dashboard that saves data into a RDBMS (or similar) and utilizes a readthrough cache. Often times there are internal caches or caching DNS servers between what reads the RDBMS and serves the cache. Domain (not IP) nameservers might be geographically distributed and may be handled by roundrobin DNS. For example, one provider has ns1.example.com through ns5.example.com, each one in a different geographic region from the internal system that services the write; another provider might have ns1.example.com resolve to multiple IP addresses in a roundrobin style. Large systems also often use internal caching and replication where the public IP is just the gateway for a cluster of nameservers. Few systems offer a DNS flush at all on updates. Few state they handle propagation via an instant push or write-through mechanism (vs a read-through system). These systems (rightly) appear to cache on just the key, because caching on a key+value combo makes no sense at all.
+Suggested ways to handle this are
+Make manual DNS verification write both challenges parallel (or in serial) before any validation happens.
+Use a single auth challenge for root+wildcard
+Use a separate DNS key for wildcards
+The current approach requires me to sleep at twice the TTL on several DNS services in order for the second challenge to validate (suggesting internal cache systems that respect TTL). One vendor I tested with has a 5minute minimum TTL, which makes it largely incompatible with this auth mechanism.
+Edit: Referencing this to a similar feature on #5712

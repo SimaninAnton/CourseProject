@@ -1,0 +1,39 @@
+Contributor
+jsatt commented on 17 Feb 2018 •
+edited
+Conditions:
+installing a dependency with a specific version, say Django==1.8.18
+also installing a vcs dependency which itself depends on the same package, but an does not restrict the version, setup.py just includes django
+Results in a race condition where the install of the package sometime installs the pinned version, 1.8.18, and sometimes installed the un-pinned, latest version, 1.11.10.
+I have repeated it both locally and on AWS servers with the files below, though it happens intermittently locally and pretty reliably on AWS.
+Pipfile
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[requires]
+
+python_version = "2.7"
+
+
+[dev-packages]
+
+
+[packages]
+
+django = "==1.8.18"
+django-affect = { editable = true, git = "https://github.com/SummitESP/django-affect.git", ref = "1.5.0" }
+Dockerfile
+FROM python:2.7
+RUN set -ex && pip install pipenv --upgrade
+RUN set -ex && mkdir -p /srv/app
+WORKDIR /srv/app
+COPY Pipfile Pipfile
+COPY Pipfile.lock Pipfile.lock
+RUN set -ex && pipenv install --deploy --system --verbose
+RUN pip freeze
+Workaround:
+Run pipinstall twice in Dockerfile. When hitting the race condition, it installs the correct version. When not hitting the condition it spends very little time verifying the proper packages are installed.

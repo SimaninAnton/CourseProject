@@ -1,0 +1,116 @@
+DarthVi commented on Jul 11, 2016 •
+edited by TomDLT
+Description
+Hi guys,
+I'm trying to use GridSearchCV to test some parameters for the pipeline made up of CountVectorizer, TfidfTransformer and svm.LinearSVC.
+Everything works fine if I use n_jobs=1 for GridSearchCV, but I wanted to speed up the process by using n_jobs=-1, which however does not work as expected, since I get the error "TypeError: can't pickle _thread.lock objects". I googled error similar to the one I get and it seems a common problem when trying to use multithreading and pickle on Windows.
+I'll attach the code in the following lines, the output and the version of software I am using.
+Any ideas about how to solve this error?
+I really appreciate any help you can provide. In the meantime, thanks in advance for your attention.
+Steps/Code to Reproduce
+from TweetAnalyzer import TweetAnalyzer
+import TweetPurgeLib as tpl
+import csv
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report
+from sklearn.linear_model import SGDClassifier
+import GetData
+from EvalFileBuilder import Builder
+import nltk
+from sklearn.linear_model import PassiveAggressiveClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.grid_search import GridSearchCV
+from sklearn import svm
+from pprint import pprint
+from time import time
+
+if __name__ == "__main__":
+
+    classes = ['positive', 'rest_world']
+
+    train_data = []
+    train_labels = []
+    test_data = []
+    test_labels = []
+    test_id = []
+
+    stemmer = nltk.stem.snowball.ItalianStemmer(ignore_stopwords=True)
+
+    train_data, train_labels, test_data, test_labels, test_id = GetData.getPosVsWorld("sentipolc annotation gold v2.csv")
+
+    text_clfPos = Pipeline([('vect', CountVectorizer()),
+                            ('tfidf', TfidfTransformer(use_idf=True)),
+                            ('clf', svm.LinearSVC()),
+                            ])
+
+    parameters = {
+        'vect__analyzer': (TweetAnalyzer(None, stemmer), 'word'),
+        'vect__max_df': (0.5, 0.75, 1.0),
+        'vect__max_features': (None, 5000, 10000, 50000),
+        'vect__ngram_range': ((1, 1), (1, 2)),  # unigrams or bigrams
+        'tfidf__use_idf': (True, False),
+        'tfidf__norm': ('l1', 'l2'),
+        'clf__dual': (True, False),
+        'clf__class_weight': ('balanced', {'positive': 5, 'rest_world': 1})
+    }
+
+    grid_search = GridSearchCV(text_clfPos, parameters, n_jobs=-1, verbose=1)
+
+    print("Performing grid search...")
+    print("pipeline:", [name for name, _ in text_clfPos.steps])
+    print("parameters:")
+    pprint(parameters)
+    t0 = time()
+    grid_search.fit(train_data, train_labels)
+    print("done in %0.3fs" % (time() - t0))
+    print()
+
+    print("Best score: %0.3f" % grid_search.best_score_)
+    print("Best parameters set:")
+    best_parameters = grid_search.best_estimator_.get_params()
+    for param_name in sorted(parameters.keys()):
+        print("\t%s: %r" % (param_name, best_parameters[param_name]))
+Actual Results
+I get this output
+C:\Users\VitoVincenzo\Anaconda3\python.exe C:/Users/VitoVincenzo/PycharmProjects/SciKitSentiment/SkLearnGridSearch.py
+Performing grid search...
+pipeline: ['vect', 'tfidf', 'clf']
+parameters:
+{'clf__class_weight': ('balanced', {'positive': 5, 'rest_world': 1}),
+ 'clf__dual': (True, False),
+ 'tfidf__norm': ('l1', 'l2'),
+ 'tfidf__use_idf': (True, False),
+ 'vect__analyzer': (<TweetAnalyzer.TweetAnalyzer object at 0x00000263A5B7AE48>,
+                    'word'),
+ 'vect__max_df': (0.5, 0.75, 1.0),
+ 'vect__max_features': (None, 5000, 10000, 50000),
+ 'vect__ngram_range': ((1, 1), (1, 2))}
+Fitting 3 folds for each of 768 candidates, totalling 2304 fits
+Traceback (most recent call last):
+  File "C:/Users/VitoVincenzo/PycharmProjects/SciKitSentiment/SkLearnGridSearch.py", line 68, in <module>
+    grid_search.fit(train_data, train_labels)
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\site-packages\sklearn\grid_search.py", line 804, in fit
+    return self._fit(X, y, ParameterGrid(self.param_grid))
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\site-packages\sklearn\grid_search.py", line 553, in _fit
+    for parameters in parameter_iterable
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py", line 810, in __call__
+    self.retrieve()
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\site-packages\sklearn\externals\joblib\parallel.py", line 727, in retrieve
+    self._output.extend(job.get())
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\multiprocessing\pool.py", line 608, in get
+    raise self._value
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\multiprocessing\pool.py", line 385, in _handle_tasks
+    put(task)
+  File "C:\Users\VitoVincenzo\Anaconda3\lib\site-packages\sklearn\externals\joblib\pool.py", line 368, in send
+    CustomizablePickler(buffer, self._reducers).dump(obj)
+TypeError: can't pickle _thread.lock objects
+Versions
+OS: Windows-10-10.0.10586-SP0
+Python 3.5.1 |Anaconda 2.5.0 (64-bit)| (default, Feb 16 2016, 09:49:46) [MSC v.1900 64 bit (AMD64)]
+NumPy 1.11.0
+SciPy 0.17.1
+Scikit-Learn 0.17.1
+👍 2

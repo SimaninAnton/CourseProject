@@ -1,0 +1,26 @@
+Contributor
+philipn commented on 8 Jan 2014
+Because we use straight django_filter for filtering, it's (often) not possible to filter on DateTimeField using the same output as the serializer emits.
+For instance::
+GET /api/users/
+    ...
+    {
+        "url": "http://dev.localhost:8082/api/users/5/", 
+        "username": "newspmp", 
+        "first_name": "newspmp", 
+        "last_name": "", 
+        "date_joined": "2013-11-30T02:34:51.759"
+    },
+    ...
+and then, assuming we have:
+class UserFilter(ChainedFilterSet):
+    max_date_joined = DateTimeFilter(name='date_joined', lookup_type='lte')
+
+    class Meta:
+        model = User
+Then /api/users/?max_date_joined=2013-11-20T02:34:51.759 will fail. But /api/users/?max_date_joined=2013-11-20 02:34:51.759 will work (note the lack of "T").
+It appears to be possible to initialize the DateTimeField with an input_formats argument, but this seems like a lot to ask for every initialization. This is doubly-difficult because we can't just import api_settings.DATETIME_INPUT_FORMATS here, because we use a coded string for ISO_8601 rather than a strptime-formatted string (which goes back to problems with parsing ISO 8601 with a strptime-string..)
+So, I think the only solution that makes life easier here is to provide a wrapper around django_filter to better work with DRF. Maybe someone else has a better idea, but this is all I could figure out.
+Here is my proposed solution, which is a generalization of my previous django-rest-framework-chain package::
+https://github.com/philipn/django-rest-framework-chain/tree/django_rest_framework_filter
+I'd like to get some feedback here before I dig in much deeper (e.g. I want to rework a few things before I merge this into my filtering master). Unless I'm missing something, it feels like the current recommended approach to filtering using django-filter is unfortunately kinda broken, and we may want to recommend or bundle something like this with DRF itself to avoid confusion? I know I wasted a few hours figuring out what was up with DateTime filtering, so I'm probably not the only one who got bit :P

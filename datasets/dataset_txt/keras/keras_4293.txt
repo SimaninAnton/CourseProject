@@ -1,0 +1,58 @@
+tivaro commented on 28 Sep 2016 •
+edited
+I am trying to train a multitask network with multiple binary outcomes. Each datapoint has missing labels for many of the outputs.
+The network I am building is based on Ramsundar et al., 2015
+I looked around some related issues:
+#3206
+#2650
+#462
+Because of the missing labels, I do not think the graph model or multiple objective functions will work.
+What I actually do need is target-based masking during training, which I achieved using custom functions for loss and metrics:
+#toy problem
+MASK_VALUE = -1
+n = 25 # # datapoints
+n_tasks = 19 # tasks / # binary classes
+input_dim= 2048 # vector size
+
+# generate random X vectors and random 
+# Y labels (binary labels [0,1] or -1 for missing value
+x = np.random.rand(n, input_dim)
+x_test = np.random.rand(5, input_dim)
+y = np.random.randint(3, size=(n, tasks))-1
+
+def build_masked_loss(loss_function, mask_value=MASK_VALUE):
+    """Builds a loss function that masks based on targets
+
+    Args:
+        loss_function: The loss function to mask
+        mask_value: The value to mask in the targets
+
+    Returns:
+        function: a loss function that acts like loss_function with masked inputs
+    """
+
+    def masked_loss_function(y_true, y_pred):
+        mask = K.cast(K.not_equal(y_true, mask_value), K.floatx())
+        return loss_function(y_true * mask, y_pred * mask)
+
+    return masked_loss_function
+
+def masked_accuracy(y_true, y_pred):
+    total = K.sum(K.not_equal(y_true, MASK_VALUE))
+    correct = K.sum(K.equal(y_true, K.round(y_pred)))
+    return correct / total
+
+# create model
+model = Sequential()
+model.add(Dense(1000, activation='relu', input_dim=input_dim))
+model.add(Dense(n_tasks, activation='sigmoid'))
+model.compile(loss=build_masked_loss(K.binary_crossentropy), optimizer='adam', metrics=[masked_accuracy])
+model.fit(x, y)
+This trains the network successfully, decreasing the loss and increasing the masked accuracy at each epoch.
+However I am not sure wether the outputs are truly n_task independent predictions. I used sigmoid which should be elementwise.
+Unfortunately, model.predict_classes(x_test) returns one class for each datapoint (interpreting n_tasks as the number of classes.
+I can use model.predict(x_test).round() which seems to work. I actually wanted to use the keras.wrappers.scikit_learn.KerasClassifier, which uses predict_classes.
+I am also interested in ranking, and I use model.predict_proba(x_test) for that. The probabilities do not seem to add up to 1 row-wise, so I think that means that these probs are indeed independent.
+Is my workaround correct, can I still use the scikit wrapper and can I trust the ranking of the probabilities?
+EDIT2: I fixed a bug in the masking function
+EDIT: I see now that np.allclose(model.predict(x), model.predict_proba(x)) is true. I could use predict_proba using the wrapper and use it to predict probabilities.

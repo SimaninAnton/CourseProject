@@ -1,0 +1,31 @@
+viksit commented on 14 Apr 2016
+Running on keras 1.0.0 and TF Serving 0.7
+Here's how I'm approaching this problem,
+Create a model via Keras
+Export it via the Tensorflow serving exporter infrastructure
+Load it into TF serving's C++ wrappers and expose it on a port.
+My problem is in (2).
+Here's how I export the model.
+  model = getKerasCompiledModel() # this is just a standard keras model
+  sess = K.get_session()
+  saver = tf.train.Saver(sharded=True)
+  model_exporter = exporter.Exporter(saver)
+  signature = exporter.classification_signature(input_tensor=model.input,
+                                                scores_tensor=model.output)
+  model_exporter.init(sess.graph.as_graph_def(),
+                      default_graph_signature=signature)
+  export_path = "./"
+  model_exporter.export(export_path, tf.constant(FLAGS.export_version), sess)
+So far so good. We've managed to export the keras model session via the session exporter.
+However, the issue here is the way TF serving's exporter module expects a classification signature.
+signature = exporter.classification_signature(input_tensor=model.input,
+                                                scores_tensor=model.output)
+In a non Keras model, this works fine. But in a Keras model using the TF backend, unless your input is of the form
+[<tf.Tensor 'lstm_input_2:0' shape=(?, 128, 300) dtype=float32>,
+ <tf.Tensor 'keras_learning_phase:0' shape=<unknown> dtype=uint8>]
+with the second item being the K.learning_phase() placeholder, you can't invoke the prediction function.
+You get this error,
+You must feed a value for placeholder tensor 'keras_learning_phase' with dtype uint8
+     [[Node: keras_learning_phase = Placeholder[dtype=DT_UINT8, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]")
+Since the classification API only supports one input tensor and not a list, I can't see a way to export this model in a way that can be read by the Serving infrastructure.
+Is there a workaround?

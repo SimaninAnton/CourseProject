@@ -1,0 +1,44 @@
+monjoybme commented on 2 Nov 2018
+I'm tryign to rewrite a Theano code into Tensorflow with Keras Backend. This is basically a custom layer to do some running average operation.
+Error:
+Traceback (most recent call last): File "keras_custom.py", line 50, in <module> print(tf.abs(mask_map)) File "/usr/local/lib/python2.7/site-packages/tensorflow/python/ops/math_ops.py", line 149, in abs x = ops.convert_to_tensor(x, name="x") File "/usr/local/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 998, in convert_to_tensor as_ref=False) File "/usr/local/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 1094, in internal_convert_to_tensor ret = conversion_func(value, dtype=dtype, name=name, as_ref=as_ref) File "/usr/local/lib/python2.7/site-packages/tensorflow/python/framework/constant_op.py", line 217, in _constant_tensor_conversion_function return constant(v, dtype=dtype, name=name) File "/usr/local/lib/python2.7/site-packages/tensorflow/python/framework/constant_op.py", line 196, in constant value, dtype=dtype, shape=shape, [verify_shape=verify_shape))]
+File "/usr/local/lib/python2.7/site-packages/tensorflow/python/framework/tensor_util.py", line 525, in make_tensor_proto "supported type." % (type(values), values))
+TypeError: Failed to convert object of type <class '__main__.SoftThresPerc'> to Tensor. Contents: <__main__.SoftThresPerc object at 0x117c718d0>. Consider casting elements to a supported type.
+custom layer:
+class SoftThresPerc(Layer):
+def __init__(self, incoming, perc=99.9, alpha=0.1, beta=tf.constant(5.0), tight=20.0, bias=0.0, **kwargs):
+    self.incoming = incoming
+    self.perc = perc
+    self.alpha = alpha
+    self.tight = tight
+    self.bias = bias
+    self.beta = self.add_parameter(beta, (1,), 'beta', trainable=True, regularizable=False);
+    super(SoftThresPerc, self).__init__(**kwargs)
+def build(self, input_shape):
+    self.kernel = self.add_weight(name='kernel', 
+                                  shape=(input_shape[1], self.incoming),
+                                  initializer='uniform',
+                                  trainable=True)
+    super(SoftThresPerc, self).build(input_shape)  # Be sure to call this at the end
+
+def call(self, input, deterministic=False, **kwargs):
+    beta = self.beta;
+    if not deterministic:
+        self_beta = tf.contrib.copy_graph.copy_variable_to_graph(self.beta, share_inputs=False);
+        print (self_beta)
+        input_beta = tf.contrib.distributions.percentile(input, self.perc);
+        self_beta.default_update = ((1 - self.alpha) * self_beta + self.alpha * input_beta);
+        beta += 0 * self_beta;
+        
+    return tf.nn.sigmoid(self.tight*(input-beta+self.bias));
+def compute_output_shape(self, input_shape):
+    return (input_shape[0], self.incoming)
+Call:
+x = tf.placeholder(tf.float32, (10, 5, 5, 1024))
+mm = SoftThresPerc(x, perc=98.4, alpha=0.1, beta=tf.constant(0.5), tight=100.0, name='mm')
+     
+
+with tf.Session() as sess:
+   sess.run(tf.global_variables_initializer())
+   print(tf.abs(mm))
+Does anyone have any idea??

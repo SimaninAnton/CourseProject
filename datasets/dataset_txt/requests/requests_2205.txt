@@ -1,0 +1,38 @@
+brandon-rhodes commented on Feb 14, 2013
+A customer in whose product I used Requests complained that, on Windows, my program would immediately die with a series of Timeout exceptions printed to the logs:
+  ...
+    r = session.get(url, headers=headers, stream=True)
+  File "...\venv\lib\site-packages\requests\sessions.py", line 310, in get
+    return self.request('GET', url, **kwargs)
+  File "...\venv\lib\site-packages\requests\sessions.py", line 279, in request
+    resp = self.send(prep, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+  File "...\venv\lib\site-packages\requests\sessions.py", line 374, in send
+    r = adapter.send(request, **kwargs)
+  File "...\venv\lib\site-packages\requests\adapters.py", line 217, in send
+    raise Timeout('Request timed out.')
+Timeout: Request timed out.
+This seemed odd, since timeouts usually take — well — time to occur, instead of happening immediately when a program starts! So I looked at the code that was raising the Timeout, which is in adapters.py:
+    except (_SSLError, _HTTPError) as e:
+        if isinstance(e, _SSLError):
+            raise SSLError(e)
+        elif isinstance(e, TimeoutError):
+            raise Timeout(e)
+        else:
+            raise Timeout('Request timed out.')
+The last line of this stanza struck me as suspicious: is it really the case that all SSL and HTTP errors can be explained as timeouts? So I had my customer change the last line to simply the statement raise, so that I could see the exception that was being hidden by the Timeout and this is what we saw:
+    r = session.get(url, headers=headers, stream=True)
+  File "...\venv\lib\site-packages\requests\sessions.py", line 310, in get
+    return self.request('GET', url, **kwargs)
+  File "...\venv\lib\site-packages\requests\sessions.py", line 279, in request
+    resp = self.send(prep, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+  File "...\venv\lib\site-packages\requests\sessions.py", line 374, in send
+    r = adapter.send(request, **kwargs)
+  File "...\venv\lib\site-packages\requests\adapters.py", line 174, in send
+    timeout=timeout
+  File "...\venv\lib\site-packages\requests\packages\urllib3\connectionpool.py", line
+ 417, in urlopen
+    conn = self._get_conn(timeout=pool_timeout)
+  File "...\venv\lib\site-packages\requests\packages\urllib3\connectionpool.py", line
+ 218, in _get_conn
+    raise ClosedPoolError(self, "Pool is closed.")
+I have no idea what this error means, but it went away when instead of having several threads share the same Session we instead had each thread create its own Session for its use alone — I suppose that I should open another ticket about that, reporting that session objects are not, in fact, thread-safe in Python under Windows, but give this pool-is-closed exception instead?

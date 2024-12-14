@@ -1,0 +1,63 @@
+Contributor
+Maocx commented on Oct 14, 2019 •
+edited by TomDLT
+Description
+MemoryError when using NMF's multiplicative update solver with method="Kullback_leibler". The program tries to assign a matrix with size (# nonzero elements, rank) in function _special_sparse_dot (in decomposition/nmf.py) and sums the columns. On my machine, this results in a MemoryError. The dot product, however, could be calculated element-wise, requiring less memory and allowing for a larger matrix to be processed
+Steps/Code to Reproduce
+from scipy.sparse import random
+from sklearn.decomposition import NMF
+
+matrix = random(1500, 5000, density=1)
+nmf = NMF(n_components=3000, random_state=1,
+          alpha=.1, l1_ratio=.5, verbose=True, beta_loss="kullback-leibler", solver="mu")
+fit = nmf.fit_transform(matrix)
+Expected Results
+No error is thrown; dot product is calculated without extreme memory requirements. A potential fix could be to calculate the dot product element wise:
+def _special_sparse_dot(W, H, X):
+    """Computes np.dot(W, H), only where X is non zero."""
+    if sp.issparse(X):
+        ii, jj = X.nonzero()
+        dot_vals = []
+        for i, _ in enumerate(ii):
+            wv = W[ii[i], :]
+            hv = H.T[jj[i], :]
+            dot_vals.append(np.dot(wv, hv))
+
+        # dot_vals = np.multiply(W[ii, :], H.T[jj, :]).sum(axis=1)
+        WH = sp.coo_matrix((dot_vals, (ii, jj)), shape=X.shape)
+        return WH.tocsr()
+    else:
+        return np.dot(W, H)
+Actual Results
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+  File "C:\Program Files\JetBrains\PyCharm 2019.1.3\helpers\pydev\_pydev_bundle\pydev_umd.py", line 197, in runfile
+    pydev_imports.execfile(filename, global_vars, local_vars)  # execute the script
+  File "C:\Program Files\JetBrains\PyCharm 2019.1.3\helpers\pydev\_pydev_imps\_pydev_execfile.py", line 18, in execfile
+    exec(compile(contents+"\n", file, 'exec'), glob, loc)
+  File "C:/Users/<user>/.PyCharm2019.1/config/scratches/scratch.py", line 9, in <module>
+    fit = nmf.fit_transform(matrix)
+  File "C:\Workdir\programs\miniconda\envs\monty\lib\site-packages\sklearn\decomposition\nmf.py", line 1289, in fit_transform
+    shuffle=self.shuffle)
+  File "C:\Workdir\programs\miniconda\envs\monty\lib\site-packages\sklearn\decomposition\nmf.py", line 1077, in non_negative_factorization
+    verbose)
+  File "C:\Workdir\programs\miniconda\envs\monty\lib\site-packages\sklearn\decomposition\nmf.py", line 800, in _fit_multiplicative_update
+    error_at_init = _beta_divergence(X, W, H, beta_loss, square_root=True)
+  File "C:\Workdir\programs\miniconda\envs\monty\lib\site-packages\sklearn\decomposition\nmf.py", line 119, in _beta_divergence
+    WH_data = _special_sparse_dot(W, H, X).data
+  File "C:\Workdir\programs\miniconda\envs\monty\lib\site-packages\sklearn\decomposition\nmf.py", line 187, in _special_sparse_dot
+    dot_vals = np.multiply(W[ii, :], H.T[jj, :]).sum(axis=1)
+numpy.core._exceptions.MemoryError: Unable to allocate array with shape (75000000, 300) and data type float64
+Versions
+System:
+python: 3.6.8 |Anaconda, Inc.| (default, Feb 21 2019, 18:30:04) [MSC v.1916 64 bit (AMD64)]
+executable: C:\Workdir\programs\miniconda\envs\monty\python.exe
+machine: Windows-10-10.0.17763-SP0
+Python deps:
+pip: 19.1.1
+setuptools: 41.0.1
+sklearn: 0.21.3
+numpy: 1.17.0
+scipy: 1.3.0
+Cython: None
+pandas: 0.25.0

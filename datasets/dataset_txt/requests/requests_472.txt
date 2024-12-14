@@ -1,0 +1,74 @@
+avilaton commented on Oct 20, 2017
+Hi all,
+I found an issue while passing data to requests which was wrapped in a call to str( imported with from builtins import str on python 2.7.13.
+The request fails to prepare with a KeyError.
+I tracked it down to here https://github.com/requests/requests/blob/master/requests/models.py#L104 where the value I'm passing in is being encoded. It is returning bytes and urlencode is choking on that. I tested changing
+v.encode('utf-8') if isinstance(v, str) else v to
+str(v.encode('utf-8')) if isinstance(v, str) else v
+and all tests passed while the issue I'm reporting is gone but I don't think that is the end of the story.
+Expected Result
+I sort of expected it not to blow up. I'm using from builtins import str to deal with python 2 and 3 compatibliity issues and did not see this one comming.
+Actual Result
+The prepare method raises an exception KeyError: 98
+Reproduction Steps
+from builtins import str
+import requests
+req = requests.Request('GET', 'http://httpbin.org/get')
+req.params = {'email':str('bob@mail.com')}
+req.prepare()
+results in
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "requests/models.py", line 259, in prepare
+    hooks=self.hooks,
+  File "requests/models.py", line 305, in prepare
+    self.prepare_url(url, params)
+  File "requests/models.py", line 423, in prepare_url
+    enc_params = self._encode_params(params)
+  File "requests/models.py", line 105, in _encode_params
+    return urlencode(result, doseq=True)
+  File "/usr/lib/python2.7/urllib.py", line 1349, in urlencode
+    v = quote_plus(v)
+  File "/usr/lib/python2.7/urllib.py", line 1306, in quote_plus
+    return quote(s, safe)
+  File "/usr/lib/python2.7/urllib.py", line 1299, in quote
+    return ''.join(map(quoter, s))
+KeyError: 98
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  }, 
+  "cryptography": {
+    "version": ""
+  }, 
+  "idna": {
+    "version": "2.6"
+  }, 
+  "implementation": {
+    "name": "CPython", 
+    "version": "2.7.13"
+  }, 
+  "platform": {
+    "release": "4.10.0-38-generic", 
+    "system": "Linux"
+  }, 
+  "pyOpenSSL": {
+    "openssl_version": "", 
+    "version": null
+  }, 
+  "requests": {
+    "version": "2.18.4"
+  }, 
+  "system_ssl": {
+    "version": "1000207f"
+  }, 
+  "urllib3": {
+    "version": "1.22"
+  }, 
+  "using_pyopenssl": false
+}
+This command is only available on Requests v2.16.4 and greater. Otherwise,
+please provide some basic information about your system (Python version,
+operating system, &c).

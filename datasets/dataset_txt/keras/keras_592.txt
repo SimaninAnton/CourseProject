@@ -1,0 +1,164 @@
+boxuanwu0826 commented on 26 Nov 2018
+Ive encountered a problem that using the preprocessing function of ImageDataGenerator to convert the color space of my image. I tried to convert RGB to CMYK and feed it into the CNN. But the preprocessing function can only return the same shape as the input. For example, the image in RGB mode has a shape(224,224,3), after the convertion, the shape should be converted into (224,224,4). And this seems to be a problem to using the preprocessing function. Can anyone help?
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import matplotlib.image as img
+from keras.models import Sequential
+from keras.layers import Flatten, Dense, Input, Lambda
+from keras.layers.convolutional import Conv2D, MaxPooling2D, ZeroPadding2D
+from keras.utils import to_categorical, multi_gpu_model
+from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
+from keras import optimizers
+from keras.applications.vgg16 import VGG16, preprocess_input
+from keras.models import Model
+import os
+import keras.backend.tensorflow_backend as KTF
+import numpy as np
+import cv2
+from PIL import Image
+import pickle
+
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
+
+
+#cmyk convetion
+def rgb_to_cmyk(img_arr):
+    aaa = []
+
+    img_arr_min = (255 - img_arr)
+    K = np.min(img_arr_min, axis=2)
+
+    C_init = (img_arr_min[:, :, 0])
+    M_init = (img_arr_min[:, :, 1])
+    Y_init = (img_arr_min[:, :, 2])
+
+    C = C_init - K
+    M = M_init - K
+    Y = Y_init - K
+
+    aaa.append(C)
+    aaa.append(M)
+    aaa.append(Y)
+    aaa.append(K)
+    new_arr = np.array(aaa).transpose(1,2,0)
+    return new_arr
+
+
+#customize function used for color convetion
+def myFunc(image):
+    image = np.array(image)
+    converted_img = rgb_to_cmyk(image)
+    converted_img /= 255
+    return converted_img
+
+
+
+
+#parameters
+batch_size = 32
+n_epoch = 150
+lr_rate = 0.001
+
+
+
+#data augementation
+train_datagen = ImageDataGenerator(rescale = None,
+                                   rotation_range = 30,
+                                   width_shift_range = 0.2,
+                                   height_shift_range = 0.2,
+                                   shear_range = 0.2,
+                                   zoom_range = 0.2,
+                                   horizontal_flip = True,
+                                   preprocessing_function=myFunc)
+
+test_datagen = ImageDataGenerator(rescale = None,
+                                  preprocessing_function=myFunc)
+
+
+
+with tf.device('/cpu:0'):
+    # load data
+    train_generator = train_datagen.flow_from_directory('train_dir',
+                                                        target_size=(224,224),
+                                                        color_mode='rgb',
+                                                        batch_size=batch_size,
+                                                        class_mode='categorical')
+
+    test_generator = test_datagen.flow_from_directory('test_dir',
+                                                      target_size=(224,224),
+                                                      color_mode='rgb',
+                                                      batch_size=batch_size,
+                                                      class_mode='categorical')
+
+
+
+
+
+
+
+
+#initialize the model
+model = Sequential()
+
+# Conv Block 1
+model.add(Conv2D(64, (3, 3), input_shape=(224,224,1), activation='relu', padding='same'))
+model.add(Conv2D(64, (3, 3), activation='relu', padding='same'))
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+# Conv Block 2
+model.add(Conv2D(128, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(128, (3, 3), activation='relu', padding='same'))
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+# Conv Block 3
+model.add(Conv2D(256, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(256, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(256, (3, 3), activation='relu', padding='same'))
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+# Conv Block 4
+model.add(Conv2D(512, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(512, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(512, (3, 3), activation='relu', padding='same'))
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+# Conv Block 5
+model.add(Conv2D(512, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(512, (3, 3), activation='relu', padding='same'))
+model.add(Conv2D(512, (3, 3), activation='relu', padding='same'))
+model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+# FC layers
+model.add(Flatten())
+model.add(Dense(4096, activation='relu'))
+model.add(Dense(4096, activation='relu'))
+model.add(Dense(101, activation='softmax'))
+
+
+
+
+
+
+network = model
+
+sgd = optimizers.SGD(lr=lr_rate, decay=1e-6, momentum=0.9, nesterov=True)
+network.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+network.summary()
+
+
+
+# train
+history_callback = network.fit_generator(train_generator,
+                      steps_per_epoch=2000,
+                      epochs=n_epoch,
+                      validation_data=test_generator,
+                      validation_steps=800, verbose=2)
+                      #use_multiprocessing=False)
+
+
+
+
+all_history = history_callback.history
+pickle.dump(all_history, open('save_dir/results', 'wb'), 0)
+1

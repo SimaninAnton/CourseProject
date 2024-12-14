@@ -1,0 +1,78 @@
+DDevine commented on 16 Oct 2017 •
+edited
+I am trying to make a ViewSet that allows multiple-creation. It does actually work, however it throws an error in my logs.
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+Steps to reproduce
+I have a serializer and view like this:
+class FooEntryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+    serializer_class = FooEntrySerializer
+    queryset = FooEntry.objects.all()
+    model = FooEntry
+
+    def get_serializer(self, *args, **kwargs):
+        if "data" in kwargs:
+            data = kwargs["data"]
+            if isinstance(data, list):
+                kwargs["many"] = True
+        return super(FooEntryViewSet, self).get_serializer(*args, **kwargs)
+
+class FooEntrySerializer(serializers.Serializer):
+    bars = serializers.PrimaryKeyRelatedField(queryset=Bar.objects.all(), many=True)
+
+    def create(self, validated_data):
+        """Create a KhronEntry"""
+        bars = validated_data.pop("bars", [])
+        # More stuff done here... a FooEntry returned at the end.
+        return FooEntry(bars=bars)
+
+     class Meta:
+         model = FooEntry
+         fields = ('bars')
+Expected behavior
+Everything works as expected including multiple create (ie. POST "[{bars: [1,2]}, {bars:[7,9]}]"), but without the error shown above in the logs.
+Actual behaviour
+Everything works except this error is put in the logs:
+Oct 16 14:36:31 foobar python[8920]: ERROR 2017-10-16 14:36:31,506 exception 8920 139711230404352 Internal Server Error: /api/v2/khronos/
+Oct 16 14:36:31 foobar python[8920]: Traceback (most recent call last):
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/core/handlers/exception.py", line 39, in inner
+Oct 16 14:36:31 foobar python[8920]:     response = get_response(request)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/core/handlers/base.py", line 249, in _legacy_get_response
+Oct 16 14:36:31 foobar python[8920]:     response = self._get_response(request)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/core/handlers/base.py", line 217, in _get_response
+Oct 16 14:36:31 foobar python[8920]:     response = self.process_exception_by_middleware(e, request)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/channels/handler.py", line 237, in process_exception_by_middleware
+Oct 16 14:36:31 foobar python[8920]:     return super(AsgiHandler, self).process_exception_by_middleware(exception, request)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/core/handlers/base.py", line 215, in _get_response
+Oct 16 14:36:31 foobar python[8920]:     response = response.render()
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/response.py", line 109, in render
+Oct 16 14:36:31 foobar python[8920]:     self.content = self.rendered_content
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/rest_framework/response.py", line 72, in rendered_content
+Oct 16 14:36:31 foobar python[8920]:     ret = renderer.render(self.data, accepted_media_type, context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/rest_framework/renderers.py", line 708, in render
+Oct 16 14:36:31 foobar python[8920]:     context = self.get_context(data, accepted_media_type, renderer_context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/rest_framework/renderers.py", line 681, in get_context
+Oct 16 14:36:31 foobar python[8920]:     'post_form': self.get_rendered_html_form(data, view, 'POST', request),
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/rest_framework/renderers.py", line 510, in get_rendered_html_form
+Oct 16 14:36:31 foobar python[8920]:     return self.render_form_for_serializer(serializer)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/rest_framework/renderers.py", line 520, in render_form_for_serializer
+Oct 16 14:36:31 foobar python[8920]:     {'style': {'template_pack': 'rest_framework/horizontal'}}
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/rest_framework/renderers.py", line 372, in render
+Oct 16 14:36:31 foobar python[8920]:     return template.render(context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/backends/django.py", line 66, in render
+Oct 16 14:36:31 foobar python[8920]:     return self.template.render(context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/base.py", line 208, in render
+Oct 16 14:36:31 foobar python[8920]:     return self._render(context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/base.py", line 199, in _render
+Oct 16 14:36:31 foobar python[8920]:     return self.nodelist.render(context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/base.py", line 994, in render
+Oct 16 14:36:31 foobar python[8920]:     bit = node.render_annotated(context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/base.py", line 961, in render_annotated
+Oct 16 14:36:31 foobar python[8920]:     return self.render(context)
+Oct 16 14:36:31 foobar python[8920]:   File "/opt/foobar-env/lib/python3.5/site-packages/django/template/defaulttags.py", line 165, in render
+Oct 16 14:36:31 foobar python[8920]:     values = list(values)
+Oct 16 14:36:31 foobar python[8920]: TypeError: 'ListSerializer' object is not iterable

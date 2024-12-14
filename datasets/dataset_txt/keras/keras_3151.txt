@@ -1,0 +1,39 @@
+Qululu commented on 22 Feb 2017
+(Using Tensorflow 0.12 and Keras 1.1.1)
+I'm exporting my Keras model for use in Tensorflow Serving as follows according to the TF Serving tutorial:
+# Construct Keras model
+model = Sequential()
+model.add(Embedding(num_features, embedding_dims, input_length=3))
+...
+model.add(Dense(12, activation='softmax'))
+model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.fit(x, y, batch_size=32, nb_epoch=1)
+
+# Export to Tensorflow
+from tensorflow.python.saved_model import builder, tag_constants, utils, loader
+sess = K.get_session()
+saver = builder.SavedModelBuilder('output/dir/path')
+signature = utils.build_signature_def(inputs={'embedding': utils.build_tensor_info(model.input)},
+                                              outputs={'scores': utils.build_tensor_info(model.output)},
+                                              method_name='tensorflow/serving/predict')
+saver.add_meta_graph_and_variables(sess=sess, tags=[tag_constants.SERVING],
+                                             signature_def_map={'predict': signature})
+saver.save()
+However, when I load and execute both Keras and TF models on the same sample embedding input (x=[[123, 456, 789]]), I get very different outputs:
+Load Keras model
+with open('output/keras/config') as r:
+    model = model_from_json(r.read())
+model.load_weights('output/keras/weights')
+model.predict(x)
+Keras Output
+[[ 0.007, 0.008, 0.196, 0.189, 0.129, 0.100, 0.007, 0.099, 0.093, 0.153, 0.006, 0.007 ]]
+Load Tensorflow model
+from tensorflow.python.saved_model import loader
+with tf.Session() as sess:
+    loader.load(sess, [tag_constants.SERVING], 'output/dir/path')
+    init_all_op = tf.global_variables_initializer()
+    sess.run(init_all_op)
+    sess.run('Softmax:0', feed_dict={'embedding_input_1:0': x})
+TF Output
+[[ 0.082, 0.085, 0.082, 0.078, 0.083, 0.083,, 0.088, 0.082, 0.078, 0.085, 0.081, 0.087 ]]
+Any idea what could be going on here?

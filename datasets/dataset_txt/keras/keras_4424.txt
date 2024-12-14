@@ -1,0 +1,57 @@
+phdowling commented on 7 Sep 2016 •
+edited
+Hi,
+I am training a deep recurrent model on batches of a dataset at a time, by manually slicing the data and calling model.fit() on it. I noticed that when I use a larger dataset (same batch size, but more validation data), training slows down quite a bit, and monitoring CPU usage I can see that the process seems to be IO bound in some way (one core is constantly at 100%, and the other cores sporadically spike slightly, seemingly on minibatch start and end).
+For reference, here is the some of the relevant part of my training code:
+# train_inputs is a list of large (in dim 0, i.e. number of samples) matrices, each matrix is the data for one model input
+
+chunk_size = 10000
+num_points = Y_train.shape[0]
+num_chunks = num_points // chunk_size + 1
+for chunk_no in range(num_chunks):
+    slice_start, slice_end = chunk_no * chunk_size, min((chunk_no + 1) * chunk_size, num_points)
+
+    # use advanced indexing so we create copies
+    slice_indexes = range(slice_start, slice_end)
+
+    # part refers to each of my model input matrices, all this does is create parallel slices of input_1, input_2, ...
+    train_inputs_slice = [part[slice_indexes] for part in train_inputs]
+    Y_train_slice = Y_train[slice_indexes]
+    sample_weights_slice = sample_weights_train[slice_indexes]
+
+    self.model.fit(
+        train_inputs_slice, Y_train_slice,
+        batch_size=32, nb_epoch=1,
+        validation_data=(val_inputs, Y_val),
+        callbacks=[checkpoint],
+        sample_weight=sample_weights_slice
+    )
+Just to clarify:
+the model gets the same amount of training data in each fit call, and that data is not a view but a copy of the relevant chunk of the big matrix)
+My systems RAM is far from being fully used
+I supply 2.5% of the whole dataset as validation data, so the amount of val data is higher if I use a larger dataset (note though that val testing does not seem to be what is slowing down training, as the CPU usage is poor during the epoch, not during testing)
+the larger the dataset, the more time one chunk takes to train. At 200k samples, it's around 240 seconds per fit call, and at 2 million samples, it goes to around 1000 seconds.
+the time each epoch takes seems to be increasing with each call to fit
+I've tried both RMSprop and SGD as optimizers, SGD seems to slow down less, but CPU usage is still bad on the large dataset
+What could be slowing this down? If I drop the dataset size so that there are only around 2 chunks, CPU usage is basically perfect, and RAM does not seem to be the problem.
+EDIT: the training time definitely appears to slow down with each epoch:
+Train on 10000 samples, validate on 4978 samples
+Epoch 1/1
+ 9984/10000 [============================>.] - ETA: 0s - loss: 3.1736 - acc: 0.6670Epoch 00000: val_acc improved from -inf to 0.75733, saving model to tmp_best_exp_weights_1473252153.81.hdf5
+10000/10000 [==============================] - **242s** - loss: 3.1744 - acc: 0.6666 - val_loss: 0.5002 - val_acc: 0.7573
+2016-09-07 14:47:01,922 DEBUG    main: Training on chunk 2 / 18 (iteration 1 / 500)
+Train on 10000 samples, validate on 4978 samples
+Epoch 1/1
+ 9984/10000 [============================>.] - ETA: 0s - loss: 3.0495 - acc: 0.7313Epoch 00000: val_acc improved from 0.75733 to 0.81559, saving model to tmp_best_exp_weights_1473252153.81.hdf5
+10000/10000 [==============================] - **246s** - loss: 3.0511 - acc: 0.7312 - val_loss: 0.4576 - val_acc: 0.8156
+2016-09-07 14:51:08,711 DEBUG    main: Training on chunk 3 / 18 (iteration 1 / 500)
+Train on 10000 samples, validate on 4978 samples
+Epoch 1/1
+ 9984/10000 [============================>.] - ETA: 0s - loss: 3.0236 - acc: 0.7467Epoch 00000: val_acc did not improve
+10000/10000 [==============================] - **314s** - loss: 3.0238 - acc: 0.7467 - val_loss: 0.4797 - val_acc: 0.7909
+2016-09-07 14:56:22,999 DEBUG    main: Training on chunk 4 / 18 (iteration 1 / 500)
+Train on 10000 samples, validate on 4978 samples
+Epoch 1/1
+ 9984/10000 [============================>.] - ETA: 0s - loss: 3.0511 - acc: 0.7590Epoch 00000: val_acc did not improve
+10000/10000 [==============================] - **426s** - loss: 3.0547 - acc: 0.7588 - val_loss: 0.4879 - val_acc: 0.8114
+2016-09-07 15:03:29,099 DEBUG    main: Training on chunk 5 / 18 (iteration 1 / 500)

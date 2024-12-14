@@ -1,0 +1,69 @@
+timmwagener commented on 10 Sep 2016 •
+edited
+Problem
+This issue proposes a possible solution to the demand of having several, centrally (settings.py) configurable rest_framework API duplicates. The need arouse through a project where there was a user and core API within the same Django project, each with different sets of auth./perm./rendering/exception handling defaults, so one REST_FRAMEWORK entry in settings.py was not enough. It would have been nice to be able to declare several defaults like USER_API and CORE_API in settings.py and get a set of specific object like UserAPIView and CoreAPIView instanciated.
+Solution
+I have coded this up and it's fairly tested but I'm not able to show any code, sorry for that!
+A plugable, reusable and fully settings.py controlled Django app to clone rest_framework APIs
+Custom django command show_rest_framework_clones to display dynamically generated objects
+Example
+settings.py
+...
+REST_FRAMEWORK = {...}  # default API settings
+
+REST_FRAMEWORK_APICLONES = [  # api clone setup
+    # (settings.py API key, API prefix, API decorator name)
+    ('MY_CUSTOM_API', 'MyCustom', 'my_custom_api_view'),
+]
+
+MY_CUSTOM_API = {  # default API settings for cloned API
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+    ),
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    ),
+    'EXCEPTION_HANDLER': 'my_custom_app.exceptions.exception_handler.custom_exception_handler'
+}
+...
+Generated primitives (APIViews, GenericAPIViews, ViewSets, GenericViewSets, api_view decorators etc.)
+MyCustomAPIView
+MyCustomCreateAPIView
+MyCustomDestroyAPIView
+MyCustomGenericAPIView
+MyCustomGenericViewSet
+MyCustomListAPIView
+MyCustomListCreateAPIView
+MyCustomModelViewSet
+MyCustomReadOnlyModelViewSet
+MyCustomRetrieveAPIView
+MyCustomRetrieveDestroyAPIView
+MyCustomRetrieveUpdateAPIView
+MyCustomRetrieveUpdateDestroyAPIView
+MyCustomUpdateAPIView
+MyCustomViewSet
+my_custom_api_view
+some_views.py
+from rest_framework_apiclones import viewsets
+from rest_framework_apiclones.decorators import my_custom_api_view
+
+class MyViewSet(viewsets.MyCustomModelViewSet):
+    queryset = Group.objects.all()
+    serializer_class = GroupSerializer
+
+@my_custom_api_view()
+def hello_world(request):
+    return Response({"message": "Hello, world!"})
+How does it work?
+It is implemented mainly through module member introspection/collection, custom type creation at runtime and a bit of code object manipulation (not hacking though! I'm fairly convinced about its sanity ). Therefore it depends quite heavily on some of the less frequently used mechanics of Python that require some insights. Nevertheless I personally feel like the composable nature of rest_framework's design and object hierarchies allows to implement such a postprocessing quite cleanly and reasonably obvious.
+Feedback
+I'm showing this because I'm hoping for some criticism of the solution and alternative/better setup ideas.
+Are there already solutions for that?
+Did I awkwardly solve a non-existent problem?
+Is the demand for several centrally controlled API defaults a rather exotic problem, no one ever had?
+Is this demand maybe even a sign for a bigger design flaw?
+Would you hesitate to use such dynamically created APIView subclasses and decorators in production? If so, why? Any obvious alternatives for several global defaults that I missed?
+Should this be of any interest/demand though maybe there are ways to release it as a third-party plugin...

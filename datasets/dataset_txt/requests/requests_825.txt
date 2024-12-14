@@ -1,0 +1,71 @@
+ernestoalejo commented on Dec 19, 2016
+Related to issue #3774, but I preferred to open a new one just in case it's different.
+The code:
+import requests
+
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.ssl_ import create_urllib3_context
+
+# This is the 2.11 Requests cipher string.
+CIPHERS = (
+    'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+HIGH:'
+    'DH+HIGH:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+HIGH:RSA+3DES:!aNULL:'
+    '!eNULL:!MD5'
+)
+
+class DESAdapter(HTTPAdapter):
+  def init_poolmanager(self, *args, **kwargs):
+    context = create_urllib3_context(ciphers=CIPHERS)
+    kwargs['ssl_context'] = context
+    return super(DESAdapter, self).init_poolmanager(*args, **kwargs)
+
+s = requests.Session()
+s.mount('https://XXX:25000/YYY', DESAdapter())
+print s.post('https://XXX:25000/YYY', verify=False, timeout=10)
+The exception:
+Traceback (most recent call last):
+  File "test.py", line 22, in <module>
+    print s.post('https://XXX:25000/YYY', verify=False, timeout=10)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/sessions.py", line 535, in post
+    return self.request('POST', url, data=data, json=json, **kwargs)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/sessions.py", line 488, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/sessions.py", line 609, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/adapters.py", line 497, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: EOF occurred in violation of protocol (_ssl.c:590)
+The issue seems related to #3774 because curl connects correctly but outputs this in verbose mode:
+* SSL connection using TLS1.0 / RSA_3DES_EDE_CBC_SHA1
+*   server certificate verification SKIPPED
+*   server certificate status verification SKIPPED
+Output of pip freeze:
+pkg-resources==0.0.0
+requests==2.12.4
+Inside the Docker production container requests v2.11.1 is working right now and v2.12.0 not. I wanted to pinpoint exactly the commit to fill the issue but in my local virtualenv outside Docker every single version I'm trying raises the error and I can't start the git blame. I'll try to make a custom simplified container.
+I wanted to confirm the issue is the 3DES cypher before asking the server operator to change it.
+If I install requests[security] the error changes to:
+Traceback (most recent call last):
+  File "test.py", line 22, in <module>
+    print s.post('https://rol.othello.es:25000/BookingEngine', verify=False, timeout=10)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/sessions.py", line 535, in post
+    return self.request('POST', url, data=data, json=json, **kwargs)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/sessions.py", line 488, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/sessions.py", line 609, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/ernesto/projects/test2/local/lib/python2.7/site-packages/requests/adapters.py", line 497, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: ("bad handshake: SysCallError(-1, 'Unexpected EOF')",)
+and pip freeze changes to:
+cffi==1.9.1
+cryptography==1.7.1
+enum34==1.1.6
+idna==2.1
+ipaddress==1.0.17
+pkg-resources==0.0.0
+pyasn1==0.1.9
+pycparser==2.17
+pyOpenSSL==16.2.0
+requests==2.12.4
+six==1.10.0

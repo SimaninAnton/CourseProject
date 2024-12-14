@@ -1,0 +1,135 @@
+Volodya1234 commented on 10 Nov 2018 •
+edited
+If you're having trouble using Certbot and aren't sure you've found a bug or
+request for a new feature, please first try asking for help at
+https://community.letsencrypt.org/. There is a much larger community there of
+people familiar with the project who will be able to more quickly answer your
+questions.
+My operating system is (include version):
+root@dns:/opt/letsencrypt# cat /etc/*-release
+PRETTY_NAME="Debian GNU/Linux 8 (jessie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="8"
+VERSION="8 (jessie)"
+ID=debian
+HOME_URL="http://www.debian.org/"
+SUPPORT_URL="http://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+git clone https://github.com/letsencrypt/letsencrypt /opt/letsencrypt && ./letsencrypt-auto --authenticator standalone --installer nginx -d dns.abcdteam.eu --pre-hook "service nginx stop" --post-hook "service nginx start"
+I ran this command and it produced this output:
+cd /opt/letsencrypt && ./letsencrypt-auto --authenticator standalone --installer nginx -d dns.abcdteam.eu --pre-hook "service nginx stop" --post-hook "service nginx start"
+Certbot's behavior differed from what I expected because:
+Traceback (most recent call last):
+File "/tmp/tmp.KsKe0TGrij/pipstrap.py", line 184, in
+exit(main())
+File "/tmp/tmp.KsKe0TGrij/pipstrap.py", line 165, in main
+for path, digest in PACKAGES]
+File "/tmp/tmp.KsKe0TGrij/pipstrap.py", line 120, in hashed_download
+response = opener(using_https=parsed_url.scheme == 'https').open(url)
+File "/usr/lib/python2.7/urllib2.py", line 437, in open
+response = meth(req, response)
+File "/usr/lib/python2.7/urllib2.py", line 550, in http_response
+'http', request, response, code, msg, hdrs)
+File "/usr/lib/python2.7/urllib2.py", line 469, in error
+result = self._call_chain(*args)
+File "/usr/lib/python2.7/urllib2.py", line 409, in _call_chain
+result = func(*args)
+File "/usr/lib/python2.7/urllib2.py", line 656, in http_error_302
+return self.parent.open(new, timeout=req.timeout)
+File "/usr/lib/python2.7/urllib2.py", line 437, in open
+response = meth(req, response)
+File "/usr/lib/python2.7/urllib2.py", line 550, in http_response
+'http', request, response, code, msg, hdrs)
+File "/usr/lib/python2.7/urllib2.py", line 475, in error
+return self._call_chain(*args)
+File "/usr/lib/python2.7/urllib2.py", line 409, in _call_chain
+result = func(*args)
+File "/usr/lib/python2.7/urllib2.py", line 558, in http_error_default
+raise HTTPError(req.get_full_url(), code, msg, hdrs, fp)
+urllib2.HTTPError: HTTP Error 503: Backend is unhealthy
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    keepalive_timeout  65;
+
+    #gzip  on;
+
+         server {
+    if ($host = dns.abcdteam.eu) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+                server_name dns.abcdteam.eu dns.brainycp.org;
+                listen 217.182.207.2:80;
+                return 301 https://$host$request_uri;
+        
+    # Redirect non-https traffic to https
+    # if ($scheme != "https") {
+    #     return 301 https://$host$request_uri;
+    # } # managed by Certbot
+
+
+
+}
+        server {
+                server_name dns.abcdteam.eu dns.brainycp.org;
+                listen 217.182.207.2:443;
+                ssl on;
+    ssl_certificate /etc/letsencrypt/live/dns.abcdteam.eu-0001/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/dns.abcdteam.eu-0001/privkey.pem; # managed by Certbot
+                ssl_ciphers HIGH:!RC4:!aNULL:!eNULL:!MD5:!EXPORT:!EXP:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2;
+                ssl_prefer_server_ciphers on;
+                ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+                        add_header Strict-Transport-Security "max-age=31536000;";
+                        client_max_body_size 20m;
+         
+                set $mgr_proxy "https://217.182.207.2:1500";
+                        set $mgr_secret "Secret";
+         
+                        location ^~ /manimg/ {
+                        alias /usr/local/mgr5/skins/;
+                }
+                location / {
+                        proxy_pass $mgr_proxy;
+                        proxy_redirect $mgr_proxy /;
+                        proxy_set_header Host $host:$server_port;
+                        proxy_set_header X-Forwarded-For $remote_addr;
+                        proxy_set_header X-Forwarded-Proto $scheme;
+                        proxy_set_header X-Real-IP $remote_addr;
+                                        proxy_set_header X-Forwarded-Secret $mgr_secret;
+                        chunked_transfer_encoding off;
+                }
+ 
+                location ^~ /mancgi/ {
+                                proxy_pass $mgr_proxy;
+                                proxy_redirect $mgr_proxy /;
+                                proxy_set_header Host $host:$server_port;
+                                proxy_set_header X-Forwarded-For $remote_addr;
+                                proxy_set_header X-Forwarded-Proto $scheme;
+                                proxy_set_header X-Real-IP $remote_addr;
+                                proxy_set_header X-Forwarded-Secret $mgr_secret;
+                                chunked_transfer_encoding off;
+                }
+        
+
+
+
+}
+ 
+    include /etc/nginx/conf.d/*.conf;
+}

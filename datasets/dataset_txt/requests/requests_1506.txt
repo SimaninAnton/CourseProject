@@ -1,0 +1,26 @@
+pddenhar commented on Feb 18, 2015
+This is a bug that I originally experienced using the InfluxDB-python client and reported here. Upon further investigation, I've been able to reproduce it using only the requests library (which InfluxDB-client uses).
+Running a very simple script making repeated requests to a remote URL will result in a failed request if a certain timing condition is met, resulting in a thrown requests.exceptions.ConnectionError.
+Here is the script I used to reproduce the issue:
+import requests
+import time 
+session = requests.Session()
+
+while 1:
+    try:
+        response = session.request(
+            method='GET',
+            url="http://mediaqueri.es/",
+            timeout=15
+        )
+        print response.status_code, response.text[0:30]
+    except Exception as e:
+        print e, type(e)
+    time.sleep(5)
+The site I'm GETting is just a publicly available site that happens to be running on the Flask framework. About one in ten requests to the site will fail, and the following line will be printed by the exception handler shown above: HTTPConnectionPool(host='mediaqueri.es', port=80): Max retries exceeded with url: / (Caused by <class 'httplib.BadStatusLine'>: '') <class 'requests.exceptions.ConnectionError'>
+This exception message confused me initially, because the BadStatusLine is something that would usually indicate a HTTP status being returned that is not considered valid, which would be unusual for such a basic request to a web server. After inspecting the actual TCP traffic with Wireshark, I've found that something else is happening. Here is the packet sequence for two requests being made five seconds apart, with the second one failing:
+
+The first request proceeds as you would expect, with a TCP connection being opened with a SYN, and then a GET and a HTTP response being received. The use of connection pooling means that the connection is kept open between the first and second and after five seconds the second GET is sent out.
+The issue is that the Flask web server also seems to close inactive TCP connections after five seconds, so right after that GET is sent out and probably while it's still in flight, a FIN is received from the server and duly ACKed, which closes that TCP connection without receiving the HTTP response. At that point, some RST packets arrive (indicating that a packet arrived on a socket after a FIN was sent?) and they seem to somehow end up causing a BadStatusLine HTTP error to be thrown.
+I understand that is a fairly involved series of events, so thank you if you've made it this far. It might even be possible that this bug is at an even lower level than the requests library, somewhere in urllib3 perhaps.
+In any case though, having Session requests fail because they happen to be in sync with the rate at which TCP connections close is a pretty obscure problem for an end user to handle. At the least I think throwing an exception that lists BadStatusLine as the cause is not the correct behavior. The client side is ACKing the FIN it receives from the server, which means it should not expect to receive an HTTP response on that connection after that point.

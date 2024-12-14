@@ -1,0 +1,59 @@
+waliens commented on 10 Aug 2017 •
+edited
+I was trying to define a multi-output layer performing pooling and providing both the max-pooled tensor and pooling indexes as outputs. When I tried to use the outputs of this layer, I got this IndexError exception:
+Using TensorFlow backend.
+Traceback (most recent call last):
+ File "[...]/model.py", line 134, in <module>
+   model = segnet_basic((256, 256, 3), 2)
+ File "[...]/model.py", line 117, in segnet_basic
+   x = UnpoolWithArgmax(ksize=2, name="decoder4/unpooling")([x, idx4])
+ File "[...]\keras\engine\topology.py", line 574, in __call__
+   previous_mask = _collect_previous_mask(inputs)
+ File "[...]\keras\engine\topology.py", line 2766, in _collect_previous_mask
+   mask = node.output_masks[tensor_index]
+IndexError: list index out of range
+Here is a minimal snippet to reproduce the error:
+import tensorflow as tf
+from keras import Input
+from keras.engine import Layer, Model
+
+
+class ArbitraryMultiOutputLayer(Layer):
+    def __init__(self, **kwargs):
+        super(ArbitraryMultiOutputLayer, self).__init__(**kwargs)
+
+    def call(self, inputs, **kwargs):
+        return [tf.negative(tf.abs(inputs)), tf.abs(inputs)]
+
+    def compute_output_shape(self, input_shape):
+        out_shape = super(ArbitraryMultiOutputLayer, self).compute_output_shape(input_shape)
+        return [out_shape, out_shape]
+
+
+class ArbitraryMultiInputLayer(Layer):
+    def __init__(self, **kwargs):
+        super(ArbitraryMultiInputLayer, self).__init__(**kwargs)
+
+    def call(self, inputs, **kwargs):
+        negative, positive = inputs
+        return tf.add(negative, positive)
+
+
+if __name__ == "__main__":
+
+    input_layer = Input(shape=(None, 16, 16, 3))
+    x, y = ArbitraryMultiOutputLayer()(input_layer)
+    z = ArbitraryMultiInputLayer()([x, y])
+    model = Model(inputs=input_layer, outputs=z)
+which raises the same exception:
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "[...]test.py", line 31, in <module>
+    z = ArbitraryMultiInputLayer()([x, y])
+  File "[...]\keras\engine\topology.py", line 574, in __call__
+    previous_mask = _collect_previous_mask(inputs)
+  File "[...]\keras\engine\topology.py", line 2766, in _collect_previous_mask
+    mask = node.output_masks[tensor_index]
+IndexError: list index out of range
+I guess the compute_mask (at line 588 of engine/topology.py) does not generate a list of mask as stated in its documentation when the layer has several outputs.
+Am I right ? Or is there a mistake in my layer implementation ?

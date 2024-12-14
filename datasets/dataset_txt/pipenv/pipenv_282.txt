@@ -1,0 +1,35 @@
+sedrubal commented on 13 Feb 2019 •
+edited
+Issue description
+When running pipenv install or pipenv sync on GitLab CI, pipenv gets stuck (at least for 1h, until the job gets killed).
+Expected result
+It should not get stuck.
+Actual result
+--verbose does not print any more information. When LANG is set properly, you can't see any output, otherwise you can read
+Warning: the environment variable LANG is not set!
+We recommend setting this in ~/.profile (or equivalent) for proper expected behavior.
+and after that it hangs.
+Steps to replicate
+Unfortunately I couldn't reproduce it on gitlab.com. It happens on our private gitlab in a private repo. Here is a minimal version of a Pipfile:
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+Django = "<2.2.0"
+
+[requires]
+# Don't specify the exact python version, because of https://github.com/pypa/pipenv/issues/1050#issuecomment-346203646
+python_version = "3"
+I only run pipenv install or pipenv sync.
+While the job was running / stuck in GitLab CI, I run the exact same command within the docker container, where the CI job was running and it worked. I think, the problem has something to do with how GitLab CI runs the commands. I thought, the problem might be, that stdout is not a tty, but running something like setsid sh -c 'pipenv install' < /dev/null > log 2>&1 did work, too.
+I tried running python3 -m trace --trace /usr/bin/pipenv install > trace_log.txt and this is the output
+trace_log.txt
+I removed many lines. I think, the last ones are interesting. At the end, it seems, that pipenv is looping forever over:
+ --- modulename: ansitowin32, funcname: closed
+ansitowin32.py(52):         stream = self.__wrapped
+ansitowin32.py(53):         return not hasattr(stream, 'closed') or stream.closed
+I already spent hours on debugging, but now, I don't know what to do...
+$ pipenv --support
+1

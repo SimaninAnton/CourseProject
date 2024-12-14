@@ -1,0 +1,81 @@
+Contributor
+johannfaouzi commented on Feb 8, 2019
+I looked at the issues and did not find something related, so I hope it's not a duplicate.
+Description
+I fitted a DecisionTreeClassifieron a single feature and had a look at the threshold attribute of the Tree object. I observed that there were a lot of thresholds equal to -2, though my feature took only positive values. Using this example from the documentation, I realized that all leaf nodes had a threshold equal to -2. Since leaf nodes don't have a threshold, I would have expected np.nan for these thresholds.
+Steps/Code to Reproduce
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+
+
+X = np.arange(10)[:, None]
+y = [0] * 5 + [1] * 5
+
+clf = DecisionTreeClassifier(criterion='entropy')
+clf.fit(X, y)
+print(clf.tree_.threshold)
+Expected Results
+array([ 4.5, nan , nan])
+Actual Results
+array([ 4.5, -2. , -2. ])
+Bigger example (using the example from the doc)
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+
+
+rng = np.random.RandomState(42)
+X = np.abs(rng.randn(1000, 1)) # All the values of X are non-negative
+y = rng.randint(2, size=1000)
+
+clf = DecisionTreeClassifier(criterion='entropy')
+clf.fit(X, y)
+clf.tree_.threshold
+
+n_nodes = clf.tree_.node_count
+children_left = clf.tree_.children_left
+children_right = clf.tree_.children_right
+feature = clf.tree_.feature
+threshold = clf.tree_.threshold
+
+node_depth = np.zeros(shape=n_nodes, dtype=np.int64)
+is_leaves = np.zeros(shape=n_nodes, dtype=bool)
+stack = [(0, -1)]  # seed is the root node id and its parent depth
+while len(stack) > 0:
+    node_id, parent_depth = stack.pop()
+    node_depth[node_id] = parent_depth + 1
+
+    if (children_left[node_id] != children_right[node_id]):
+        stack.append((children_left[node_id], parent_depth + 1))
+        stack.append((children_right[node_id], parent_depth + 1))
+    else:
+        is_leaves[node_id] = True
+
+print("Number of leaf nodes: {0}".format(is_leaves.sum()))
+print("Number of thresholds equal to -2: {0}".format(
+    (clf.tree_.threshold == -2).sum()))
+print("All leaf nodes have a threshold equal to -2: {0}".format(
+    np.all(is_leaves == (clf.tree_.threshold == -2)))
+)
+
+Number of leaf nodes: 505
+Number of thresholds equal to -2: 505
+All leaf nodes have a threshold equal to -2: True
+Versions
+System:
+    python: 3.7.1 (default, Dec 14 2018, 13:28:58)  [Clang 4.0.1 (tags/RELEASE_401/final)]
+executable: /Users/johann.faouzi/anaconda3/bin/python
+   machine: Darwin-16.7.0-x86_64-i386-64bit
+
+BLAS:
+    macros: SCIPY_MKL_H=None, HAVE_CBLAS=None
+  lib_dirs: /Users/johann.faouzi/anaconda3/lib
+cblas_libs: mkl_rt, pthread
+
+Python deps:
+       pip: 18.1
+setuptools: 40.6.3
+   sklearn: 0.20.1
+     numpy: 1.15.4
+     scipy: 1.1.0
+    Cython: 0.29.2
+    pandas: 0.23.4

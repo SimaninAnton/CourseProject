@@ -1,0 +1,18 @@
+Contributor
+slingamn commented on Sep 7, 2012
+This ticket is intended to aggregate previous discussion from #539, #589, and #597 about the default value of chunk_size used by iter_content and iter_lines.
+cc @mponton @gwrtheyrn @shazow
+Issues:
+The default read size of iter_content is 1 byte; this is probably inefficient
+Requests does not expose the ability to read chunked encoding streams in the "correct" way, i.e., using the provided octet counts to tell how much to read.
+However, this would not be suitable as the default implementation of iter_content anyway; not all websites are standards-compliant and when this was tried it caused more problems than it solved.
+The current default read size for iter_lines is 10kB. This is high enough that iteration over lines can be perceived as unresponsive --- no lines are returned until all 10kB have been read.
+There is no "correct" way to implement iter_lines using blocking I/O, we just have to bite the bullet and take a guess as to how much data we should read.
+There's apparently some nondeterminism in iter_lines, I think because of the edge case where a read ends between a \r and a \n.
+iter_lines is backed by iter_content, which operates on raw byte strings and splits at byte boundaries. I think there may be edge cases where we could split the body in the middle of a multi-byte encoding of a Unicode character.
+My guess at a solution:
+Set the default chunk_size to 1024 bytes, for both iter_content and iter_lines.
+Provide a separate interface (possibly iter_chunks) for iterating over chunks of pages that are known to correctly implement chunked encoding, e.g., Twitter's firehose APIs
+We may need our own implementation of splitlines that is deterministic with respect to our chunking boundaries, i.e., remembers if the last-read character was \r and suppresses a subsequent \n. We may also need to build in Unicode awareness at this level, i.e., decode as much of the body as is valid, then save any leftover invalid bytes to be prepended to the next chunk.
+Comments and thoughts are much appreciated. Thanks for your time!
+👍 1

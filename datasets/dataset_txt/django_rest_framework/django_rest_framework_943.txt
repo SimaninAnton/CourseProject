@@ -1,0 +1,62 @@
+roboslone commented on 26 Dec 2016 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Write a simple serializer and view for an existing model:
+#
+# models.py
+#
+class Tag(Model):
+    text = CharField(max_length=1023, unique=True, db_index=True)
+
+#
+# serializers.py
+#
+class TagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tag
+        fields = ('id', 'text')
+
+#
+# views.py
+#
+class TagDetail(generics.RetrieveUpdateDestroyAPIView, DjangoPermissionsMixin):
+    queryset = Tag.objects.all()
+    serializer_class = serializers.TagSerializer
+Write middleware, that logs response object:
+#
+# middleware.py
+#
+class LoggingMiddleware(object):
+    def process_response(self, request, response):
+        logging.warning(response)
+        return response
+Try to delete existing object: DELETE https://example.com/api/tag/1234
+Expected behavior
+object is deleted
+response object is logged
+response with no content returned, status is HTTP204
+Actual behavior
+object is deleted (indeed)
+response object is not logged, due to KeyError
+response with html content returned, status is HTTP500 (Django intercepted the exception)
+I tried to log response._headers and noticed, that content_type is removed somewhere during request processing:
+# No 'content_type' key here.
+{'allow': ('Allow', 'GET, PUT, PATCH, DELETE, HEAD, OPTIONS'), 'vary': ('Vary', 'Accept, Cookie'), ... }
+This doesn't happen during GET or POST requests.
+KeyError is raised in Django's Response.__repr__:
+class HttpResponse(HttpResponseBase):
+   ...
+
+   def __repr__(self):
+       return '<%(cls)s status_code=%(status_code)d, "%(content_type)s">' % {
+           'cls': self.__class__.__name__,
+           'status_code': self.status_code,
+           'content_type': self['Content-Type'],  # <- there's our KeyError
+       }

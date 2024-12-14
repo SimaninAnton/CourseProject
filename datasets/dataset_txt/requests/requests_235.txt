@@ -1,0 +1,64 @@
+schlenk commented on Jul 6, 2018 •
+edited
+Trying to use a Session object to have a common TLS verify option for a bunch of calls in a CI environment for test with self signed certificates.
+This works all right when no environment variable is set, but once REQUESTS_CA_BUNDLE or the equivalent curl var is set up, it fails.
+This probably happens due to the logic in merge_environment_settings() and the merge logic for settings.
+Expected Result
+Verify works, the explicitly configured ca path on the Session object is used.
+<Response [200]>
+Actual Result
+Verify fails, the implicitly configured environment setting overrides the explicit setting on the Session.
+SSLError: HTTPSConnectionPool(host='example.org', port=8443): Max retries exceeded with url: /login (Caused by SSLError(SSLError(1, u'[SSL: CERTIFICATE_VERIFY_FAILED]
+Reproduction Steps
+import requests, os
+# One of the many linux default locations for a ca bundle
+os.environ['REQUESTS_CA_BUNDLE'] = '/etc/ssl/certs/ca-bundle.crt'
+ca = "/home/schlenk/sqlite/certs/ca.crt"
+print requests.get('https://myhost.example.org:8443/', verify=ca)
+# This gives a <Response [200]>
+# Now try with Session
+s = requests.Session()
+s.verify = ca
+s.get('https://myhost.example.org:8443/')
+# This throws an SSLError exception
+# SSLError: HTTPSConnectionPool(host='myhost.example.org', port=8443): Max retries exceeded with url:  / (Caused by SSLError(SSLError(1, u'[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:726)'),))
+# But this works just fine
+s.get('https://myhost.example.org:8443/', verify=ca)
+<Response [200]>
+System Information
+$ python -m requests.help
+d:\code\trunk64>win32\debug\img\python.exe -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.2.2"
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "2.7.15"
+  },
+  "platform": {
+    "release": "2012ServerR2",
+    "system": "Windows"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "100020df",
+    "version": "18.0.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020ff"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}
+Same issue happens on Linux with identical versions.

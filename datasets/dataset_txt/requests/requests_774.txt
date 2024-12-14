@@ -1,0 +1,68 @@
+xsren commented on Feb 10, 2017
+I use python(2.7.6),gevnet(1.1.2),requests(2.11.1) to make http requests concurrent, and it works good. But when I add socks proxy to requests, it blocks.
+This is my code:
+import time
+import requests
+import logging
+import click
+
+import gevent
+from gevent import monkey
+monkey.patch_all()
+
+FORMAT = '%(asctime)-15s %(message)s'
+logging.basicConfig(format=FORMAT)
+logger = logging.getLogger('test')
+
+#socks proxy
+user = MY_SOCKS_PROXY_USERNAME
+password = MY_SOCKS_PROXY_PASSWORD
+host = MY_SOCKS_PROXY_HOST
+port = MY_SOCKS_PROXY_PORT
+proxies = {
+        'http': 'socks5://{0}:{1}@{2}:{3}'.format(user, password, host, port),
+        'https': 'socks5://{0}:{1}@{2}:{3}'.format(user, password, host, port),
+}
+url = 'https://www.youtube.com/user/NBA'
+
+
+def fetch_url(i,with_proxy):
+    while True:
+        logger.warning('thread %s fetch url'%i)
+        try:
+            if with_proxy:
+                res = requests.get(url,proxies=proxies, timeout=5)
+            else:
+                res = requests.get(url, timeout=5)
+        except Exception as e:
+            logger.error(str(e))
+            continue
+
+        logger.warning(res.status_code)
+
+def do_other_thing():
+    while True:
+        logger.warning('do other thing...')
+        time.sleep(1)
+
+@click.command()
+@click.option('--with_proxy/--without_proxy',help='if use proxy', default=True)
+def run(with_proxy):
+    if with_proxy:
+        logger.warning('with proxy......')
+    else:
+        logger.warning('without proxy......')
+    ts = []
+    ts.append(gevent.spawn(do_other_thing))
+    for i in xrange(3):
+        ts.append(gevent.spawn(fetch_url,i,with_proxy))
+    gevent.joinall(ts)
+
+if __name__=='__main__':
+    run()
+These pictures show the result.
+run with proxy
+run without proxy
+With proxy, do_other_thing will blocks before fetch_url done.
+Without proxy， it works good. (timeout error occurs, because of the GFW)
+Can anyone help me solving this problem? Thanks very much!

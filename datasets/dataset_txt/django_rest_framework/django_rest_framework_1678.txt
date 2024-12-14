@@ -1,0 +1,19 @@
+cloutiertyler commented on 2 Aug 2015
+I am attempting to create a new authenticator by subclassing BasicAuthentication with the goal of changing the WWW-Authenticate header for the HTTP 401 response so that I can avoid the Basic Auth popup that is automatically triggered in the browser by the default Basic Auth WWW-Authenticate header.
+In the documentation under "Custom authentication" it says,
+"You may also override the .authenticate_header(self, request) method. If implemented, it should return a string that will be used as the value of the WWW-Authenticate header in a HTTP 401 Unauthorized response." which seems like exactly what I was hoping for.
+I made a simple subclass, HiddenBasicAuthentication, which overrides .authenticate_header(self, request) and either provides the default header or an altered header if a specific parameter is provided in the request. My implementation is below.
+class HiddenBasicAuthentication(BasicAuthentication):
+    """
+    Required to change the authenticate header as a work around to prevent the
+    Basic Auth popup on the client side.
+    i.e. Change Basic to HiddenBasic
+    """
+    def authenticate_header(self, request):
+        option_dict = request.query_params if request.method == 'GET' else request.data
+        if option_dict.get('suppress_basic_auth_dialog', None):
+            return 'HiddenBasic realm="{}"'.format(self.www_authenticate_realm)
+        else:
+            return super(HiddenBasicAuthentication, self).authenticate_header(request)
+If I use this subclass authenticator and do not include the suppress_basic_auth_dialog parameter, everything works as expected. I am able to authenticate the request and if I provide bogus credentials I get the popup requesting I enter my credentials. If I do provide the parameter however, I receive the 401 response, {"detail":"Authentication credentials were not provided."} (no popup though), regardless of the credentials I provide, be them valid or bogus.
+If I return 'Basic realm="{}"'.format(self.www_authenticate_realm) it returns to the normal behavior. I looked through the code and it doesn't look like the authenticate_header method is used anywhere except in the view to add the header in the event of an authentication error. So if I provide valid credentials I would have assumed that this wouldn't even be called. Is there somewhere that Django Rest Framework is checking the WWW-Authenticate header for validity or something?

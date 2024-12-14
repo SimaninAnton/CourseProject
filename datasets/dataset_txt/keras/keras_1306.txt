@@ -1,0 +1,50 @@
+lorenzori commented on 22 Jan 2018
+I trained a UNET with Keras successfully. Now I want to try to reach better performance applying some data augmentation to my images. To do so I use the ImageDataGenerator and then flow_from_directory to load only batches into memory (I tried without but I get memory error). Code example is:
+training_images = np.array(training_images) 
+training_masks = np.array(training_masks)[:, :, :, 0].reshape(len(training_masks), 400, 400, 1)
+
+# generators for data augmentation -------
+seed = 1
+generator_x = ImageDataGenerator(
+    featurewise_center=True,
+    featurewise_std_normalization=True,
+    rotation_range=180,
+    horizontal_flip=True,
+    fill_mode='reflect')
+
+generator_y = ImageDataGenerator(
+    featurewise_center=False,
+    featurewise_std_normalization=False,
+    rotation_range=180,
+    horizontal_flip=True,
+    fill_mode='reflect')
+
+generator_x.fit(training_images, augment=True, seed=seed)
+generator_y.fit(training_masks, augment=True, seed=seed)
+
+
+image_generator = generator_x.flow_from_directory(
+    'data',
+    target_size=(400, 400),
+    class_mode=None,
+    seed=seed)
+
+mask_generator = generator_y.flow_from_directory(
+    'masks',
+    target_size=(400, 400),
+    class_mode=None,
+    seed=seed)
+
+train_generator = zip(image_generator, mask_generator)
+model = unet(img_rows, img_cols)
+model.fit_generator(train_generator, steps_per_epoch=int(len(training_images)/4), epochs=1)
+However when I run the code I get the following error (I am using Tensorflow back-end):
+InvalidArgumentError (see above for traceback): Incompatible shapes: [14400000] vs. [4800000]
+     [[Node: loss/out_loss/mul = Mul[T=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"](loss/out_loss/Reshape, loss/out_loss/Reshape_1)]]
+In the error it complains about incompatible shapes 14400000 (400x400x9) vs. 4800000 (400x400x3). I am using a custom loss function here (and if you look at the error it says something about the loss) that is the Dice coefficient, defined as follows:
+y_true_f = K.flatten(y_true)
+y_pred_f = K.flatten(y_pred)
+intersection = K.sum(y_true_f * y_pred_f)
+return (2. * intersection + 1.) / (K.sum(y_true_f) + K.sum(y_pred_f) + 1.)
+Here I use (400,400,3) images with masks for 1 class of shape (400,400,1). My UNET has inputs defined as Input((img_rows, img_cols, 3)) and output as Conv2D(1, (1, 1), activation='sigmoid', name='out')(conv9) (but this was working fine when training without data augmentation).
+Tensorflow version 1.4, using Keras as distributed from tensforflow (tf.python.keras).

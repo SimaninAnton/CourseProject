@@ -1,0 +1,65 @@
+Member
+fabianp commented on Sep 2, 2011
+To reproduce (Reported by Tim Sheerman-Chase in the mailing list):
+from sklearn import datasets, svm
+from sklearn.cross_val import KFold
+import numpy as np
+from svmutil import *
+#import mvpa.clfs.libsvmc
+from datetime import datetime
+
+C = 10000.
+nu = 0.5
+gamma = 0.
+
+dataset = datasets.load_boston()
+kfold = KFold(len(dataset.data), k=2)
+
+print "\n================"
+print "Using Scikits"
+startTime = datetime.now()
+
+for train, test in kfold: 
+    X = dataset.data
+    Y = dataset.target
+    X_train, X_test, y_train, y_test = X[train], X[test], Y[train], Y[test]
+
+    reg = svm.NuSVR(nu=nu,C=C,gamma=gamma)
+    print reg
+    reg.fit(X_train,y_train)
+
+    predict = reg.predict(X_test)
+
+    #for p,a in zip(predict,y_test):
+    #   print p,a
+
+    msError = ((predict - y_test) ** 2.).mean()
+
+    print "Mean squared error",msError
+
+print "Run time", datetime.now() - startTime
+
+print "\n================"
+print "Using Libsvm"
+startTime = datetime.now()
+
+for train, test in kfold: 
+    X = dataset.data
+    Y = dataset.target
+    X_train, X_test, y_train, y_test = X[train], X[test], Y[train], Y[test]
+
+    problem = svm_problem(y_train, X_train.tolist())
+    # parameter s = 4 for libsvm: nusvr
+    # parameter t = 2 for libsvm: radial basis function kernel
+    # parameter g = 0.0 for libsvm: gamma
+    param = svm_parameter("-s 4 -t 2 -g " + str(gamma) + " -c "+str(C)+" -n "+str(nu))
+    model = svm_train(problem, param)
+
+    predict = svm_predict(y_test,X_test.tolist(),model)
+
+    predictV = predict[0]
+    msError = ((np.array(predictV) - y_test) ** 2.).mean()
+
+    print "Mean squared error",msError
+
+print "Run time", datetime.now() - startTime

@@ -1,0 +1,66 @@
+layamahmoudi commented on 8 Jul 2019 •
+edited by rpkilby
+My project is about a university system. 2 Custom Users named Student and Professor are defined which inherits Django User Model. There is a course Model which have ManyToMany relation with Professor model to define courses and define professor for each course. I used CreateMixinModel, UpdateMixinModel, DestroyMixinModel to Update, Create and delete courses. CRUD was applied correctly. But there was a problem in displaying Professor's information and it just return professor id. I use a nested serializer in CourseCreateSErializer to display professor information beside course info. And now I cannot edit Course Object.
+I want to be able to edit Course Object
+models.py:
+class Professor(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    professor_no = models.PositiveIntegerField()
+
+    def get_full_name(self):
+        return self.user.first_name
+
+    def __str__(self):
+        return self.user.first_name + " " + self.user.last_name
+
+
+class Course(models.Model):
+    professor = models.ManyToManyField(Professor)
+    name = models.CharField(max_length=100)
+    unit = models.PositiveIntegerField()
+serializers.py:
+class CustomUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ('first_name',
+                  'last_name',
+                  'identity_no',
+                  'email')
+
+    def create(self, validated_data):
+        return CustomUser.objects.create(**validated_data)
+
+class ProfessorDetailSerializer(serializers.ModelSerializer):
+    user = CustomUserSerializer()
+    class Meta:
+        model = Professor
+        fields = (
+            'user',
+            'professor_no'
+        )
+
+    def create(self, validated_data):
+        return CustomUser.objects.create(**validated_data)
+
+class CourseDetailSerializer(serializers.ModelSerializer):
+    professor =ProfessorDetailSerializer(many=True)
+
+    class Meta:
+        model = Course
+        fields = (
+            'professor',
+            'name',
+            'unit',
+        )
+view.py:
+class CourseDetailView(DestroyModelMixin, UpdateModelMixin, RetrieveAPIView):
+    queryset = Course.objects.all()
+    serializer_class = CourseDetailSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+
+    def put(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def delete(self, request, *args, **kwargs):
+        return self.destroy(request, *args, **kwargs)

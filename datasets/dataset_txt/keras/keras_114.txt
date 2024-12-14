@@ -1,0 +1,152 @@
+spartian commented on 22 Jul 2019 •
+edited
+Here is my code:-
+def inputs_and_embeddings(features, config):
+    inputs, embeddings = [], []
+    for f in features:
+        E = Embedding if not config.fixed_embedding else FixedEmbedding
+        # i = Input(shape=(config.doc_size,), dtype='int32', name=f.name)
+        i = Input(shape=(config.doc_size,), dtype='int32', name=f.name)
+        e = E(f.input_dim, f.output_dim, weights=[f.weights],
+              input_length=config.doc_size)(i)
+        inputs.append(i)
+        embeddings.append(e)
+    
+    
+    # sentence_input = Input(shape=(MAX_SENT_LEN,),
+ #  dtype='int32')
+    # input_layer = Input(shape=(MAX_SEQ_LEN,MAX_SENT_LEN),
+ #  dtype='int32')
+    return inputs, embeddings
+`inputs, embeddings = inputs_and_embeddings(features, config)
+    seq = concat(embeddings)
+    
+    cshape = (config.doc_size, sum(f.output_dim for f in features)) 
+    seq = Reshape((1,)+cshape)(seq)
+#seq = Reshape((1, config.doc_size, w2v.output_dim))(embeddings) #old way of doing the above
+Convolution(s)
+convLayers = []
+for filter_size, filter_num in zip(config.filter_sizes, config.filter_nums):
+    seq2 = Convolution2D(
+        filter_num,
+        filter_size,
+        cshape[1],
+        border_mode='valid',
+        activation='relu',
+        dim_ordering='th'
+    )(seq)
+    seq2 = MaxPooling2D(
+        pool_size=(config.doc_size-filter_size+1, 1),
+    dim_ordering='th'
+    )(seq2)
+# seq2 = Flatten()(seq2)
+    convLayers.append(seq2)
+
+
+seq = Concatenate(axis=1)(convLayers)
+if config.drop_prob:
+    seq = Dropout(config.drop_prob)(seq)
+for s in config.hidden_sizes:
+    seq = Dense(s, activation='relu')(seq)
+
+#need reshaping here
+seq = Reshape((200,3))(seq)
+word_encoder = Bidirectional(GRU(50, return_sequences=True))(seq) 
+rnn_type = 'GRU'  
+
+dense_transform_word = Dense(
+        100, 
+        activation='relu', kernel_regularizer=l2_reg,
+        name='dense_transform_word')(word_encoder)
+
+
+outputs = Attention(name="word_attention")(dense_transform_word)
+    # word attention
+attention_weighted_sentence = Model(
+        inputs, outputs)
+
+word_attention_model = attention_weighted_sentence
+
+attention_weighted_sentence.summary()
+
+    # sentence-attention-weighted document scores
+
+texts_in = Input(shape=(MAX_SEQ_LEN,config.doc_size), dtype='int32', name="input_2")
+
+attention_weighted_sentences = TimeDistributed(attention_weighted_sentence)(texts_in)
+
+
+
+if rnn_type is 'GRU':
+    #sentence_encoder = Bidirectional(GRU(50, return_sequences=True, dropout=0.1, recurrent_dropout=0.2))(attention_weighted_sentences)
+    dropout = Dropout(0.1)(attention_weighted_sentences)
+    sentence_encoder = Bidirectional(GRU(50, return_sequences=True))(dropout)
+else:
+    sentence_encoder = Bidirectional(LSTM(50, return_sequences=True, dropout=0.1, recurrent_dropout=0.2))(attention_weighted_sentences)
+
+
+dense_transform_sentence = Dense(
+    100, 
+    activation='relu', 
+    name='dense_transform_sentence',
+    kernel_regularizer=l2_reg)(sentence_encoder)
+
+# sentence attention
+attention_weighted_text = Attention(name="sentence_attention")(dense_transform_sentence)
+
+
+prediction = Dense(19, activation='sigmoid')(attention_weighted_text)
+
+model = Model([inputs[0], texts_in], prediction)
+model.summary()
+
+
+# out = Dense(
+#     data.documents.target_dim, init=my_init,
+#     W_regularizer=W_regularizer(config),
+#     activation='sigmoid'
+#     )(attention_weighted_text) 
+
+# model = Model([inputs[0], texts_in], out)
+# model.summary()
+
+if config.verbosity != 0:
+    logging.info(model.summary())
+
+optimizer = get_optimizer(config)
+model.compile(
+    loss='binary_crossentropy',
+    optimizer=optimizer,
+    #metrics=['accuracy', f1, prec, rec]
+    metrics=['accuracy']
+)
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=6, verbose=0, mode='auto')
+weights, results = [], {}
+callbacks = [
+    EpochTimer(),
+    early_stopping,
+    # WeightStore(weights),
+    # document_evaluator(data.train, label='train', results=results),
+
+    evaluator(data.devel,model, label='devel', results=results)
+
+]
+# if config.test:
+# callbacks.append(document_evaluator(data.test, label='test',
+#                                       results=results))
+
+hist = model.fit(
+    data.train.documents.inputs,
+    data.train.documents.targets,
+    validation_data=(
+        data.devel.documents.inputs,
+        data.devel.documents.targets,
+    ),
+    batch_size=config.batch_size,
+    nb_epoch=config.epochs,
+    callbacks=callbacks,
+    verbose=config.verbosity
+    
+)`
+I am trying to combine CNN with Attention networks. However, I am facing the issue as mentioned in the title. I know I have named the input layer as input_2 in the code. So the issue is in that layer. I get the error on model.fit function. Can anyone help me with this?

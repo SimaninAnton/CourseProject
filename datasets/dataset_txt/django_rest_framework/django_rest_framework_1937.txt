@@ -1,0 +1,32 @@
+Contributor
+aleontiev commented on 17 Mar 2015
+Update: Related to #2727 - @tomchristie
+I noticed some undesirable behavior around ListSerializer's implementation of to_representation in the context of relations prefetched with Django 1.7's Prefetch object.
+I am talking about this block of code:
+        # Dealing with nested relationships, data can be a Manager,
+        # so, first get a queryset from the Manager if needed
+        iterable = data.all() if isinstance(data, (models.Manager, query.QuerySet)) else data
+        return [
+            self.child.to_representation(item) for item in iterable
+        ]
+To demonstrate the problem, consider a request made to fetch all auth.Users and their related auth.Groups matching a certain filter. This can be done with Prefetch like so:
+>>> users_with_test_groups = User.objects.all().prefetch_related(Prefetch('groups', queryset=Group.objects.filter(name__icontains='test')
+Lets look at the first user and his prefetched groups:
+>>> user = users_with_test_groups[0]
+>>> user.groups.all()
+[<Group: test>]
+... so far, so good. Now let's add DRF into the mix; I have a UserSerializer and a related GroupSerializer:
+UserSerializer(ModelSerializer):
+   groups = GroupSerializer(many=True)
+   ...
+
+GroupSerializer(ModelSerializer):
+   ...   
+If I call UserSerializer(users_with_test_groups, many=True).data, I expect to see my first user returned with only those related groups that contain test. But I actually see ALL groups related to that user!
+This is because calling .all() on a filtered managed queryset will re-evaluate that queryset as if it has no filters:
+>>> user.groups.all()
+[<Group: test>]
+>>> user.groups.all().all()
+[<Group: student>, <Group: test>]
+This took a while to figure out and seems like bizarre behavior. Why is calling .all() on a queryset necessary when you can just iterate over it?
+As a workaround, I have started using a custom ListSerializer that never calls .all(). Interested to hear if anybody else has run into this or tried using DRF Serializers together with the Prefetch object.

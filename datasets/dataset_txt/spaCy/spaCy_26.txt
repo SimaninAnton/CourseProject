@@ -1,0 +1,192 @@
+CatarinaPC commented 25 days ago •
+edited
+I want to train a French NER model using some data I have. I decided to follow this example that besides showing how to update a pre-trained model with new examples, also shows how to train a model from scratch by using a blank Language class (at least that's what I understood).
+I took this code and since I want to train a French model, the first thing I did was change the language ID in the spacy.blank() function to "fr". I ran the code and I got the following error:
+ImportError: [E048] Can't import language fr from spacy.lang: cannot import name 'FrenchLemmatizer'
+I also tried importing the "French" class and I get the same kind of error: ImportError: cannot import name 'FrenchLemmatizer'
+How to reproduce the behaviour
+To get the first error, run the example code on here and change the language ID in the spacy.blank() function to "fr", like in the following code:
+from __future__ import unicode_literals, print_function
+
+import plac
+import random
+from pathlib import Path
+import spacy
+from spacy.util import minibatch, compounding
+
+
+# training data
+TRAIN_DATA = [
+    ("Who is Shaka Khan?", {"entities": [(7, 17, "PERSON")]}),
+    ("I like London and Berlin.", {"entities": [(7, 13, "LOC"), (18, 24, "LOC")]}),
+]
+
+
+@plac.annotations(
+    model=("Model name. Defaults to blank 'fr' model.", "option", "m", str),
+    output_dir=("Optional output directory", "option", "o", Path),
+    n_iter=("Number of training iterations", "option", "n", int),
+)
+def main(model=None, output_dir=None, n_iter=100):
+    """Load the model, set up the pipeline and train the entity recognizer."""
+    if model is not None:
+        nlp = spacy.load(model)  # load existing spaCy model
+        print("Loaded model '%s'" % model)
+    else:
+        nlp = spacy.blank("fr")  # create blank Language class
+        print("Created blank 'fr' model")
+
+    # create the built-in pipeline components and add them to the pipeline
+    # nlp.create_pipe works for built-ins that are registered with spaCy
+    if "ner" not in nlp.pipe_names:
+        ner = nlp.create_pipe("ner")
+        nlp.add_pipe(ner, last=True)
+    # otherwise, get it so we can add labels
+    else:
+        ner = nlp.get_pipe("ner")
+
+    # add labels
+    for _, annotations in TRAIN_DATA:
+        for ent in annotations.get("entities"):
+            ner.add_label(ent[2])
+
+    # get names of other pipes to disable them during training
+    other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "ner"]
+    with nlp.disable_pipes(*other_pipes):  # only train NER
+        # reset and initialize the weights randomly – but only if we're
+        # training a new model
+        if model is None:
+            nlp.begin_training()
+        for itn in range(n_iter):
+            random.shuffle(TRAIN_DATA)
+            losses = {}
+            # batch up the examples using spaCy's minibatch
+            batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
+            for batch in batches:
+                texts, annotations = zip(*batch)
+                nlp.update(
+                    texts,  # batch of texts
+                    annotations,  # batch of annotations
+                    drop=0.5,  # dropout - make it harder to memorise data
+                    losses=losses,
+                )
+            print("Losses", losses)
+
+    # test the trained model
+    for text, _ in TRAIN_DATA:
+        doc = nlp(text)
+        print("Entities", [(ent.text, ent.label_) for ent in doc.ents])
+        print("Tokens", [(t.text, t.ent_type_, t.ent_iob) for t in doc])
+
+    # save model to output directory
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        if not output_dir.exists():
+            output_dir.mkdir()
+        nlp.to_disk(output_dir)
+        print("Saved model to", output_dir)
+
+        # test the saved model
+        print("Loading from", output_dir)
+        nlp2 = spacy.load(output_dir)
+        for text, _ in TRAIN_DATA:
+            doc = nlp2(text)
+            print("Entities", [(ent.text, ent.label_) for ent in doc.ents])
+            print("Tokens", [(t.text, t.ent_type_, t.ent_iob) for t in doc])
+
+
+if __name__ == "__main__":
+    plac.call(main)
+
+    # Expected output:
+    # Entities [('Shaka Khan', 'PERSON')]
+    # Tokens [('Who', '', 2), ('is', '', 2), ('Shaka', 'PERSON', 3),
+    # ('Khan', 'PERSON', 1), ('?', '', 2)]
+    # Entities [('London', 'LOC'), ('Berlin', 'LOC')]
+    # Tokens [('I', '', 2), ('like', '', 2), ('London', 'LOC', 3),
+    # ('and', '', 2), ('Berlin', 'LOC', 3), ('.', '', 2)]
+The result should be:
+Traceback (most recent call last):
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/util.py", line 74, in get_lang_class
+    module = importlib.import_module(".lang.%s" % lang, "spacy")
+  File "/usr/lib/python3.6/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 994, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 971, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 955, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 665, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 678, in exec_module
+  File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/lang/fr/__init__.py", line 9, in <module>
+    from .lemmatizer import FrenchLemmatizer
+ImportError: cannot import name 'FrenchLemmatizer'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/catarinapc/cl-extraction-models/eval/test_spacy.py", line 91, in <module>
+    plac.call(main)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/plac_core.py", line 367, in call
+    cmd, result = parser.consume(arglist)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/plac_core.py", line 232, in consume
+    return cmd, self.func(*(args + varargs + extraopts), **kwargs)
+  File "/home/catarinapc/cl-extraction-models/eval/test_spacy.py", line 28, in main
+    nlp = spacy.blank("fr")  # create blank Language class
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/__init__.py", line 34, in blank
+    LangClass = util.get_lang_class(name)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/util.py", line 76, in get_lang_class
+    raise ImportError(Errors.E048.format(lang=lang, err=err))
+ImportError: [E048] Can't import language fr from spacy.lang: cannot import name 'FrenchLemmatizer'
+For the second error simply run:
+from spacy.lang.fr import French
+The result should be:
+Traceback (most recent call last):
+  File "/home/catarinapc/cl-extraction-models/eval/test_spacy.py", line 1, in <module>
+    from spacy.lang.fr import French
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/lang/fr/__init__.py", line 9, in <module>
+    from .lemmatizer import FrenchLemmatizer
+ImportError: cannot import name 'FrenchLemmatizer'
+Your Environment
+spaCy version 2.2.3
+Location /home/catarinapc/.local/lib/python3.6/site-packages/spacy
+Platform Linux-5.0.0-37-generic-x86_64-with-Ubuntu-18.04-bionic
+Python version 3.6.8
+Edit
+I tried training the model using the command-line interface and also got the same error:
+I ran: python3 -m spacy train fr test train.json dev.json -p ner
+And the result was:
+Training pipeline: ['ner']
+Starting with blank model 'fr'
+Traceback (most recent call last):
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/util.py", line 74, in get_lang_class
+    module = importlib.import_module(".lang.%s" % lang, "spacy")
+  File "/usr/lib/python3.6/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 994, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 971, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 955, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 665, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 678, in exec_module
+  File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/lang/fr/__init__.py", line 9, in <module>
+    from .lemmatizer import FrenchLemmatizer
+ImportError: cannot import name 'FrenchLemmatizer'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.6/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/usr/lib/python3.6/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/__main__.py", line 33, in <module>
+    plac.call(commands[command], sys.argv[1:])
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/plac_core.py", line 367, in call
+    cmd, result = parser.consume(arglist)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/plac_core.py", line 232, in consume
+    return cmd, self.func(*(args + varargs + extraopts), **kwargs)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/cli/train.py", line 196, in train
+    lang_cls = util.get_lang_class(lang)
+  File "/home/catarinapc/.local/lib/python3.6/site-packages/spacy/util.py", line 76, in get_lang_class
+    raise ImportError(Errors.E048.format(lang=lang, err=err))
+ImportError: [E048] Can't import language fr from spacy.lang: cannot import name 'FrenchLemmatizer'

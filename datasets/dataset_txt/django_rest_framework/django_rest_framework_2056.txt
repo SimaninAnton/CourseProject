@@ -1,0 +1,30 @@
+Contributor
+jamescooke commented on 26 Jan 2015
+DRF has its own settings object at rest_framework.settings.api_settings. It appears that these are generated once and not updated when override_settings is used in Django testing.
+Failing test
+With this in a settings file:
+REST_FRAMEWORK = {
+    'PAGINATE_BY': 10,
+}
+This will fail:
+from django.test.utils import override_settings
+from rest_framework.settings import api_settings
+from rest_framework.test import APITestCase
+
+
+class TestSettings(TestCase):
+
+    def test_settings_normal(self):
+        self.assertEqual(settings.REST_FRAMEWORK['PAGINATE_BY'], 10)
+        self.assertEqual(api_settings.PAGINATE_BY, 10)
+
+    def test_settings_overridden(self):
+        with override_settings(REST_FRAMEWORK={'PAGINATE_BY': 999}):
+            self.assertEqual(settings.REST_FRAMEWORK['PAGINATE_BY'], 999)
+            self.assertEqual(api_settings.PAGINATE_BY, 999)
+test_settings_overridden FAILS because PAGINATE_BY in api_settings is still 10 during override, when it should have been overridden to 999.
+This is unexpected behaviour - Django developers familiar with the Django settings and the settings object will expect to be able to override at testing time as per the Django docs.
+Simple solutions?
+There are probably some elegant solutions to wire in the build of api_settings to listen for updates made by the settings override functions in Django tests... however, what about using what's in DRF already?
+There is a temporary_setting function in tests.utils: https://github.com/tomchristie/django-rest-framework/blob/master/tests/utils.py#L9 , which looks like it can do the job. If this could be included in the DRF package and documented then it could be a "good enough" solution maybe.
+4

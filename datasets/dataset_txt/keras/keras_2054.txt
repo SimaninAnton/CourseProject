@@ -1,0 +1,41 @@
+sun-peach commented on 28 Jun 2017 •
+edited
+Hi, dear all, I implement a temporal attention pooling layer.
+It is able to take a sequence of input and compute the weight for each time point. At last it will output the weighted summation of all the input frames in the sequence. It supports masking. The implementation is shown as below. However I still have a little bit unsatisfied with my code. It is a little bit ugly to me because I use the "in_shape" arguments taking the input shape and use the "self.internal_shape" to store and use the shape parameters for vector tiling. Could anyone help to improve the code? Or say, could anyone tell me how to get the input shape without using a argument?
+Thank you.
+class TemporalAtten(Layer):
+    """
+    input shape: (nb_samples, nb_timesteps, nb_features)
+    output shape: (nb_samples, nb_features)
+    """
+    def __init__(self, hidden_num, in_shape, **kwargs):
+        super(TemporalAtten, self).__init__(**kwargs)
+        self.supports_masking = True
+        self.hidden_num = hidden_num
+        self.internal_shape = in_shape
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[2])
+
+    def build(self, input_shape):
+        self.u1 = self.add_weight(shape=(input_shape[-1],),initializer='glorot_uniform')
+        super(TemporalAtten, self).build(input_shape)
+
+    def call(self, x, mask=None): #mask: (nb_samples, nb_timesteps)
+        if mask is None:
+            mask = T.mean(T.ones_like(x), axis=-1)
+        energy = T.exp(T.dot(x,self.u1))
+        energy_masked = energy * mask
+        energy_all = T.sum(energy_masked,axis=-1)
+        energy_divider = energy_all**(-1)
+        energy_divider = T.tile(energy_divider,(self.internal_shape[-2],1))
+        energy_divider = energy_divider.dimshuffle(1,0)
+        weight = energy_masked * energy_divider
+        weight_mat = weight.dimshuffle(0,1,'x')
+        weight_mat = T.tile(weight_mat,(1,1,self.internal_shape[-1]))
+        weighted_input = weight_mat * x
+        weighted_sum = T.sum(weighted_input,axis=-2)
+        return weighted_sum
+
+    def compute_mask(self, input, mask):
+        return None

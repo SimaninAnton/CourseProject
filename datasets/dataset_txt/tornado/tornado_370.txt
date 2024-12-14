@@ -1,0 +1,70 @@
+ayamnikov commented on 22 Mar 2017 •
+edited
+Hi!
+I am using tornado 4.4.2 on Python 2.7.6
+And I am trying to make some synchronous code work in asynchronous manner. So I widely using futures and callbacks.
+Here is a simple code that shows the problem:
+import sys
+import functools
+
+from tornado import gen
+from tornado import ioloop
+from tornado.httpclient import AsyncHTTPClient
+
+
+class DummyException(Exception):
+    pass
+
+
+class Client(object):
+    def __init__(self):
+        self._future = None
+
+    def _parse_response(self, response):
+        if response.code == 418:
+            raise DummyException
+        return response.body
+
+    def _parse_response_wrapper(self, response):
+        try:
+            result = self._parse_response(response)
+            self._future.set_result(result)
+        except Exception as exc:
+            self._future.set_exception(exc)
+            self._future.set_exc_info(sys.exc_info())
+
+    def get(self, url):
+        self._future = gen.Future()
+        AsyncHTTPClient().fetch(
+            url, method='GET', callback=self._parse_response_wrapper)
+        return self._future
+
+
+@gen.coroutine
+def make_request(url):
+    try:
+        yield Client().get(url)
+    except Exception as exc:
+        print repr(exc)
+
+
+ioloop.IOLoop.current().run_sync(
+    functools.partial(make_request, 'http://httpbin.org/status/418'))
+And here is its output:
+DummyException()
+ERROR:tornado.application:Future exception was never retrieved: DummyException
+ERROR:tornado.application:Exception in callback <functools.partial object at 0x7f602cc720a8>
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/tornado/ioloop.py", line 604, in _run_callback
+    ret = callback()
+  File "/usr/local/lib/python2.7/dist-packages/tornado/stack_context.py", line 275, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/home/andrey/projects/snippets/future_exc.py", line 29, in parse_response
+    self._future.set_exc_info(sys.exc_info())
+  File "/usr/local/lib/python2.7/dist-packages/tornado/concurrent.py", line 306, in set_exc_info
+    self._set_done()
+  File "/usr/local/lib/python2.7/dist-packages/tornado/concurrent.py", line 320, in _set_done
+    for cb in self._callbacks:
+TypeError: 'NoneType' object is not iterable
+First of all I am worried about "Future exception was never retrieved" error. I thought it should never happen for yielded futures inside a coroutine. I know about the trick with future.add_done_callback(lambda f: f.exception()). But is there a more correct way to fix this?
+The second is this "TypeError: 'NoneType' object is not iterable". What is wrong here?

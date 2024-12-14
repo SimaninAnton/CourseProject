@@ -1,0 +1,97 @@
+nikolausWest commented on 9 Mar 2018 •
+edited
+tldr: Locking fails when a dependency isn't available on the current platform, even though it's declared conditional on the platform.
+Background
+I have a machine learning project where development happens on macOS and longer training runs on linux machines with gpus, for which I use tensorflow. Tensorflow uses different packages depending on if you use gpu or not (tensorflow vs tensorflow-gpu).
+The availability for these packages looks like the following:
+tensorflow==1.6.0: linux - | macOS
+tensorflow-gpu==1.6.0: linux - | macOS
+In the Pipfile the tensorflow requirement is specified as follows:
+tensorflow = {version = "==1.6.0", sys_platform = "== 'darwin'"}
+tensorflow-gpu = {version = "==1.6.0", sys_platform = "!= 'darwin'"}
+Problem
+If I create the Pipfile.lock on the linux machine, and the run pipenv sync with that lockfile on a mac everything installs fine. However, if I try to add a new requirement on a mac (e.g. pipenv install requests), which results in pipenv creating another lock, it fails because it can't find the requirement tensorflow-gpu==1.6.0.
+Describe your environment
+OS Type: macOS Version 10.13.3
+Python version: 3.5.2
+Pipenv version: 11.1.7
+Expected result
+>> pipenv lock
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+Or: to be able to use pipenv together with PEP508 dependency specification to do cross-platform development in situations where a specific package is only available on one platform.
+Actual result
+>> pipenv lock --verbose
+Locking [dev-packages] dependencies…
+Using pip: -i https://pypi.python.org/simple
+
+                          ROUND 1
+Current constraints:
+
+Finding the best candidates:
+
+Finding secondary dependencies:
+------------------------------------------------------------
+Result of round 1: stable, done
+
+Locking [packages] dependencies…
+Using pip: -i https://pypi.python.org/simple
+
+                          ROUND 1
+Current constraints:
+  requests
+  tensorflow==1.6.0
+  tensorflow-gpu==1.6.0
+
+Finding the best candidates:
+  found candidate requests==2.18.4 (constraint was <any>)
+  found candidate tensorflow==1.6.0 (constraint was ==1.6.0)
+  found candidate tensorflow-gpu==1.6.0 (constraint was ==1.6.0)
+
+Finding secondary dependencies:
+Using pip: -i https://pypi.python.org/simple
+
+                          ROUND 1
+Current constraints:
+  requests
+  tensorflow==1.6.0
+  tensorflow-gpu==1.6.0
+
+Finding the best candidates:
+  found candidate requests==2.18.4 (constraint was <any>)
+  found candidate tensorflow==1.6.0 (constraint was ==1.6.0)
+  found candidate tensorflow-gpu==1.6.0 (constraint was ==1.6.0)
+
+Finding secondary dependencies:
+  requests==2.18.4          requires certifi>=2017.4.17, chardet<3.1.0,>=3.0.2, idna<2.7,>=2.5, urllib3<1.23,>=1.21.1
+
+
+CRITICAL:pip.index:Could not find a version that satisfies the requirement tensorflow-gpu==1.6.0 (from versions: 0.12.0rc1, 0.12.0, 0.12.1, 1.0.0, 1.0.1, 1.1.0rc1, 1.1.0rc2, 1.1.0)
+Warning: Your dependencies could not be resolved. You likely have a mismatch in your sub-dependencies.
+  You can use $ pipenv install --skip-lock to bypass this mechanism, then run $ pipenv graph to inspect the situation.
+No matching distribution found for tensorflow-gpu==1.6.0
+Steps to replicate
+Pipfile:
+[[source]]
+
+name = "pypi"
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+
+
+[packages]
+
+tensorflow-gpu = {version = "==1.6.0", sys_platform = "!= 'darwin'"}
+tensorflow = {version = "==1.6.0", sys_platform = "== 'darwin'"}
+requests = "*"
+
+
+[dev-packages]
+
+
+
+[requires]
+
+python_version = "3.5"
+On macOS run:
+pipenv lock

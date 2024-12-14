@@ -1,0 +1,188 @@
+autumnjolitz commented on Jan 11, 2018 •
+edited
+Hi,
+I encountered this issue while filing scrapy/scrapy#3065 regarding https://agences.creditfoncier.fr/credit-immobilier/toutes-nos-agences. Like the other bugs, curl magically works but Python installations crap out.
+uname -a:
+Darwin BTJ-GT.local 16.7.0 Darwin Kernel Version 16.7.0: Mon Nov 13 21:56:25 PST 2017; root:xnu-3789.72.11~1/RELEASE_X86_64 x86_64
+python --version:
+Python 3.6.2
+pip freeze | grep -iE 'requests|ssl|cryptography':
+cryptography==2.1.4
+pyOpenSSL==17.5.0
+requests==2.18.4
+requests-cache==0.4.13
+requests-oauthlib==0.8.0
+requests-toolbelt==0.7.1
+Checking the OpenSSL version reveals we are using 1.0.2n:
+(cpython36) BenJolitz-Laptop:~/software$ python -c 'import _ssl;print(_ssl.__file__)'
+/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/lib-dynload/_ssl.cpython-36m-darwin.so
+(cpython36) BenJolitz-Laptop:~/software$ otool -L /Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/lib-dynload/_ssl.cpython-36m-darwin.so
+/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/lib-dynload/_ssl.cpython-36m-darwin.so:
+ /usr/local/opt/openssl/lib/libssl.1.0.0.dylib (compatibility version 1.0.0, current version 1.0.0)
+ /usr/local/opt/openssl/lib/libcrypto.1.0.0.dylib (compatibility version 1.0.0, current version 1.0.0)
+ /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1238.50.2)
+(cpython36) BenJolitz-Laptop:~/software$ brew info --json=v1 openssl | python -m json.tool | jq .[].installed[].version
+"1.0.2l"
+"1.0.2n"
+(cpython36) BenJolitz-Laptop:~/software$ ls -lt /usr/local/opt/openssl
+lrwxr-xr-x  1 BenJolitz  admin  24 Jan  9 17:51 /usr/local/opt/openssl -> ../Cellar/openssl/1.0.2n
+(cpython36) BenJolitz-Laptop:~/software$
+Yes, OpenSSL 1.0.2n it looks like...
+Expected Result
+>>> import requests
+>>> fh = requests.get('https://agences.creditfoncier.fr/credit-immobilier/toutes-nos-agences')
+>>> fh.code == 200
+True
+Actual Result
+If you have pyOpenSSL==17.5.0 installed:
+(cpython36) BenJolitz-Laptop:~/software$ python
+Python 3.6.2 (default, Jul 17 2017, 16:44:45)
+[GCC 4.2.1 Compatible Apple LLVM 8.1.0 (clang-802.0.42)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import requests
+>>> fh = requests.get('https://agences.creditfoncier.fr/credit-immobilier/toutes-nos-agences')
+Traceback (most recent call last):
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/contrib/pyopenssl.py", line 441, in wrap_socket
+    cnx.do_handshake()
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/OpenSSL/SSL.py", line 1806, in do_handshake
+    self._raise_ssl_error(self._ssl, result)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/OpenSSL/SSL.py", line 1539, in _raise_ssl_error
+    raise SysCallError(-1, "Unexpected EOF")
+OpenSSL.SSL.SysCallError: (-1, 'Unexpected EOF')
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 601, in urlopen
+    chunked=chunked)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 346, in _make_request
+    self._validate_conn(conn)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 850, in _validate_conn
+    conn.connect()
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connection.py", line 326, in connect
+    ssl_context=context)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/util/ssl_.py", line 329, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/contrib/pyopenssl.py", line 448, in wrap_socket
+    raise ssl.SSLError('bad handshake: %r' % e)
+ssl.SSLError: ("bad handshake: SysCallError(-1, 'Unexpected EOF')",)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/adapters.py", line 440, in send
+    timeout=timeout
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 639, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/util/retry.py", line 388, in increment
+    raise MaxRetryError(_pool, url, error or ResponseError(cause))
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='agences.creditfoncier.fr', port=443): Max retries exceeded with url: /credit-immobilier/toutes-nos-agences (Caused by SSLError(SSLError("bad handshake: SysCallError(-1, 'Unexpected EOF')",),))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/api.py", line 72, in get
+    return request('get', url, params=params, **kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/api.py", line 58, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/sessions.py", line 508, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/sessions.py", line 618, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/adapters.py", line 506, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: HTTPSConnectionPool(host='agences.creditfoncier.fr', port=443): Max retries exceeded with url: /credit-immobilier/toutes-nos-agences (Caused by SSLError(SSLError("bad handshake: SysCallError(-1, 'Unexpected EOF')",),))
+>>>
+If pyOpenSSL==17.5.0 is NOT INSTALLED:
+>>> requests.get('https://agences.creditfoncier.fr/credit-immobilier/toutes-nos-agences')
+
+Traceback (most recent call last):
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 601, in urlopen
+    chunked=chunked)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 346, in _make_request
+    self._validate_conn(conn)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 850, in _validate_conn
+    conn.connect()
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connection.py", line 326, in connect
+    ssl_context=context)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/util/ssl_.py", line 329, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/usr/local/Cellar/python3/3.6.2/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 401, in wrap_socket
+    _context=self, _session=session)
+  File "/usr/local/Cellar/python3/3.6.2/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 808, in __init__
+    self.do_handshake()
+  File "/usr/local/Cellar/python3/3.6.2/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 1061, in do_handshake
+    self._sslobj.do_handshake()
+  File "/usr/local/Cellar/python3/3.6.2/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 683, in do_handshake
+    self._sslobj.do_handshake()
+ssl.SSLEOFError: EOF occurred in violation of protocol (_ssl.c:748)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/adapters.py", line 440, in send
+    timeout=timeout
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/connectionpool.py", line 639, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/urllib3/util/retry.py", line 388, in increment
+    raise MaxRetryError(_pool, url, error or ResponseError(cause))
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='agences.creditfoncier.fr', port=443): Max retries exceeded with url: /credit-immobilier/toutes-nos-agences (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:748)'),))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/api.py", line 72, in get
+    return request('get', url, params=params, **kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/api.py", line 58, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/sessions.py", line 508, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/sessions.py", line 618, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/BenJolitz/.virtualenvs/cpython36/lib/python3.6/site-packages/requests/adapters.py", line 506, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: HTTPSConnectionPool(host='agences.creditfoncier.fr', port=443): Max retries exceeded with url: /credit-immobilier/toutes-nos-agences (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:748)'),))
+>>>
+>>>
+Reproduction Steps
+import requests
+requests.get('https://agences.creditfoncier.fr/credit-immobilier/toutes-nos-agences')
+System Information
+$ python -m requests.help
+(cpython36) BenJolitz-Laptop:~/software$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.1.4"
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.2"
+  },
+  "platform": {
+    "release": "16.7.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "1010007f",
+    "version": "17.5.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020ef"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}
+(cpython36) BenJolitz-Laptop:~/software$

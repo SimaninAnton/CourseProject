@@ -1,0 +1,61 @@
+gundalav commented on Nov 7, 2016
+I have the following code:
+from sklearn import svm, datasets
+from sklearn.metrics import roc_curve, auc
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+import numpy as np
+from scipy import interp
+
+seed = 7
+np.random.seed(seed)
+
+iris = datasets.load_iris()
+X = iris.data
+y = iris.target
+X, y = X[y != 2], y[y != 2]
+n_samples, n_features = X.shape
+
+# Add noisy features
+random_state = np.random.RandomState(0)
+X = np.c_[X, random_state.randn(n_samples, 200 * n_features)]
+
+cv = StratifiedKFold(n_splits=10)
+classifier = svm.SVC(kernel='linear', probability=True, random_state=seed)
+
+mean_tpr = 0.0
+mean_fpr = np.linspace(0, 1, 100)
+
+i= 0
+for train, test in cv.split(X, y):
+    probas_ = classifier.fit(X[train], y[train]).predict_proba(X[test])
+    # Compute ROC curve and area the curve
+    fpr, tpr, thresholds = roc_curve(y[test], probas_[:, 1])
+    mean_tpr += interp(mean_fpr, fpr, tpr)
+    mean_tpr[0] = 0.0
+    roc_auc = auc(fpr, tpr)
+
+    i += 1
+    
+    
+mean_tpr /= cv.get_n_splits(X, y)
+mean_tpr[-1] = 1.0
+mean_auc_1 = auc(mean_fpr, mean_tpr)
+print "#--- Method 1 to calculate mean AUC ---"
+print mean_auc_1
+
+
+print "#--- Method 2 to calculate mean AUC ---"
+results = cross_val_score(classifier, X, y, cv=cv)
+mean_auc_2 =  "{:.3f}".format(results.mean())
+print mean_auc_2
+It produces the following result:
+#--- Method 1 to calculate mean AUC ---
+0.801818181818
+#--- Method 2 to calculate mean AUC ---
+0.700
+Method 1 of calculating mean AUC is through loop as suggested by this Scikit Tutorial.
+Method 2 calculates the mean AUC using Scikit's inbuilt cross_val_score() method.
+My question is, why the difference? Which mean AUC should I believe?
+I'm using this version of Scikit-Learn:
+In [442]: sklearn.__version__
+Out[442]: '0.18'

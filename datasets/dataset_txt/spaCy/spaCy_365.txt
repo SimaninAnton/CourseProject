@@ -1,0 +1,69 @@
+tsoernes commented on 3 Sep 2019
+How to reproduce the behaviour
+When using multiprocessing or joblib to train multiple texcats. I get errors when trying to save the model, but only sometimes. Most of the time it works.
+trainer_ = partial(
+    trainer,
+    labels=labels,
+    n_iter=n_iter,
+    dropout=dropout,
+    learn_rate=learn_rate,
+    batch_start=batch_start,
+    batch_max=batch_max
+)
+with Pool(processes=4) as pool:
+    pool.starmap(trainer_, zip(model_dirs, train_data))
+
+def trainer(
+    model_dir,
+    train_data,
+    labels,
+    n_iter,
+    dropout,
+    learn_rate,
+    batch_start,
+    batch_max,
+):
+    nlp = spacy.load('en_core_web_lg')
+    print(f"Starting {model_dir}")
+    config = {"exclusive_classes": False, "architecture": 'bow'}
+    textcat = nlp.create_pipe("textcat", config=config)
+    nlp.add_pipe(textcat, last=True)
+
+    for label in labels:
+        textcat.add_label(label)
+
+    batch_sizes = compounding(batch_start, batch_max, 1.001)
+    other_pipes = [pipe for pipe in nlp.pipe_names if not pipe != "textcat"]
+    with nlp.disable_pipes(*other_pipes):
+        optimizer = nlp.begin_training()
+        # handle_ctrlc(nlp, optimizer, model_dir, None, None, None)
+        for epoch in range(1, n_iter + 1):
+            losses = {}
+            random.shuffle(train_data)
+            batches = minibatch(train_data[:100], size=batch_sizes)
+            for batch in batches:
+                texts, cats = zip(*batch)
+                nlp.update(texts, cats, sgd=optimizer, drop=dropout, losses=losses)
+    print(f"Finished {model_dir}")
+    with nlp.use_params(optimizer.averages):
+        textcat.to_disk(model_dir)
+Your Environment
+Operating System: Fedora 30
+Python Version Used: 3.7
+spaCy Version Used: spacy 2.1.8
+Environment Information:
+"""
+Traceback (most recent call last):
+  File "/home/ubuntu/anaconda3/envs/nlp/lib/python3.7/multiprocessing/pool.py", line 121, in worker
+    result = (True, func(*args, **kwds))
+  File "/home/ubuntu/anaconda3/envs/nlp/lib/python3.7/multiprocessing/pool.py", line 47, in starmapstar
+    return list(itertools.starmap(args[0], args[1]))
+  File "/home/ubuntu/fintechdb/nlp/catml/textcat/train_hierarchy.py", line 103, in trainer
+    with nlp.use_params(optimizer.averages):
+  File "/home/ubuntu/anaconda3/envs/nlp/lib/python3.7/contextlib.py", line 112, in __enter__
+    return next(self.gen)
+  File "/home/ubuntu/anaconda3/envs/nlp/lib/python3.7/site-packages/spacy/language.py", line 675, in use_params
+    next(context)
+  File "pipes.pyx", line 152, in use_params
+AttributeError: 'bool' object has no attribute 'use_params'
+"""

@@ -1,0 +1,60 @@
+Voltara commented on 12 Feb 2016
+I got this error when letsencrypt-auto upgraded from 0.3.0 to 0.4.0:
+Checking for new version...
+Upgrading letsencrypt-auto 0.3.0 to 0.4.0...
+Replacing letsencrypt-auto...
+   cp /tmp/tmp.IOXyxE1Nmb/letsencrypt-auto /root/letsencrypt/letsencrypt-auto
+Creating virtual environment...
+Installing Python packages...
+Requesting root privileges to run letsencrypt...
+   /root/.local/share/letsencrypt/bin/letsencrypt --no-self-upgrade --keep-until-expiring --apache certonly -d www.voltara.org -d voltara.org -d ipv4.voltara.org
+/root/letsencrypt/letsencrypt-auto: 1800: /root/letsencrypt/letsencrypt-auto: ownership: not found
+The problem is letsencrypt-auto overwrites itself using the cp command before the shell (dash) has finished reading the script. (Technically speaking, it read all 64445 bytes of the script, but did not yet attempt to read past EOF.) The new version is 64814 bytes, 369 bytes larger than the previous version. Thus when the shell tried reading more of the script, instead of returning EOF, it read the final 369 bytes of the new version.
+$ tail -c -369 letsencrypt-auto
+ownership from the old copy.
+    # TODO: Deal with quotes in pathnames.
+    echo "Replacing letsencrypt-auto..."
+    echo "  " $SUDO cp "$TEMP_DIR/letsencrypt-auto" "$0"
+    $SUDO cp "$TEMP_DIR/letsencrypt-auto" "$0"
+    # TODO: Clean up temp dir safely, even if it has quotes in its path.
+    rm -rf "$TEMP_DIR"
+  fi  # should upgrade
+  "$0" --no-self-upgrade "$@"
+fi
+Because this fragment happened to start with the word "ownership", it gave an ownership: not found error. (I imagine it could have been much worse...)
+Here is the strace output showing the behavior:
+rt_sigreturn()                          = 17961
+read(10, "encies. Aborting bootstrap!\"\n   "..., 8192) = 8192
+read(10, "uz-re_bUPwGx8\nordereddict==1.1\n\n"..., 8192) = 8192
+read(10, "le wasn't there, so some\n# of ou"..., 8192) = 8192
+read(10, ": Everything after the subcomman"..., 8192) = 8192
+read(10, "     filename = link.filename  #"..., 8192) = 8192
+read(10, "he requirements file, which\\n'\n "..., 8192) = 8192
+read(10, "on:\n        exception_handler(*s"..., 8192) = 7101     <=== Reading last few bytes of old version
+...
+...
+rt_sigreturn()                          = 17975
+clone(child_stack=0, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7f3b4e0ffa10) = 17976
+wait4(-1, Requesting root privileges to run letsencrypt...
+   /root/.local/share/letsencrypt/bin/letsencrypt --no-self-upgrade --version
+letsencrypt 0.4.0
+[{WIFEXITED(s) && WEXITSTATUS(s) == 0}], 0, NULL) = 17976
+--- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=17976, si_status=0, si_utime=0, si_stime=0} ---
+rt_sigreturn()                          = 17976
+read(10, "ownership from the old copy.\n   "..., 8192) = 369      <=== Reading tail end of *new* version
+stat("/usr/sbin/ownership", 0x7ffddf98fd30) = -1 ENOENT (No such file or directory)
+stat("/usr/bin/ownership", 0x7ffddf98fd30) = -1 ENOENT (No such file or directory)
+stat("/sbin/ownership", 0x7ffddf98fd30) = -1 ENOENT (No such file or directory)
+stat("/bin/ownership", 0x7ffddf98fd30)  = -1 ENOENT (No such file or directory)
+write(2, "./letsencrypt-auto: 1800: ./lets"..., 46./letsencrypt-auto: 1800: ./letsencrypt-auto: ) = 46
+write(2, "ownership: not found", 20ownership: not found)    = 20
+write(2, "\n", 1
+)                       = 1
+exit_group(127)                         = ?
+I'm running Ubuntu 14.04.3 LTS, and my /bin/sh is a symlink to dash 0.5.7-4ubuntu1.
+Here's how I can reproduce the issue. This is very sensitive to the old/new versions of the script; as of this writing, the "new" version is v0.4.0. I'm not exactly sure what the "old" version is (it's most likely a prerelease version of the self-updating letsencrypt-auto; however, the bug is still present in the 0.4.0 version):
+Check out commit eb59804f76f6f0975f411df135c42fc4eaace521
+Change if [ "$LE_AUTO_VERSION" on line 1781 of letsencrypt-auto-source/letsencrypt-auto to if [ "$XX_XXXX_XXXXXXX", taking care not to alter the length of the file.
+Verify the script is still 64445 bytes in length
+Run it: ./letsencrypt-auto --version
+The script will update in-place to version 0.4.0 and then terminate with ownership: not found

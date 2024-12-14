@@ -1,0 +1,60 @@
+24dlong commented on 19 Apr 2019 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Hello, this is my first time creating one of these and I'm just a hobby programmer, so I don't have much experience with creating pull requests, etc. I figured I'd share my findings though and let the community evaluate if this is a legitimate "bug". Happy to provide additional info/incorporate feedback into making this issue more robust.
+Steps to reproduce
+I'm attempting to POST to a ModelViewSet and a ModelSerializer and create a new record for SampleModel with a ForeignKey lookup to ModelTwo. I overrode the field definition for my related model as by default, it's read only.
+When attempting to POST FormData like:
+{"model_two_id": 25, "attr_one": "foo", "attr_two": "bar"}
+I'm receiving the following error:
+TypeError: int() argument must be a string, a bytes-like object or a number, not 'ModelTwo'
+class SampleModelSerializer(serializers.ModelSerializer):
+    model_two_id = serializers.PrimaryKeyRelatedField(queryset=ModelTwo.objects.all(), many=False, read_only=False)
+
+    class Meta:
+        model = SampleModel
+        fields = ('attr_one', 'attr_two', 'model_two_id')
+
+
+class SampleModelViewSet(viewsets.ModelViewSet):
+    permission_classes = (permissions.IsAuthenticated,)
+    queryset = SampleModel.objects.all()
+    serializer_class = SampleModelSerializer
+
+    parser_classes = (MultiPartParser,)
+Expected behavior
+I would expect that passing a model_two_id to my POST would allow me to create a SampleModel record with model_two_id foreignkey field populated with a reference to model_two_id
+Actual behavior
+Hitting TypeError
+A Proposed Solution
+I traced the issue to the PrimaryKeyRelatedField class's to_internal_value method, this is converting the int value initially passed into request.data into a ModelTwo instance, which is then being passed on to django's .save() which is expecting an int value.
+I believe the tweak I made preserves all of the validation, but then passes back the int value rather than the model instance to continue through the rest of the flow.
+Before My Change
+def to_internal_value(self, data):
+    if self.pk_field is not None:
+        data = self.pk_field.to_internal_value(data)
+    try:
+        return self.get_queryset().get(pk=data)
+    except ObjectDoesNotExist:
+        self.fail('does_not_exist', pk_value=data)
+    except (TypeError, ValueError):
+        self.fail('incorrect_type', data_type=type(data).__name__)
+After My Change
+def to_internal_value(self, data):
+    if self.pk_field is not None:
+        data = self.pk_field.to_internal_value(data)
+    try:
+        self.get_queryset().get(pk=data)
+    except ObjectDoesNotExist:
+        self.fail('does_not_exist', pk_value=data)
+    except (TypeError, ValueError):
+        self.fail('incorrect_type', data_type=type(data).__name__)
+    else:
+        return data
+1

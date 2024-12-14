@@ -1,0 +1,210 @@
+jllombart commented on 21 Apr 2016
+I have some problems with the way functional api makes the graph
+I'm implementing a sequence to sequence layer, not based in the concept of the addition_rnn example.
+I'm thinking in the https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf paper. In these, the decoder has as a seed the last internal state of the lstm the C vector, and a end of sentence symbol in the input. The idea is make a loop providing as input to the decoder the last prediction made by the model.
+To make this I was thinking in use the output layer like shared layer. Use it to perform the output with the softmax, and also, use inside of my seq2seq function in order to perform the next step input in the decoder.
+I think that it is important to train in these ways because it is interesting for example, during to training provide as decoder input the exact labels, and in testing make the loop function thing. This is explained in http://arxiv.org/abs/1506.03099
+this is the code of my class
+from ..engine import Layer, InputSpec
+from .. import backend as K
+from ..layers import Recurrent
+
+import numpy as np
+
+
+class Rnn_seq2seq(Recurrent):
+
+
+    def __init__(self, encoder, decoder,  loop_function, eos_symbol, **kwargs):
+        self.encoder = encoder
+        self.decoder = decoder
+        self.loop_function = loop_function
+        self.eos_symbol = eos_symbol
+        super(Rnn_seq2seq, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+
+        assert len(input_shape) >= 3
+        assert len(self.eos_symbol) == input_shape[2], " input_dim %d len eos %d" % (input_shape[2], len(self.eos_symbol))
+        self.input_spec = [InputSpec(shape=input_shape)]
+        input_dim = input_shape[2]
+        self.input_dim = input_dim
+
+        self.encoder.build(input_shape)
+        self.decoder.build(input_shape)
+        self.loop_function.build((input_shape[1],input_shape[2]))
+
+
+        self.output_dim = self.decoder.output_dim
+
+        super(Rnn_seq2seq,self).build(input_shape)
+
+
+    def call(self, x, mask=None):
+        input_shape = self.input_spec[0].shape
+        if K._BACKEND == 'tensorflow':
+            raise Exception('TODO')
+
+
+        constants = self.encoder.get_constants(x)
+        preprocessed_input = self.encoder.preprocess_input(x)
+        initial_states = self.encoder.get_initial_states(x)
+
+        last_output, outputs, states = K.rnn(self.encoder.step, preprocessed_input,
+                                             initial_states,
+                                             go_backwards=self.encoder.go_backwards,
+                                             mask=mask,
+                                             constants=constants,
+                                             unroll=self.encoder.unroll,
+                                             input_length=input_shape[1])       
+
+        constants = self.decoder.get_initial_states(x)
+
+        sampling_states = [states]
+        sampling_outputs = []
+        constants = self.decoder.get_constants(x)
+
+        cell_states = sampling_states[-1] + constants
+        last_output, last_states = self.decoder.step(self.decoder.preprocess_input(self.eos_symbol[0]),cell_states)
+        sampling_outputs.append(last_output)
+        sampling_states.append(last_states)  
+
+        for i in range(1,input_shape[1]):            
+
+            cell_states = sampling_states[-1] + constants
+            last_output, last_states = self.decoder.step(self.decoder.preprocess_input(self.loop_function(sampling_outputs[-1])),cell_states)
+            sampling_outputs.append(last_output)
+            sampling_states.append(last_states)   
+
+        if self.decoder.return_sequences:
+            return sampling_outputs
+        else:
+            return sampling_outputs[-1]
+To try this concept I'm using the addition_rnn example, In this example the model is described at the end
+from __future__ import print_function
+from keras.engine.training import slice_X
+from keras.models import Sequential, Model
+from keras.layers.core import Activation, RepeatVector,Dense
+from keras.layers.wrappers import TimeDistributed
+from keras.layers import recurrent,Input
+import numpy as np
+from six.moves import range
+from keras.seq2seq.Seq2seq import Rnn_seq2seq
+
+
+class CharacterTable(object):
+    def __init__(self, chars, maxlen):
+        self.chars = sorted(set(chars))
+        self.char_indices = dict((c, i) for i, c in enumerate(self.chars))
+        self.indices_char = dict((i, c) for i, c in enumerate(self.chars))
+        self.maxlen = maxlen
+    def encode(self, C, maxlen=None):
+        maxlen = maxlen if maxlen else self.maxlen
+        X = np.zeros((maxlen, len(self.chars)))
+        for i, c in enumerate(C):
+            X[i, self.char_indices[c]] = 1
+        return X
+    def decode(self, X, calc_argmax=True):
+        if calc_argmax:
+            X = X.argmax(axis=-1)
+        return ''.join(self.indices_char[x] for x in X)
+
+
+# Parameters for the model and dataset
+TRAINING_SIZE = 500
+DIGITS = 3
+INVERT = True
+# Try replacing GRU, or SimpleRNN
+RNN = recurrent.LSTM
+HIDDEN_SIZE = 64
+BATCH_SIZE = 512
+LAYERS = 1
+MAXLEN = DIGITS + 1 + DIGITS + 2
+
+chars = '0123456789+ es' # added s=start of sentence and e= end of sentence
+ctable = CharacterTable(chars, MAXLEN)
+
+questions = []
+expected = []
+seen = set()
+print('Generating data...')
+while len(questions) < TRAINING_SIZE:
+    f = lambda: int(''.join(np.random.choice(list('0123456789')) for i in range(np.random.randint(1, DIGITS + 1))))
+    a, b = f(), f()
+    # Skip any addition questions we've already seen
+    # Also skip any such that X+Y == Y+X (hence the sorting)
+    key = tuple(sorted((a, b)))
+    if key in seen:
+        continue
+    seen.add(key)
+    # Pad the data with spaces such that it is always MAXLEN
+    q = 's'+'{}+{}'.format(a, b)+'e'
+    query = q + ' ' * (MAXLEN - len(q))
+    ans = 's'+str(a + b)+'e'
+    # Answers can be of maximum size DIGITS + 1 + 2 control characters
+    ans += ' ' * (DIGITS + 1 + 2 - len(ans))
+    if INVERT:
+        query = query[::-1]
+    questions.append(query)
+    expected.append(ans)
+print('Total addition questions:', len(questions))
+
+print('Vectorization...')
+X = np.zeros((len(questions), MAXLEN, len(chars)), dtype=np.bool)
+yin = np.zeros((len(questions), DIGITS + 3, len(chars)), dtype=np.bool) # maximum output length plus sequence characters
+yout = np.zeros((len(questions), DIGITS + 2, len(chars)), dtype=np.bool) # maximum output length plus sequence characters
+for i, sentence in enumerate(questions):
+    X[i] = ctable.encode(sentence, maxlen=MAXLEN)
+for i, sentence in enumerate(expected):
+    yin[i] = ctable.encode(sentence, maxlen=DIGITS + 3)
+for i, sentence in enumerate(yin):
+    yout[i]=yin[i][1:] 
+
+# Shuffle (X, y) in unison as the later parts of X will almost all be larger digits
+indices = np.arange(len(yin))
+np.random.shuffle(indices)
+X = X[indices]
+yin = yin[indices]
+yout= yout[indices]
+
+print('Build model...')
+
+
+# Second model
+eos=ctable.encode('e',maxlen=1) # end of sentence
+eos=eos[0]
+encoder_input = Input(shape=(MAXLEN,len(chars)))
+
+encoder_cell = recurrent.LSTM(HIDDEN_SIZE)
+decoder_cell = recurrent.LSTM(HIDDEN_SIZE)
+softlayer = Dense(len(chars),activation='softmax')
+
+seq2seq = Rnn_seq2seq(encoder_cell,decoder_cell, softlayer, eos)
+outseq = seq2seq(encoder_input)
+
+outlayer = TimeDistributed(softlayer)(outseq)
+
+model2 = Model(input=encoder_input,output=outlayer)
+model2.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+model2.fit(X, yout, batch_size=64, metrics=['accuracy'])
+But the problem resides on how it makes the graph
+There is a problem with the input types of the output shared layer, or the way in which I have to build the model
+Traceback (most recent call last):
+File "seq_deb.py", line 167, in
+outseq = seq2seq(encoder_input)
+File "/----/keras/engine/topology.py", line 485, in call
+self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+File "/----/keras/engine/topology.py", line 543, in add_inbound_node
+Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+File "/----/keras/engine/topology.py", line 148, in create_node
+output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+File "/----/keras/seq2seq/Seq2seq.py", line 73, in call
+last_output, last_states = self.decoder.step(self.decoder.preprocess_input(self.loop_function(sampling_outputs[-1])),cell_states)
+File "/----/keras/engine/topology.py", line 441, in call
+self.assert_input_compatibility(x)
+File "/-----/keras/engine/topology.py", line 382, in assert_input_compatibility
+str(K.ndim(x)))
+Exception: Input 0 is incompatible with layer dense_1: expected ndim=2, found ndim=3
+I have tried to buid inside the model, outside, force dimension
+Have anyone any suggestion for that??

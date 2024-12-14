@@ -1,0 +1,20 @@
+Member
+jnothman commented on Sep 7, 2016
+At #3864 (comment), @nielsenmarkus11 raised an issue where roc_auc_score returned strange results where its y_true was a pandas.SparseSeries.
+The following is a sufficient demonstrator of some weird behaviour:
+import pandas as pd
+import numpy as np
+from sklearn.metrics import roc_auc_score, roc_curve
+
+r =  np.random.RandomState(0).rand(5)
+print(roc_curve(pd.SparseSeries([1,0,0,0,1]), r))
+print(roc_auc_score(pd.SparseSeries([1,0,0,0,1]), r))
+for this value of r, roc_auc_score claims that y_true is constant. For other values of r the returned score is > 1.
+A few points:
+Users are unlikely to be making substantial memory savings when evaluating roc_auc_score with a sparse y_true. After all, the scores are dense so will occupy at least as much memory as one is attempting to save with a sparse structure.
+Our metrics and estimators were not intended for and have not been tested with SparseSeries. We should, initially, raise an error when they are passed. (Contributor welcome.)
+The current problem seems to come down to the fact that np.array(some_sparse_series) only returns the explicit data, i.e. no zeroes.
+There is also quirky behaviour involving sparse series of non-floats: pd.SparseSeries([True, False, False, False, True])[[1,2,0,3,4]] returns a SparseSeries with a float64 dtype. (And taking np.array of the result returns an array of 2 floats. Hence some weirdness in roc_auc_score.)
+The latter two points may constitute bugs or features for Pandas. I will post issues there.
+Again a contributor is welcome to implement rejecting y as SparseSeries.
+👍 1

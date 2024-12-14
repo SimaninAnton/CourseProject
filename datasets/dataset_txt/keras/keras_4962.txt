@@ -1,0 +1,45 @@
+marcj commented on 15 Jun 2016 •
+edited
+I try to visualise all convolution layer of my graph model. The model is
+    model = keras.models.Graph()
+    model.add_input(name='Input', input_shape=trainer.input_shape)
+    model.add_node(keras.layers.convolutional.Convolution2D(15, 3, 3, border_mode='valid', activation='relu', init='glorot_uniform'), name='conv1',  input='Input')
+    model.add_node(keras.layers.core.Dropout(0.2), name='conv1_dropout', input='conv1')
+    model.add_node(keras.layers.convolutional.Convolution2D(15, 3, 3, border_mode='valid', activation='relu', init='glorot_uniform'), name='conv2',  input='conv1_dropout')
+    model.add_node(keras.layers.core.Dropout(0.2), name='conv2_dropout', input='conv2')
+    model.add_node(keras.layers.convolutional.Convolution2D(15, 3, 3, border_mode='valid', activation='relu', init='glorot_uniform'), name='conv3',  input='conv2_dropout')
+    model.add_node(keras.layers.core.Dropout(0.2), name='conv3_dropout', input='conv3')
+    model.add_node(keras.layers.convolutional.MaxPooling2D(pool_size=(2, 2)), name='pool1',  input='conv3_dropout')
+    model.add_node(keras.layers.core.Flatten(), name='flatten',  input='pool1')
+    model.add_node(keras.layers.core.Dense(60, activation='relu', init='glorot_uniform'), name='full1',  input='flatten')
+    model.add_node(keras.layers.core.Dropout(0.2), name='full1_dropout', input='full1')
+    model.add_node(keras.layers.core.Dense(2, activation='softmax', init='glorot_uniform'), name='Output',  input='full1_dropout')
+    model.add_output(name='Output_output', input='Output')
+    return model
+My code to get the outputs of each conv layer is like following and is executed after each epoch.
+X = some training data
+inputs = [self.model._graph_inputs['Input'].input]
+input_data = [[X]]
+if self.model.uses_learning_phase:
+    inputs += [K.learning_phase()]
+    input_data += [0.]  # disable learning_phase
+
+for key, layer in self.model._graph_nodes.iteritems():
+    if isinstance(layer, keras.layers.convolutional.Convolution2D):
+
+        fn = K.function(inputs, [layer.output])
+        Y = fn(input_data)[0] # warning happens here
+
+        store_output_as_image(Y.tolist())
+I get following warning after the first epoch (where my code above is placed). I investigated already a bit and figured out it only happens for the first convolutional layer conv1. If I jump over it, I don't get the warning.
+/usr/local/lib/python2.7/site-packages/keras/backend/theano_backend.py:521: UserWarning: theano.function was asked to create a function computing outputs given certain inputs, but the provided input variable at index 1 is not part of the computational graph needed to compute the outputs: keras_learning_phase.
+To make this warning into an error, you can pass the parameter on_unused_input='raise' to theano.function. To disable it completely, use on_unused_input='ignore'.
+  **kwargs)
+The warning is only shown once, I guess Theano suppresses all further warnings of the same type.
+Anyone an idea why this happens? The method Model._make_predict_function builds almost the same function but with output of the output layer for the Theano function, and it doesn't produce this warning.
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

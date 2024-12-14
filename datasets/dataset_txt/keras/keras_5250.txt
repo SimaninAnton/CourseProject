@@ -1,0 +1,130 @@
+3rduncle commented on 5 May 2016 •
+edited
+Hi, I am working sequences similarity task following Sentence Similarity Learning by Lexical Decomposition and Composition[http://arxiv.org/abs/1602.07019]
+I wrote a network like this.
+____________________________________________________________________________________________________
+Layer (type)                       Output Shape        Param #     Connected to
+====================================================================================================
+a_input (InputLayer)               (None, 1072)        0
+____________________________________________________________________________________________________
+q_input (InputLayer)               (None, 33)          0
+____________________________________________________________________________________________________
+embedding_1 (Embedding)            (None, 33, 300)     768600      q_input[0][0]
+                                                                   a_input[0][0]
+____________________________________________________________________________________________________
+semantic (Merge)                   (33, 1072)          0           embedding_1[0][0]
+                                                                   embedding_1[1][0]
+____________________________________________________________________________________________________
+a_match (Merge)                    (1072, 300)         0           embedding_1[0][0]
+                                                                   semantic[0][0]
+____________________________________________________________________________________________________
+q_match (Merge)                    (33, 300)           0           embedding_1[1][0]
+                                                                   semantic[0][0]
+____________________________________________________________________________________________________
+a+ (Merge)                         (50, 1072, 300)     0           embedding_1[1][0]
+                                                                   a_match[0][0]
+____________________________________________________________________________________________________
+q+ (Merge)                         (50, 33, 300)       0           embedding_1[0][0]
+                                                                   q_match[0][0]
+____________________________________________________________________________________________________
+a- (Lambda)                        (50, 1072, 300)     0           a+[0][0]
+____________________________________________________________________________________________________
+q- (Lambda)                        (50, 33, 300)       0           q+[0][0]
+____________________________________________________________________________________________________
+a_conv (Convolution1D)             (50, 1070, 500)     450500      a-[0][0]
+                                                                   a+[0][0]
+____________________________________________________________________________________________________
+q_conv (Convolution1D)             (50, 31, 500)       450500      q-[0][0]
+                                                                   q+[0][0]
+____________________________________________________________________________________________________
+merge_1 (Merge)                    (50, 31, 500)       0           q_conv[0][0]
+                                                                   q_conv[1][0]
+____________________________________________________________________________________________________
+merge_2 (Merge)                    (50, 1070, 500)     0           a_conv[0][0]
+                                                                   a_conv[1][0]
+____________________________________________________________________________________________________
+activation_1 (Activation)          (50, 31, 500)       0           merge_1[0][0]
+____________________________________________________________________________________________________
+activation_2 (Activation)          (50, 1070, 500)     0           merge_2[0][0]
+____________________________________________________________________________________________________
+a_maxpool (Lambda)                 (50, 500)           0           activation_2[0][0]
+____________________________________________________________________________________________________
+q_maxpool (Lambda)                 (50, 500)           0           activation_1[0][0]
+____________________________________________________________________________________________________
+similar (Merge)                    (50, 1)             0           q_maxpool[0][0]
+                                                                   a_maxpool[0][0]
+====================================================================================================
+Total params: 1669600
+____________________________________________________________________________________________________
+When training, I got nan loss and weights after some batches.
+I debug with mode=NanGuardMode(nan_is_error=True, inf_is_error=True).
+Traceback (most recent call last):
+  File "LexicalDistance.py", line 252, in <module>
+    nb_epoch=1,
+  File "/usr/local/lib/python2.7/site-packages/keras/engine/training.py", line 1046, in fit
+    callback_metrics=callback_metrics)
+  File "/usr/local/lib/python2.7/site-packages/keras/engine/training.py", line 784, in _fit_loop
+    outs = f(ins_batch)
+  File "/usr/local/lib/python2.7/site-packages/keras/backend/theano_backend.py", line 507, in __call__
+    return self.function(*inputs)
+  File "/usr/local/lib/python2.7/site-packages/theano/compile/function_module.py", line 859, in __call__
+    outputs = self.fn()
+  File "/usr/local/lib/python2.7/site-packages/theano/gof/link.py", line 1014, in f
+    raise_with_op(node, *thunks)
+  File "/usr/local/lib/python2.7/site-packages/theano/gof/link.py", line 314, in raise_with_op
+    reraise(exc_type, exc_value, exc_trace)
+  File "/usr/local/lib/python2.7/site-packages/theano/gof/link.py", line 1012, in f
+    wrapper(i, node, *thunks)
+  File "/usr/local/lib/python2.7/site-packages/theano/compile/nanguardmode.py", line 302, in nan_check
+    do_check_on(x[0], node, fn, True)
+  File "/usr/local/lib/python2.7/site-packages/theano/compile/nanguardmode.py", line 272, in do_check_on
+    raise AssertionError(msg)
+AssertionError: Inf detected
+Big value detected
+NanGuardMode found an error in an input of this node.
+Node:
+Elemwise{Composite{((i0 * sqrt(clip((i1 - (i2 ** i3)), i4, i5))) / (i1 - (i6 ** i3)))}}(<TensorType(float32, scalar)>, TensorConstant{1.0}, <TensorType(float32, scalar)>, Elemwise{Add}[(0, 1)].0, TensorConstant{0.0}, TensorConstant{inf}, <TensorType(float32, scalar)>)
+The input variable that cause problem:
+Elemwise{Composite{((i0 * sqrt(clip((i1 - (i2 ** i3)), i4, i5))) / (i1 - (i6 ** i3)))}} [id A] ''
+ |<TensorType(float32, scalar)> [id B]
+ |TensorConstant{1.0} [id C]
+ |<TensorType(float32, scalar)> [id D]
+ |Elemwise{Add}[(0, 1)] [id E] ''
+ | |TensorConstant{1.0} [id C]
+ | |<TensorType(float32, scalar)> [id F]
+ |TensorConstant{0.0} [id G]
+ |TensorConstant{inf} [id H]
+ |<TensorType(float32, scalar)> [id I]
+I don't know the the exact meaning of this info. It seems error is division by zero.
+All functions in Lambda Layers or Merge Layers are listed below. I can't fine where are the problems.
+def semantic_matrix(argv):
+    assert len(argv) == 2
+    q = argv[0]
+    a = argv[1]
+    q_l2 = K.l2_normalize(q, axis=2)
+    a_l2 = K.l2_normalize(a, axis=2)
+    return K.batch_dot(q_l2, K.permute_dimensions(a_l2, [0,2,1]))
+
+def match_matrix(argv, axis=0, w=3):
+    assert len(argv) == 2
+    o = argv[0]
+    s = argv[1]
+    idx = T.argmax(s, axis=2-axis)
+    i0 = T.repeat(T.arange(idx.shape[0]), idx.shape[1]).flatten()
+    i1 = idx.flatten()
+    indexed = o[i0, i1, :]
+    return indexed.reshape((idx.shape[0], idx.shape[1], o.shape[2]))
+
+def parallel(source, target):
+    einner_product = (source * target).sum(axis=2).reshape((source.shape[0],source.shape[1], 1))
+    enorm = (target ** 2).sum(axis=2).reshape((source.shape[0],source.shape[1],1))
+    response = target * (einner_product / enorm)
+    return response
+
+def compute_similar(source, target):
+    normlized_source = K.l2_normalize(source, axis=1)
+    normlized_target = K.l2_normalize(target, axis=1)
+    return (normlized_source * normlized_target).sum(axis=1).reshape((source.shape[0], 1))
+The problem may be in semantic_matrix and compute_similar, which compute the cosine similarity with inputs. I guest K.l2_normalize is not safe when passing a zero vector.
+How to compute cosine distance over matrix in safe way?
+thanks for any help.

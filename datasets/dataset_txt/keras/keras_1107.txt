@@ -1,0 +1,43 @@
+haydarai commented on 9 Apr 2018
+I tried to implement https://blog.keras.io/building-powerful-image-classification-models-using-very-little-data.html with slight modification because I need to make multi-class classification model. But, for some reason the input and target samples count returning different number.
+datagen = ImageDataGenerator(rescale=1.0 / 255)
+
+# Read images and labels from train directory and dump it to a file
+generator = datagen.flow_from_directory(
+    train_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode=None,
+    shuffle=False)
+bottleneck_features_train = model.predict_generator(
+    generator, len(generator.filenames) // batch_size, verbose=1, workers=8)
+pickle.dump(bottleneck_features_train, open('bottleneck_features_train.npy', 'wb'))
+
+train_labels = generator.classes
+num_classes = generator.class_indices
+train_labels = pd.get_dummies(pd.Series(train_labels))
+
+train_data = np.load('bottleneck_features_train.npy')
+
+# for debugging purpose to show this issue
+print(len(train_data), len(train_labels))
+
+model = Sequential()
+model.add(Flatten(input_shape=train_data.shape[1:]))
+model.add(Dense(256, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(34, activation='sigmoid'))
+
+model.compile(optimizer='rmsprop',
+              loss='categorical_crossentropy', metrics=['accuracy'])
+
+# It will fail here because the train_data and train_labels are not the same length for some reason
+history = model.fit(
+    train_data,
+    train_labels,
+    epochs=epochs,
+    batch_size=batch_size)
+Here's the console result:
+What I've checked:
+File formats, I've made sure all of them are JPGs
+Corrupted files: I've tried to go through each file and open it using PIL and everything load just fine

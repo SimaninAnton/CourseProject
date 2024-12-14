@@ -1,0 +1,56 @@
+H0neyBadger commented on 26 Mar 2015
+Hello,
+I try to hide passwords displayed in Django error reports
+https://docs.djangoproject.com/en/1.7/howto/error-reporting/#django.views.decorators.debug.sensitive_post_parameters
+from django.views.decorators.debug import sensitive_variables, sensitive_post_parameters
+
+...
+
+class SensitiveViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
+
+...
+
+    @sensitive_post_parameters()
+    @sensitive_variables()
+    def create(self, request):
+        raise Exception
+_sensitive_variables_ works perfectly but unfortunately _sensitive_post_parameters_ throw an exception.
+sensitive_post_parameters didn't receive an HttpRequest. If you are decorating a classmethod, be sure to use @method_decorator.
+I tried to find a solution by myself
+in DRF request.py
+class Request(object):
+    @property
+    def sensitive_post_parameters(self):
+        if _hasattr(self._request, 'sensitive_post_parameters'):
+            return self._request.sensitive_post_parameters
+        else :
+            return None
+
+    @sensitive_post_parameters.setter
+    def sensitive_post_parameters(self, value):
+        if value :
+            self._request.sensitive_post_parameters = value
+With the following decorator definition:
+import functools
+from rest_framework.request import Request as HttpRequest
+
+def sensitive_post_parameters(*parameters):
+    def decorator(obj):
+        @functools.wraps(obj)
+        def sensitive_post_parameters_wrapper(view, request, *args, **kwargs):
+            assert isinstance(request, HttpRequest), (
+                "sensitive_post_parameters didn't receive an HttpRequest. "
+                "If you are decorating a classmethod, be sure to use "
+                "@method_decorator."
+            )
+            if parameters:
+                request.sensitive_post_parameters = parameters
+            else:
+                request.sensitive_post_parameters = '__ALL__'
+
+            return obj(view, request, *args, **kwargs)
+        return sensitive_post_parameters_wrapper
+    return decorator
+This code looks like a monkey-patch
+It’s really difficult to find a pretty solution to this problem.
+Do you have an idea ?

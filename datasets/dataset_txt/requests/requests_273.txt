@@ -1,0 +1,54 @@
+bdarnell commented on May 21, 2018
+When uploading a file with a non-ascii filename, that filename is encoded according to the method of RFC 5987
+>>> requests.post('http://ya.ru', files={'file': (u'файл', '123')}).request.body 
+b'--5cb06bfe9bc549e09dc080ed257f9555\r\nContent-Disposition: form-data; name="file"; filename*=utf-8\'\'%D1%84%D0%B0%D0%B9%D0%BB\r\n\r\n123\r\n--5cb06bfe9bc549e09dc080ed257f9555--\r\n'
+However, RFC 7578 (the current version of the multipart/form-data spec) explicitly prohibits the use of this encoding for the filename field of a Content-Disposition header (in a multipart/form-data body):
+NOTE: The encoding method described in [RFC5987], which would add a
+"filename*" parameter to the Content-Disposition header field, MUST
+NOT be used.
+it's unclear to me why RFC 7578 made this decision, especially when its predecessor RFC 2388 said that RFC 2231 (which defines the encoding used in RFC 5987) "might" be used. This may be an example of an RFC that is at odds with practical usage. However, since it is quite explicit on this point we should consider whether following the new RFC would be better than the current implementation.
+Note that to add to the confusion, Content-Disposition when used as an HTTP header instead of in multipart/form-data is defined by RFC 6266, which specifies the use of RFC 5987. A lot of the references used to argue in favor of the RFC 5987 behavior in #2117 were actually about the HTTP header, not the form-data header (such as this SO question).
+For context, I'm looking at this as a result of a PR to add RFC 5987 support to Tornado's multipart/form-data parser. We don't currently decode percent-encoded filenames according to RFC 7578 either, so something has to change on our side either way, but I thought I'd raise this issue since it's not clear that requests is handling this the right way.
+Expected Result
+A Content-Disposition header containing filename=%D1%84%D0%B0%D0%B9%D0%BB
+Actual Result
+A Content-Disposition header containing a filename*= header instead.
+Reproduction Steps
+import requests
+print(requests.post('http://ya.ru', files={'file': (u'файл', '123')}).request.body)
+System Information
+$ python -m requests.help
+$ /tmp/reqs/bin/python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.5"
+  },
+  "platform": {
+    "release": "17.5.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020ff"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}

@@ -1,0 +1,49 @@
+meysamgolm commented on 9 Aug 2017
+I see a lot of groups are implementing deep CNNs with more than 30 layers such as:
+https://arxiv.org/abs/1707.01836#
+I wonder which kind of GPU these groups are using for their network. Because when I want to increase number of layers to be more than 4 I get memory error:
+MemoryError: Error allocating 246005760 bytes of device memory (out of memory).
+Apply node that caused the error: GpuReshape{5}(GpuDimShuffle{0,2,3,1}.0, GpuShape.0)
+Toposort index: 1498
+Inputs types: [CudaNdarrayType(float32, 4D), TensorType(int64, vector)]
+Inputs shapes: [(6720, 22, 26, 16), (5,)]
+Inputs strides: [(9152, 26, 1, 572), (8,)]
+Inputs values: ['not shown', array([ 32, 210,  22,  26,  16])]
+Outputs clients: [[GpuElemwise{Composite{Switch(i0, i1, (exp(i2) * i1))},no_inplace}(GpuFromHost.0, GpuReshape{5}.0, if{inplace,gpu}.0)]]
+We use this GPU: NVIDIA GeForce 1070 with 8GB GDDR5 device memory
+Currently I implement a network like this:
+    # build CNN/LSTM and train it.
+    #
+    model = Sequential()
+
+    # build CNN/LSTM and train it.
+    
+    model.add(TimeDistributed(Conv2D(16, (3, 3), padding='same'), input_shape=(210, 22, 26, 1))) 
+    model.add(Activation('elu'))
+    model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
+    model.add(Dropout(0.2))
+
+    model.add(TimeDistributed(Conv2D(32, (3, 3), padding='same'))) 
+    model.add(Activation('elu'))
+    model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
+    model.add(Dropout(0.2))
+
+    model.add(TimeDistributed(Conv2D(64, (3, 3), padding='same'))) 
+    model.add(Activation('elu'))
+    model.add(TimeDistributed(MaxPooling2D(pool_size=(2, 2))))
+
+    model.add(TimeDistributed(Flatten()))
+
+    model.add(Conv1D(16, 3, padding='same'))
+    model.add(Activation('elu'))
+    model.add(MaxPooling1D(pool_size=8))
+
+    model.add(Bidirectional(LSTM(64, return_sequences=True))) 
+    model.add(Activation('elu'))
+    model.add(Bidirectional(LSTM(128, return_sequences=False))) 
+    model.add(Activation('elu'))
+    model.add(Dense(1, activation='sigmoid'))
+    adammgm = keras.optimizers.Adam(lr=0.0005, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0001)
+    model.compile(loss='mean_squared_error', optimizer=adammgm, metrics=['accuracy'])
+    print(model.summary())
+I'm already aware of a lot of discussions about memory error and the solutions are : (1) decrease number of layers (2) decrease batch size (3) use CPU. My batch size is 32 and I want to design 32 layers. I don't get any error using CPU. But I want to use GPU. Should I upgrade my GPU? If yes, what's your suggestion? Is this normal that my GPU cannot handle such a simple network? Should I change setting of my GPU?

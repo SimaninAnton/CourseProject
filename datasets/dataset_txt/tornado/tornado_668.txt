@@ -1,0 +1,124 @@
+diranged commented on 13 Mar 2015
+In a recent change by @bdarnell (241956a#diff-f9417e85a5edaa0ca2318cad516e1d6aL122), if yield [taska, taskb, taskc] is called, and more than one of those tasks raises an exception, Tornado jumps in and decides to log the exception for you when the Future object is being cleaned up. I get why this is done. However, I don't understand how we're supposed to handle it.
+We use this yield [... many things ...] pattern a ton in Kingpin. Since Tornado 4.1, we are unable to control the logging output when multiple asynchronous tasks fail, even though we are absolutely logging each of those exceptions.
+Here is a super simple example yield_all.py code:
+import random
+import time
+
+from tornado import gen
+from tornado import ioloop
+
+
+@gen.coroutine
+def tornado_sleep(seconds=1.0):
+    yield gen.Task(ioloop.IOLoop.current().add_timeout,
+                   time.time() + seconds)
+
+
+@gen.coroutine
+def raise_exception(name):
+    print ("%s is sleeping" % name)
+    yield tornado_sleep(random.random())
+    print ("%s is raising exception!" % name)
+    try:
+        raise Exception('Bad things from %s' % name)
+    except Exception as e:
+        print ("%s raised exception: %s" % (name, e))
+        raise e
+
+
+@gen.coroutine
+def raise_many():
+
+    tasks = [raise_exception('one'),
+             raise_exception('two'),
+             raise_exception('three'),
+             raise_exception('four')]
+
+    print ("Beginning yield")
+    yield tasks
+
+
+def print_tidy_exception(e):
+    # Skip traceback that involves site-packages.
+    import traceback
+    trace_lines = traceback.format_exc(e).splitlines()
+    skip_next = False
+    for l in trace_lines:
+        if 'tornado' in l:
+            skip_next = True
+            continue
+        if not skip_next:
+            print(l)
+        skip_next = False
+
+if __name__ == '__main__':
+    try:
+        ioloop.IOLoop.instance().run_sync(raise_many)
+    except Exception as e:
+        print_tidy_exception(e)
+Here is the example output in Tornado 4:
+python yield_all.py 
+one is sleeping
+two is sleeping
+three is sleeping
+four is sleeping
+Beginning yield
+one is raising exception!
+one raised exception: Bad things from one
+two is raising exception!
+two raised exception: Bad things from two
+four is raising exception!
+four raised exception: Bad things from four
+three is raising exception!
+three raised exception: Bad things from three
+Traceback (most recent call last):
+  File "yield_all.py", line 53, in <module>
+    ioloop.IOLoop.instance().run_sync(raise_many)
+  File "yield_all.py", line 35, in raise_many
+    yield tasks
+  File "yield_all.py", line 23, in raise_exception
+    raise e
+Exception: Bad things from one
+Here is the example output in Tornado 4.1:
+python yield_all.py 
+one is sleeping
+two is sleeping
+three is sleeping
+four is sleeping
+Beginning yield
+four is raising exception!
+four raised exception: Bad things from four
+one is raising exception!
+one raised exception: Bad things from one
+two is raising exception!
+two raised exception: Bad things from two
+three is raising exception!
+three raised exception: Bad things from three
+Traceback (most recent call last):
+  File "yield_all.py", line 53, in <module>
+    ioloop.IOLoop.instance().run_sync(raise_many)
+  File "yield_all.py", line 35, in raise_many
+    yield tasks
+  File "yield_all.py", line 23, in raise_exception
+    raise e
+Exception: Bad things from one
+ERROR:tornado.application:Future exception was never retrieved: Traceback (most recent call last):
+  File "/Users/diranged/git/Nextdoor/kingpin/.venv/lib/python2.7/site-packages/tornado/gen.py", line 812, in run
+    yielded = self.gen.send(value)
+  File "yield_all.py", line 23, in raise_exception
+    raise e
+Exception: Bad things from two
+ERROR:tornado.application:Future exception was never retrieved: Traceback (most recent call last):
+  File "/Users/diranged/git/Nextdoor/kingpin/.venv/lib/python2.7/site-packages/tornado/gen.py", line 812, in run
+    yielded = self.gen.send(value)
+  File "yield_all.py", line 23, in raise_exception
+    raise e
+Exception: Bad things from three
+ERROR:tornado.application:Future exception was never retrieved: Traceback (most recent call last):
+  File "/Users/diranged/git/Nextdoor/kingpin/.venv/lib/python2.7/site-packages/tornado/gen.py", line 812, in run
+    yielded = self.gen.send(value)
+  File "yield_all.py", line 23, in raise_exception
+    raise e
+Exception: Bad things from four
+The question here is, how do we properly handle multiple Future objects raising Exceptions? We're already handling and logging the Exception, but we want to continue to raise it up the stack anyways.

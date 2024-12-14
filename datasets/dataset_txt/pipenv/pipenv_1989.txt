@@ -1,0 +1,58 @@
+bofm commented on 3 Oct 2017 •
+edited
+Hi Kenneth! Happy Birthday! All the best wishes. And (luckily or unfortunately) I also have some issues for you.
+pipenv lock -r doesn't generate hashes for the packages from a private PyPI like mypkg = { version = "==1.0.0", index = "mypypi" }. But it should do that because if we feed the generated requirements.txt into pip install -r, it will fail with the error:
+Hashes are required in --require-hashes mode, but they are missing from some requirements. Here is a list of those requirements along with the hashes their downloaded archives actually had. Add lines like these to your requirements files to prevent tampering. (If you did not enable --require-hashes manually, note that it turns on automatically when any package has a hash.)
+No matter what the message says it looks like pip 9.0.1 expects all the packages within requirements.txt to have --hash ... if there is at least one with the hash. Here is a script to demonstrate this behaviour of pip.
+$ cat requirements.txt
+Django==1.9.1 \
+    --hash=sha256:9f7ca04c6dbcf08b794f2ea5283c60156a37ebf2b8316d1027f594f34ff61101 \
+    --hash=sha256:a29aac46a686cade6da87ce7e7287d5d53cddabc41d777c6230a583c36244a18
+bgg==0.22.1
+$ pip install -r requirements.txt
+Collecting Django==1.9.1 (from -r requirements.txt (line 1))
+  Using cached Django-1.9.1-py2.py3-none-any.whl
+Collecting bgg==0.22.1 (from -r requirements.txt (line 4))
+  Using cached bgg-0.22.1.tar.gz
+Hashes are required in --require-hashes mode, but they are missing from some requirements. Here is a list of those requirements along with the hashes their downloaded archives actually had. Add lines like these to your requirements files to prevent tampering. (If you did not enable --require-hashes manually, note that it turns on automatically when any package has a hash.)
+    bgg==0.22.1 --hash=sha256:aaa53aea1cecb8a6e1288d6bfe52a51408a264a97d5c865c38b34ae16c9bff88
+The same thing occurs when the package without hash in the requirements.txt is a package from a private PyPI.
+pipenv lock -r puts the private PyPI url in the same line with the package like this:
+my-package==1.0.0 -i http://private.pypi.url.com/ --trusted-host private.pypi.url.com
+Pip 9.0.1 does not seem to understand that.
+$ cat requirements.txt
+Django==1.9.1
+bgg==0.22.1
+my-package==1.0.0 -i http://private.pypi.url.com/ --trusted-host private.pypi.url.com
+$ pip install -r requirements.txt
+Collecting Django==1.9.1 (from -r requirements.txt (line 1))
+  Downloading Django-1.9.1-py2.py3-none-any.whl (6.6MB)
+    100% |████████████████████████████████| 6.6MB 8.4MB/s
+Collecting bgg==0.22.1 (from -r requirements.txt (line 2))
+  Downloading bgg-0.22.1.tar.gz
+Collecting my-package==1.0.0 (from -r requirements.txt (line 3))
+  Could not find a version that satisfies the requirement my-package==1.0.0 (from -r requirements.txt (line 3)) (from versions: )
+No matching distribution found for my-package==1.0.0 (from -r requirements.txt (line 3))
+But it works if -i http://private.pypi.url.com/ --trusted-host private.pypi.url.com is specified on the first separate line in the requirements.txt.
+$ cat requirements.txt
+-i http://private.pypi.url.com/ --trusted-host private.pypi.url.com
+Django==1.9.1
+bgg==0.22.1
+my-package==1.0.0
+$ pip install -r requirements.txt
+Collecting Django==1.9.1 (from -r requirements.txt (line 2))
+  Downloading Django-1.9.1-py2.py3-none-any.whl (6.6MB)
+    100% |████████████████████████████████| 6.6MB 7.3MB/s
+Collecting bgg==0.22.1 (from -r requirements.txt (line 3))
+  Downloading bgg-0.22.1.tar.gz
+Collecting my-package==1.0.0 (from -r requirements.txt (line 4))
+  Downloading http://private.pypi.url.com/api/package/my-package/my-package-1.0.0-py2.py3-none-any.whl
+Requirement already satisfied: requests<3.0,>=2.13.0 in /Users/x/.virtualenvs/ab1abe836d7bbe/lib/python3.6/site-packages (from my-package==1.0.0->-r requirements.txt (line 4))
+Requirement already satisfied: urllib3<1.23,>=1.21.1 in /Users/x/.virtualenvs/ab1abe836d7bbe/lib/python3.6/site-packages (from requests<3.0,>=2.13.0->my-package==1.0.0->-r requirements.txt (line 4))
+Requirement already satisfied: idna<2.7,>=2.5 in /Users/x/.virtualenvs/ab1abe836d7bbe/lib/python3.6/site-packages (from requests<3.0,>=2.13.0->my-package==1.0.0->-r requirements.txt (line 4))
+Requirement already satisfied: certifi>=2017.4.17 in /Users/x/.virtualenvs/ab1abe836d7bbe/lib/python3.6/site-packages (from requests<3.0,>=2.13.0->my-package==1.0.0->-r requirements.txt (line 4))
+Requirement already satisfied: chardet<3.1.0,>=3.0.2 in /Users/x/.virtualenvs/ab1abe836d7bbe/lib/python3.6/site-packages (from requests<3.0,>=2.13.0->my-package==1.0.0->-r requirements.txt (line 4))
+Installing collected packages: Django, bgg, my-package
+  Running setup.py install for bgg ... done
+Successfully installed Django-1.9.1 bgg-0.22.1 my-package-1.0.0
+Maybe Pipenv should solve this somehow. Maybe we need to document this. Maybe I'm doing everything wrong :)

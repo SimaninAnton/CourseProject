@@ -1,0 +1,103 @@
+PedroCardoso commented on 20 Jun 2016
+I am trying to do a tagging system, where there is a label for each word, but the input is a list of lists, where each word is represented by its chars.
+This network works with some success
+inputs = Input(shape=(MAX_WORDS,MAX_LEN), dtype='int32', name='main_input')
+embLayer = TimeDistributed(Embedding(output_dim=300, input_dim=len(charDict), input_length=MAX_LEN, mask_zero=True))(inputs)
+wordLayer = TimeDistributed(LSTM(128, return_sequences=False))(embLayer)
+
+left = SimpleRNN(128, return_sequences=True)(Dropout(0.2)(wordLayer))
+right = SimpleRNN(128, return_sequences=True, go_backwards=True)(Dropout(0.2)(wordLayer))
+merged = merge([left, right], mode='sum')
+predictions = TimeDistributed(Dense(3, activation='softmax'))(merged)
+The problem is that I noticed that the last few outputs change value, even if all input chars are 0. This makes think that masking is not done at the "word" level.
+I have tried to add a masking layer, but having a mistake .
+The updated network is :
+inputs = Input(shape=(MAX_WORDS,MAX_LEN), dtype='int32', name='main_input')
+inputs = Masking(mask_value=0)(inputs)
+embLayer = TimeDistributed(Embedding(output_dim=300, input_dim=len(charDict), input_length=MAX_LEN, mask_zero=True))(inputs)
+and the error I get is
+/Users/pedro/anaconda/envs/dev/lib/python2.7/site-packages/keras/engine/topology.pyc in __call__(self, x, mask)
+    483         if inbound_layers:
+    484             # this will call layer.build() if necessary
+--> 485             self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+    486             input_added = True
+    487 
+
+/Users/pedro/anaconda/envs/dev/lib/python2.7/site-packages/keras/engine/topology.pyc in add_inbound_node(self, inbound_layers, node_indices, tensor_indices)
+    541         # creating the node automatically updates self.inbound_nodes
+    542         # as well as outbound_nodes on inbound layers.
+--> 543         Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+    544 
+    545     def get_output_shape_for(self, input_shape):
+
+site-packages/keras/engine/topology.pyc in create_node(cls, outbound_layer, inbound_layers, node_indices, tensor_indices)
+    146 
+    147         if len(input_tensors) == 1:
+--> 148             output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+    149             output_masks = to_list(outbound_layer.compute_mask(input_tensors[0], input_masks[0]))
+    150             # TODO: try to auto-infer shape if exception is raised by get_output_shape_for
+
+site-packages/keras/layers/wrappers.pyc in call(self, X, mask)
+    129                 input_length = K.shape(X)[1]
+    130             X = K.reshape(X, (-1, ) + input_shape[2:])  # (nb_samples * timesteps, ...)
+--> 131             y = self.layer.call(X)  # (nb_samples * timesteps, ...)
+    132             # (nb_samples, timesteps, ...)
+    133             output_shape = self.get_output_shape_for(input_shape)
+
+site-packages/keras/layers/embeddings.pyc in call(self, x, mask)
+    133         else:
+    134             W = self.W
+--> 135         out = K.gather(W, x)
+    136         return out
+    137 
+
+site-packages/keras/backend/theano_backend.pyc in gather(reference, indices)
+    164     Return: a tensor of same type as reference.
+    165     '''
+--> 166     return reference[indices]
+    167 
+    168 
+
+site-packages/theano/tensor/var.pyc in __getitem__(self, args)
+    501                             TensorVariable, TensorConstant,
+    502                             theano.tensor.sharedvar.TensorSharedVariable))):
+--> 503                 return self.take(args[axis], axis)
+    504             else:
+    505                 return theano.tensor.subtensor.advanced_subtensor(self, *args)
+
+site-packages/theano/tensor/var.pyc in take(self, indices, axis, mode)
+    533 
+    534     def take(self, indices, axis=None, mode='raise'):
+--> 535         return theano.tensor.subtensor.take(self, indices, axis, mode)
+    536 
+    537     # COPYING
+
+site-packages/theano/tensor/subtensor.pyc in take(a, indices, axis, mode)
+   2390                 [a.shape[:axis], indices.shape, a.shape[axis + 1:]])
+   2391         ndim = a.ndim + indices.ndim - 1
+-> 2392     return take(a, indices.flatten(), axis, mode).reshape(shape, ndim)
+
+site-packages/theano/tensor/subtensor.pyc in take(a, indices, axis, mode)
+   2368             return advanced_subtensor1(a.flatten(), indices)
+   2369         elif axis == 0:
+-> 2370             return advanced_subtensor1(a, indices)
+   2371         else:
+   2372             if axis < 0:
+
+site-packages/theano/gof/op.pyc in __call__(self, *inputs, **kwargs)
+    609         """
+    610         return_list = kwargs.pop('return_list', False)
+--> 611         node = self.make_node(*inputs, **kwargs)
+    612 
+    613         if config.compute_test_value != 'off':
+
+site-packages/theano/tensor/subtensor.pyc in make_node(self, x, ilist)
+   1685         ilist_ = theano.tensor.as_tensor_variable(ilist)
+   1686         if ilist_.type.dtype[:3] not in ('int', 'uin'):
+-> 1687             raise TypeError('index must be integers')
+   1688         if ilist_.type.ndim != 1:
+   1689             raise TypeError('index must be vector')
+
+TypeError: index must be integers
+I looked around, and nothing seems similar to what I am trying to achieve.
+Any ideas how to solve this ?

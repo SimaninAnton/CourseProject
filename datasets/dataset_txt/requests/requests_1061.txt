@@ -1,0 +1,40 @@
+adeverteuil commented on May 26, 2016
+Hello,
+I am using requests 2.10.0 and Python 2.7.11.
+By setting timeout=None by default in the session.Session().request() method's default parameters, the value None is propagated all the way to the low level socket module, overriding whatever value was set using socket.setdefaulttimeout(_timeout_).
+If the user doesn't assign a timeout value, the expected result is that socket.getdefaulttimeout() is used. To get this behavior, the value of packages.urllib3.util.timeout._default should be used by default instead of None, since None has a special meaning. This can be done by importing packages.urllib3.util.Timeout as TimeoutSauce (as it is done in the adapter module) and assigning timeout=TimeoutSauce.DEFAULT_TIMEOUT.
+Here is a unit test suite that shows that using socket directly respects socket.getdefaulttimeout() and another test using requests that blocks indefinitely unless the above modification is applied.
+# usage: python -m unittest discover
+import socket
+import unittest
+
+import requests
+
+class SocketTimeoutTestCase(unittest.TestCase):
+
+     def setUp(self):
+         self.original_timeout = socket.getdefaulttimeout()
+         socket.setdefaulttimeout(0.1)
+         self.host = '127.0.0.1'
+         self.port = 50000
+         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+         self.server.bind((self.host, self.port))
+         self.server.listen(1)
+
+     def tearDown(self):
+         socket.setdefaulttimeout(self.original_timeout)
+         self.server.close()
+
+     def test_default_timeout_with_socket(self):
+         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+         with self.assertRaises(socket.timeout):
+             client.connect((self.host, self.port))
+             conn, addr = self.server.accept()
+             client.recv(1024)
+         conn.close()
+
+     def test_default_timeout_with_requests(self):
+         with self.assertRaises(requests.Timeout):
+             r = requests.get('http://{}:{}/'.format(self.host, self.port))
+May I submit a pull request? I need to read contributing guidelines to prepare it correctly as this would be my first pull request. As far as I know (and I am not familiar with the code base), only the session module requires modification, but you may know better.

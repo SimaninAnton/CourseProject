@@ -1,0 +1,126 @@
+michetonu commented on 23 May 2017
+Issue similar to the one I posted earlier: #6729
+When I train an LSTM model for a time-series dataset with sample_weight_mode = "temporal" and I pass loss weights to each time step, I get this error:
+Traceback (most recent call last):
+  File "/home/mtonutti/Documents/anticipation_project/tesi_autovision/RNN_code/sRNN_temporal.py", line 152, in <module>
+    hist = model.fit([X_train_inside,X_train_outside],one_hot_labels_train, epochs=500, batch_size=128, validation_split=0.2, callbacks=[early_stopping, checkpointer])
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1498, in fit
+    initial_epoch=initial_epoch)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/training.py", line 1170, in _fit_loop
+    callbacks.on_epoch_end(epoch, epoch_logs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/callbacks.py", line 77, in on_epoch_end
+    callback.on_epoch_end(epoch, logs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/callbacks.py", line 479, in on_epoch_end
+    if self.monitor_op(current - self.min_delta, self.best):
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+Here as well the code cannot cope with 2D accuracy values (which is apparently the case for temporal weight mode: it gives a value for each timestep).
+I fixed this temporarily by changing:
+current = logs.get(self.monitor) (line 474)
+to
+current = logs.get(self.monitor)[-1]
+so that only the value for the last time step is considered.
+The same applies for other callbacks (e.g. ModelCheckpoint), with the same fix. However, i do not know how it will behave with different datasets.
+Code to reproduce issue:
+import numpy as np
+from keras.models import Sequential, Model
+from keras.layers import Input, Embedding, LSTM, Dense, Activation, concatenate, Merge, merge, Lambda, Dropout, Masking, Conv1D, MaxPooling1D
+from keras.layers.embeddings import Embedding
+from keras.preprocessing import sequence
+from keras.callbacks import EarlyStopping
+from keras.engine.topology import Layer
+from keras import utils, regularizers
+from keras import backend as K
+from keras.preprocessing.sequence import pad_sequences
+from keras.layers.wrappers import TimeDistributed
+import os
+from sklearn.preprocessing import normalize
+from sklearn.model_selection import train_test_split
+
+features = np.zeros([151,19,3173])
+features_outside = np.zeros([151,4,3173])
+labels = np.zeros([3173,])
+
+features = np.transpose(features,(2,0,1))
+features_outside = np.transpose(features_outside,(2,0,1))
+
+def unison_shuffled_copies(a, b, c):
+    assert len(a) == len(b) == len(c)
+    p = np.random.permutation(len(a))
+    return a[p], b[p], c[p]
+
+features, labels, features_outside = unison_shuffled_copies(features,labels, features_outside)
+
+X_train_inside, X_test_inside, X_train_outside, X_test_outside, y_train, y_test = train_test_split(features, features_outside, labels, test_size = 0.15)
+
+y_train = np.reshape(y_train,(1,1,len(y_train)))
+y_test = np.reshape(y_test,(1,1,len(y_test)))
+
+for t in range(features.shape[1]):
+ X_train_inside[:,t,:] = normalize(X_train_inside[:,t,:], norm="l2",axis=1)
+ X_train_outside[:,t,:] = normalize(X_train_outside[:,t,:], norm="l2",axis=1)
+
+data_dim_in = len(X_train_inside[0,0,:])
+data_dim_out = len(X_train_outside[0,0,:])
+timesteps = len(X_train_inside[0,:,0])
+
+y_train_temp = np.zeros([1,timesteps,y_train.shape[2]])
+y_test_temp = np.zeros([1,timesteps,y_test.shape[2]])
+for t in range(timesteps):
+ y_train_temp[0,t,:] = y_train[0,0,:]
+ y_test_temp[0,t,:] = y_test[0,0,:]
+y_train = y_train_temp
+y_test = y_test_temp
+
+
+loss_weights = {}
+d = []
+for t in range(timesteps):
+ time_factor = np.exp(-(timesteps-t))
+ d.append(time_factor)
+loss_weights["time_distributed_2"] = d
+
+input_shape_in=(timesteps,data_dim_in)
+input_in = Input(shape=input_shape_in)
+lstm_out_1 = LSTM(64, kernel_initializer = "VarianceScaling", return_sequences = True, bias_initializer = "ones")(input_in)
+lstm_out_1 = LSTM(128, kernel_initializer = "VarianceScaling", return_sequences = True, bias_initializer = "ones")(lstm_out_1)
+lstm_out_1 = LSTM(128, kernel_initializer = "VarianceScaling", return_sequences = True, bias_initializer = "ones")(lstm_out_1)
+lstm_out_1 = Dropout(0.5)(lstm_out_1)
+
+input_shape_out=(timesteps,data_dim_out)
+input_out = Input(shape=input_shape_out)
+lstm_out_2 = LSTM(64, kernel_initializer = "VarianceScaling", return_sequences = True, bias_initializer = "ones")(input_out)
+lstm_out_2 = LSTM(128, kernel_initializer = "VarianceScaling", return_sequences = True, bias_initializer = "ones")(lstm_out_2)
+lstm_out_2 = LSTM(128, kernel_initializer = "VarianceScaling", return_sequences = True, bias_initializer = "ones")(lstm_out_2)
+lstm_out_2 = Dropout(0.5)(lstm_out_2)
+
+lstm_concat = concatenate([lstm_out_1,lstm_out_2])
+aux_output = TimeDistributed(Dense(256, activation = "tanh", kernel_initializer = "VarianceScaling"))(lstm_concat)
+
+aux_output = Dropout(0.5)(aux_output)
+merged = merge([aux_output,lstm_concat], mode="dot")
+
+main_output = TimeDistributed(Dense(5, activation='softmax', kernel_initializer = "VarianceScaling"))(merged)
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10)
+
+one_hot_labels_train = np.zeros([y_train.shape[2],timesteps,5])
+one_hot_labels_test = np.zeros([y_test.shape[2],timesteps,5])
+for t in range(timesteps):
+ one_hot_labels_train[:,t,:] = utils.to_categorical(y_train[:,t,:], num_classes=5)
+ one_hot_labels_test[:,t,:] = utils.to_categorical(y_test[:,t,:], num_classes=5)
+
+
+model = Model(inputs=[input_in,input_out], outputs=[main_output])
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'], sample_weight_mode = "temporal", loss_weights = loss_weights)
+print(model.summary())
+hist = model.fit([X_train_inside,X_train_outside],one_hot_labels_train, epochs=500, batch_size=128, validation_split=0.2, callbacks = [early_stopping])
+
+scores = model.evaluate([X_test_inside,X_test_outside], one_hot_labels_test, batch_size =20, verbose=1)
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

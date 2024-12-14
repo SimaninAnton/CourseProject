@@ -1,0 +1,55 @@
+zhaoguixu commented on Jun 13, 2015 •
+edited by sigmavirus24
+A simple test case:
+request = requests.Request(method='GET', url='https://httpbin.org/get')
+request.files = {'f': ('føø', '\xff')}
+prepared = request.prepare()
+requests.Session().send(prepared)
+    prepared = request.prepare()
+  File "/usr/lib/python2.7/dist-packages/requests/models.py", line 249, in prepare
+    hooks=self.hooks,
+  File "/usr/lib/python2.7/dist-packages/requests/models.py", line 296, in prepare
+    self.prepare_body(data, files)
+  File "/usr/lib/python2.7/dist-packages/requests/models.py", line 434, in prepare_body
+    (body, content_type) = self._encode_files(files, data)
+  File "/usr/lib/python2.7/dist-packages/requests/models.py", line 148, in _encode_files
+    rf.make_multipart(content_type=ft)
+  File "/usr/lib/python2.7/dist-packages/urllib3/fields.py", line 176, in make_multipart
+    self.headers['Content-Disposition'] += '; '.join(['', self._render_parts((('name', self._name), ('filename', self._filename)))])
+  File "/usr/lib/python2.7/dist-packages/urllib3/fields.py", line 139, in _render_parts
+    parts.append(self._render_part(name, value))
+  File "/usr/lib/python2.7/dist-packages/urllib3/fields.py", line 119, in _render_part
+    return format_header_param(name, value)
+  File "/usr/lib/python2.7/dist-packages/urllib3/fields.py", line 44, in format_header_param
+    result.encode('ascii')
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 11: ordinal not in range(128)
+The terrible unicode feather of python2.x will implicitly cast the byte-string to unicode. results contains non-ascii characters which will be casted to unicode first before calling encode method. However the catch in format_header_param UnicodeEnocdeError is not enough.
+The api specification in this function says value is a unicode string. Actually its a so low-level function. Requests seems ignore this and allow user-decided non-ascii builtin-string flows in, resulting this traceback.
+def format_header_param(name, value):
+    """
+    Helper function to format and quote a single header parameter.
+
+    Particularly useful for header parameters which might contain
+    non-ASCII values, like file names. This follows RFC 2231, as
+    suggested by RFC 2388 Section 4.4.
+
+    :param name:
+        The name of the parameter, a string expected to be ASCII only.
+    :param value:
+        The value of the parameter, provided as a unicode string.
+    """
+    if not any(ch in value for ch in '"\\\r\n'):
+        result = '%s="%s"' % (name, value)
+        try:
+            print result
+            result.encode('ascii')
+        except UnicodeEncodeError:
+            pass
+        else:
+            return result
+    if not six.PY3:  # Python 2:
+        value = value.encode('utf-8')
+    value = email.utils.encode_rfc2231(value, 'utf-8')
+    value = '%s*=%s' % (name, value)
+    return value
+Thanks,

@@ -1,0 +1,101 @@
+Johndt6 commented on 7 Feb 2019
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+class AddressLookupResult(models.Model):
+    """
+    Models the results of an address lookup, storing them in the database for marketing planning and optimizations.
+    """
+    street_address = models.CharField(max_length=255)
+    city = models.CharField(max_length=255)
+    state = usmodels.USStateField()
+    zip_code = models.CharField(max_length=10, null=True)
+    full_address = models.CharField(max_length=255, null=True)
+    lookup_date = models.DateTimeField()
+    lookup_duration = duration.DurationField(help_text='Enter a duration using a format like 3 days 2:20:10.5 or '
+                                                       '3d 2:20:10.5. This is interpreted as 3 days 2 hours 20 minutes '
+                                                       '10.5 seconds.')
+    outcome = models.CharField(max_length=1)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    # Corresponds to the date/time, shortly after the address lookup was completed
+    create_date = models.DateTimeField(auto_now_add=True)
+
+    # AddressLookupResults generally shouldn't be modified, but we can track if/when they
+    # are using the modify date.
+    modify_date = models.DateTimeField(auto_now=True)
+    error_code = models.CharField(max_length=255, null=True)
+class AddressLookupResultSerializer(serializers.ModelSerializer):
+    """
+    Serializer for AddressLookupResult model.
+    """
+
+    class Meta:
+        model = AddressLookupResult
+        fields = '__all__'
+class AddressLookupResultView(ListAPIView, CreateAPIView):
+    serializer_class = AddressLookupResultSerializer
+    # For testing purposes, let's just grab the latest 100 so it doesn't take forever...
+    queryset = AddressLookupResult.objects.all().order_by('-lookup_date')[:100]
+
+    def post(self, request, *args, **kwargs):
+        """
+        Overloading this so that we catch the ValidationError that is being masked.
+        """
+        try:
+            return super(AddressLookupResultView, self).post(request, *args, **kwargs)
+        except Exception as e:
+            traceback.print_exc()
+            raise e
+    url(r'^rest/v1/address/address_lookup_result/$', AddressLookupResultView.as_view(), name='address_lookup_result_list_view'),
+    url(r'^rest/v1/address/address_lookup_result/<int:pk>/$', AddressLookupResultView.as_view(), name='address_lookup_result_detail_view'),
+Expected behavior
+When POSTing a JSON instance of AddressLookupResult to /rest/v1/address/lookup_result/ with validation errors (for example, an empty street_address or empty city), DRF should respond with the validation errors in JSON format.
+Actual behavior
+When POSTing a JSON instance of AddressLookupResult to /rest/v1/address/lookup_result/ with validation errors (for example, an empty street_address or empty city), the following error occurs:
+Traceback (most recent call last):
+  File "/home/usrfjt/TDS/ipm/ipm/availabilityareas/views.py", line 1147, in post
+    return super(AddressLookupResultView, self).post(request, *args, **kwargs)
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framework/generics.py", line 192, in post
+    return self.create(request, *args, **kwargs)
+  File "/home/usrfjt/TDS/ipm/ipm/availabilityareas/views.py", line 1139, in create
+    serializer.is_valid(raise_exception=True)
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framework/serializers.py", line 221, in is_valid
+    raise ValidationError(self.errors)
+ValidationError: {'city': [u'This field may not be blank.'], 'lookup_duration': [u'This field may not be null.'], 'full_address': [u'This field may not be blank.'], 'state': [u'This field may not be null.'], 'lookup_date': [u'This field may not be null.'], 'outcome': [u'This field may not be null.'], 'street_address': [u'This field may not be blank.'], 'zip_code': [u'This field may not be blank.']}
+AddressLookupResultView
+Internal Server Error: /ws/rest/v1/address/address_lookup_result/
+Traceback (most recent call last):
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/django/core/handlers/base.py", line 137, in get_response
+    response = response.render()
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/django/template/response.py", line 103, in render
+    self.content = self.rendered_content
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framework/response.py", line 71, in rendered_content
+    ret = renderer.render(self.data, media_type, context)
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framework/renderers.py", line 676, in render
+    context = self.get_context(data, accepted_media_type, renderer_context)
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framework/renderers.py", line 637, in get_context
+    'content': self.get_content(renderer, data, accepted_media_type, renderer_context),
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framAddressLookupResultViewework/renderers.py", line 399, in get_content
+    content = renderer.render(data, accepted_media_type, renderer_context)
+  File "/home/usrfjt/TDS/venvs/ipm_env/lib/python2.7/site-packages/rest_framework/renderers.py", line 104, in render
+    separators=separators
+  File "/usr/lib64/python2.7/json/__init__.py", line 250, in dumps
+    sort_keys=sort_keys, **kw).encode(obj)
+  File "/usr/lib64/python2.7/json/encoder.py", line 209, in encode
+    chunks = list(chunks)
+  File "/usr/lib64/python2.7/json/encoder.py", line 434, in _iterencode
+    for chunk in _iterencode_dict(o, _current_indent_level):
+  File "/usr/lib64/python2.7/json/encoder.py", line 408, in _iterencode_dict
+    for chunk in chunks:
+  File "/usr/lib64/python2.7/json/encoder.py", line 348, in _iterencode_dict
+    raise ValueError("Circular reference detected")
+ValueError: Circular reference detected
+It appears that the ValidationError, when being converted to JSON, is returning a JSON Circular reference detected error.
+I don't see anything in the ValidationError JSON that would be causing a circular reference error, and I don't see anything in the model that would cause this (there aren't even any relationships on the model).
+When I POST a valid instance, the AddressLookupResultView works correctly and the instance is created (with a 201 response).

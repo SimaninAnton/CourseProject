@@ -1,0 +1,57 @@
+roberts81 commented on 20 Nov 2012
+This actually didn't give me any trouble in 2.1.2 and then 2.1.3 broke it.
+First of all, this is a separate issue, but its really weird that this code is even being hit, because these are for model fields that are NOT listed in my 'fields' tuple in the Meta for my Serializer class. It seems that default_fields (at line 352 of serializers.py) builds serializer Fields for all the model fields that have serialize= True, regardless of whether the serializer Meta includes them. That seems inefficient. I'm sure there's a good reason, and if there's not, maybe thats a separate issue.
+Anyhow, the issue:
+I have model fields that are of a custom class, particularly, ThumbnailerImageFields from the wonderful easy_thumbnails package. The trouble happens at the get_field method of ModelSerializer. At line 432, the thumbnailer field has a max_length attribute, so 'max_length' gets added to kwargs. But the field doesn't map to any of the mappings, and KeyError is raised. At line 457 a ModelField is instantiated with the kwargs, which contain max_length. ModelField's init super's into WritableField.init (at line 218 of fields.py), but WritableField's init is not accommodating to a max_length kwarg and a standard bad kwarg exception gets raised.
+I'm really in a crunch, so can't submit a patch right now (i realize its not hard, but I've never done such a thing before, so it would take me some time to figure out), and will just stick with 2.1.2 for now, but I thought I'd step you through the problem to be as helpful as possible. There are obviously a few ways to deal with this. One would be to pop the max_length kwarg before sending it on, or to do the check after testing for a field_mapping, or a few other things that could be done to prevent this.
+Traceback:
+File "/app/.heroku/venv/lib/python2.7/site-packages/django/core/handlers/base.py" in get_response
+                    response = callback(request, _callback_args, *_callback_kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/newrelic-1.3.0.289/newrelic/hooks/framework_django.py" in call
+                return self.__wrapped(_args, *_kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/django/views/generic/base.py" in view
+        return self.dispatch(request, _args, *_kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/django/views/decorators/csrf.py" in wrapped_view
+    return view_func(_args, *_kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/views.py" in dispatch
+        response = self.handle_exception(exc)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/views.py" in dispatch
+        response = handler(request, _args, *_kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/generics.py" in get
+    return self.list(request, _args, *_kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/mixins.py" in list
+    return Response(serializer.data)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in data
+        self._data = self.to_native(self.object)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in to_native
+        return [self.convert_object(item) for item in obj]
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in convert_object
+        value = field.field_to_native(obj, field_name)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in field_to_native
+    return self.to_native(obj)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in to_native
+        return [self.convert_object(item) for item in obj]
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in convert_object
+        value = field.field_to_native(obj, field_name)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in field_to_native
+        return [self.to_native(item) for item in obj.all()]
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in to_native
+    return self.convert_object(obj)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in convert_object
+        value = field.field_to_native(obj, field_name)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in field_to_native
+    return self.to_native(obj)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in to_native
+    return self.convert_object(obj)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in convert_object
+    fields = self.get_fields(nested=bool(self.opts.depth))
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in get_fields
+    fields = self.default_fields(nested)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in default_fields
+            field = self.get_field(model_field)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/serializers.py" in get_field
+        return ModelField(model_field=model_field, **kwargs)
+File "/app/.heroku/venv/lib/python2.7/site-packages/rest_framework/fields.py" in init
+    super(ModelField, self).**init**(_args, *_kwargs)
+Exception Type: TypeError at /menu/api/menus/
+Exception Value: init() got an unexpected keyword argument 'max_length'

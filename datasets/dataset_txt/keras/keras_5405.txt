@@ -1,0 +1,19 @@
+Contributor
+braingineer commented on 20 Apr 2016 •
+edited
+Code for recreating here: https://gist.github.com/braingineer/727f9b3d7fbcd8a0f0d8cd1232d24c29
+Basically, If you do this:
+dense_func = Dense(1)
+TimeDistributed(dense_func)(in1)
+TimeDistributed(dense_func)(in2)
+dense_func is rebuilt and the weights are re-initialized.
+I think the current setup is that built gets set by topology.py in the Layer.__call__ and that's the expected behavior. However, TimeDistributed bypasses __call__and directly calls self.layer.call. Additionally, whenever TimeDistributed is built, it calls self.layer.build no matter what.
+I'll write up a PR, but where do you want to handle things? I'm not sure of the organization philosophy in this instance. TimeDistributed definitely needs to check for the layer being built. Aka, putting this here:
+       # inside TimeDistributed.build
+        if not self.layer.built:
+            self.layer.build(child_input_shape)
+I was thinking that in the case it's handled a not-built layer and has to build it, it should mark the built True here
+       # inside TimeDistributed.build
+        if not self.layer.built:
+            self.layer.build(child_input_shape)
+            self.layer.built = True

@@ -1,0 +1,79 @@
+ScientiaEtVeritas commented on 4 Jul 2017
+I'm trying to build a seq2seq autoencoder with the goal of getting a fixed sized vector from a sequence, which represents the sequence as good as possible. This means the output should exactly like the input. This autoencoder consists of two parts:
+LSTM Encoder: Takes a sequence and returns an output vector (return_sequences = False)
+LSTM Decoder: Takes an output vector and returns a sequence (return_sequences = True)
+The input looks like this (one-hot-encoded, 120 time steps with 115 vector length).
+array([[[1, 0, 0, ..., 0, 0, 0],
+        [0, 1, 0, ..., 0, 0, 0],
+        [0, 0, 1, ..., 0, 0, 0],
+        ..., 
+        [0, 0, 0, ..., 0, 0, 0],
+        [0, 0, 0, ..., 0, 0, 0],
+        [0, 0, 0, ..., 0, 0, 0]]])
+I have 11.000 examples.
+This is my current coding:
+ inp = Input((120,115))
+
+ out = LSTM(units = 200, return_sequences=True, activation='tanh')(inp)
+ out = LSTM(units = 180, return_sequences=True)(out)
+ out = LSTM(units = 140, return_sequences=True, activation='tanh')(out)
+ out = LSTM(units = 120, return_sequences=False, activation='tanh')(out)
+ encoder = Model(inp,out)   
+
+ out_dec = RepeatVector(120)(out) # I also tried to use Reshapeinstead, not really a difference
+
+ out1 = LSTM(200,return_sequences=True, activation='tanh')(out_dec)   
+ out1 = LSTM(175,return_sequences=True, activation='tanh')(out1)   
+ out1 = LSTM(150,return_sequences=True, activation='tanh')(out1)   
+ out1 = LSTM(115,return_sequences=True, activation='sigmoid')(out1) # I also tried softmax instead of sigmoid, not really a difference
+
+ decoder = Model(inp,out1)
+
+autoencoder = Model(encoder.inputs, decoder(encoder.inputs))
+
+autoencoder.compile(loss='binary_crossentropy',
+              optimizer='RMSprop',
+              metrics=['accuracy'])
+
+autoencoder.fit(padded_sequences[:9000], padded_sequences[:9000],
+          batch_size=150,
+          epochs=5,
+          validation_data=(padded_sequences[9001:], padded_sequences[9001:]))
+But after a few epochs of training, there is no improvement anymore.
+The output for the example in the beginning looks like this, not very much the same...
+array([[[ 0.14739206,  0.49056929,  0.06915747, ...,  0.        ,
+          0.        ,  0.        ],
+        [ 0.03878205,  0.7227878 ,  0.03550367, ...,  0.        ,
+          0.        ,  0.        ],
+        [ 0.02073009,  0.74334699,  0.03663541, ...,  0.        ,
+          0.        ,  0.        ],
+        ..., 
+        [ 0.        ,  0.08416401,  0.        , ...,  0.        ,
+          0.        ,  0.        ],
+        [ 0.        ,  0.08630376,  0.        , ...,  0.        ,
+          0.        ,  0.        ],
+        [ 0.        ,  0.08602102,  0.        , ...,  0.        ,
+          0.        ,  0.        ]]], dtype=float32)
+The embedding vector (produced by encoder.predict) looks like this (somehow weird as all values are nearly -1, 0, or 1).
+array([[ -1.00000000e+00,  -0.00000000e+00,  -1.00000000e+00,
+          1.00000000e+00,   1.00000000e+00,   9.99999523e-01,
+          1.00000000e+00,   9.99999881e-01,   1.00000000e+00,
+          9.99989152e-01,   9.99999821e-01,   9.99998808e-01,
+          1.00000000e+00,  -0.00000000e+00,  -4.86032724e-01,
+          9.99996543e-01,   1.00000000e+00,   0.00000000e+00,
+          1.00000000e+00,   0.00000000e+00,   0.00000000e+00,
+          1.00000000e+00,  -0.00000000e+00,   0.00000000e+00,
+          0.00000000e+00,  -0.00000000e+00,   9.99999464e-01,
+         -9.99999881e-01,  -0.00000000e+00,   4.75281268e-01,
+          3.01986277e-01,   6.65608108e-01,  -9.99999881e-01,
+          0.00000000e+00,  -0.00000000e+00,  -0.00000000e+00,
+          0.00000000e+00,  -0.00000000e+00,  -3.65448680e-15,
+         -9.99888301e-01,  -0.00000000e+00,  -1.00000000e+00,
+         -1.00000000e+00,  -9.90761220e-01,  -9.96851087e-01,
+         -0.00000000e+00,   0.00000000e+00,  -1.47916377e-02,
+         -9.99999523e-01,  -2.90349454e-01,  -9.99999702e-01,
+         -7.63339102e-02,  -1.00000000e+00,  -4.16638345e-01,
+         -9.99999940e-01,  -1.00000000e+00,  -9.99996841e-01,
+         ..............
+So I assume that's not the correct way to build a seq2seq autoencoder. What could be better?
+3

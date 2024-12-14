@@ -1,0 +1,66 @@
+Contributor
+ncullen93 commented on 12 Aug 2016 •
+edited
+When I upgrade from Keras1.0.6 to 1.0.7, the following code produces wildly different results for the loss. In 1.0.6, the loss starts ~1.5 and steadily decreases. In 1.0.7, however, the MSE loss starts around 14,000 .. which is clearly not correct. I'm thinking it's either a problem with the MSE objective, the convolution layer, or maybe the regularizer is not getting picked up. Note this code is trivial to reproduce the error.
+It happens w/ theano0.8.2 and 0.9.0dev. I'm using NVIDIA GPU with CUDA7.5 and visual studio VC12.0, cuDNN 5005.
+from __future__ import division
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers import Dense, Flatten, Convolution2D
+from keras.regularizers import l1l2
+from keras.optimizers import SGD
+
+
+images = np.random.randn(10000,1,32,32)
+
+x_train = images[0:8000,:,:,:]
+y_train = x_train.copy()
+x_test = images[8000:,:,:,:]
+y_test = x_test.copy()
+
+ytr = np.empty((y_train.shape[0],y_train.shape[-1]**2))
+yte = np.empty((y_test.shape[0],y_test.shape[-1]**2))
+for i in range(y_train.shape[0]):
+    ytr[i,:] = y_train[i,:,:,:].flatten()
+    if i < y_test.shape[0]:
+        yte[i,:] = y_test[i,:,:,:].flatten()
+y_train = ytr
+y_test = yte
+
+stride = (2,2)
+kernel_size = (15,15)
+nb_kernels = 2
+
+autoencoder = Sequential()
+autoencoder.add(Convolution2D(nb_kernels, kernel_size[0], kernel_size[1], 
+    border_mode='same', subsample=stride, W_regularizer=l1l2(l1=1.0,l2=0.1),
+    activation='relu', input_shape=(1,x_train.shape[-1],x_train.shape[-1])))
+autoencoder.add(Flatten())
+autoencoder.add(Dense(y_train.shape[-1], 
+    activation='tanh', W_regularizer=l1l2(l1=1.0,l2=0.1)))
+
+
+autoencoder.compile(optimizer=SGD(lr=0.5), loss='mse')
+
+autoencoder.fit(x_train, y_train,
+                nb_epoch=100,
+                batch_size=512,
+                verbose = 1,
+                validation_data=(x_test,y_test))
+1.0.7:
+Train on 8000 samples, validate on 2000 samples
+Epoch 1/100
+8000/8000 [==============================] - 0s - loss: 138498.2220 - val_loss: 1.9168
+Epoch 2/100
+8000/8000 [==============================] - 0s - loss: 140987.8638 - val_loss: 1.9382
+Epoch 3/100
+8000/8000 [==============================] - 0s - loss: 141583.5654 - val_loss: 1.9408
+1.0.6:
+Train on 8000 samples, validate on 2000 samples
+Epoch 1/100
+8000/8000 [==============================] - 0s - loss: 1.0857 - val_loss: 1.0002
+Epoch 2/100
+8000/8000 [==============================] - 0s - loss: 1.0361 - val_loss: 0.9999
+Epoch 3/100
+8000/8000 [==============================] - 0s - loss: 1.0316 - val_loss: 0.9999

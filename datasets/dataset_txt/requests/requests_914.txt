@@ -1,0 +1,49 @@
+htpasswd commented on Oct 5, 2016 •
+edited
+Hello. There is my example of code I'm using:
+import threading
+import resource
+import time
+import sys
+
+#maximum Open File Limit for thread limiter.
+maxOpenFileLimit = resource.getrlimit(resource.RLIMIT_NOFILE)[0] # For example, it shows 50.
+
+# I will use one session for every Thread.
+requestSessions = requests.Session()
+# Making the requests Pool bigger.
+adapter = requests.adapters.HTTPAdapter(pool_connections=maxOpenFileLimit, pool_maxsize=maxOpenFileLimit, pool_block=True)
+requestSessions.mount('http://', adapter)
+requestSessions.mount('https://', adapter)
+
+def requestAction(a1, a2):
+    global number
+    time.sleep(1) # My actions with Requests for each thread.
+    print number = number + 1
+
+number = 0 # Count of complete actions
+
+ThreadsActions = [] # Action tasks.
+for i in range(100): # I have 100 websites I need to do in parallel threads.
+    a1 = i
+    for n in range(3): # Every website I need to "GET" in 3 threads
+        a2 = n
+        ThreadsActions.append(threading.Thread(target=requestAction, args=(a1,a2)))
+
+
+for item in ThreadsActions:
+    # But I can't do more than 50 Threads at once, because of maxOpenFileLimit.
+    while True:
+        # Thread limiter, analogue of BoundedSemaphore.
+        if (int(threading.activeCount()) < threadLimiter):
+            item.start()
+            break
+        else:
+            time.sleep(.1)
+            continue
+
+for item in ThreadsActions:
+    item.join()
+But I'm getting an error: HTTPSConnectionPool(host='www.example.org', port=443): Max retries exceeded with url: /page?news-25 (Caused by NewConnectionError('<requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x7fdc5c138b90>: Failed to establish a new connection: [Errno -3] Temporary failure in name resolution',))
+As I read in issues, it might happens when some socket is stacked in CLOSE_WAIT status. If there are a lot of sockets, for example, because of slow connection or slow servers, the script might go to the point where all the sockets are in CLOSE_WAIT state. I tried to use max_retries=10, and got errors about Too many files openned.
+How to pause new requests if all the sockets are in CLOSE_WAIT state? Or why I'm getting these errors?

@@ -1,0 +1,27 @@
+faustomorales commented on 3 Feb 2019
+This is a similar issue to #6005 but I believe it is caused by the way h5py defines groups. In particular, if a layer named foo is in a network after a layer named foo/bar, h5py throws an exception. But the same does not occur if foo comes first. To reproduce, see the snippet below.
+from keras import layers, models
+
+# This raises an exception.
+input_layer = layers.Input((None, None, 3), name='test_input')
+x = layers.Conv2D(1, 1, name='conv1/conv')(input_layer)
+x = layers.BatchNormalization(name='conv1/bn')(x)
+x = layers.Activation('relu', name='conv1')(x)
+models.Model(inputs=input_layer, outputs=x).save_weights('test.h5')
+
+# This doesn't raise an exception
+input_layer = layers.Input((None, None, 3), name='test_input')
+x = layers.Conv2D(1, 1, name='conv1')(input_layer)
+x = layers.BatchNormalization(name='conv1/bn')(x)
+x = layers.Activation('relu', name='conv1/relu')(x)
+models.Model(inputs=input_layer, outputs=x).save_weights('test.h5')
+Perhaps we could provide a more helpful error message in keras/engine/saving.py? For example, changing part of save_weights_to_hdf5_group to the following would help trace the offending layer name.
+for layer in layers:
+    try:
+         g = group.create_group(layer.name)
+    except ValueError:
+         raise ValueError('An error occurred creating weights group for {0}.'.format(layer.name))
+    symbolic_weights = layer.weights
+    weight_values = K.batch_get_value(symbolic_weights)
+Happy to create PR if this is helpful.
+3

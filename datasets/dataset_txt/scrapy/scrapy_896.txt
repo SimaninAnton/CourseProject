@@ -1,0 +1,67 @@
+jh88 commented on Jun 22, 2016 •
+edited
+FormRequests will return response with empty bodies, but these pages are definitely not empty. And the empty pages are random.
+Here is a piece of code to test. I got a lot of empty responses if autothrottle is disabled and some when enabled. All Requests are fine, only FormRequests have the issue.
+import scrapy
+
+class TestcSpider(scrapy.Spider):
+    name = "testc"
+    # allowed_domains = ["http://shop.coles.com.au/"]
+    start_urls = ["http://shop.coles.com.au/online/national"]
+    # download_delay = 3
+
+    def parse(self, response):
+        for div in response.xpath('//ul[@id="aisleMenu"]/li/div')[1:]:
+            a = div.xpath('h2/a')
+            category_name = a.xpath('text()').extract_first().strip()
+            category_urlName = a.xpath('@href').re(r'/([^/]+)/*$')[0]
+
+
+            for li in div.xpath('ul/li'):
+                if (li.xpath('@class').extract_first()):
+                    subcategory_name = li.xpath('a/text()').extract_first().strip()
+                    subcategory_urlName = li.xpath('a/@href').re(r'/([^/]+)/*$')[0]
+                else:
+                    subsubcategory_name = li.xpath('a/text()').extract_first().strip()
+                    subsubcategory_urlName = li.xpath('a/@href').re(r'/([^/]+)/*$')[0]
+
+                    url = self.make_url(category_urlName, subcategory_urlName, subsubcategory_urlName)
+                    request = scrapy.Request(url, cookies={'ColesSearchPageSizeCookie': '100'}, callback = self.get_products)
+                    request.meta['category'] = [category_name, category_urlName]
+                    request.meta['subcategory'] = [subcategory_name, subcategory_urlName]
+                    request.meta['subsubcategory'] = [subsubcategory_name, subsubcategory_urlName]
+
+                    yield request
+
+
+    def get_products(self, response):
+
+        check = response.xpath('//div[@class="list-view viewContainer clearfix searchEspot"]/div[@class="outer-prod prodtile"]').extract_first()
+        if check is None:
+            print response.url
+            print response.meta
+            print '------------'
+
+        if response.xpath('//div[@class="pagination clearfix"]/ul[@class="navigator"]/li[@class="next"]').extract_first() is not None:
+            data_refresh = response.xpath('//div[@id="searchDisplay"]/@data-refresh').extract_first()
+            formdata = dict([
+                (x.split(':')[0].strip(), x.split(':')[1].strip("' "))
+                for x in data_refresh.strip("{}").split(',')
+            ])
+
+            formdata['beginIndex'] = str(int(formdata['beginIndex']) + int(formdata['pageSize']))
+
+            url = self.make_next_url(response.meta['category'][1], response.meta['subcategory'][1])
+            request = scrapy.FormRequest(url, cookies={'ColesSearchPageSizeCookie': '100'}, formdata = formdata, callback = self.get_products)
+            request.meta['category'] = response.meta['category']
+            request.meta['subcategory'] = response.meta['subcategory']
+            request.meta['subsubcategory'] = response.meta['subsubcategory']
+
+            yield request
+
+    def make_url(self, category_urlName, subcategory_urlName, subsubcategory_urlName):
+        return 'http://shop.coles.com.au/online/national/{0}/{1}/{2}'.format(category_urlName, subcategory_urlName, subsubcategory_urlName)
+
+
+    def make_next_url(self, category_urlName, subcategory_urlName):
+        return 'http://shop.coles.com.au/online/national/{0}/{1}/ColesCategoryView'.format(category_urlName, subcategory_urlName)

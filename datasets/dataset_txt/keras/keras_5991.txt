@@ -1,0 +1,61 @@
+sunshineatnoon commented on 6 Feb 2016
+I implemented a custom objective function, but during training, no message regarding training process or loss shows on the screen. So how can I get information about loss on each batch? Also, I use generate_batch_data to generate data, yielding one training sample every time. where should I specify the batch size?
+Here is my code:
+def generate_batch_data(vocPath,imageNameFile):
+    """
+    Args:
+      vocPath: the path of pascal voc data
+      imageNameFile: the path of the file of image names
+      batchsize: batch size, sample_number should be divided by batchsize
+    Funcs:
+      A data generator generates training batch indefinitely
+    """
+    sample_number = 5000 #use only 5000 images so we have more batchsize choices
+    class_num = 20
+
+    while 1:
+        for i in range(0,sample_number):
+            imageList = prepareBatch(i,i+1,imageNameFile,vocPath)
+            image_list = []
+            box_list = []
+
+            image_array = crop(imageList[0].imgPath,resize_width=512,resize_height=512,new_width=448,new_height=448)
+
+            y = []
+            for i in range(7):
+                for j in range(7):
+                    box = imageList[0].boxes[i][j]
+                    if(box.has_obj):
+                        obj = box.objs[0]
+
+                        y.append(obj.x)
+                        y.append(obj.y)
+                        y.append(obj.h)
+                        y.append(obj.w)
+
+                        labels = [0]*20
+                        labels[obj.class_num] = 1
+                        y.extend(labels)
+                    else:
+                        y.extend([0]*24)
+            y = np.asarray(y)
+            yield images,y
+
+def custom_loss(y_true,y_pred):
+    lamb = 4
+    loss = 0.0
+
+    for i in range(49):
+        cord_loss = 0.0
+        class_loss = 0.0
+        if(y_pred[i*24] != 0):
+            #if this cell has objects
+            cord_loss = lamb * T.square(y_pred[i*24:i*24+4] - y_true[i*24:i*24+4]), axis=-1)
+        else:
+            #if this cell doesn't have objects
+            cord_loss = 0
+        class_loss = T.square(y_pred[i*24+4:i*24+24] - y_true[i*24+4:i*24+24])
+        loss = loss + class_loss + cord_loss
+    return loss
+
+model.fit_generator(generate_batch_data(vocPath,imageNameFile),samples_per_epoch=100,nb_epoch=1,verbose=1)

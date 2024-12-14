@@ -1,0 +1,24 @@
+redbaron commented on 18 Jun 2013
+Because data is read in tight loops, there could be a case when EAGAIN is never returned if producer is fast enough. If it happens IOStream consumes max_buffer_size bytes and exits with error without having a chance to call streaming callback.
+                while not self.closed():
+                    if self._read_to_buffer() == 0:
+                        break
+Here is the minimal script which demonstrates the problem. Note that not on all systems it misbehaves. On Mac OS X it runs fine, simply because it happen that read syscall returns EAGAIN, but on our Linux servers it is not happening and Reached maximum read buffer size error is raised.
+#!/usr/bin/env python
+
+from tornado.process import Subprocess
+from tornado.log import enable_pretty_logging; enable_pretty_logging()
+import logging
+log = logging.getLogger("tornado.application")
+
+
+def main():
+    pipe = Subprocess(["/bin/cat", "/dev/zero"], stdout=Subprocess.STREAM).stdout
+    pipe.read_until_close(
+            lambda _: log.warn("Stream is closing"),
+            lambda chunk: log.info("Streamed chunk size %d", len(chunk)))
+    pipe.io_loop.start()
+
+
+if __name__ == '__main__':
+    main()

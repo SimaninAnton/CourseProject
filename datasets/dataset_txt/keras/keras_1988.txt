@@ -1,0 +1,48 @@
+javiercorrea commented on 6 Jul 2017 •
+edited
+TensorBoard callback fails on models with more than 3 inputs and there is validation data.
+Here's a test code:
+from keras.models import Model
+from keras.layers import Input, Dense, add 
+from keras.callbacks import TensorBoard
+import numpy as np
+
+num_inputs = 4 
+inputs = []
+for i in range(num_inputs):
+    inputs.append(Input(shape=(32,), name='input_'+str(i)))
+
+merged = add([Dense(16, name='dense_'+str(i))(inpt) for i,inpt in enumerate(inputs)],
+             name='merge')
+o = Dense(64, name='dense_o')(merged)
+
+model = Model(inputs=inputs, outputs=o)
+model.compile(optimizer='sgd', loss='mean_squared_error')
+
+batch_size = 100 
+x_train = [np.random.randn(batch_size, 32) for i in range(num_inputs)]
+y_train = np.random.randn(batch_size, 64) 
+
+x_val = [np.random.randn(batch_size, 32) for i in range(num_inputs)]
+y_val = np.random.randn(batch_size, 64) 
+model.fit(x=x_train, y=y_train,
+          validation_data=[x_val, y_val],
+          callbacks=[TensorBoard(histogram_freq=5)], epochs=100)
+if variable num_inputs is set to 3 or less, this code works.
+I think the problem lies in callbacks.py lines 762-764 of the latest keras:
+batch_val = []
+batch_val.append(val_data[0][i:i + step])
+batch_val.append(val_data[1][i:i + step])
+batch_val.append(val_data[2][i:i + step])
+should be changed for:
+batch_val = []
+for val_input in val_data:
+    val_entry = np.asarray(val_entry)
+    if val_entry.ndim > 1 and val_entry.shape[0] == val_size:
+        batch_val.append(val_input[i:i + step])
+    else:
+        batch_val.append(val_entry)
+Also, I'm not sure about line 765, for the learning phase tensor. I think it should be fixed at 0:
+batch_val.append(0)
+Instead of:
+batch_val.append(val_data[3])

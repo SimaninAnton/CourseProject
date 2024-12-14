@@ -1,0 +1,61 @@
+davidslater commented on 5 Dec 2016
+When keras models using backend are saved, the json (de)serialization cannot find "backend". This may be due to the use of the Lambda layer, as it appears that the name "backend" is saved in the json and then the loader cannot find it (because "backend" is not in its namespace). If it is imported as "K", then it works properly, because the loader imports backend as K.
+Possible Quick Fix: Update the documentation both in backend and Lambda that backend must be imported as "K". The current doc only has a note under backend, and seems to be just a suggestion: "You can import the backend module via: from keras import backend as K". Given standard python convention, it is unintuitive that "from keras import backend", "import keras.backend", or "from keras import backend as somethingelse" should function differently.
+Another workaround is to have the user add "from keras import backend" in their user-defined Lambda function.
+Best,
+David
+Here's a script that demonstrates working and non-working cases.
+theano.version = '0.9.0dev4.dev-ad1310c88830ed96119194c4f2da22b9b37c7622'
+keras.version = '1.1.2'
+from keras import backend as K
+from keras.layers.convolutional import Convolution1D
+from keras.layers import Lambda, Dense
+from keras.models import Sequential, model_from_json
+
+print 'Works'
+model = Sequential()
+model.add(Convolution1D(nb_filter=128, filter_length=5, input_shape=(4096, 16), border_mode='same', activation='relu'))
+model.add(Lambda(lambda x: K.sum(x, axis=1), output_shape=(128,)))
+model.add(Dense(10, activation='sigmoid'))
+model.compile(loss='binary_crossentropy', optimizer='Nadam')
+model2 = model_from_json(model.to_json())
+
+from keras import backend
+
+print 'Fails'
+model = Sequential()
+model.add(Convolution1D(nb_filter=128, filter_length=5, input_shape=(4096, 16), border_mode='same', activation='relu'))
+model.add(Lambda(lambda x: backend.sum(x, axis=1), output_shape=(128,)))
+model.add(Dense(10, activation='sigmoid'))
+model.compile(loss='binary_crossentropy', optimizer='Nadam')
+model2 = model_from_json(model.to_json())
+The second model load fails with this stack trace:
+Traceback (most recent call last):
+  File "keras_bug.py", line 23, in <module>
+    model2 = model_from_json(model.to_json())
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/models.py", line 209, in model_from_json
+    return layer_from_config(config, custom_objects=custom_objects)
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/utils/layer_utils.py", line 34, in layer_from_config
+    return layer_class.from_config(config['config'])
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/models.py", line 1061, in from_config
+    model.add(layer)
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/models.py", line 324, in add
+    output_tensor = layer(self.outputs[0])
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/engine/topology.py", line 517, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/engine/topology.py", line 571, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/engine/topology.py", line 155, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/Users/davidslater/.virtualenvs/davidslater/lib/python2.7/site-packages/keras/layers/core.py", line 592, in call
+    return self.function(x, **arguments)
+  File "keras_bug.py", line 20, in <lambda>
+    model.add(Lambda(lambda x: backend.sum(x, axis=1), output_shape=(128,)))
+NameError: global name 'backend' is not defined
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+2

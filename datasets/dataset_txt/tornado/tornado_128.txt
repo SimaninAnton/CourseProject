@@ -1,0 +1,38 @@
+willhak commented on 20 Sep 2018 •
+edited
+Using Tornado version 5.0 + (python 2.7 and 3.7) we've noticed that the AsyncHTTPClient causes the number of threads used by the Python process to grow and these don't seem to get cleaned up. The example below is trivial, but we use tornado in long running processes that are making hundreds of async fetches an hour and we find that we can quickly run into OS thread caps This same behaviour is not observed in Tornado versions 4.5.x. Should we expect threads created by the async client to be cleaned up once a request has completed?
+from tornado import httpclient, ioloop, gen
+import threading
+
+target = "http://google.com"
+client = httpclient.AsyncHTTPClient()
+
+def print_thread_count():
+        print ("There are {} threads".format(len(threading.enumerate())))
+
+async def get():
+        for i in range(10):
+                await client.fetch(target, method="GET")
+                print_thread_count()
+
+print_thread_count()
+print ("Starting fetch...")
+ioloop.IOLoop.current().run_sync(get)
+print ("Done fetching...")
+print_thread_count()
+Output:
+python3 test_tornado.py
+There are 1 threads
+Starting fetch...
+There are 3 threads
+There are 5 threads
+There are 7 threads
+There are 9 threads
+There are 11 threads
+There are 13 threads
+There are 15 threads
+There are 17 threads
+There are 19 threads
+There are 21 threads
+Done fetching...
+There are 21 threads

@@ -1,0 +1,78 @@
+hellopablo commented on 6 Sep 2018
+I am having trouble parsing installing certificates due to certbot complaining that it is unable to parse a custom environment variable. this is running inside a single docker container, if that's relevant.
+Any guidance here would be wonderful, I'm certain it's something I am doing wrong rather than an issue with certbot.
+Many thanks,
+Pablo.
+My operating system is (include version):
+Debian Stretch (i.e the container)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+apt-get install python-certbot-apache -y -t stretch-backports
+I ran this command and it produced this output:
+cerbot --apache
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+The apache plugin is not working; there may be problems with your existing configuration.
+The error was: PluginError('Error Parsing variable: ${DOMAIN}',)
+echo $DOMAIN prints out the expected result
+Certbot's behavior differed from what I expected because:
+I expected to be able to create the certificate
+Here is a Certbot log showing the issue (if available):
+018-09-06 09:52:05,769:DEBUG:certbot.main:certbot version: 0.25.0
+2018-09-06 09:52:05,770:DEBUG:certbot.main:Arguments: ['--apache']
+2018-09-06 09:52:05,770:DEBUG:certbot.main:Discovered plugins: PluginsRegistry(PluginEntryPoint#apache,PluginEntryPoint#manual,PluginEntryPoint#null,PluginEntryPoint#standalone,PluginEntryPoint#webroot)
+2018-09-06 09:52:05,784:DEBUG:certbot.log:Root logging level set at 20
+2018-09-06 09:52:05,785:INFO:certbot.log:Saving debug log to /var/log/letsencrypt/letsencrypt.log
+2018-09-06 09:52:05,787:DEBUG:certbot.plugins.selection:Requested authenticator apache and installer apache
+2018-09-06 09:52:05,893:DEBUG:certbot_apache.configurator:Apache version is 2.4.25
+2018-09-06 09:52:06,287:DEBUG:certbot.plugins.disco:Other error:(PluginEntryPoint#apache): Error Parsing variable: ${DOMAIN}
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/certbot_apache/parser.py", line 452, in get_arg
+    value = value.replace(var, self.variables[var[2:-1]])
+KeyError: 'DOMAIN'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/certbot/plugins/disco.py", line 127, in prepare
+    self._initialized.prepare()
+  File "/usr/lib/python3/dist-packages/certbot_apache/configurator.py", line 237, in prepare
+    self.vhosts = self.get_virtual_hosts()
+  File "/usr/lib/python3/dist-packages/certbot_apache/configurator.py", line 817, in get_virtual_hosts
+    new_vhost = self._create_vhost(path)
+  File "/usr/lib/python3/dist-packages/certbot_apache/configurator.py", line 793, in _create_vhost
+    self._add_servernames(vhost)
+  File "/usr/lib/python3/dist-packages/certbot_apache/configurator.py", line 743, in _add_servernames
+    servername, serveraliases = self._get_vhost_names(host.path)
+  File "/usr/lib/python3/dist-packages/certbot_apache/configurator.py", line 725, in _get_vhost_names
+    serveralias = self.parser.get_arg(alias)
+  File "/usr/lib/python3/dist-packages/certbot_apache/parser.py", line 454, in get_arg
+    raise errors.PluginError("Error Parsing variable: %s" % var)
+certbot.errors.PluginError: Error Parsing variable: ${DOMAIN}
+2018-09-06 09:52:06,289:DEBUG:certbot.plugins.selection:No candidate plugin
+2018-09-06 09:52:06,289:DEBUG:certbot.plugins.selection:Selected authenticator None and installer None
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+# Configre VirtualHosts
+# Redirect all non-secure traffic to secure
+<VirtualHost *:80>
+    ServerName ${DOMAIN}
+    ServerAlias www.${DOMAIN}
+    RewriteEngine on
+    RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,QSA,R=permanent]
+</VirtualHost>
+
+# Naked domain
+<VirtualHost *:443>
+    ServerName ${DOMAIN}
+    DocumentRoot /var/www/html
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/localhost/localhost.crt
+    SSLCertificateKeyFile /etc/ssl/localhost/localhost.key
+</VirtualHost>
+
+# WWW domain
+<VirtualHost *:443>
+    ServerName www.${DOMAIN}
+    DocumentRoot /var/www/html
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/localhost/localhost.crt
+    SSLCertificateKeyFile /etc/ssl/localhost/localhost.key
+</VirtualHost>

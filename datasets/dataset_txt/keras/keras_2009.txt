@@ -1,0 +1,113 @@
+kbitsakos commented on 3 Jul 2017
+The issue should appear on both Linux (Ubuntu 16.04 and OSX 10.12).
+One can use the following script to reproduce the problem.
+from collections import OrderedDict
+from keras.layers import Input, Embedding, Dense, concatenate, GlobalAveragePooling1D
+from keras.models import Model
+import keras.losses
+from keras.models import save_model, load_model
+
+
+def create_embeddings():
+    ret = {}
+    xy_embedding = Embedding(output_dim=10,
+                             input_dim=10,
+                             input_length=3,
+                             name='xy_embedding')
+    ret['x'] = xy_embedding
+    ret['y'] = xy_embedding
+    return ret
+
+
+def create_inputs():
+    inputs = OrderedDict()
+    inputs['x'] = Input(shape=(3,), dtype='int32', name='x')
+    inputs['y'] = Input(shape=(1,), dtype='int32', name='y')
+    inputs['z'] = Input(shape=(3,), dtype='float32', name='z')
+    return inputs
+
+
+def create_outputs(input_features):
+    embeddings = create_embeddings()
+    x_embedding = embeddings['x'](input_features['x'])
+    x_embedding_flat = GlobalAveragePooling1D()(x_embedding)
+
+    y_embedding = embeddings['y'](
+        input_features['y'])
+    y_embedding_flat = GlobalAveragePooling1D()(y_embedding)
+
+    z = input_features['z']
+    xz = concatenate([x_embedding_flat, z])
+    w = concatenate([xz, y_embedding_flat])
+    out = Dense(10, name='out', activation='softmax')(w)
+    return out
+
+
+def run_job():
+
+    inputs = create_inputs()
+    inputs_list = [value for value in inputs.itervalues()]
+    outputs = create_outputs(inputs)
+
+    model = Model(inputs=inputs_list, outputs=outputs)
+    model.summary()
+    print_model_depth(model)
+    model.compile(optimizer='sgd',
+                  loss=keras.losses.sparse_categorical_crossentropy,
+                  metrics=['accuracy'])
+    save_model(model, "./model.hdf5")
+    load_model("./model.hdf5")
+    return model
+
+
+def print_model_depth(model):
+    for depth, layers in model.layers_by_depth.items():
+        for layer in layers:
+            print("Layer name:{}, depth:{}".format(layer.name, depth))
+
+
+if __name__ == '__main__':
+    run_job()
+There are two input variables (x, y) that share the embedding layer (xy_embedding). The network summary is
+____________________________________________________________________________________________________
+Layer (type)                     Output Shape          Param #     Connected to                     
+====================================================================================================
+x (InputLayer)                   (None, 3)             0                                            
+____________________________________________________________________________________________________
+xy_embedding (Embedding)         (None, 3, 10)         100         x[0][0]                          
+                                                                   y[0][0]                          
+____________________________________________________________________________________________________
+y (InputLayer)                   (None, 1)             0                                            
+____________________________________________________________________________________________________
+global_average_pooling1d_1 (Glob (None, 10)            0           xy_embedding[0][0]               
+____________________________________________________________________________________________________
+z (InputLayer)                   (None, 3)             0                                            
+____________________________________________________________________________________________________
+concatenate_1 (Concatenate)      (None, 13)            0           global_average_pooling1d_1[0][0] 
+                                                                   z[0][0]                          
+____________________________________________________________________________________________________
+global_average_pooling1d_2 (Glob (None, 10)            0           xy_embedding[1][0]               
+____________________________________________________________________________________________________
+concatenate_2 (Concatenate)      (None, 23)            0           concatenate_1[0][0]              
+                                                                   global_average_pooling1d_2[0][0] 
+____________________________________________________________________________________________________
+out (Dense)                      (None, 10)            240         concatenate_2[0][0]              
+====================================================================================================
+Total params: 340
+Trainable params: 340
+Non-trainable params: 0
+____________________________________________________________________________________________________
+Printing the depth of each layer reveals the problem
+Layer name:out, depth:0
+Layer name:concatenate_2, depth:1
+Layer name:concatenate_1, depth:2
+Layer name:global_average_pooling1d_2, depth:2
+Layer name:global_average_pooling1d_1, depth:3
+Layer name:z, depth:3
+Layer name:xy_embedding, depth:4
+Layer name:y, depth:4
+Layer name:x, depth:5
+Input variable y has the same depth as the xy_embedding layer, thus when loading the model we get a ValueError exception because y is not initialized before xy_embedding.
+  File "python2.7/site-packages/keras/engine/topology.py", line 2437, in process_layer
+    raise ValueError('Missing layer: ' + inbound_layer_name)
+ValueError: Missing layer: y

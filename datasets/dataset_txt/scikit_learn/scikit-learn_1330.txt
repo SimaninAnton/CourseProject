@@ -1,0 +1,76 @@
+hantingxie commented on Jun 11, 2018 •
+edited
+Description
+This issue is initially discovered in #8236 .
+Many estimators (e.g., PCA, RidgeRegression, SpectralClustering) in Scikit-learn are currently depending on the SVD implementation in Scipy.
+However, on some devices (MacBook in my case), you may face Segmanetation fault caused by the SVD if you import XGboost as well in a code. There might be some low-level conflicts between the packing of these two libraries.
+Steps/Code to Reproduce
+import numpy as np
+from scipy import linalg
+
+import xgboost # this causes conflicts, remove this to pass !!!!
+
+num_samples = [
+    100,  # can pass in any case
+    500  # cannot pass with xgboost imported and scipy svd used
+]
+for num_sample in num_samples:
+    x = np.random.sample((num_sample, 100))
+    n_samples, n_features = x.shape
+    # Center data
+    mean = np.mean(x, axis=0)
+    x_transformed = x - mean
+
+    # can pass in any case
+    u, s, v = np.linalg.svd(x_transformed, full_matrices=False)  
+    print('reached 1')
+
+    # cannot pass with xgboost imported and larger number of samples
+    u, s, v = linalg.svd(x_transformed, full_matrices=False)  
+    print('reached 2')
+Expected Results
+reached 1
+reached 2
+reached 1
+reached 2
+Actual Results
+reached 1
+reached 2
+reached 1
+Segmentation fault: 11
+Versions
+python --version
+Python 2.7.13 :: Anaconda custom (64-bit)
+import platform; print(platform.platform())
+Darwin-16.7.0-x86_64-i386-64bit
+import sys; print("Python", sys.version)
+('Python', '2.7.13 |Anaconda custom (64-bit)| (default, Sep 21 2017, 17:38:20) \n[GCC 4.2.1 Compatible Clang 4.0.1 (tags/RELEASE_401/final)]')
+import numpy; print("NumPy", numpy.version)
+('NumPy', '1.14.3')
+import scipy; print("SciPy", scipy.version)
+('SciPy', '0.19.1')
+import sklearn; print("Scikit-Learn", sklearn.version)
+('Scikit-Learn', '0.19.1')
+import xgboost; print("XGBoost", xgboost.version)
+('XGBoost', '0.71')
+Discussions
+Apparently there are some low level conflicts between Scipy and XGBoost. Not sure if this is only for the versions that I'm using here. Also I'm not sure if Scipy's implementation of svd is also conflicting with any other C based libraries.
+Note that I can only reproduce this error with Python 2 but not on Python 3.
+I have tried to use gdb to get further details. Since that I'm using the Anaconda, there is no debugging symbols available, so the results might be useless:
+Reading symbols from python...(no debugging symbols found)...done.
+(gdb) run
+Starting program: /Users/hanting/anaconda/envs/python2/bin/python seg_error.py
+[New Thread 0x1903 of process 28604]
+warning: unhandled dyld version (15)
+
+Thread 2 received signal EXC_SOFTWARE, Software generated exception.
+0x0000000100005000 in ?? ()
+(gdb) bt
+#0  0x0000000100005000 in ?? ()
+#1  0x0000000100000000 in ?? ()
+#2  0x0000000000000002 in ?? ()
+#3  0x00007fff5fbffc10 in ?? ()
+#4  0x00007fff5fbffc40 in ?? ()
+#5  0x0000000000000000 in ?? ()
+Temporary workaround
+You can patch the codes that are using Scipy SVD to use np.linalg.svd instead to pass.

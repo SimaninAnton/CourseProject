@@ -1,0 +1,63 @@
+bacongobbler commented on 9 Mar 2015
+I found an interesting "bug" with Django Rest Framework along with how Django's DateTimeField works. Given the following TestCase:
+class ReadOnlyDateTimeModel(models.Model):
+    date = models.DateTimeField()
+
+    def save(self, *args, **kwargs):
+        self.date = '2015-02-03 00:00:00'
+        return super(ReadOnlyDateTimeModel, self).save(*args, **kwargs)
+
+
+class ReadOnlyDateTimeSerializer(serializers.ModelSerializer):
+    date = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = ReadOnlyDateTimeModel
+
+
+class ReadOnlyDateTimeView(generics.ListCreateAPIView):
+    queryset = ReadOnlyDateTimeModel.objects.all()
+    serializer_class = ReadOnlyDateTimeSerializer
+
+
+class TestReadOnlyFieldSerializer(TestCase):
+    def setUp(self):
+        self.view = ReadOnlyDateTimeView.as_view()
+
+    def test_model_save_works(self):
+        obj = ReadOnlyDateTimeModel.objects.create()
+        assert obj.date == '2015-02-03 00:00:00'
+
+    def test_post_root_view(self):
+        """
+        POST requests to ListCreateAPIView should create a new object.
+        """
+        data = {'price': 1}
+        request = factory.post('/', data, format='json')
+        response = self.view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+I see this error:
+tests/test_generics.py:544: in test_post_root_view
+    response = self.view(request).render()
+/usr/local/lib/python2.7/site-packages/django/views/decorators/csrf.py:57: in wrapped_view
+    return view_func(*args, **kwargs)
+/usr/local/lib/python2.7/site-packages/django/views/generic/base.py:69: in view
+    return self.dispatch(request, *args, **kwargs)
+rest_framework/views.py:452: in dispatch
+    response = self.handle_exception(exc)
+rest_framework/views.py:449: in dispatch
+    response = handler(request, *args, **kwargs)
+rest_framework/generics.py:244: in post
+    return self.create(request, *args, **kwargs)
+rest_framework/mixins.py:21: in create
+    headers = self.get_success_headers(serializer.data)
+rest_framework/serializers.py:466: in data
+    ret = super(Serializer, self).data
+rest_framework/serializers.py:213: in data
+    self._data = self.to_representation(self.instance)
+rest_framework/serializers.py:435: in to_representation
+    ret[field.field_name] = field.to_representation(attribute)
+rest_framework/fields.py:879: in to_representation
+    value = value.isoformat()
+E   AttributeError: 'unicode' object has no attribute 'isoformat'
+It seems like Django will accept a formatted string as input, however DRF tries to format the field as a datetime rather than a string, causing the above failure case. If I change self.date = '2015-02-03 00:00:00' to self.date = datetime.datetime.now(), it all works as expected.

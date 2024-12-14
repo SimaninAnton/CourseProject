@@ -1,0 +1,66 @@
+lucabergamini commented on 19 May 2017
+I've found a suspicious behaviour using Adam optimizer on the two backends during training on GPU. Even after the first batch of the first epoch the loss begin to change substantially between the two, leading to completing different results.
+My setup is the following:
+Theano==0.9.0
+tensorflow==1.2.0rc0
+Keras==2.0.4
+The following script produces the output below for theano and tensorflow (mind the note about the saving of the weights the first time using tensorflow for reproducibility):
+import numpy
+#seed
+numpy.random.seed(6)
+
+from keras.layers import Dense,Activation,Flatten,Conv2D,Input,MaxPooling2D
+from keras.optimizers import SGD,Adam,Adadelta
+from keras.engine import Model
+#just a bunch of random data
+data = numpy.random.randint(0,255,(256,224,224,3),dtype="uint8")
+labels = numpy.random.randint(-40,40,(256,8))
+
+
+# just some conv layers
+i = Input(shape=(224,224,3))
+x = Conv2D(filters=64,kernel_size=(7,7))(i)
+x = Activation("relu")(x)
+x = Conv2D(filters=64,kernel_size=(7,7))(x)
+x = Activation("relu")(x)
+x = MaxPooling2D(pool_size=(4,4))(x)
+x = Flatten()(x)
+
+x = Dense(64)(x)
+x = Activation("relu")(x)
+regression = Dense(8)(x)
+
+
+m = Model(inputs = i, outputs = regression)
+m.compile(optimizer=Adam(),loss="mse")
+
+# FIRST TIME YOU MUST SAVE THE WEIGHTS USING TF
+# AFTER THE FIRST TIME JUST LOAD THE SAVED WEIGHTS
+#m.save_weights("weight")
+m.load_weights("weight")
+
+
+#shuffle False 
+m.fit(data,labels,batch_size=64,epochs=1,verbose=1,shuffle=False)
+print m.predict(data[0:2])
+theano output:
+Epoch 1/1
+ 64/256 [======>.......................] - ETA: 4s - loss: 4376.9785
+128/256 [==============>...............] - ETA: 2s - loss: 3911741.9893
+192/256 [=====================>........] - ETA: 1s - loss: 2724266.4095
+256/256 [==============================] - 5s - loss: 2057485.4937     
+[[ 75.25156403 -21.78306198   4.46948481 -45.56488419 -17.11978722
+   21.7769928    9.39421368  -1.17750597]
+ [ 75.70091248 -26.04473495   7.39787912 -48.53498459 -18.33971405
+   23.88442802  11.57343578   1.10816526]]
+tensorflow output:
+Epoch 1/1
+ 64/256 [======>.......................] - ETA: 7s - loss: 4305.3589
+128/256 [==============>...............] - ETA: 2s - loss: 3202171.1794
+192/256 [=====================>........] - ETA: 1s - loss: 2176515.5806
+256/256 [==============================] - 3s - loss: 1634411.5006     
+[[ 16.88379288   0.0546287   12.6675539   -4.60460424   4.56019258
+   -4.61473322  -3.14350152   3.76243567]
+ [ 18.1175251   -0.51430005  10.4362421   -3.66809964   7.15978241
+   -3.7258842   -2.6210978    3.76560569]]
+This seems to happen with Adam and also Adadelta (with very less strong), while it doesn't using SGD (I've set lr really low, because of the few Conv layers)

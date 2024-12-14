@@ -1,0 +1,101 @@
+jerilkuriakose commented on 6 Sep 2019
+Hi,
+I was trying to find the ner entities from a paragraph, and I was using the en_core_web_sm model for it. The model was able to identify most of the required entities, but a few were not identified. The following is the code:
+import spacy
+nlp = spacy.load('en_core_web_sm')
+sentence = u"""
+ICICI bank is a banking company. New York City on Tuesday declared a public health emergency and ordered mandatory measles vaccinations amid an outbreak, becoming the latest national flash point over refusals to inoculate against dangerous diseases.
+
+At least 285 people have contracted measles in the city since seventh of September, mostly in Brooklyn’s Williamsburg neighborhood. The order covers four Zip codes there, Mayor Bill de Blasio (D) said Tuesday.
+
+The mandate orders all unvaccinated people in the area, including a concentration of Orthodox Jews, to receive inoculations, including for children as young as 6 months old. Anyone who resists could be fined up to $1,000.
+
+Thodupuzha is a nice play to stay, and is Pala.
+"""
+nytimes = nlp(sentence)
+entities = [(i, i.label_, i.label) for i in nytimes.ents]
+print(entities)
+The following is the output:
+[(, 'GPE', 382),
+ (New York City, 'GPE', 382),
+ (Tuesday, 'DATE', 388),
+ (At least 285, 'CARDINAL', 394),
+ (seventh, 'ORDINAL', 393),
+ (September, 'DATE', 388),
+ (Brooklyn, 'GPE', 382),
+ (Williamsburg, 'GPE', 382),
+ (four, 'CARDINAL', 394),
+ (Zip, 'PERSON', 378),
+ (Bill de Blasio, 'PERSON', 378),
+ (Tuesday, 'DATE', 388),
+ (Orthodox, 'NORP', 379),
+ (Jews, 'NORP', 379),
+ (6 months old, 'DATE', 388),
+ (1,000, 'MONEY', 391),
+ (Thodupuzha, 'PERSON', 378),
+ (Pala, 'PERSON', 378),
+ (, 'GPE', 382)]
+The problem here was, it didn't identify ICICI bank as an ORG, and it identified two places / locations (LOC) such as Thodupuzha and Pala as PERSON. So I thought of training the existing en_core_web_sm model with the entities that were not identified. I Googled my requirement and found Pseudo-rehearsal to be a solution. The following is the code to update the model:
+import random
+from spacy.gold import GoldParse
+from cytoolz import partition_all
+# training data
+TRAIN_DATA = [
+    ("Where is ICICI bank located", {"entities": [(9, 18, "ORG")]}),
+    ("I like Thodupuzha and Pala", {"entities": [(7, 16, "LOC"), (22, 25, "LOC")]}),
+    ("Thodupuzha is a tourist place", {"entities": [(0, 9, "LOC")]}),
+    ("Pala is famous for mangoes", {"entities": [(0, 3, "LOC")]}),
+    ("ICICI bank is one of the largest bank in the world", {"entities": [(0, 9, "ORG")]}),
+    ("ICICI bank has a branch in Thodupuzha", {"entities": [(0, 9, "ORG"), (27, 36, "LOC")]}),
+]
+# preparing the revision data
+revision_data = []
+for doc in nlp.pipe(list(zip(*TRAIN_DATA))[0]):
+    tags = [w.tag_ for w in doc]
+    heads = [w.head.i for w in doc]
+    deps = [w.dep_ for w in doc]
+    entities = [(e.start_char, e.end_char, e.label_) for e in doc.ents]
+    revision_data.append((doc, GoldParse(doc, tags=tags, heads=heads,
+                                         deps=deps, entities=entities)))
+# preparing the fine_tune_data
+fine_tune_data = []
+for raw_text, entity_offsets in TRAIN_DATA:
+    doc = nlp.make_doc(raw_text)
+    gold = GoldParse(doc, entities=entity_offsets['entities'])
+    fine_tune_data.append((doc, gold))
+# training the model
+n_epoch = 10
+batch_size = 2
+for i in range(n_epoch):
+    examples = revision_data + fine_tune_data
+    losses = {}
+    random.shuffle(examples)
+    for batch in partition_all(batch_size, examples):
+        docs, golds = zip(*batch)
+        nlp.update(docs, golds, drop=0.0, losses=losses)
+# finding ner with the updated model
+nytimes = nlp(sentence)
+entities = [(i, i.label_, i.label) for i in nytimes.ents]
+print(entities)
+The following is the ouput after training:
+[(New York City, 'GPE', 382),
+ (Tuesday, 'DATE', 388),
+ (At least 285, 'CARDINAL', 394),
+ (Brooklyn, 'GPE', 382),
+ (Williamsburg, 'GPE', 382),
+ (four, 'CARDINAL', 394),
+ (Zip, 'PERSON', 378),
+ (Bill de Blasio, 'PERSON', 378),
+ (Tuesday, 'DATE', 388),
+ (Orthodox, 'NORP', 379),
+ (Jews, 'NORP', 379),
+ (6 months old, 'DATE', 388),
+ (1,000, 'MONEY', 391),
+ (Thodupuzha, 'PERSON', 378),
+ (Pala, 'PERSON', 378)]
+In the output one ner entities went missing for e.g., (seventh, 'ORDINAL', 393), and the places / locations (LOC) such as Thodupuzha and Pala are still getting predicted as PERSON, whereas it was trained for LOC. Is there something that I am missing? Kindly help.
+Environment
+Operating System: Windows 7 Professional
+Python Version Used: 3.6.5
+spaCy Version Used: 2.0.11
+Environment Information: Jupyter notebook 4.4.0

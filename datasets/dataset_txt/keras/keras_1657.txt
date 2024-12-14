@@ -1,0 +1,76 @@
+Contributor
+bdwyer2 commented on 19 Sep 2017
+I'm doing binary classification on images with a simple CNN
+When I use this code for my image data generator the model converges to about 90% accuracy after about 5 epochs:
+train_datagen=ImageDataGenerator(rescale=1.0/255, cval=0.0)
+however with this code the model never converges:
+train_datagen=ImageDataGenerator(rescale=1.0/255, cval=0)
+here is my full script for reference:
+import os
+#os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
+import keras
+from keras import metrics, optimizers
+from keras.models import Model
+from keras.layers import Activation, Input, Dense, Dropout, Flatten, Dense, Conv2D, MaxPooling2D
+from keras.preprocessing import image
+from keras.preprocessing.image import ImageDataGenerator
+from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
+import numpy as np
+import sklearn as skl
+
+size_x, size_y = 1024, 1320
+batch_size=6
+num_epoch=25
+
+input_img=Input(shape=(size_x, size_y, 3))
+
+x=Conv2D(32, (3, 3), activation='relu')(input_img)
+x=Conv2D(32, (3, 3), activation='relu')(x)
+x=MaxPooling2D(pool_size=(2, 2))(x)
+
+x=Conv2D(64, (3, 3), activation='relu')(x)
+x=Conv2D(64, (3, 3), activation='relu')(x)
+x=MaxPooling2D(pool_size=(2, 2))(x)
+
+x=Conv2D(64, (3, 3), activation='relu')(x)
+x=MaxPooling2D(pool_size=(2,2))(x)
+
+x=Flatten()(x)
+x=Dense(64, activation='relu')(x)
+x=Dropout(0.5)(x)
+x=Dense(1, activation='sigmoid')(x)
+
+model=Model(inputs=input_img, outputs=x)
+
+model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+
+train_datagen=ImageDataGenerator(rescale=1.0/255, cval=0.0)
+
+valid_datagen=ImageDataGenerator(rescale=1.0/255)
+
+train_generator=train_datagen.flow_from_directory(
+        'img/train',
+        target_size=(size_x, size_y),
+        batch_size=batch_size,
+        class_mode='binary'
+        )
+
+valid_generator=valid_datagen.flow_from_directory(
+        'img/valid'
+        target_size=(size_x, size_y),
+        batch_size=batch_size,
+        class_mode='binary'
+        )
+
+weights=skl.utils.class_weight.compute_class_weight('balanced', np.unique(train_generator.classes), train_generator.classes)
+class_weight = {0: weights[0], 1: weights[1]}
+
+model.fit_generator(
+        generator=train_generator,
+        steps_per_epoch=train_generator.samples // train_generator.batch_size,
+        epochs=num_epoch,
+        validation_data=valid_generator,
+        validation_steps=valid_generator.samples // valid_generator.batch_size,
+        class_weight=class_weight
+        )

@@ -1,0 +1,18 @@
+fvisin commented on 28 Apr 2016
+The format of the input that fit_generator expects to receive from the generator object is not clearly documented.
+According to the documentation:
+The output of the generator must be either
+- a tuple (inputs, targets)
+- a tuple (inputs, targets, sample_weights).
+All arrays should contain the same number of samples. The generator is expected to loop over its data indefinitely. An epoch finishes when samples_per_epoch samples have been seen by the model.
+The format of inputs and targets is not properly documented, but some assumptions are made in the code.
+For some reason in case x is a list, Keras expects the batches to be in the second axis (see L1359). It is not clear to me and is not documented what should go on the first axis, but I have reason to believe it has to do with self.input_names, whatever that is (see below). This comment #1428 (comment) is also related.
+Later on, more undocumented assumptions on the data format are made. Specifically, this is the stacktrace that I reconstructed by manually (see #2538) inspecting the code:
+fit_generator --> train_on_batch(x, ..) --> _standardize_user_data(x, ..) --> standardize_user_data(x, ..).
+This last function expects as an input a list of arrays, dictionary of arrays, or as a single array.
+This is not documented in fit_generator and train_on_batch.
+This does not work when the data is a list of lists (specifically, it will fail every time the shape argument is accessed (see e.g. L91)
+As a consequence of ii., it is not possible to use fit_generator and train_on_batch with variable-size inputs (see example below).
+Example:
+Say that I have some 5D video data of dimensions [batches, frames, height, width, channels], where each batch will contain a 20 frames with the same resolution, but the resolution of the video varies among the batches. This cannot be saved as a numpy array because the data is not homogeneous. This breaks the assumption of standardize_user_data and makes it impossible to use Keras for this kind of data AFAIK.
+2

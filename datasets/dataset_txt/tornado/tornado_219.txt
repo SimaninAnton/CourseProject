@@ -1,0 +1,77 @@
+pivdets commented on 14 Mar 2018 •
+edited
+update: I just remove the java part and use python to show the subprocess.
+origin:
+I post the same thread in SO, but got no answer, so I repost it here.
+I've a tornado program which uses async to call subprocess and return the result.
+import tornado.ioloop
+import tornado.web
+from tornado.process import Subprocess
+from tornado.gen import coroutine, Task, Return
+import subprocess
+
+
+class MainHandler(tornado.web.RequestHandler):
+    @coroutine
+    def get(self):
+        appid = self.get_argument("appid")
+        cmd = ['/usr/local/bin/python2.7', 'jarlib101.py', appid]
+
+        result, error = yield self.call_subprocess(cmd)
+
+        with open('defx.txt', 'r') as myfile:
+            data=myfile.read()
+
+        self.write(data)
+
+
+    @coroutine
+    def call_subprocess(self, cmd, stdin_data=None, stdin_async=True):
+        stdin = Subprocess.STREAM if stdin_async else subprocess.PIPE
+        sub_process = Subprocess(cmd,
+                                 stdin=stdin,
+                                 stdout=Subprocess.STREAM,
+                                 stderr=Subprocess.STREAM,)
+        if stdin_data:
+            if stdin_async:
+                yield Task(sub_process.stdin.write, stdin_data)
+            else:
+                sub_process.stdin.write(stdin_data)
+
+        if stdin_async or stdin_data:
+            sub_process.stdin.close()
+
+        result, error = yield [Task(sub_process.stdout.read_until_close),
+                               Task(sub_process.stderr.read_until_close),]
+
+        raise Return((result, error))
+
+
+
+def make_app():
+    return tornado.web.Application([
+        (r"/webmini", MainHandler),
+    ])
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8845)
+    tornado.ioloop.IOLoop.current().start()
+Here's the source code of the jarlib101.py:
+from time import sleep
+import sys
+
+sleep(5)
+
+appid = sys.argv[1]
+
+with open('defx.txt', 'w') as myfile:
+    myfile.write(appid)
+The python code works well on my MacBook laptop:
+$ /usr/local/bin/python2 webmini2.py
+I test it in a browser as follows:
+But when I upload my code to centOS and start the server
+$ /usr/local/bin/python2.7 webmini2.py
+I got an empty response from the browser, but there's an deft.txt on the server folder with content
+$cat defx.txt
+1299w

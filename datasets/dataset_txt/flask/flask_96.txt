@@ -1,0 +1,49 @@
+kaos commented on 19 Jul 2019
+Related to #2935 but for g.
+Expected Behavior
+When I use @copy_current_request_context it should preserve the contents in flask.g.
+I would expect that the g object is transparent to whether I'm in a normal request context, or one that has been copied using the copy_current_request_context decorator in another greenlet.
+I borrowed the very nice test-script from #2935 and adapted it for g instead.
+import concurrent.futures
+import random
+
+from flask import Flask, g, copy_current_request_context, request, session
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'test'
+executor = concurrent.futures.ThreadPoolExecutor()
+
+@app.route('/')
+def session_context():
+    test_value = random.randint(1, 1001)
+    g.test_value = test_value
+
+    original_context = (
+        ('g', getattr(g, 'test_value', None))
+    )
+
+    @copy_current_request_context
+    def debug_session():
+        return (
+            ('g', getattr(g, 'test_value', None))
+        )
+
+    future = executor.submit(debug_session)
+    print('original_context:', original_context)
+    print('copied_context:', future.result())
+    return 'ok'
+
+
+if __name__ == '__main__':
+    client = app.test_client()
+    print('### Request ###')
+    client.get('/')
+Actual Behavior
+I get a new empty g object in the decorated function.
+### Request ###
+original_context: ('g', 750)
+copied_context: ('g', None)
+Environment
+Python version: 3.7.3
+Flask version: 1.1.1
+Werkzeug version: 0.15.5

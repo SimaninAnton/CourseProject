@@ -1,0 +1,40 @@
+cnobile2012 commented on 13 Oct 2016
+If I make a GET request to a view using the test framework and I have a single permission set that permission gets called six time once for each HTTP method. This behavior I don't feel is correct. I have simplified my code to show what happens. In the case below the test passes, but dumps to the log five times once for each HTTP method. I have cases where the test fails when it should pass because I'm testing for specific method and since they all run the test will fail on the one that would normally return False.
+Permission Class
+class IsUserActive(permissions.BasePermission):
+    def has_permission(self, request, view):
+        result = False
+        user = get_user(request)
+
+        if user and user.is_active:
+            result = True
+
+        log.debug("IsUserActive: %s, method: %s", result, request.method)
+        return result
+View
+class ProjectDetail(ProjectAuthorizationMixin, RetrieveUpdateDestroyAPIView):
+    serializer_class = ProjectSerializer
+    permission_classes = (IsUserActive,)
+Test Code
+The _create_user method just creates a user and conditionally logs the user in. It returns the user and the client objects. The self.project_url object is setup in the def setUp(self) method.
+def test_GET_condition_errors(self):
+    username = 'Normal_User'
+    password = '123456'
+    kwargs = {}
+    kwargs['username'] = username
+    kwargs['password'] = password
+    kwargs['login'] = False
+    kwargs['is_superuser'] = True
+    kwargs['role'] = 0
+    user, client = self._create_user(**kwargs)
+    response = client.get(self.project_uri, format='json')
+    msg = "Response: {} should be {}, content: {}".format(
+        response.status_code, HTTP_401_UNAUTHORIZED, self._clean_data(response.data))
+    self.assertEqual(response.status_code, HTTP_401_UNAUTHORIZED, msg)
+Results From Log
+2016-10-13 11:27:47,980 DEBUG api.common.permissions has_permission [line:244] IsUserActive: False, method: GET
+2016-10-13 11:27:47,989 DEBUG api.common.permissions has_permission [line:244] IsUserActive: False, method: PUT
+2016-10-13 11:27:47,989 DEBUG api.common.permissions has_permission [line:244] IsUserActive: False, method: PATCH
+2016-10-13 11:27:47,991 DEBUG api.common.permissions has_permission [line:244] IsUserActive: False, method: PUT
+2016-10-13 11:27:47,992 DEBUG api.common.permissions has_permission [line:244] IsUserActive: False, method: DELETE
+2016-10-13 11:27:47,992 DEBUG api.common.permissions has_permission [line:244] IsUserActive: False, method: OPTIONS

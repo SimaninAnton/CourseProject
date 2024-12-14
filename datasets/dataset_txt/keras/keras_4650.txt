@@ -1,0 +1,100 @@
+rmkemker commented on 4 Aug 2016 •
+edited
+I am having issues with the Deconvolution2D function. First of all, I am using the theano backend with the bleeding edge Keras (pulled changes this morning) and Theano. I am trying to replicate the FCN for Semantic Segmentation code in Keras. The code below is my model. There is also a graphical model at the very bottom of this post. When I build the model, the Deconvolution2D get_output_shape returns (batch_size,21,512,512) even though I explicitly state that the output_shape should be (21,500,500). My solution was to use a custom crop function (which is working well) to force it to be (21,500,500).
+inputData = Input(batch_shape=(batch_size,3,500,500))
+pad1_1 = ZeroPadding2D((100,100))(inputData)
+conv1_1 = Convolution2D(64,3,3,activation='relu')(pad1_1)
+pad1_2 = ZeroPadding2D((1,1))(conv1_1)
+conv1_2 = Convolution2D(64,3,3,activation='relu')(pad1_2)
+pool1 = MaxPooling2D((2,2), strides=(2,2))(conv1_2)
+
+pad2_1 = ZeroPadding2D((1,1))(pool1)
+conv2_1 = Convolution2D(128,3,3,activation='relu')(pad2_1)
+pad2_2 = ZeroPadding2D((1,1))(conv2_1)
+conv2_2 = Convolution2D(128,3,3,activation='relu')(pad2_2)
+pool2 = MaxPooling2D((2,2), strides=(2,2))(conv2_2)
+
+pad3_1 = ZeroPadding2D((1,1))(pool2)
+conv3_1 = Convolution2D(256,3,3,activation='relu')(pad3_1)
+pad3_2 = ZeroPadding2D((1,1))(conv3_1)
+conv3_2 = Convolution2D(256,3,3,activation='relu')(pad3_2)
+pad3_3 = ZeroPadding2D((1,1))(conv3_2)
+conv3_3 = Convolution2D(256,3,3,activation='relu')(pad3_3)
+pool3 = MaxPooling2D((2,2), strides=(2,2))(conv3_3)  
+
+pad4_1 = ZeroPadding2D((1,1))(pool3)
+conv4_1 = Convolution2D(512,3,3,activation='relu')(pad4_1)
+pad4_2 = ZeroPadding2D((1,1))(conv4_1)
+conv4_2 = Convolution2D(512,3,3,activation='relu')(pad4_2)
+pad4_3 = ZeroPadding2D((1,1))(conv4_2)
+conv4_3 = Convolution2D(512,3,3,activation='relu')(pad4_3)
+pool4 = MaxPooling2D((2,2), strides=(2,2))(conv4_3)    
+
+pad5_1 = ZeroPadding2D((1,1))(pool4)
+conv5_1 = Convolution2D(512,3,3,activation='relu')(pad5_1)
+pad5_2 = ZeroPadding2D((1,1))(conv5_1)
+conv5_2 = Convolution2D(512,3,3,activation='relu')(pad5_2)
+pad5_3 = ZeroPadding2D((1,1))(conv5_2)
+conv5_3 = Convolution2D(512,3,3,activation='relu')(pad5_3)
+pool5 = MaxPooling2D((2,2), strides=(2,2))(conv5_3)
+
+fc6 = Convolution2D(4096,7,7,activation='relu')(pool5)
+drop6 = Dropout(0.5)(fc6)
+fc7 = Convolution2D(4096,1,1,activation='relu')(drop6)
+drop7 = Dropout(0.5)(fc7)
+score_fr = Convolution2D(21,1,1)(drop7)
+
+deconv  = Deconvolution2D(21,64,64,output_shape=(batch_size,21,500,500),subsample=(32,32),bias=False)(score_fr)
+crop = Cropping2D(((6,6),(6,6)))(deconv)
+
+flat = Reshape((21,500*500))(crop)
+permute = Permute((2,1))(flat)    
+soft = Activation('softmax')(permute)
+model = Model(input=inputData, output=soft)    
+
+sgd = SGD(lr=1e-4, decay=5e-4, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+history = model.fit(trainData, trainGT, batch_size=batch_size, nb_epoch=10, verbose=1)
+When I run model.fit() I get an error (below) that says that the output of my crop layer is actually (batch_size,21,488,488) which means that the K.deconv2d is actually outputting the shape that I requested.
+File "<ipython-input-5-271f8399bbb6>", line 1, in <module>
+runfile('/home/klab/Documents/Python Scripts/VOC2012/net.py', wdir='/home/klab/Documents/Python Scripts/VOC2012')
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/spyderlib/widgets/externalshell/sitecustomize.py", line 699, in runfile
+execfile(filename, namespace)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/spyderlib/widgets/externalshell/sitecustomize.py", line 88, in execfile
+exec(compile(open(filename, 'rb').read(), filename, 'exec'), namespace)
+
+File "/home/klab/Documents/Python Scripts/VOC2012/net.py", line 193, in <module>
+history = model.fit(trainData, trainGT, batch_size=batch_size, nb_epoch=10, verbose=1)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/Keras-1.0.6-py3.5.egg/keras/engine/training.py", line 1107, in fit
+callback_metrics=callback_metrics)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/Keras-1.0.6-py3.5.egg/keras/engine/training.py", line 825, in _fit_loop
+outs = f(ins_batch)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/Keras-1.0.6-py3.5.egg/keras/backend/theano_backend.py", line 644, in __call__
+return self.function(*inputs)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/theano/compile/function_module.py", line 879, in __call__
+storage_map=getattr(self.fn, 'storage_map', None))
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/theano/gof/link.py", line 325, in raise_with_op
+reraise(exc_type, exc_value, exc_trace)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/six.py", line 685, in reraise
+raise value.with_traceback(tb)
+
+File "/home/klab/anaconda3/lib/python3.5/site-packages/theano/compile/function_module.py", line 866, in __call__
+self.fn() if output_subset is None else\
+
+ValueError: GpuReshape: cannot reshape input of shape (1, 21, 488, 488) to shape (0, 21, 250000).
+Apply node that caused the error: GpuReshape{3}(GpuSubtensor{::, ::, int64:int64:, int64:int64:}.0, TensorConstant{[    -1   ..21 250000]})
+Toposort index: 522
+Inputs types: [CudaNdarrayType(float32, 4D), TensorType(int64, vector)]
+Inputs shapes: [(1, 21, 488, 488), (3,)]
+Inputs strides: [(0, 250000, 500, 1), (8,)]
+Inputs values: ['not shown', array([    -1,     21, 250000])]
+Outputs clients: [[GpuDimShuffle{0,2,1}(GpuReshape{3}.0), GpuElemwise{Composite{Cast{float32}(EQ(i0, i1))},no_inplace}(GpuDimShuffle{0,x,1}.0, GpuReshape{3}.0)]]
+I am going to checkout the deconv2d function in the theano backend file, but I thought I would bring it up to see if this is a problem for anyone else (or if I am just messing up something simple).

@@ -1,0 +1,53 @@
+charlescurley commented on 2 Aug 2016
+I installed and used letsencrypt via git. The last commit was:
+commit 4d4cfb4
+Author: Brad Warren bradmwarren@gmail.com
+Date: Tue Apr 5 17:55:18 2016 -0700
+Release 0.5.0
+This on Debian Jessie:
+root@chaffee:/letsencrypt# lsb_release -a
+No LSB modules are available.
+Distributor ID: Debian
+Description: Debian GNU/Linux 8.5 (jessie)
+Release: 8.5
+Codename: jessie
+root@chaffee:/letsencrypt#
+I was able to obtain a certificate and all went well.
+At the end of July, I installed certbot from the debian repo:
+root@chaffee:/letsencrypt# pre certbot
+certbot 0.8.1-2bpo8+1 all
+python-certbot 0.8.1-2bpo8+1 all
+python-certbot-apache 0.8.1-1bpo8+1 all
+root@chaffee:~/letsencrypt#
+(pre is a tool for seeing what packages I have installed.)
+The certificate updated, but Apache did not serve up the new certificate. I narrowed the problem down to the symlinks in /etc/letsencrypt/live/wli.ddns.info/: they were not updated.
+root@chaffee:/etc/apache2# ll /etc/letsencrypt/live/wli.ddns.info/*
+lrwxrwxrwx 1 root root 37 May 3 09:30 /etc/letsencrypt/live/wli.ddns.info/cert.pem -> ../../archive/wli.ddns.info/cert2.pem
+lrwxrwxrwx 1 root root 38 May 3 09:30 /etc/letsencrypt/live/wli.ddns.info/chain.pem -> ../../archive/wli.ddns.info/chain2.pem
+lrwxrwxrwx 1 root root 42 May 3 09:30 /etc/letsencrypt/live/wli.ddns.info/fullchain.pem -> ../../archive/wli.ddns.info/fullchain2.pem
+lrwxrwxrwx 1 root root 40 May 3 09:30 /etc/letsencrypt/live/wli.ddns.info/privkey.pem -> ../../archive/wli.ddns.info/privkey2.pem
+root@chaffee:/etc/apache2# ll /etc/letsencrypt/archive/wli.ddns.info/*
+-rw-r--r-- 1 root root 1793 Feb 6 10:22 /etc/letsencrypt/archive/wli.ddns.info/cert1.pem
+-rw-r--r-- 1 root root 1793 May 3 09:30 /etc/letsencrypt/archive/wli.ddns.info/cert2.pem
+-rw-r--r-- 1 root root 1793 Jul 27 09:51 /etc/letsencrypt/archive/wli.ddns.info/cert3.pem
+-rw-r--r-- 1 root root 1675 Feb 6 10:22 /etc/letsencrypt/archive/wli.ddns.info/chain1.pem
+-rw-r--r-- 1 root root 1647 May 3 09:30 /etc/letsencrypt/archive/wli.ddns.info/chain2.pem
+-rw-r--r-- 1 root root 1647 Jul 27 09:51 /etc/letsencrypt/archive/wli.ddns.info/chain3.pem
+-rw-r--r-- 1 root root 3468 Feb 6 10:22 /etc/letsencrypt/archive/wli.ddns.info/fullchain1.pem
+-rw-r--r-- 1 root root 3440 May 3 09:30 /etc/letsencrypt/archive/wli.ddns.info/fullchain2.pem
+-rw-r--r-- 1 root root 3440 Jul 27 09:51 /etc/letsencrypt/archive/wli.ddns.info/fullchain3.pem
+-rw-r--r-- 1 root root 1704 Feb 6 10:22 /etc/letsencrypt/archive/wli.ddns.info/privkey1.pem
+-rw-r--r-- 1 root root 1704 May 3 09:30 /etc/letsencrypt/archive/wli.ddns.info/privkey2.pem
+-rw-r--r-- 1 root root 1708 Jul 27 09:51 /etc/letsencrypt/archive/wli.ddns.info/privkey3.pem
+root@chaffee:/etc/apache2#
+The following series of commands repaired the problem, and the server is now serving up the new certificate, as expected.
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# rm cert.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# ln -s ../../archive/wli.ddns.info/cert3.pem cert.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# rm chain.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# ln -s ../../archive/wli.ddns.info/chain3.pem chain.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# rm fullchain.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# ln -s ../../archive/wli.ddns.info/fullchain3.pem fullchain.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# rm privkey.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info# ln -s ../../archive/wli.ddns.info/privkey3.pem privkey.pem
+root@chaffee:/etc/letsencrypt/live/wli.ddns.info#
+I would hope that git repo users would upgrade to the packages. This extra step may help.

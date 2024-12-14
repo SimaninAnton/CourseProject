@@ -1,0 +1,66 @@
+s-t-e-v-e-n-k commented on 8 Nov 2019
+From a build log against Python 3.8:
+[   42s] ______________ TestSendfile.test_send_from_directory_bad_request _______________
+[   42s] 
+[   42s] self = <test_helpers.TestSendfile object at 0x7fa523850cd0>
+[   42s] app = <Flask 'flask_test'>
+[   42s] req_ctx = <RequestContext 'http://localhost/' [GET] of flask_test>
+[   42s] 
+[   42s]     def test_send_from_directory_bad_request(self, app, req_ctx):
+[   42s]         app.root_path = os.path.join(
+[   42s]             os.path.dirname(__file__), "test_apps", "subdomaintestmodule"
+[   42s]         )
+[   42s]     
+[   42s]         with pytest.raises(BadRequest):
+[   42s] >           flask.send_from_directory("static", "bad\x00")
+[   42s] 
+[   42s] tests/test_helpers.py:789: 
+[   42s] _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+[   42s] 
+[   42s] directory = 'static'
+[   42s] filename = '/home/abuild/rpmbuild/BUILD/Flask-1.1.1/tests/test_apps/subdomaintestmodule/static/bad\x00'
+[   42s] options = {}
+[   42s] 
+[   42s]     def send_from_directory(directory, filename, **options):
+[   42s]         """Send a file from a given directory with :func:`send_file`.  This
+[   42s]         is a secure way to quickly expose static files from an upload folder
+[   42s]         or something similar.
+[   42s]     
+[   42s]         Example usage::
+[   42s]     
+[   42s]             @app.route('/uploads/<path:filename>')
+[   42s]             def download_file(filename):
+[   42s]                 return send_from_directory(app.config['UPLOAD_FOLDER'],
+[   42s]                                            filename, as_attachment=True)
+[   42s]     
+[   42s]         .. admonition:: Sending files and Performance
+[   42s]     
+[   42s]            It is strongly recommended to activate either ``X-Sendfile`` support in
+[   42s]            your webserver or (if no authentication happens) to tell the webserver
+[   42s]            to serve files for the given path on its own without calling into the
+[   42s]            web application for improved performance.
+[   42s]     
+[   42s]         .. versionadded:: 0.5
+[   42s]     
+[   42s]         :param directory: the directory where all the files are stored.
+[   42s]         :param filename: the filename relative to that directory to
+[   42s]                          download.
+[   42s]         :param options: optional keyword arguments that are directly
+[   42s]                         forwarded to :func:`send_file`.
+[   42s]         """
+[   42s]         filename = fspath(filename)
+[   42s]         directory = fspath(directory)
+[   42s]         filename = safe_join(directory, filename)
+[   42s]         if not os.path.isabs(filename):
+[   42s]             filename = os.path.join(current_app.root_path, filename)
+[   42s]         try:
+[   42s]             if not os.path.isfile(filename):
+[   42s] >               raise NotFound()
+[   42s] E               werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+[   42s] 
+[   42s] ../../BUILDROOT/python-Flask-1.1.1-2.2.x86_64/usr/lib/python3.8/site-packages/flask/helpers.py:767: NotFound
+This occurs because os.path.isfile() no longer raises ValueError with invalid sequences under Python 3.8, instead just returns False.
+I can see it, there are two ways to fix this test:
+Catch either Bad Request or Not Found, call it good.
+Or change the code to raise Bad Request if we look for invalid sequences.
+I'm happy to push up a PR with a pointer to which direction you'd like to take.

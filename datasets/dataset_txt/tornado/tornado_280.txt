@@ -1,0 +1,48 @@
+truongdo commented on 19 Oct 2017
+When using tornador with ThreadPoolExecutor, it spawns one PID for every request, here is the code
+import tornado.ioloop
+import tornado.web
+from tornado.concurrent import futures
+from tornado.ioloop import IOLoop
+from tornado.concurrent import run_on_executor
+import logging
+from tornado import gen
+
+
+class TaskRunner(object):
+    def __init__(self, npool=40, loop=None):
+        self.executor = futures.ThreadPoolExecutor(npool)
+        self.loop = loop or IOLoop.instance()
+
+    @run_on_executor
+    def run(self, func, args=(), kwargs={}):
+        return func(*args, **kwargs)
+
+task_runner = TaskRunner()
+
+def hello_world():
+    return "Hello world"
+
+class MainHandler(tornado.web.RequestHandler):
+    @gen.coroutine
+    def get(self):
+        output = yield task_runner.run(hello_world)
+        self.write(output)
+
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+    ])
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+Check PID command pstree -sg PID
+Output
+After server started:
+systemd(1)───lightdm(1162)───lightdm(1162)───upstart(2617)───/usr/bin/x-term(2999)───zsh(17892)───python3(22675)
+After 3 requests
+systemd(1)───lightdm(1162)───lightdm(1162)───upstart(2617)───/usr/bin/x-term(2999)───zsh(17892)───python3(22675)─┬─{python3}(22675)
+                                                                                                                 ├─{python3}(22675)
+                                                                                                                 └─{python3}(22675)

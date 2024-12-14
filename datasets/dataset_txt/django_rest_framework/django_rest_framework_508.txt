@@ -1,0 +1,64 @@
+guyandtheworld commented on 29 Jan 2018
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third-party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+I was writing tests for throttling when I found out that throttling doesn't seem to be working properly in development env. None of the requests is getting throttled (anon and user).
+This is my REST settings.
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': (
+        'rest_framework.pagination.LimitOffsetPagination'),
+    'PAGE_SIZE': 10,
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly'
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_expiring_authtoken.authentication.ExpiringTokenAuthentication',
+    ],
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'accounts.throttles.ResendEmailThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/minute',
+        'user': '100/minute',
+        'resend_email': '3/hour',
+    },
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    )
+}
+This is my test code.
+class AccountThrottlesTestCase(BaseAPITestCase):
+
+    def setUp(self):
+        super(AccountThrottlesTestCase, self).setUp()
+
+    def test_resend_email_throttles(self):
+        url = reverse_lazy('accounts:resend_email')
+        for i in range(0, 3):
+            response = self.client.post(url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+Throttles not working.
+This is the tests failing by giving 200, whereas it should have been throttled.
+FAIL: test_resend_email_throttles (tests.unit.accounts.test_throttles.AccountThrottlesTestCase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/rustbucket/evalai/tests/unit/accounts/test_throttles.py", line 39, in test_resend_email_throttles
+    self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+AssertionError: 200 != 429
+
+----------------------------------------------------------------------
+Ran 286 tests in 15.994s
+Steps to reproduce.
+I didn't try reproducing but my best guess was it's something related to DRF because I tried everything else.
+Expected Behaviour
+Should start throttling after the third request.
+Actual Behaviour
+Not throttling requests at all. Weird thing I noticed was that when I kept the limit to 0/minute, it suddenly starts throttling the requests.

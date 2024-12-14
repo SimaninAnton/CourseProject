@@ -1,0 +1,48 @@
+rsmichael commented on 23 Apr 2016 •
+edited
+Hi,
+I want to train models where the gold standard data are discrete probability distributions, which come from many observations of different discrete outcomes with the same input. For my model, I want to minimize, kullback-leibler divergence, which measures the information gain from a predicted distribution, q, to a true distribution, p:
+KL_div = \sum{i}p_i*log(p_i/q_i)
+Where i in the index for all of the categorical possibilities.
+I implemented a function that takes in vectors and computes the kullback-leibler divergence:
+def kullback_leibler(y_pred, y_true):
+    p = T.vector('p')
+    q = T.vector('q')
+    results, updates = theano.scan(lambda p,q: p*T.log(p/q), sequences = [p,q]) 
+    get_kldiv = T.sum(theano.function(inputs = [p,q], outputs = -T.sum(results)))
+    kldiv = get_kldiv(y_true,y_pred)
+    return(kldiv)
+Here's an example of the function computing kullback-leibler divergence of two discrete distributions with length 2:
+kullback_leibler(np.array([0.1,0.2]).astype('float32'),np.array([0.3,0.4]).astype('float32'))
+array(-0.606842577457428, dtype=float32)
+When I try to compile my model with this objective, I get the following error:
+model.compile(loss=kullback_leibler, optimizer='sgd')
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "<stdin>", line 66, in compile_model
+  File "/usr/local/lib/python2.7/site-packages/keras/models.py", line 332, in compile
+    **kwargs)
+  File "/usr/local/lib/python2.7/site-packages/keras/engine/training.py", line 578, in compile
+    sample_weight, mask)
+  File "/usr/local/lib/python2.7/site-packages/keras/engine/training.py", line 305, in weighted
+    score_array = fn(y_true, y_pred)
+  File "<stdin>", line 6, in kullback_leibler
+  File "/usr/local/lib/python2.7/site-packages/theano/compile/function_module.py", line 786, in __call__
+    allow_downcast=s.allow_downcast)
+  File "/usr/local/lib/python2.7/site-packages/theano/tensor/type.py", line 86, in filter
+    'Expected an array-like object, but found a Variable: '
+TypeError: ('Bad input argument to theano function with name "<stdin>:5"  at index 0(0-based)', **'Expected an array-like object, but found a Variable: maybe you are trying to call a function on a (possibly shared) variable instead of a numeric array?')**
+This suggests that instead of making a function that directly computes the kullback-leibler divergence, I instead need it to output a Theano variable. I tried to do this and I get no error in compiling my model, but I get nan as the result of my model.
+Here's the function:
+def kullback_leibler(y_pred,y_true):
+    results, updates = theano.scan(lambda y_true,y_pred: y_true*T.log(y_true/y_pred), sequences =   [y_true,y_pred])
+    return(T.sum(results, axis= - 1))
+The call to fit my model:
+model.fit(features_small[:10000], Y[:10000], nb_epoch=20, batch_size=1, verbose=1,
+validation_data=(features_small[10000:20000], Y[10000:20000]))
+And the output:
+Train on 10000 samples, validate on 10000 samples
+Epoch 1/20
+  905/10000 [=>............................] - ETA: 13s - loss: nan
+I'm not quite sure what's going wrong, but would greatly appreciate any help. I am also unsure: do keras objective functions also need to be able to pass in 2D tensors? I am not 100% sure how to do this from reading the Theano documentation.
+Thanks for your help!

@@ -1,0 +1,53 @@
+kormilitzin commented on 19 Aug 2019
+While I'm following the examples #3813 , I'm stuck with this problem:
+ValueError Traceback (most recent call last)
+in
+9 print(doc.ents)
+10 #json_docs.append(doc.to_json())
+---> 11 json_docs.append(docs_to_json(doc, id=i))
+12
+13 with open(os.path.join(path_to_data, 'train_set.json'), 'w') as fh:
+gold.pyx in spacy.gold.docs_to_json()
+doc.pyx in sents()
+ValueError: [E030] Sentence boundaries unset. You can add the 'sentencizer' component to the pipeline with: nlp.add_pipe(nlp.create_pipe('sentencizer')) Alternatively, add the dependency parser, or set sentence boundaries by setting doc[i].is_sent_start.
+How to reproduce the behaviour
+import spacy
+from spacy.gold import docs_to_json
+
+
+TRAINING_DATA = [{"text": "Horses are too tall and they pretend to care about your feelings", "entities": [(0, 6, 'ANIMAL')]},
+{"text": "Do they bite?", "entities": []},
+{"text": "horses are too tall and they pretend to care about your feelings", "entities": [(0, 6, 'ANIMAL')]},
+{"text": "horses pretend to care about your feelings", "entities": [(0, 6, 'ANIMAL')]},
+{"text": "they pretend to care about your feelings, those horses", "entities": [(48, 54, 'ANIMAL')]},
+{"text": "horses?", "entities": [(0, 6, 'ANIMAL')]}]
+
+nlp = spacy.load('en_core_web_lg')
+
+json_docs = []
+for i, training_data_i in enumerate(TRAINING_DATA ):
+    doc = nlp.make_doc(training_data_i['text'])
+    doc[0].is_sent_start = True
+    doc.ents = [doc.char_span(s, e, label=L) for s, e, L in training_data_i["entities"]]
+    print(doc.ents)
+    json_docs.append(docs_to_json(doc, id=i))
+    
+with open(os.path.join(path_to_data, 'train_set.json'), 'w') as fh:
+    fh.write(json.dumps(json_docs))
+I'm getting the aforementioned error.
+HOWEVER (!!!), If I change the line:
+json_docs.append(docs_to_json(doc, id=i)) -> json_docs.append(doc.to_json())
+then it works. BUT (!!!), If I use the resulted train_set.json file, the CLI spacy training fails with:
+File "gold.pyx", line 130, in spacy.gold.GoldCorpus.init
+File "gold.pyx", line 141, in spacy.gold.GoldCorpus.write_msgpack
+File "gold.pyx", line 181, in read_tuples
+File "gold.pyx", line 393, in _json_iterate
+File "gold.pyx", line 307, in json_to_tuple
+KeyError: 'paragraphs'
+Any ideas how to properly convert TRAINING_DATA into a format that is compatible with spacy CLI train? Thanks.
+Your Environment
+Info about spaCy
+spaCy version: 2.1.7
+Platform: Linux-4.15.0-55-generic-x86_64-with-Ubuntu-18.04-bionic
+Python version: 3.6.8
+Models: en

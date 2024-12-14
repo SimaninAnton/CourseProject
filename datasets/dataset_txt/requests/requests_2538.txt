@@ -1,0 +1,24 @@
+jmoiron commented on Mar 20, 2012
+Because _enc_params seems to already be built by the time auth is applied, and r.params is no longer a dictionary, authentication schemes that require signatures to be passed as a param (like LastFM's, possibly others) end up being kind of unwieldy. Here's some working LastFM auth code, for example:
+from hashlib import md5
+from requests.auth import AuthBase
+from urllib import urlencode
+
+key = "xxx"
+secret = "xxx-secret"
+
+class LastFMAuth(AuthBase):
+    """Implement LastFM's annoying authentication."""
+    def __init__(self, session_key):
+        self.session_key = session_key
+
+    def __call__(self, r):
+        r.params.append(('sk', self.session_key))
+        r.params.append(('api_key', key))
+        encode = lambda x: unicode(x).encode("utf-8")
+        signature = list(sorted(r.params))
+        signature = "".join([encode(k) + encode(v) for k,v in signature]) + secret
+        r.params.append(("api_sig", md5(signature).hexdigest()))
+        r._enc_params = urlencode(r.params)
+        return r
+I think it would suffice to delay setting _enc_params until after auth is applied; even if such a thing is documented it still feels kind of strange.

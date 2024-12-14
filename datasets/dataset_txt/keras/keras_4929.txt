@@ -1,0 +1,216 @@
+AdityaGudimella commented on 21 Jun 2016 •
+edited
+I'm implementing a custom layer. When I try to call it using the following code it gives me an error. Is this the right way to implement a layer with multiple inputs? Also the code in the call function of the layer is using some theano.Tensor functions instead of the functions given in keras backend. Does this mean I won't be able to use this with a functional api anymore?
+model = Sequential()
+layer1 = InputLayer((17, 33))
+layer2 = InputLayer((17, 33, 2, 11))
+layer3 = InputLayer((17, 33))
+model.add(Merge([layer1, layer2, layer3], 30, len(node_indices), 1))
+model.compile('adam', 'mse')
+Traceback (most recent call last):
+File "/Users/Aditya/Documents/Qbit Logic/TBCNN/Tree.py", line 338, in
+fitlog = model.fit([trees, connections, n_leaves_mat], y, batch_size=1, nb_epoch=50, verbose=1)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/models.py", line 409, in fit
+sample_weight=sample_weight)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/engine/training.py", line 1037, in fit
+self._make_train_function()
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/engine/training.py", line 663, in _make_train_function
+training_updates = self.optimizer.get_updates(trainable_weights, self.constraints, self.total_loss)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/optimizers.py", line 321, in get_updates
+grads = self.get_gradients(loss, params)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/optimizers.py", line 53, in get_gradients
+grads = K.gradients(loss, params)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/backend/theano_backend.py", line 532, in gradients
+return T.grad(loss, variables)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/theano/gradient.py", line 545, in grad
+handle_disconnected(elem)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/theano/gradient.py", line 532, in handle_disconnected
+raise DisconnectedInputError(message)
+theano.gradient.DisconnectedInputError: grad method was asked to compute the gradient with respect to a variable that is not part of the computational graph of the cost, or is used only by a non-differentiable operator: <TensorType(float32, matrix)>
+Backtrace when the node is created:
+File "/Users/Aditya/Documents/Qbit Logic/TBCNN/Tree.py", line 336, in
+model.compile('adam', 'mse')
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/models.py", line 339, in compile
+**kwargs)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/engine/training.py", line 510, in compile
+masks = self.compute_mask(self.inputs, mask=None)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/engine/topology.py", line 1914, in compute_mask
+output_tensors, output_masks, output_shapes = self.run_internal_graph(inputs, masks)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/engine/topology.py", line 2049, in run_internal_graph
+output_tensors = to_list(layer.call(computed_tensors, computed_masks))
+File "/Users/Aditya/Documents/Qbit Logic/TBCNN/Tree.py", line 178, in call
+self.build([x.shape for x in inputs])
+File "/Users/Aditya/Documents/Qbit Logic/TBCNN/Tree.py", line 168, in build
+self.VCi, self.Wl, self.Wr = K.variable(vci), K.variable(wl), K.variable(wr)
+File "/Users/Aditya/anaconda/envs/acads/lib/python3.5/site-packages/keras/backend/theano_backend.py", line 31, in variable
+return theano.shared(value=value, name=name, strict=False)
+class Merge(Layer):
+    def __init__(self, layers, n_feat, vocab_len, delta, output_shape=None,
+                 node_indices=None, tensor_indices=None, name=None, **kwargs):
+        self.layers = layers
+        self._output_shape = output_shape
+        self.node_indices = node_indices
+
+        self.n_feat = n_feat
+        self.vocab_len = vocab_len
+        self.delta = delta
+
+        # layer parameters
+        self.inbound_nodes = []
+        self.outbound_nodes = []
+        self.constraints = {}
+        self.regularizers = []
+        self.non_trainable_weights = []
+        self.supports_masking = False
+        self.uses_learning_phase = False
+        self.input_spec = None  # compatible with whatever
+        if not name:
+            prefix = self.__class__.__name__.lower()
+            name = prefix + '_' + str(K.get_uid(prefix))
+        self.name = name
+
+        if layers:
+            # this exists for backwards compatibility.
+            # equivalent to:
+            # merge = Merge(layers=None)
+            # output = merge([input_tensor_1, input_tensor_2])
+            self.built = True
+            if not node_indices:
+                # by default we connect to
+                # the 1st output stream in the input layer
+                node_indices = [0 for _ in range(len(layers))]
+            self.add_inbound_node(layers, node_indices, tensor_indices)
+
+    def build(self, input_shape):
+        wr = np.random.random((self.n_feat, self.n_feat))
+        wl = np.random.random((self.n_feat, self.n_feat))
+        vci = np.random.random((1 + self.vocab_len, self.n_feat))
+        vci[0] = 0
+        b = np.random.random(vci.shape[0])
+
+        self.VCi, self.Wl, self.Wr = K.variable(vci), K.variable(wl), K.variable(wr)
+        self.trainable_weights = [self.VCi, self.Wl, self.Wr]
+        self.built = True
+
+    def call(self, inputs, mask=None):
+        # Todo: Currently this only supports batch size of 1. That is the current code will work correctly only if
+        # batch size = 1. Modify this implementation to work for batch_size = n
+        if type(inputs) is not list or len(inputs) != 3:
+            raise Exception('Munge must be called on a list of 3 tensors.'
+                            ' Got: ' + str(inputs))
+        self.build([x.shape for x in inputs])
+        import theano.tensor as T
+        tree, connection, leaves = inputs
+        Ci_init = T.zeros((tree.shape[0], tree.shape[1], tree.shape[2], self.n_feat))
+        # Nodes only correspond to nonzero values
+        node_indices = tree.nonzero()
+        # Ci is a dummy tensor created to align with shape of tree. Actual representations are in VCi. Set those
+        # representations to corresponding nodes positions in Ci. So if node p is present in position [0, i, j] in tree,
+        # it's vector representation is present at VCi[p] and Ci[0, i, j] is set to VCi[p]
+        Ci = T.set_subtensor(Ci_init[node_indices], self.VCi[tree[node_indices].astype('int32')])
+        # Get representations (Ci) corresponding to nodes in tree
+        Ci_subset = Ci[node_indices]  # shape is (num_nodes, n_feat)
+        # li_init and ri_init are tensors from which the multipliers Wl, and Wr, i.e. li and lr will be made. The
+        # formulae for li and lr as given in the paper are li = (n - i)/(n - 1) and lr = (i - 1)/(n - 1). See the paper
+        # for details on n and i.
+        li_init, ri_init = T.ones_like(tree), T.ones_like(tree)
+        # Non zero elements in tree represent nodes. Get children of those nodes
+        children_indices = connection[node_indices]  # shape is (2, max_num_children * num_nodes)
+        # Find number of non zero children and store that in n
+        n = (~T.isclose(children_indices, 0.0)).sum(axis=-1)[:, 0]
+        # if num children is 1 then change corresponding n to 2
+        ni = T.switch(T.isclose(n, 1.0), 2.0, n)
+        # Generate a matrix like [[1,2,3,...n],[1,2,3,...n],...[1,2,3,...n]] of shape (children_indices.shape[0], n)
+        # where n is the max number of children a node could have.
+        posns = T.tile(T.arange(children_indices.shape[-1]) + 1,
+                       children_indices.shape[0]).reshape((children_indices.shape[0], -1))
+        i = T.switch(T.gt(posns, ni[:, None]), 0, posns)
+        l_mult_init = (ni[:, None] - i) / (ni[:, None] - 1)
+        r_mult_init = (i - 1) / (ni[:, None] - 1)
+        # The paper says to use li, ri = 0.5 when n = 2
+        l_mult_upd = T.switch(T.eq(ni.reshape((-1, 1)), 1), 0.5, l_mult_init)
+        r_mult_upd = T.switch(T.eq(ni.reshape((-1, 1)), 1), 0.5, r_mult_init)
+        zeroed_children_ind = T.isclose(children_indices.sum(1), 0.0)
+        # Shape of l_mult, r_mult is (children_indices.shape[0], n)
+        l_mult, r_mult = T.switch(zeroed_children_ind, 0, l_mult_upd), T.switch(zeroed_children_ind, 0, r_mult_upd)
+        stacked_indices = children_indices.dimshuffle(1, 0, 2).reshape((2, -1)).astype('int32')
+        stacked_rows, stacked_columns = stacked_indices[0], stacked_indices[1]
+
+        # Shape of li, ri is tree.shape
+        li = T.set_subtensor(li_init[0, stacked_rows, stacked_columns], l_mult.ravel())
+        ri = T.set_subtensor(ri_init[0, stacked_rows, stacked_columns], r_mult.ravel())
+        Wi = li[:, :, :, None, None] * self.Wl[None, None, None, :, :] + \
+             ri[:, :, :, None, None] * self.Wr[None, None, None, :, :]
+        Wi_subset = Wi[0, stacked_rows, stacked_columns]
+        # product_init is used to create product which represents Wi*vec(ci) in the paper for all parents and all
+        # children. product_init is basically doing the following code:
+        # result = np.empty((n, n_feat, 1))   # n is number of nodes in tree
+        # for i in range(n):
+        #   result[i] = np.dot(Wi_subset[i],Ci[i])
+        # product_init = result
+        product_init = T.tensordot(Wi_subset, Ci[0, stacked_rows, stacked_columns],
+                                   axes=[2, 1])[T.arange(Wi_subset.shape[0]), :, T.arange(Wi_subset.shape[0])]
+        product = product_init.reshape((children_indices.shape[0], -1, product_init.shape[-1]))
+        nli_subset = connection[0, stacked_rows, stacked_columns].reshape((children_indices.shape[0], -1, 1))
+        # bias = self.bias[]
+        activation = T.tanh((nli_subset * product).sum(axis=1))  # Change to product.sum(1) + b
+        di = (Ci_subset - activation).norm(2, axis=-1) ** 2
+
+        # Generate negative example and find distance for that
+        Cwi = T.zeros_like(Ci)
+        Cwi = T.set_subtensor(Cwi[node_indices], Ci_subset[::-1])
+        product_ne_init = T.tensordot(Wi_subset, Cwi[0, stacked_rows, stacked_columns],
+                                      axes=[2, 1])[T.arange(Wi_subset.shape[0]), :, T.arange(Wi_subset.shape[0])]
+        product_ne = product_ne_init.reshape((children_indices.shape[0], -1, product_ne_init.shape[-1]))
+        activation_ne = T.tanh((nli_subset * product_ne).sum(axis=1))  # Change to product.sum(1) + b
+        dci = (Cwi[node_indices] - activation_ne).norm(2, axis=-1) ** 2
+
+        J_init = self.delta + di - dci
+        J = T.nnet.relu(J_init).sum()
+        # self.non_trainable_weights.extend([Cwi, li, ri])
+        return J
+
+    def __call__(self, inputs, mask=None):
+        '''We disable successive calls to __call__ for Merge layers.
+        Although there is no technical obstacle to
+        making it possible to __call__ a Merge intance many times
+        (it is just a layer), it would make for a rather unelegant API.
+        '''
+        if type(inputs) is not list:
+            raise Exception('Merge can only be called on a list of tensors, '
+                            'not a single tensor. Received: ' + str(inputs))
+
+        # self.build([x.shape for x in inputs])
+
+        all_keras_tensors = True
+        for x in inputs:
+            if not hasattr(x, '_keras_history'):
+                all_keras_tensors = False
+                break
+
+        if all_keras_tensors:
+            layers = []
+            node_indices = []
+            tensor_indices = []
+            for x in inputs:
+                layer, node_index, tensor_index = x._keras_history
+                layers.append(layer)
+                node_indices.append(node_index)
+                tensor_indices.append(tensor_index)
+
+            self.built = True
+            self.add_inbound_node(layers, node_indices, tensor_indices)
+
+            outputs = self.inbound_nodes[-1].output_tensors
+            return outputs[0]  # merge only returns a single tensor
+        else:
+            return self.call(inputs, mask)
+
+    def get_output_shape_for(self, input_shape):
+        return tuple((1,))
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

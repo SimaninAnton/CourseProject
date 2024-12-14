@@ -1,0 +1,53 @@
+JeremieCharest commented on 12 Mar 2016
+Steps to reproduce
+Create a serializer with CharField members (rest_framework.serializers.CharField)
+Can be bind or not to an actual Model
+Set the trim_whitespace argument to True
+Create an instance of the serializer with data
+Wrap it in a Response instance to trigger the serialization process
+from rest_framework import serializers
+
+
+class TrimNotWorkingSerializer(serializers.Serializer):
+    my_field = serializers.CharField(trim_whitespace=True)
+
+    def create(self, validated_data):
+        return SomeModel.objects.create(**validated_data)
+
+    def update(self, instance, validated_data):
+        instance.my_field = validated_data.get('my_field', instance.my_field)
+        instance.save()
+        return instance
+Expected behavior
+I was expecting a trimmed output for all fields with the trim option enabled.
+{
+    "my_field": "My test string trimmed"
+}
+Actual behavior
+The output still contains padding whitespace. The CharField::to_representation method does not trim the value like CharField::to_internal_value
+serialized output
+{
+    "my_field": "My test string un-trimmed                     "
+}
+rest_framework.fields.py
+The method to_representation should be identical to to_internal_value that support trimming.
+class CharField(Field):
+     # .....
+
+    def to_internal_value(self, data):
+        value = six.text_type(data)
+        return value.strip() if self.trim_whitespace else value
+
+    def to_representation(self, value):
+        return six.text_type(value)
+Workaround
+Override the to_representation method in a subclass.
+from rest_framework import serializers
+
+
+class TrimRepresentationField(serializers.CharField):
+    def to_representation(self, data):
+        return self.to_internal_value(data)
+
+class TrimWorkingSerializer(serializers.Serializer):
+    myField = TrimRepresentationField(trim_whitespace=True)

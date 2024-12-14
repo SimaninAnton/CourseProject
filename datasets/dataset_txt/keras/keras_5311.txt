@@ -1,0 +1,54 @@
+TwoScientists commented on 29 Apr 2016 •
+edited
+Two problems happened when I used the latest Keras API.
+After the model was trained, I saved the model architecture and weights. However, the reloaded model can't do prediction. Then I find I have to recompile a exactly same model and just loaded the weights. Actually, the model architecture can't be reloaded successfully. In addition, I didn't find such problem in 0.3.3.
+GRU_model = model_from_json(open('GRU_model_architecture.json').read()) # -->something wrong in source code?
+GRU_model.load_weights('GRU_model_weights.h5')
+I built a Bidirectional GRU with two layers with the latest Keras API by the following codes. I find the results haven't been improved by comparing with the normal GRU model with one layer. However, it showed there are huge differences between the simple GRU and complex GRU models when I used the old version 0.3.3 by Graph(). In the latest version, have the model really compiled? No error was reported during running. Bug or my bad coding..?
+latest version
+def Bi_2l_GRU(self, X, Y, vec_dim, sent_length, first_output_dim, drop_percent, nepoch):
+inputs = Input(shape=(None, vec_dim), batch_shape=(1, None, vec_dim), name='inputs')
+layer1_out1 = GRU(sent_length, activation='tanh', return_sequences=True, dropout_U=drop_percent, dropout_W=drop_percent)(inputs)
+layer1_out2 = GRU(sent_length, activation='tanh', return_sequences=True, dropout_U=drop_percent, dropout_W=drop_percent, go_backwards=True)(inputs)
+layer1_loss = TimeDistributed(Dense(first_output_dim, activation='softmax'))(layer1_out1, layer1_out2)
+layer2_out1 = GRU(sent_length, activation='tanh', return_sequences=True, dropout_U=drop_percent, dropout_W=drop_percent)(layer1_loss)
+layer2_out2 = GRU(sent_length, activation='tanh', return_sequences=True, dropout_U=drop_percent, dropout_W=drop_percent, go_backwards=True)(layer1_loss)
+predictions = TimeDistributed(Dense(3, activation='softmax'))(layer2_out1, layer2_out2)
+model = Model(input=inputs, output=predictions)
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['accuracy'])
+
+for epoch in xrange(nepoch):
+    print 'epoch:', epoch
+    for idx, (seq, label) in enumerate(zip(X, Y)):
+        #model.train_on_batch(np.array([seq]), np.array([label.T]))
+        loss, accuracy = model.train_on_batch(np.array([seq]), np.array([label.T]))
+        if idx % 50 == 0:
+            print "\tidx={0}, loss={1}, accuracy={2}".format(idx, loss, accuracy)
+return model
+version 0.3.3
+def Bi_2l_GRU(self, X, Y, vec_dim, HIDDEN_SIZE, nepoch):
+
+    model = Graph()
+    model.add_input(name='input', input_shape=(None, vec_dim))
+    model.add_node(GRU(HIDDEN_SIZE, activation='tanh', return_sequences=True), name='forward', input='input')
+    model.add_node(GRU(HIDDEN_SIZE, activation='tanh', return_sequences=True, go_backwards=True), name='backward', input='input')
+    model.add_node(Dropout(0.5), name='dropout', merge_mode='concat', inputs=['forward', 'backward'])
+    model.add_node(GRU(HIDDEN_SIZE, activation='tanh', return_sequences=True), name='level2_forward', input='dropout')
+    model.add_node(GRU(HIDDEN_SIZE, activation='tanh', return_sequences=True, go_backwards=True), name='level2_backward', input='dropout')
+    model.add_node(Dropout(0.5), name='level2_dropout', merge_mode='concat', inputs=['level2_forward', 'level2_backward'])
+    model.add_node(TimeDistributed(Dense(3, activation='softmax')), name='softmax', input='level2_dropout')
+    model.add_output(name='output', input='softmax')
+    model.compile('adam', {'output': 'categorical_crossentropy'}, metrics=["accuracy"])
+
+    for epoch in xrange(nepoch):
+        print 'epoch:', epoch
+        for idx, (seq, label) in enumerate(zip(X, Y)):
+            loss, accuracy = model.train_on_batch({'input':np.array([seq]), 'output':np.array([label.T])})
+            if idx % 50 == 0:
+                print "\tidx={0}, loss={1}, accuracy={2}".format(idx, loss, accuracy)
+    return model
+[Yes ] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[ Yes] If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[ Yes] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

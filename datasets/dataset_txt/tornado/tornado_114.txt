@@ -1,0 +1,30 @@
+nieksand commented on 21 Nov 2018 •
+edited
+I am using Tornado 5.1.1 with Python 3.6 asyncio.
+When I cancel() an asyncio task holding a Tornado http fetch request, I get the following exception:
+ERROR:tornado.application:Exception in callback functools.partial(<function wrap.<locals>.null_wrapper at 0x7fda5decba60>, HTTPResponse(_body=None,_error_i
+Traceback (most recent call last):
+File "/data/workspace/cape/attribute-pipeline/python/lib/python3.6/site-packages/tornado/ioloop.py", line 758, in _run_callback
+ret = callback()
+File "/data/workspace/cape/attribute-pipeline/python/lib/python3.6/site-packages/tornado/stack_context.py", line 300, in null_wrapper
+return fn(*args, **kwargs)
+File "/data/workspace/cape/attribute-pipeline/python/lib/python3.6/site-packages/tornado/httpclient.py", line 290, in handle_response
+future.set_exception(response.error)
+asyncio.base_futures.InvalidStateError: invalid state
+The problem looks like it's here in httpclient.py:
+        def handle_response(response):
+            if raise_error and response.error:
+                if isinstance(response.error, HTTPError):
+                    response.error.response = response
+                future.set_exception(response.error)
+            else:
+                if response.error and not response._error_is_response_code:
+                    warnings.warn("raise_error=False will allow '%s' to be raised in the future" %
+                                  response.error, DeprecationWarning)
+                future_set_result_unless_cancelled(future, response)
+        self.fetch_impl(request, handle_response)
+        return future
+For results Tornado uses the wrapper future_set_result_unless_cancelled.
+For exceptions, Tornado just invokes future.set_exception(response.error) which triggers the invalid state error since the future has been cancelled externally:
+https://github.com/tornadoweb/tornado/blob/master/tornado/httpclient.py#L293
+Perhaps the set_exception() just needs a similar check-if-cancelled wrapper?

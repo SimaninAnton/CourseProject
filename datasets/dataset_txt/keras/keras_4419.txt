@@ -1,0 +1,60 @@
+fritjofbuettner commented on 8 Sep 2016
+I would like to implement a custom objective function for a convolutional autoencoder network. My objective resembles MSE, but with a Gaussian blurring using theano.tensor.signal.conv.conv2d (since I want to use only one 2D filter):
+from theano.tensor.signal.conv import conv2d
+from keras import backend as K
+
+def conv_loss(y_true, y_pred):
+    input_ = T.fmatrix('image').astype(K.floatx())
+    c = conv2d(input=input_, filters=kernel, border_mode='valid')
+    blur = theano.function([input_], c)
+    image = K.square(y_true - y_pred)
+    return K.mean(blur(image), axis=-1)
+where kernel is a predefined 2D ndarray. When I test this objective function on a simple convolutional autoencoder like this:
+from keras.models import Sequential
+from keras.layers import Dense, Activation, Flatten, Reshape, Convolution2D, UpSampling2D, ZeroPadding2D
+
+print('X_train shape:', X_train.shape)  # (2000, 1, 32, 32) gray-scale images
+model = Sequential()
+ae_layers = [
+    Convolution2D(8, 3, 3, border_mode='valid', input_shape=(img_channels, img_rows, img_cols), subsample=(2, 2), activation='relu'),
+    Flatten(),
+    Dense(64),
+    Activation('relu'),
+    Dense(8 * 15 * 15),
+    Reshape(target_shape=(8, 15, 15)),
+    UpSampling2D(size=(2, 2)),
+    Convolution2D(8, 3, 3, border_mode='same'),
+    Activation('relu'),
+    ZeroPadding2D(padding=(1, 1))
+]
+for layer in ae_layers:
+    model.add(layer)
+model.summary()
+print("compile model...")
+model.compile(optimizer='adadelta', loss=conv_loss)
+print("train model...")
+model.fit(X_train, X_train, batch_size=128, nb_epoch=5, shuffle=True)
+I get the following error:
+compile model...
+Traceback (most recent call last):
+  File "test_error.py", line 72, in <module>
+    model.compile(optimizer='adadelta', loss=conv_loss)
+  File "anaconda/lib/python2.7/site-packages/keras/models.py", line 343, in compile
+    **kwargs)
+  File "anaconda/lib/python2.7/site-packages/keras/engine/training.py", line 601, in compile
+    sample_weight, mask)
+  File "anaconda/lib/python2.7/site-packages/keras/engine/training.py", line 323, in weighted
+    score_array = fn(y_true, y_pred)
+  File "errors.py", line 161, in conv_loss
+    return K.mean(blur(image))
+  File "anaconda/lib/python2.7/site-packages/theano/compile/function_module.py", line 788, in __call__
+    allow_downcast=s.allow_downcast)
+  File "anaconda/lib/python2.7/site-packages/theano/tensor/type.py", line 87, in filter
+    'Expected an array-like object, but found a Variable: '
+TypeError: ('Bad input argument to theano function with name "errors.py:159" at index 0 (0-based)', 'Expected an array-like object, but found a Variable: maybe you are trying to call a function on a (possibly shared) variable instead of a numeric array?')
+What exactly does keras expect back from the loss function?
+Any help is greatly appreciated.
+Mac OSX 10.11.6
+python 2.7.12 (anaconda)
+keras v1.0.5
+theano v0.9.0dev2

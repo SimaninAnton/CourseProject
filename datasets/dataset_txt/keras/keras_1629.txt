@@ -1,0 +1,63 @@
+shunyo commented on 28 Sep 2017 •
+edited
+I am trying to perform pixel classification for image datasets having two classes which are unbalanced. The model has X as numpy array of grayscale images [shape=(num_images, img_width,img_height,1)] and y as numpy array of [shape=(img_width,img_height,num_classes)] (one-hot vectors for two classes). However, I am trying to provide class_weights or sample_weights and am failing to do so. I am creating sample_weights of [shape=(num_img,img_width*img_height,2)] but receiving the error
+ValueError: Found a sample_weight array with shape (39993344, 2) for an input with shape (2441, 16384, 2). sample_weight cannot be broadcast.
+The grayscale images and class images are loaded using the load_image_pairs function:
+def load_image_pairs(data_path,class_weights):
+    class_data_path = data_path + '/class/'
+    img_data_path = data_path + '/img/'
+    gray_img_list = []
+    class_img_list = []
+    sample_weights_list = []
+    for img_file in sorted(os.listdir(igrid_data_path)):
+        class_img_path = class_data_path + img_file
+        gray_img_path = gray_data_path + img_file
+        class_img = load_img(class_img_path, target_size=(img_width,img_height))
+        class_img = img_to_array(class_img)
+        class_img = class_img[:,:,0]
+        mean_img = class_img.mean()
+        std_img = class_img.std()
+        if(mean_img == 0 and std_img == 0):
+            continue
+        else:
+            class_img[class_img > 0] = 1
+            class_img = class_img.astype(int)
+            labels = one_hot_it(class_img,n_labels)
+            labels = np.reshape(labels,(labels.shape[0]*labels.shape[1],labels.shape[2]))
+            sample_weights = np.column_stack((np.ones(labels.shape[0])*class_weights[0], np.ones(labels.shape[0])*class_weights[1]))
+            class_img_list.append(labels)
+            sample_weights_list.append(sample_weights)
+            gray_img = load_img(gray_img_path, target_size=(img_width,img_height))
+            gray_img = img_to_array(gray_img)
+            gray_img = gray_img[:,:,0]
+            mean_img = gray_img.mean()
+            std_img = gray_img.std()
+            gray_img -= mean_img
+            gray_img /= std_img
+            gray_img_list.append(gray_img)
+    
+    class_img_list = np.array(class_img_list)
+    gray_img_list = np.array(gray_img_list)
+    sample_weights_list = np.array(sample_weights_list)
+    return gray_img_list,class_img_list, sample_weights_list
+
+class_weights = [1,10]
+sub_dir = [os.path.join(directory, o) for o in os.listdir(directory) 
+                    if os.path.isdir(os.path.join(directory,o))]
+X_train, y_train,sample_weights = load_image_pairs(sub_dir[0], class_weights)
+for i in range(1,len(sub_dir)):
+    X_train_sub, y_train_sub, sample_weights_sub = load_image_pairs(sub_dir[i],class_weights)
+    X_train = np.append(X_train,X_train_sub,axis=0)
+    y_train = np.append(y_train,y_train_sub,axis=0)
+    sample_weights = np.append(sample_weights,sample_weights_sub,axis=0)
+
+X_train = X_train.reshape(X_train.shape[0],img_width,img_height,1)
+sample_weights = sample_weights.reshape(sample_weights.shape[0]*sample_weights.shape[1],sample_weights.shape[2])
+The model, compile and fit commands are given as
+model = segmentation_model(img_width,img_height,n_labels)
+sgd = optimizers.SGD(lr=1e-1, decay=1e-6, momentum=0.9, clipnorm=0.)
+model.compile(optimizer=sgd, loss='binary_crossentropy', metrics=['mae'],sample_weight_mode='temporal')
+history = model.fit(X_train, y_train, batch_size = 64, epochs=10,
+               validation_split=0.2, sample_weight = sample_weights,
+              callbacks=[ModelCheckpoint('model_weights.h5', save_best_only=True)], verbose=1)
+Thanks for the help.

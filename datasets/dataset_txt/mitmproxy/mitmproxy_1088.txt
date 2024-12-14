@@ -1,0 +1,41 @@
+arnau commented on 20 May 2016
+A bit of context: I got here when migrating from 0.15 to 0.17. I was trying to import mitmproxy.models from a non-inline script and then import this in my actual inline script. I did work with 0.15's libmproxy.models but not with the new structure.
+This unexpected situation made me find the following comment in
+mitmproxy/mitmproxy/models/http.py
+Line 28 in bb4f961
+     A mitmproxy HTTP request. 
+:
+A mitmproxy HTTP request.
+This is a very thin wrapper on top of :py:class:netlib.http.Request and
+may be removed in the future.
+So I tried to use netlib.http.Request instead which works with my import chain but the following happens which is an unexpected outcome for me.
+Steps to reproduce the problem:
+(1). Create the following inline script a.py and run mitmdump --script a.py.
+# a.py
+from mitmproxy.models import Headers, HTTPResponse
+
+def request(context, flow):
+    flow.reply(HTTPResponse("HTTP/1.1", 204, "foo", Headers(), ""))
+(2). Then make a proxied request (it is intended the requested service on localhost:8000 is not available):
+curl -I --proxy http://localhost:8080 -XGET http://localhost:8000
+(3). Response:
+HTTP/1.1 204 foo
+(4). Create the following inline script b.py and run mitmdump --script b.py.
+# b.py
+from netlib.http import Headers, Response
+def request(context, flow):
+    flow.reply(Response("HTTP/1.1", 204, "foo", Headers(), ""))
+(5). Then make a proxied request (it is intended the requested service on localhost:8000 is not available):
+curl -I --proxy http://localhost:8080 -XGET http://localhost:8000
+(6). Response:
+HTTP/1.1 502 Bad Gateway
+Content-Length: 262
+Content-Type: text/html
+Connection: close
+Server: netlib 0.17
+What is the expected behavior?
+I expected mitmproxy.models.HTTPResponse and netlib.http.Response to behave in a similar way. Ideally both like mitmproxy.models.HTTPResponse so I can mock responses to non-existing services.
+Thanks!
+Mitmproxy Version: 0.17
+Operating System: OSX 10.11.4
+Python: 2.7.11

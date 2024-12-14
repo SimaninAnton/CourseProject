@@ -1,0 +1,115 @@
+yananchen1989 commented on 3 Oct 2018 •
+edited
+My code has a class which includes two thread: one is responsible for load model from disk and the other one is use the loaded model to predict.
+here is a skeleton of the class:
+some details have been erased for simplicity
+from multiprocessing.dummy import Pool as ThreadPool
+class TSNew:
+    def __init__(self):
+        self.redis_client = redis.StrictRedis(host="172.17.31.147", port=4401, db=0)
+        self.pool = ThreadPool(40) # init pool
+        self.dnn_model = None
+        self.lock=threading.Lock()
+
+        self.t1 = threading.Thread(target=self.load_model_item)
+        self.t1.start()
+
+        self.t2 = threading.Thread(target=self.process_user_dict)
+        self.t2.start()
+
+    def load_model_item(self):
+        while True:
+            
+            try:
+                dnn_model_ = load_model('best_model.h5')
+                dnn_model_._make_predict_function()
+                logging.info('dnn_model_ loaded success PID: %d', os.getpid()  ) 
+            except Exception, e:
+                logging.info('dnn_model_ loaded error PID: %d traceback:%s', os.getpid(),traceback.format_exc() )   
+                continue    
+            self.lock.acquire()
+            self.dnn_model = dnn_model__         
+            self.lock.release()
+            time.sleep(600)
+    def predict_memcache(self, user_dict):
+        scores = self.dnn_model.predict(user_dict, verbose=0, steps=1) 
+        return scores
+    def process_user_dict(self):
+        while True:
+            # construct user_dicts as a list
+            # use self.dnn_model to predict by self.pool 
+            results = self.pool.map(self.predict_memcache, user_dicts)
+
+TSNew_ = TSNew()
+But when running this code, most of the time it is OK, while sometimes the two thread both gives the error below, just as the program execute the mode.predict and load_model operations.
+ File "/data01/refreash_category_ucb_score/dnns_server.py", line 185, in load_model_item
+    dnn_model_ = load_model('best_model.h5')
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/saving.py", line 260, in load_model
+    model = model_from_config(model_config, custom_objects=custom_objects)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/saving.py", line 334, in model_from_config
+    return deserialize(config, custom_objects=custom_objects)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/layers/__init__.py", line 55, in deserialize
+    printable_module_name='layer')
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/utils/generic_utils.py", line 145, in deserialize_keras_object
+    list(custom_objects.items())))
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/network.py", line 1027, in from_config
+    process_node(layer, node_data)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/network.py", line 986, in process_node
+    layer(unpack_singleton(input_tensors), **kwargs)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/base_layer.py", line 431, in __call__
+    self.build(unpack_singleton(input_shapes))
+File "/root/anaconda2/lib/python2.7/site-packages/keras/layers/core.py", line 861, in build
+    constraint=self.kernel_constraint)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/legacy/interfaces.py", line 91, in wrapper
+    return func(*args, **kwargs)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/base_layer.py", line 252, in add_weight
+    constraint=constraint)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 400, in variable
+    v = tf.Variable(value, dtype=tf.as_dtype(dtype), name=name)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 145, in __call__
+    return cls._variable_call(*args, **kwargs)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 141, in _variable_call
+    aggregation=aggregation)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 120, in <lambda>
+    previous_getter = lambda **kwargs: default_variable_creator(None, **kwargs)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variable_scope.py", line 2441, in default_variable_creator
+    expected_shape=expected_shape, import_scope=import_scope)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 147, in __call__
+    return super(VariableMetaclass, cls).__call__(*args, **kwargs)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 1104, in __init__
+    constraint=constraint)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 1267, in _init_from_args
+    ops.add_to_collections(collections, self)
+  File "/root/anaconda2/lib/python2.7/contextlib.py", line 24, in __exit__
+    self.gen.next()
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 5347, in init_scope
+   yield
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 4369, in __exit__
+    self._graph._pop_control_dependencies_controller(self)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 4390, in _pop_control_dependencies_controller
+    assert self._control_dependencies_stack[-1] is controller
+AssertionError
+[Traceback (most recent call last):
+  File "/data01/refreash_category_ucb_score/dnns_server.py", line 248, in predict_memcache
+    pred_scores = self.dnn_model.predict(feats_news_user, verbose=0, steps=1)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/training.py", line 1167, in predict
+    steps=steps)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/engine/training_arrays.py", line 266, in predict_loop
+    batch_outs = f(ins)
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 2658, in __call__
+    if hasattr(get_session(), '_make_callable_from_options'):
+  File "/root/anaconda2/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 204, in get_session
+    session.run(tf.variables_initializer(uninitialized_vars))
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/variables.py", line 2566, in variables_initializer
+    return control_flow_ops.group(*[v.initializer for v in var_list], name=name)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/control_flow_ops.py", line 3416, in group
+    return _GroupControlDeps(dev, deps, name=name)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/control_flow_ops.py", line 3368, in _GroupControlDeps
+    return no_op(name=name)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 4369, in __exit__
+    self._graph._pop_control_dependencies_controller(self)
+  File "/root/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 4390, in _pop_control_dependencies_controller
+    assert self._control_dependencies_stack[-1] is controller
+AssertionError](url)
+So what's wrong with this and I am confused whether the lock has worked right. Any solutions ?
+Thanks.

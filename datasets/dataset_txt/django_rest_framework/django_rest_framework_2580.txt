@@ -1,0 +1,31 @@
+spenthil commented on 22 Mar 2014
+Is there a reason why field serializer's default isn't given context, self, etc.? I want to set the default value of a field to the logged in user.
+I'm monkey patching my desired behavior with the code below. Would be happy to formalize the fix along these lines if desired.
+import inspect
+from rest_framework.fields import WritableField, is_simple_callable
+
+
+def number_of_arguments(obj):
+    function = inspect.isfunction(obj)
+    method = inspect.ismethod(obj)
+
+    if not (function or method):
+        return False
+
+    args, _, _, defaults = inspect.getargspec(obj)
+    len_args = len(args) if function else len(args) - 1
+    return len_args
+
+
+def get_default_value_context(self):
+    if is_simple_callable(self.default):
+        return self.default()
+    elif number_of_arguments(self.default) == 1:
+        return self.default(self.context)
+    return self.default
+
+
+WritableField.get_default_value = get_default_value_context
+Then I can use the default function for a SlugRelatedField as:
+def default_authenticated_user(context):
+    return context['request'].user.email

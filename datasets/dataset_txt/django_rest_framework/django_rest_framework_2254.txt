@@ -1,0 +1,52 @@
+mkching commented on 19 Nov 2014
+In isolating a test case for PR #2070, we found that the issue only manifests when the field is part of a unique_together requirement. This is perhaps related to issue #1945. Is there something different we should be doing here in DRF 3.0?
+Model:
+class DefaultFieldModel(models.Model):
+    ip = models.CharField(max_length=15, blank=False)
+    port = models.CharField(max_length=5, default="5060")
+
+    class Meta:
+        unique_together = (('ip', 'port'),)
+Serializer:
+class DefaultFieldSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DefaultFieldModel
+        fields = ('id', 'ip', 'port')
+Code:
+s = DefaultFieldSerializer(data={'ip':'192.168.0.2', 'port': '8888'})
+if s.is_valid():
+    o = s.save()
+    print("ok", o.id, o.ip, o.port)
+else:
+    print("errors", s.errors)
+
+s = DefaultFieldSerializer(o, data={'ip': '192.168.0.3'}, partial=True)
+if s.is_valid():
+    o = s.save()
+    print("ok", o.id, o.ip, o.port)
+else:
+    print("errors", s.errors)
+
+s = DefaultFieldSerializer(o, data={'ip': '192.168.0.4'})
+if s.is_valid():
+    o = s.save()
+    print("ok", o.id, o.ip, o.port)
+else:
+    print("errors", s.errors)
+
+s = DefaultFieldSerializer(data={'ip': '192.168.0.5'})
+if s.is_valid():
+    o = s.save()
+    print("ok", o.id, o.ip, o.port)
+else:
+    print("errors", s.errors)
+Output in DRF 2.4:
+ok 1 192.168.0.2 8888
+ok 1 192.168.0.3 8888
+ok 1 192.168.0.4 5060
+ok 2 192.168.0.5 5060
+Output in DRF 3.0:
+ok 1 192.168.0.2 8888
+errors ReturnDict([('port', [<django.utils.functional.lazy.<locals>.__proxy__ object at 0x7f80ed8f0278>])])
+errors ReturnDict([('port', [<django.utils.functional.lazy.<locals>.__proxy__ object at 0x7f80ed8f0278>])])
+errors ReturnDict([('port', [<django.utils.functional.lazy.<locals>.__proxy__ object at 0x7f80ed8f0278>])])

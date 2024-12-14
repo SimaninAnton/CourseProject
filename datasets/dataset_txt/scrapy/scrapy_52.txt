@@ -1,0 +1,51 @@
+vella-nicholas commented on Oct 9, 2019
+I am scraping a web page which has fragment identifiers (on the home page) for same page navigation. To make it clear I have this anchor tag <a href="#idx1">1. Histoire</a> and when you click on it you are taken to the 'Histoire' header on the same page. <h2 id="idx1">1. Histoire</h2>.
+Scrapy is following this fragment as https://www.mysite.com/#idx1 (or https://www.mysite.com#idx1) and scraping the whole page again. Since this is the home page, it is yielding the same results as if it scraped the home page.
+This behavior is not repeated for the rest of the fragment identifiers (I have many more). So for this anchor tag (on the same page) the above scenario is not manifested. <a href="#idx2">2. Idées reçues</a> -> Do not repeat itself for this.
+Is this intentional or am I missing something?
+import scrapy
+from datetime import datetime
+from netlinking.items import NetlinkItem
+from urllib.parse import urlparse, urlunparse
+
+
+class NetlinkingSpider(scrapy.Spider):
+    name = "netlinking"
+    referent_netloc = ''
+
+    def __init__(self, url=None, *args, **kwargs):
+        super(NetlinkingSpider, self).__init__(*args, **kwargs)
+        parsed_uri = urlparse(url)
+        self.referent_netloc = parsed_uri.netloc
+        self.referent_netloc = self.referent_netloc.replace('www.', '')
+        self.allowed_domains = [('%s' % self.referent_netloc)]
+        self.start_urls = [('%s' % url)]
+
+    def parse(self, response):
+        for anchor in response.css('a'):
+            netlink = NetlinkItem()
+            netlink['anchor_text'] = anchor.css('a::text').get()
+            netlink['referent_website'] = response.request.url
+            netlink['referent_netloc'] = self.referent_netloc
+            netlink['target_url'] = anchor.css('a::attr(href)').get()
+
+            parsed_target_uri = urlparse(netlink['target_url'])
+            if parsed_target_uri.netloc.strip() \
+                    and (self.referent_netloc !=
+                         parsed_target_uri.netloc.lower().replace('www.', '')):
+
+                netlink['target_website'] = \
+                    '{uri.scheme}://{uri.netloc}/'.format(
+                    uri=parsed_target_uri)
+
+                netlink['target_netloc'] = '{uri.netloc}'.format(
+                    uri=parsed_target_uri).replace('www.', '')
+
+                netlink['timestamp'] = datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S")
+
+                yield netlink
+
+       #Here I am aware that I am following all links but this problem does not repeat for #idx2 
+       for a in response.css('a'):
+           yield response.follow(a, callback=self.parse)

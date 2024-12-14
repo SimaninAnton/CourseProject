@@ -1,0 +1,40 @@
+claytondaley commented on 14 Dec 2017 •
+edited
+Background
+The current implementation of raise_errors_on_nested_writes permits the following approach to nested serialization (simplified for illustration):
+class ReturnsAModelInstanceSerializer(ModelSerializer):
+    class Meta:
+        model = MyChildModel
+        fields = '__all__'
+
+    def to_internal_value(self, data):
+        data = super(ReturnsAModelInstanceSerializer, self).to_internal_value(data)
+        # insert complex matching logic here... with a trivial case being:
+        return self.Meta.model(**data)
+
+class ParentSerializer(ModelSerializer):
+    class Meta:
+        model = MyParentModel
+        fields = '__all__'
+
+    # ForeignKey in the underlying Model
+    related = ReturnsAModelInstanceSerializer()
+
+    def create(self, validated_data):
+        # Must ensure 'related' has a PK due to FK dependency
+        if 'related' in validated_data and validated_data['related'].pk is None:
+            validated_data['related'].save()
+        return super(ParentSerializer, self).create(validated_data)
+Even though the field is a nested Serializer, it passes this part of the raise_errors_on_nested_writes check because the entry in validated_data is populated with a model instance. In this way, it's acting more like a related field than a nested serializer (which seems reasonable to me).
+Issue
+Now consider the same infrastructure, but with a many field instead:
+class ParentSerializer(ModelSerializer):
+    ...
+    related = ReturnsAModelInstanceSerializer(many=True)
+    ...
+In this version, the entry in validated_data is populated with a list of model instances. It seems just as reasonable as the previous version, but it runs afoul of the list check in the same place.
+Proposal
+raise_errors_on_nested_writes should be many-aware:
+If the field is not a many serializer, the current check is used
+If the field is a many serializer, the (same) checks are applied to each list element (ignoring the wrapping list)
+I can submit the trivial PR (w/ test cases) if the general approach to nested serialization does not raise any red flags.

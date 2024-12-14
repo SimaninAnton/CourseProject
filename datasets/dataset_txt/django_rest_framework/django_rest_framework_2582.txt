@@ -1,0 +1,69 @@
+jjkester commented on 14 Mar 2014
+When updating a nested serializer, only the attributes of the serialized object can be saved. DRF does not save changes to a nested serializer in another nested serializer (can you still follow?). If DRF would be able to do this, working with trees would be much easier.
+Hypothetical situation (a simplified version of my own situation):
+class CategorySerializer(serializers.ModelSerializer):
+    """Tree data"""
+    class Meta:
+        model = Category
+        fields = ('id', 'name', 'children')  # Simplified
+
+CategorySerializer.base_fields['children'] = CategorySerializer(many=True, allow_add_remove=True)
+Lets say that your data for some arbitrary Category object is the following:
+{
+    "id": 1,
+    "name": "Top level",
+    "children": [
+        {
+            "id": 2,
+            "name": "Level 2",
+            "children": [
+                {
+                        "id": 3
+                        "name": "Level 3",
+                        "children": []
+                }
+            ]
+        }
+    ]
+}
+If you want to put Level 3 next to Level 2 (so Top level -> Level 2, Level 3), you would expect the following input (PUT/PATCH) to work:
+{
+    "id": 1,
+    "name": "Top level",
+    "children": [
+        {
+            "id": 3,
+            "name": "Level 2",
+            "children": []
+        },
+        {
+                "id": 2
+                "name": "Level 3",
+                "children": []
+        }
+    ]
+}
+Sadly, the result is not what you would expect, but quite badly broken. Only the children of the Top level have changed. The result at this point is:
+{
+    "id": 1,
+    "name": "Top level",
+    "children": [
+        {
+            "id": 2,
+            "name": "Level 2",
+            "children": [
+                {
+                        "id": 3
+                        "name": "Level 3",
+                        "children": []
+                }
+            ]
+        },
+        {
+                "id": 2
+                "name": "Level 3",
+                "children": []
+        }
+    ]
+}
+My suspicion is that DRF only saves one level deep, and ignores the rest of the changes. Is it possible to fix/implement this? I would be able to help implement this, but at the moment I'm not familiar enough with the internal workings of DRF.

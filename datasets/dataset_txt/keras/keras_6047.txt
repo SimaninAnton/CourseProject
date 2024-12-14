@@ -1,0 +1,77 @@
+Contributor
+parag2489 commented on 28 Jan 2016
+We show a simple example where the training is done using fit() and train_on_batch() - to ensure identical performance from both these functions, we take the entire data in a single batch and train them. Then we test it using predict_classes().
+Our expectation was that we should get identical accuracies from 1. return argument of train_on_batch() 2. history object returned by fit() 3. predict_classes(). To our surprise, these numbers are significantly different. Could someone explain these discrepancies? Are we missing something obvious?
+We created a standalone script to replicate the issue (very similar to one of the Keras example scripts), which is pasted below. Based on this, our specific questions are:
+Does history.history["acc"][i] give accuracy at i^th epoch?
+Can we obtain final accuracy from history object, which is same as that obtained from predict_classes()?
+Why does accuracy obtained from train_on_batch() differ from everything else?
+System info:
+Ubuntu 14.04
+Python 2.7.6
+Keras backend: Theano
+GPU: NVIDIA Tesla K40
+Cuda-7.5
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation
+from keras.optimizers import SGD
+import numpy as np
+from keras.utils import np_utils
+import copy
+
+model = Sequential()
+# Dense(64) is a fully-connected layer with 64 hidden units.
+# in the first layer, you must specify the expected input data shape:
+# here, 20-dimensional vectors.
+model.add(Dense(64, input_dim=20, init='uniform'))
+model.add(Activation('tanh'))
+model.add(Dropout(0.5))
+model.add(Dense(64, init='uniform'))
+model.add(Activation('tanh'))
+model.add(Dropout(0.5))
+model.add(Dense(2, init='uniform'))
+model.add(Activation('softmax'))
+
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd, class_mode="categorical")
+
+#Creating features for 100 samples, each 20-dimensional
+r1=np.random.randint(0,5,(200,20))
+r2=np.random.randint(4,9,(200,20))
+r3=np.concatenate((r1,r2))
+
+#Creating labes
+labels=np.concatenate((np.zeros((200,),dtype="int32"),np.ones((200,),dtype="int32")))
+
+#Converting labels into categorical format
+labelsCat = np_utils.to_categorical(labels, 2)
+
+#Creating a copy of "model" so that the copy doesn't change when we train "model"
+model2 = copy.deepcopy(model)
+
+#Train "model" using "fit" function
+history = model.fit(r3,labelsCat, nb_epoch=1, batch_size=400, shuffle=True,show_accuracy=True)
+
+#Train "model2" using "train_on_batch" function
+(loss, accFromTrainOnBatch) = model2.train_on_batch(r3,labelsCat,accuracy=True)
+
+#Predicting using "predict_classes" method with "model" and "model2"
+
+#with "model2"
+predictions = model2.predict_classes(r3)
+accFromPredictClasses_model2 = (sum(predictions==labels)*100.0/400)
+
+#with "model"
+predictions2 = model.predict_classes(r3)
+accFromPredictClasses_model = (sum(predictions2==labels)*100.0/400)
+
+#Accuracy from "fit" function
+accFromFitFunction=history.totals["acc"]
+
+#Printing everything
+print "Accuracy at epoch 0 from fit() = " + str(history.history["acc"][0])
+print "Final accuracy from fit() = " + str(accFromFitFunction)
+print "Accuracy from train_on_batch() = " + str(accFromTrainOnBatch)
+print "Accuracy from predict_classes() using model = " + str(accFromPredictClasses_model)
+print "Accuracy from predict_classes() using model2 = " + str(accFromPredictClasses_model2)
+print "We verified with methods -> predict() and evaluate(), they give identical accuracy to predict_classes()"

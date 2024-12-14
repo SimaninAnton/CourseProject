@@ -1,0 +1,22 @@
+Contributor
+rubendura commented on 25 Aug 2015
+Building upon #3313 comments. This is a follow up for #3309.
+There can be some memory issues with RelatedField.choices when dealing with really big querysets (~400k items in my case). This property fetches all models in the queryset and then builds a massive OrderedDict with them, which basically can clog the memory of many systems.
+I suggest that we slice the queryset using html_cutoff before evaluating the queryset and building the returned OrderedDict. It seems to do the trick for me, but it'd be better if someone can confirm if this is a valid solution.
+This is the code snippet that I used to do a quick (and so far successful) test. I've only added the bit slicing the queryset.
+In relations.py:144 (RelatedField.choices)
+@property
+def choices(self):
+    queryset = self.get_queryset()
+    if queryset is None:
+        # Ensure that field.choices returns something sensible
+        # even when accessed with a read-only field.
+        return {}
+
+    return OrderedDict([
+        (
+            six.text_type(self.to_representation(item)),
+            self.display_value(item)
+        )
+        for item in queryset[:self.html_cutoff]
+    ])

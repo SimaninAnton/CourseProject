@@ -1,0 +1,28 @@
+Member
+cpu commented on 19 Jan 2019
+After #6144 landed Boulder had to switch away from using an up to date Certbot clone for our integration tests.
+We don't rely on Certbot's acme module to create or serve TLS-ALPN-01 challenge response certificates (we use pebble-challtestsrv for this), but we do rely on the acme module for initiating challenges. E.g. in do_tls_alpn_challenges in our chisel.py test client we call:
+ client.answer_challenge(c, c.response(client.key))
+where c is a acme.ChallengeBody with type TLSALPN01.
+If we remove this commit pin then answer_challenge begins to fail:
+Traceback (most recent call last):
+  File "test/integration-test.py", line 888, in <module>
+    main()
+  File "test/integration-test.py", line 821, in main
+    run_chisel(args.test_case_filter)
+  File "test/integration-test.py", line 845, in run_chisel
+    value()
+  File "test/integration-test.py", line 328, in test_tls_alpn_challenge
+    auth_and_issue(domains, chall_type="tls-alpn-01")
+  File "/go/src/github.com/letsencrypt/boulder/test/chisel.py", line 224, in auth_and_issue
+    cleanup = do_tlsalpn_challenges(client, authzs)
+  File "/go/src/github.com/letsencrypt/boulder/test/chisel.py", line 198, in do_tlsalpn_challenges
+    client.answer_challenge(c, c.response(client.key))
+  File "/certbot/acme/acme/challenges.py", line 179, in response
+    key_authorization=self.key_authorization(account_key))
+TypeError: 'NotImplementedType' object is not callable
+We could potentially work around this by figuring out the right way to use the acme module to prepare a signed JWS body using the account key that we can POST to the challenge URI ourselves but I think that's a little yucky: we'd be duplicating a lot of the acme module's existing code. It also means other projects that use the acme module may have to do the same in the future.
+With all of the specified ACME challenge types that exist today the client can POST a JWS with the trivial {} payload to initiate the challenge without needing to know anything about the actual process of solving the challenge. E.g. it can be totally challenge type agnostic.
+Would the Certbot team be willing to add support for initiating a TLS-ALPN-01 challenge?
+Thanks!
+4

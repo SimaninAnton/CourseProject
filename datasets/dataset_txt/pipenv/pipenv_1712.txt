@@ -1,0 +1,43 @@
+kstrauser commented on 19 Dec 2017
+pipenv install pkg updates the versions of unrelated packages in Pipfile.lock. This runs counter to an expectation that the new package would be added to Pipfile and Pipfile.lock without touching other stuff.
+Describe your environment
+OS Type
+Python version: $ python -V: Python 3.6.3
+Pipenv version: $ pipenv --version: pipenv, version 9.0.1
+Expected result
+When I run pipenv install foo, everything but foo (and any new dependencies it brings in) should be left as-is.
+Actual result
+Running pipenv install foo or pipenv install --ignore-pipfile foo adds foo and upgrades everything else.
+Steps to replicate
+Let's say I'm upgrading an existing project that used requirements.txt:
+$ cat requirements.txt
+toposort==1.4
+Yay pipenv! Let's make the switch:
+$ pipenv --three
+Creating a virtualenv for this project…
+[...]
+Warning: Your Pipfile now contains pinned versions, if your requirements.txt did.
+We recommend updating your Pipfile to specify the "*" version, instead.
+Now we'll install the required package and see what's actually in Pipfile.lock:
+$ pipenv install
+Pipfile.lock not found, creating…
+[...]
+
+$ jq '.default.toposort.version' < Pipfile.lock
+"==1.4"
+That worked! But there was a warning about pinning the version with Pipfile.lock instead of Pipfile, so let's remove that pin:
+$ sed -i'' -e 's/==1.4/*/' Pipfile
+$ grep toposort Pipfile
+toposort = "*"
+Awesome - we're using the lockfile now. Hmm, we really need to install another package, though:
+$ pipenv install yapf
+[...]
+That worked, so now Pipfile.lock has the new package and pre-existing package at its old version, right?
+$ jq '.default.toposort.version' < Pipfile.lock
+"==1.5"
+That... is not what I'd expected. I get the same results in the last couple of steps if I tell pipenv to ignore Pipfile:
+# Repeat all the steps prior to pipenv install yapf, then:
+$ pipenv install --ignore-pipfile yapf
+$ jq '.default.toposort.version' < Pipfile.lock
+"==1.5"
+11

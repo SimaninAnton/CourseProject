@@ -1,0 +1,48 @@
+samarth-b commented on 8 Jun 2017 •
+edited
+I have a functional model that takes one input and has two output layers, as follows:
+input_img= Input(shape=input_s, name='patch_input', dtype='float')
+common_rep = modelVGG(image_input_shape)
+
+tower_d = Convolution2D(64, 3, 3, border_mode='same', activation='relu')(common_rep)
+tower_d = Convolution2D(64, 3, 3, border_mode='same', activation='relu')(tower_d)
+tower_d = Flatten()(tower_d)
+tower_d = Dropout(0.5)(tower_d)
+tower_d = Dense(output_dim=43)(tower_d)
+tower_d = Activation('softmax', name='output_1')(tower_d)
+
+tower_s = Convolution2D(64, 3, 3, border_mode='same', activation='relu')(common_rep)
+tower_s = Convolution2D(64, 3, 3, border_mode='same', activation='relu')(tower_s)
+tower_s = Flatten()(tower_s)
+tower_s = Dropout(0.5)(tower_s)
+tower_s = Dense(output_dim=25)(tower_s)
+tower_s = Activation('softmax', name='output_2')(tower_s)
+
+model = Model(input=input_img, output=[tower_d, tower_s])
+The model compiles correctly
+adam = Adam(lr=0.001, decay=0.1)
+model.compile(loss={'output_1': 'categorical_crossentropy', 'output_2': 'categorical_crossentropy'},
+   optimizer=adam,
+   metrics=['fbeta_score'])
+In the custom data generator i am using the following:
+def createGenerator(X, D, S,batch_size=8):
+ while True:
+   datagen = ImageDataGenerator(
+    rescale=1./255,
+    samplewise_center=True,
+    samplewise_std_normalization=True)
+
+  batches = datagen.flow(X[idx], D[idx], batch_size, shuffle=False)
+  idx0 = 0
+  for batch in batches:
+   idx1 = idx0 + batch[0].shape[0]
+   # print "idx inside function ", idx1
+   print 'before yield', batch[0].shape,  batch[1].shape
+   print batch[1]
+   yield batch[0], {'output_1':  D[idx[idx0:idx1]], 'output_2': S[idx[idx0:idx1]]]}
+
+   idx0 = idx1
+   if idx1 >= X.shape[0]:
+    break
+The model.fit_generator puts out the error that "output_1" tensor expects (None, 43) but found (8, 1). Implying that the individual outputs are not being converted to one-hot vectors. Is this a bug in fit?
+EDIT: Can confirm that the code works when the output_1 and output_2 labels are vectorized in the datagenerator code using from sklearn.preprocessing import LabelBinarizer

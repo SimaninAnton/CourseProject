@@ -1,0 +1,45 @@
+oundead commented on 8 Nov 2012
+Edit: Fixed title to better represent the ticket. - @tomchristie, 8th Nov 2012
+i have a code:
+class CallUserSerializer(ModelSerializer):
+    class Meta:
+        model = Users
+        fields = ("id","name","surname","patronymic","photo")
+
+class CallSerializer(ModelSerializer):
+    source=CallUserSerializer()
+    target=CallUserSerializer()
+    source_id = fields.IntegerField()
+    target_id = fields.IntegerField()
+    apikey = fields.Field(source="OPENTOK_API_KEY")
+
+    class Meta:
+        model = Calls
+
+class CallResource( mixins.ListModelMixin, MultipleObjectAPIView):
+    model = Calls
+    serializer_class = CallSerializer
+    queryset = Calls.objects.prefetch_related("target","source").order_by("status","date")
+    paginate_by = 10   
+
+    def get(self,request, *args, **kwargs):
+        self.queryset = self.queryset.filter(Q(target=request.user)|Q(source=request.user))
+        pk = request.QUERY_PARAMS.get('pk')
+        if pk is not None:
+            self.queryset = self.queryset.filter(pk=pk)
+        return self.list(self, request, *args, **kwargs)
+Serializer throws exception NoneType, when model field Calls.target or Calls source is None.
+I fixed it with mixin:
+class NullSerializerPatch(BaseSerializer):
+    def field_to_native(self, obj, field_name):
+        if obj is None:
+            return None
+        val = getattr(obj, self.source or field_name)
+        if val is None:
+            return None
+        return super(NullSerializerPatch,self).field_to_native(obj, field_name)
+
+....
+
+class CallSerializer(ModelSerializer, NullSerializerPatch):
+    ....

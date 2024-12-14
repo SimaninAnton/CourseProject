@@ -1,0 +1,104 @@
+nitish11 commented on 1 Oct 2015
+I tried to implement cifar example usign Graph model.
+https://github.com/fchollet/keras/blob/1a572b10e8ffb6407c54ec64a70e0ddf8493eea3/examples/cifar10_cnn.py
+'''#####################################################################
+ Defining varibales
+#####################################################################'''
+
+batch_size = 32
+nb_classes = 10
+nb_epoch = 2
+data_augmentation = True
+
+# shape of the image (SHAPE x SHAPE)
+shapex, shapey = 32, 32
+# number of convolutional filters to use at each layer
+nb_filters = [32, 64]
+# level of pooling to perform at each layer (POOL x POOL)
+nb_pool = [2, 2]
+# level of convolution to perform at each layer (CONV x CONV)
+nb_conv = [3, 3]
+# the CIFAR10 images are RGB
+image_dimensions = 3
+
+
+'''#####################################################################
+ Loading the data and labels
+#####################################################################'''
+dirname = "cifar-10-batches-py"
+origin = "http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
+path = get_file(dirname, origin=origin, untar=True)
+
+nb_test_samples = 10000
+nb_train_samples = 50000
+
+X_train = np.zeros((nb_train_samples, 3, 32, 32), dtype="uint8")
+y_train = np.zeros((nb_train_samples,), dtype="uint8")
+
+for i in range(1, 6):
+    fpath = os.path.join(path, 'data_batch_' + str(i))
+    data, labels = load_batch(fpath)
+    X_train[(i-1)*10000:i*10000, :, :, :] = data
+    y_train[(i-1)*10000:i*10000] = labels
+
+fpath = os.path.join(path, 'test_batch')
+X_test, y_test = load_batch(fpath)
+
+y_train = np.reshape(y_train, (len(y_train), 1))
+y_test = np.reshape(y_test, (len(y_test), 1))
+
+# convert class vectors to binary class matrices
+Y_train = np_utils.to_categorical(y_train, nb_classes)
+Y_test = np_utils.to_categorical(y_test, nb_classes)
+
+'''#####################################################################
+ Graph model
+#####################################################################'''
+model =  Graph()
+# Load the input
+model.add_input(name='input1', ndim=4)
+# Convolution Neural Network architecture (5 convolution layers, 3 pooling layers)
+
+model.add_node(Convolution2D(nb_filters[0], image_dimensions, nb_conv[0], nb_conv[0], activation='relu', border_mode='full'), name='conv2', input='input1')
+model.add_node(Convolution2D(nb_filters[0], nb_filters[0], nb_conv[0], nb_conv[0], activation='relu', border_mode='full'), name='conv3', input='conv2')
+model.add_node(MaxPooling2D(poolsize=(nb_pool[0], nb_pool[0])), name='pool1', input='conv3')
+
+model.add_node(Convolution2D(nb_filters[1], nb_filters[0], nb_conv[0], nb_conv[0], activation='relu', border_mode='full'), name='conv4', input='pool1')
+model.add_node(Convolution2D(nb_filters[1], nb_filters[1], nb_conv[1], nb_conv[1], activation='relu', border_mode='full'), name='conv5', input='conv4')
+model.add_node(MaxPooling2D(poolsize=(nb_pool[1], nb_pool[1])), name='pool2', input='conv5')
+
+model.add_node(Flatten(), name='flatten', input='pool2')
+
+model.add_node(Dense(nb_filters[-1] * (shapex / nb_pool[0] / nb_pool[1]) * (shapey / nb_pool[0] / nb_pool[1]), 512, activation='relu', init='uniform'),  name='dense1', input='flatten')
+model.add_node(Dense(512, nb_classes, activation='softmax', init='uniform'), name='dense2', input='dense1')
+
+model.add_output(name='output1', input='dense2', merge_mode='sum')
+model.compile('sgd', {'output1':'categorical_crossentropy'})
+model.get_config(verbose=1)
+
+model.fit({'input1':X_train, 'output1':Y_train},batch_size=batch_size, nb_epoch=nb_epoch)
+
+#model.predict({'input1':X_test})
+I got the below error :
+Epoch 1/200
+Traceback (most recent call last):
+  File "cifar10-graph.py", line 135, in <module>
+    model.fit({'input1':X_train, 'output1':Y_train},batch_size=batch_size, nb_epoch=nb_epoch)
+  File "build/bdist.linux-x86_64/egg/keras/models.py", line 677, in fit
+    shuffle=shuffle, metrics=metrics)
+  File "build/bdist.linux-x86_64/egg/keras/models.py", line 210, in _fit
+    outs = f(*ins_batch)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 606, in __call__
+    storage_map=self.fn.storage_map)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/function_module.py", line 595, in __call__
+    outputs = self.fn()
+ValueError: Shape mismatch: x has 7744 cols (and 32 rows) but y has 4096 rows (and 512 cols)
+Apply node that caused the error: Dot22(Reshape{2}.0, dense1_W)
+Inputs types: [TensorType(float64, matrix), TensorType(float64, matrix)]
+Inputs shapes: [(32, 7744), (4096, 512)]
+Inputs strides: [(61952, 8), (4096, 8)]
+Inputs values: ['not shown', 'not shown']
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Any suggestion to debug the error????

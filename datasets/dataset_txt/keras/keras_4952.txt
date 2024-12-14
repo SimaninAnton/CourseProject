@@ -1,0 +1,115 @@
+twoertwein commented on 17 Jun 2016
+It is not possible to merge (the layer Merge) shared models created with the function API. Merging (the tensor function API merge) two shared tensors works fine. I like to use the layer 'Merge' since I could use a mix of the function API and the Sequential API .
+The following example is based on the 'Shared vision model' (http://keras.io/getting-started/functional-api-guide/). :
+import numpy as np 
+from keras.layers import merge, Convolution2D, MaxPooling2D, Input, Dense, Flatten, Merge
+from keras.models import Model, Sequential
+
+# first, define the vision modules
+digit_input = Input(shape=(1, 27, 27))
+x = Convolution2D(64, 3, 3)(digit_input)
+x = Convolution2D(64, 3, 3)(x)
+x = MaxPooling2D((2, 2))(x)
+out = Flatten()(x)
+
+vision_model = Model(digit_input, out)
+
+# then define the tell-digits-apart model
+digit_a = Input(shape=(1, 27, 27))
+digit_b = Input(shape=(1, 27, 27))
+
+# the vision model will be shared, weights and all
+out_a = vision_model(digit_a)
+out_b = vision_model(digit_b)
+
+model_a = Model(digit_a, out_a)
+model_b = Model(digit_b, out_b)
+
+model_concatenated = Merge([model_a, model_b], mode='concat') # useful to add a (long) model_c written in sequential mode
+
+model = Sequential()
+model.add(model_concatenated)
+model.add(Dense(1, activation='sigmoid'))
+
+model.compile(optimizer='sgd', loss='mae')
+
+n = 1000
+x1 = np.random.rand(n, 1, 27, 27)
+x2 = np.random.rand(n, 1, 27, 27)
+y = np.random.rand(n, 1)
+
+model.fit([x1,x2], y)
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+~/test.py in <module>()
+     36 y = np.random.rand(n, 1)
+     37 
+---> 38 model.fit([x1,x2], y)
+
+~/local/lib/python2.7/site-packages/Keras-1.0.4-py2.7.egg/keras/models.pyc in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, **kwargs)
+    406                               shuffle=shuffle,
+    407                               class_weight=class_weight,
+--> 408                               sample_weight=sample_weight)
+    409 
+    410     def evaluate(self, x, y, batch_size=32, verbose=1,
+
+~/local/lib/python2.7/site-packages/Keras-1.0.4-py2.7.egg/keras/engine/training.pyc in fit(self, x, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight)
+   1050         else:
+   1051             ins = x + y + sample_weights
+-> 1052         self._make_train_function()
+   1053         f = self.train_function
+   1054 
+
+~/local/lib/python2.7/site-packages/Keras-1.0.4-py2.7.egg/keras/engine/training.pyc in _make_train_function(self)
+    675                                              [self.total_loss] + self.metrics,
+    676                                              updates=updates,
+--> 677                                              **self._function_kwargs)
+    678 
+    679     def _make_test_function(self):
+
+~/local/lib/python2.7/site-packages/Keras-1.0.4-py2.7.egg/keras/backend/theano_backend.pyc in function(inputs, outputs, updates, **kwargs)
+    533                 msg = "Invalid argument '%s' passed to K.function" % key
+    534                 raise ValueError(msg)
+--> 535     return Function(inputs, outputs, updates=updates, **kwargs)
+    536 
+    537 
+
+~/local/lib/python2.7/site-packages/Keras-1.0.4-py2.7.egg/keras/backend/theano_backend.pyc in __init__(self, inputs, outputs, updates, **kwargs)
+    519                                         allow_input_downcast=True,
+    520                                         on_unused_input='warn',
+--> 521                                         **kwargs)
+    522 
+    523     def __call__(self, inputs):
+
+~/local/lib/python2.7/site-packages/Theano-0.9.0.dev1-py2.7.egg/theano/compile/function.pyc in function(inputs, outputs, mode, updates, givens, no_default_updates, accept_inplace, name, rebuild_strict, allow_input_downcast, profile, on_unused_input)
+    320                    on_unused_input=on_unused_input,
+    321                    profile=profile,
+--> 322                    output_keys=output_keys)
+    323     # We need to add the flag check_aliased inputs if we have any mutable or
+    324     # borrowed used defined inputs
+
+~/local/lib/python2.7/site-packages/Theano-0.9.0.dev1-py2.7.egg/theano/compile/pfunc.pyc in pfunc(params, outputs, mode, updates, givens, no_default_updates, accept_inplace, name, rebuild_strict, allow_input_downcast, profile, on_unused_input, output_keys)
+    441                                          rebuild_strict=rebuild_strict,
+    442                                          copy_inputs_over=True,
+--> 443                                          no_default_updates=no_default_updates)
+    444     # extracting the arguments
+    445     input_variables, cloned_extended_outputs, other_stuff = output_vars
+
+~/local/lib/python2.7/site-packages/Theano-0.9.0.dev1-py2.7.egg/theano/compile/pfunc.pyc in rebuild_collect_shared(outputs, inputs, replace, updates, rebuild_strict, copy_inputs_over, no_default_updates)
+    186             raise ValueError('this shared variable already has an update '
+    187                              'expression',
+--> 188                              (store_into, update_d[store_into]))
+    189 
+    190         # filter_variable ensure smooth conversion of cpu/gpu Types
+
+ValueError: ('this shared variable already has an update expression', (convolution2d_35_W, Elemwise{add,no_inplace}.0))
+> ~/local/lib/python2.7/site-packages/Theano-0.9.0.dev1-py2.7.egg/theano/compile/pfunc.py(188)rebuild_collect_shared()
+    187                              'expression',
+--> 188                              (store_into, update_d[store_into]))
+    189 
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+[x ] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[ x] If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[x ] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

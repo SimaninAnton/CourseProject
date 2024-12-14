@@ -1,0 +1,38 @@
+rasti90 commented on 17 Jun 2017 •
+edited
+Sorry for this question but I asked this in stackoverflow but nobody seems like to answer my question, so I decide to ask here maybe some one can help me.
+I just implemented a custom loss function for my sequential keras model. In the loss function I want to get the values of y_t, the Tensor that is fed in batch_size and do some math with those values:
+`def` lossFunction(y_t, u):
+    # 'y_t' shape is (batch_size, 500)
+    # 'u' shape is (batch_size, 256) (output of last layer)
+    # y_t_ExtraInformation are extra information saved in y_t
+    y_t_ExtraInformation = y_t[:,256:y_t.shape[1]]
+    # y_t_LabelValues are the real true labels for model
+    y_t_LabelValues = y_t[:,0:y_t.shape[1]-256]
+    
+    vectors=[] 
+    for record in K.get_value(y_t_ExtraInformation):
+        # computeVector is a function that return np array of shape (500, 256) based on the input values
+        vectors.append(computeVector(record))
+    # the final 'vectors' shape should be (batch_size, 500, 256)
+    vectors=np.array(vectors)
+    vTens = K.variable(vectors) 
+    u = tf.expand_dims(u, axis=K.ndim(u) if 1 == K.ndim(u) - 1 else K.ndim(u))
+    dotResult = K.batch_dot(u,vTens,axes=[1,2])
+    p = K.exp(dotResult)
+    p = tf.reshape(p, [batch_size,500])
+    sp = K.sum(p,axis=1)
+    sp = K.expand_dims(sp, axis=1)
+    sp = K.tile(sp,(1, 500))
+
+    soft = p/sp
+    soft=K.clip(soft, 0.0000001, 0.9999999)
+    obj = K.categorical_crossentropy(soft, y_t_LabelValues)
+    return obj`
+but with this loss function I get this error:
+ 'You must feed a value for placeholder tensor 'dense_3_target' with dtype float
+ [[Node: dense_3_target = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]'
+I know that the problem is in the operation K.get_value(y_t_ExtraInformation), but I need to get the values to compute a vector for that label record as you see in for loop.
+I just want to know how can I get fed y_t values in the loss function, or how can I implement this logic in another way.
+The reason that I saved extra information in y_t is that I want to produce vectors array with those information for the fed batch_size of the train data. I can produce vectors array outside of the loss function for all the train data and pass it to the loss function, but the problem is that the loss function is fed with batch_size of the train data each time and that batch_size records are generated random from the train data as I know and I don't know how to filter the vectors array for those fed data in loss function, as a result I came to this solution to make vectors array in loss function based on some extra information for the batch_size data and I found no way but to save that extra information in y_t and by getting values of y_t I can handle my problem. so I really appreciate if there is any other way to either filter vectors array for fed batch_size of the train data by finding the index of the fed data in loss function or any other way to pass the corresponding filterd vectors array to loss function in some way.
+I really appreciate your help or any other solution to implement my logic.

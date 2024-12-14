@@ -1,0 +1,80 @@
+silentsnooc commented on 11 Mar 2017 •
+edited
+I've started with a simple example where I convolute a simple image. If I am using np.random.seed(42) the image will always be convoluted exactly the same. If not, the convolution result will look different after each run as expected:
+import numpy as np
+import matplotlib.pyplot as plt
+
+from keras.engine import Input
+from keras.engine import Model
+from keras.engine import merge
+from keras.layers import Convolution2D, MaxPooling2D, Activation
+
+
+def invert_input(x):
+    return -x
+
+
+class MaxPoolTests:
+
+    def __init__(self, ctx_window_sizes, in_nb_row, in_nb_col):
+
+        in_x = Input(shape=(in_nb_row, in_nb_col, 1), name='in_x')
+        convolutions = list()
+
+        for window_size in ctx_window_sizes:
+
+            in_x_invert = Activation(invert_input)(in_x)
+
+            left = Convolution2D(nb_filter=1, nb_row=window_size, nb_col=in_nb_col,
+                                 border_mode='same',
+                                 activation='relu',
+                                 name='l_conv_{:d}'.format(window_size))(in_x)
+
+            right = Convolution2D(nb_filter=1, nb_row=window_size, nb_col=in_nb_col,
+                                  border_mode='same',
+                                  activation='relu',
+                                  name='r_conv_{:d}'.format(window_size))(in_x_invert)
+
+            l_max_pool = MaxPooling2D(name='l_maxpool_{:d}'.format(window_size),
+                                      # pool_size=(2, nb_col),
+                                      border_mode='valid')(left)
+
+            r_max_pool = MaxPooling2D(name='r_maxpool_{:d}'.format(window_size),
+                                      # pool_size=(2, nb_col),
+                                      border_mode='valid')(right)
+
+            r_max_pool = Activation(invert_input)(r_max_pool)
+
+            merged = merge([l_max_pool, r_max_pool], name='merge_{:d}'.format(window_size), mode='sum')
+
+            convolutions.append(merged)
+
+        self.model = Model(input=[in_x], output=convolutions)
+
+
+if __name__ == '__main__':
+
+    np.random.seed(42)
+
+    m = 10; n = 10
+
+    nn = MaxPoolTests([2, 3], in_nb_row=m, in_nb_col=n)
+    nn.model.compile(optimizer='adam', loss='mse')
+
+    x = np.zeros((1, m, n, 1))
+
+    for i,v in enumerate(np.linspace(-1, 1, m)):
+        x[0, i, i, 0] = v
+
+    y = nn.model.predict(x)
+
+    plt.figure()
+    plt.imshow((y[0][0, :, :, 0]))
+    plt.show()
+    
+    print('All done.')
+However, if I do the same for a convolutional neural network that I am using for NLP, the results are not reproducible anymore. If I look at the error / loss what I see is that these values develop completely different on each run except when I am using the debugger!
+Using the debugger I will see the same loss number on each session but not if I run the script normally.
+I am not sure why this is the case. My only guess would be multi-threading so I added a print(text) to the sample generator. At least from there it looks like all the samples are getting produced in the same order so - again I don't know what causes this issue.
+Any idea how I can make my results reproducible?
+As always, I've posted this where it actually belongs too: stackoverflow :P

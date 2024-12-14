@@ -1,0 +1,22 @@
+Member
+rth commented on Oct 4, 2016 •
+edited
+As there was recently a request on adding an equivalent of VotingClassifiers for regressors (issue #7555), it might be useful to have a look at the way the API for such estimators can be done consistently.
+Just the way it is possible to assemble multiple estimators in series using a pipeline, it should be possible to interact consistently with multiple estimators assembled in parallel (with optionally some reduction transformation applied to the output e.g. voting).
+Currently scikit learn has,
+FeatureUnion
+parallel transformers (though also have been used to make parallel vectorizers #3164)
+init definition: transformer_list, n_jobs=1, transformer_weights=None
+inherits from _BasePipeline, TransformerMixin
+stores estimators in self.transformer_list with tosequence (as a list)
+VotingClassifier
+parallel classifiers. In addition does reduction of the results by voting, except for transform with voting == 'soft', when it doesn't
+init defintion: estimators, voting='hard', weights=None, n_jobs=1
+inherits from BaseEstimator, ClassifierMixin, TransformerMixin
+stores estimators in self.named_estimators as a dict
+"CommitteeRegressor"
+parallel regressors, API to be defined, not yet implemented (#7555)
+The names currently do not reflect at all that these perform similar base functionality (even if they are used in different contexts). Also it might be useful to have some common base class, for instance, _BaseUnion that would handle at least parameter/estimator setting/getting in a consistent manner and everything else that could be factorized. For estimators that support it, the way cross-validation is handled should also be defined (e.g. should we provide a grid search for every estimator, or should such _BaseUnion objects accept a cv parameter). This might affect #7136, #7288, #7484, #7230, and I'm not sure if this would be in conflict with issue #2034.
+Backward compatibility would be a major issue though.
+Then there is a whole thing with Stacking Classifiers/Regressors (#4816). It this issue, it was said that "VotingClassifier is just special case of stacking", and because there was no constraints on the implementation that lead to re-implementing the parameter setting/getting for parallel estimators in PR #6674 continued in #7427. From the point of view of modularity it might be better to see stacking as a pipeline of _BaseUnion with some voting estimator IMO.
+Not sure how to address all of it, but I think this should be considered, before more such meta-estimators get merged into scikit learn and then everything will be constrained by backward compatibility.

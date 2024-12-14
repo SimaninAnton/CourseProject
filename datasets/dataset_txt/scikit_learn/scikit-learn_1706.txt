@@ -1,0 +1,52 @@
+sejlermonster commented on Dec 4, 2017
+When feature values become small but are within the range of a floating point, random forest become numerical unstable.
+The following code reproduces the problem. I use the Iris data and multiply all feature values by e^-8., so that the values are smaller. I create a test split for the data and for similar data preprocessed with MinMaxScalor. I then train using random forest, print the feature importance and accuracy.
+import numpy as np
+from sklearn.utils.testing import assert_true, assert_false
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn import datasets
+from sklearn.ensemble import RandomForestClassifier
+
+iris = datasets.load_iris()
+X = iris.data[:, :4]  #
+X *= 1e-8
+assert_true(np.isfinite(X).all())
+assert_false(np.any(np.isnan(X)))
+
+X_scaled = MinMaxScaler().fit_transform(X)
+assert_true(np.isfinite(X_scaled).all())
+assert_false(np.any(np.isnan(X_scaled)))
+
+y = iris.target
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=7)
+X_train_s, X_test_s, y_train_s, y_test_s = train_test_split(X_scaled, y, test_size=0.33, random_state=7)
+
+clf = RandomForestClassifier(n_estimators=500, n_jobs=-1, random_state=42)
+clf = clf.fit(X_train, y_train)
+print clf.feature_importances_
+y_pred = clf.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print("Accuracy: %.2f%%" % (accuracy * 100.0))
+
+clf = RandomForestClassifier(n_estimators=500, n_jobs=-1, random_state=42)
+clf = clf.fit(X_train_s, y_train_s)
+print clf.feature_importances_
+y_pred_s = clf.predict(X_test_s)
+accuracy = accuracy_score(y_test_s, y_pred_s)
+print("Accuracy: %.2f%%" % (accuracy * 100.0))
+When training on the data where all features are scaled by e^-8, random forest does not learn, it gives every feature an importance of 0 and the accuracy is similar to random guessing (28%). Using the MinMaxScalor I get an accuracy of 92% similar to the accuracy when simply training on the Iris data.
+The printet output is:
+[ 0. 0. 0. 0.]
+Accuracy: 28.00%
+[ 0.10529244 0.03109856 0.45044076 0.41316824]
+Accuracy: 92.00%
+To me this seems as a numerical instability problem in the sklearn framework.
+Versions
+Windows-7-6.1.7601-SP1
+('Python', '2.7.13 |Anaconda custom (64-bit)| (default, May 11 2017, 13:17:26) [MSC v.1500 64 bit (AMD64)]')
+('NumPy', '1.12.1')
+('SciPy', '0.19.0')
+('Scikit-Learn', '0.19.0')
+👍 1

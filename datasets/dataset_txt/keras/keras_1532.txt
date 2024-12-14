@@ -1,0 +1,73 @@
+MLenthousiast commented on 3 Nov 2017
+I raised this issue a time ago on Stackoverflow without result, therefore I am asking here again:
+I am trying to fine-tune a model using keras, according to this description: https://keras.io/applications/#inceptionv3
+However, during training I discovered that the output of the network does not remain constant after training when using the same input (while all relevant layers were frozen), which I do not want.
+I constructed the following toy example to investigate this:
+import keras.applications.resnet50 as resnet50
+from keras.layers import Dense, Flatten, Input
+from keras.models import Model
+from keras.utils import to_categorical
+from keras import optimizers
+from keras.preprocessing.image import ImageDataGenerator
+import numpy as np
+
+# data 
+i = np.random.rand(1,224,224,3)
+X = np.random.rand(32,224,224,3)
+y = to_categorical(np.random.randint(751, size=32), num_classes=751)
+
+# model
+base_model = resnet50.ResNet50(weights='imagenet', include_top=False, input_tensor=Input(shape=(224,224,3)))
+layer = base_model.output
+layer = Flatten(name='myflatten')(layer)
+layer = Dense(751, activation='softmax', name='fc751')(layer)
+model = Model(inputs=base_model.input, outputs=layer)
+
+# freeze all layers
+for layer in model.layers:
+ layer.trainable = False
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
+# features and predictions before training
+feat0 = base_model.predict(i)
+pred0 = model.predict(i)
+weights0 = model.layers[-1].get_weights()
+
+# before training output is consistent
+feat00 = base_model.predict(i)
+pred00 = model.predict(i)
+print(np.allclose(feat0, feat00)) # True
+print(np.allclose(pred0, pred00)) # True
+
+# train
+model.fit(X, y, batch_size=2, epochs=3, shuffle=False)
+
+# features and predictions after training
+feat1 = base_model.predict(i)
+pred1 = model.predict(i)
+weights1 = model.layers[-1].get_weights()
+
+# these are not the same
+print(np.allclose(feat0, feat1)) # False
+# Optionally: printing shows they are in fact very different
+# print(feat0)
+# print(feat1)
+
+# these are not the same
+print(np.allclose(pred0, pred1)) # False
+# Optionally: printing shows they are in fact very different
+# print(pred0)
+# print(pred1)
+
+# these are the same and loss does not change during training
+# so layers were actually frozen
+print(np.allclose(weights0[0], weights1[0])) # True
+
+# Check again if all layers were in fact untrainable
+for layer in model.layers:
+     assert layer.trainable == False # All succeed
+# Being overly cautious also checking base_model
+for layer in base_model.layers:
+     assert layer.trainable == False # All succeed
+Since I froze all layers i fully expect both the predictions and both the features to be equal, but surprisingly they aren't.
+So probably I am making some kind of mistake, but I can't figure what.. Any suggestions would be greatly appreciated!

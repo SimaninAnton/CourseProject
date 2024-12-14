@@ -1,0 +1,81 @@
+Contributor
+ahvigil commented on Nov 4, 2017
+Python has supported running packaged zip files since 2.6. The zipapp module newly introduced in python 3 is supposed to make it even easier to create executable python zip archives. As part of this, the contents of the zip archive are added to sys.path on execution to facilitate bundling dependencies.
+Unfortunately, the way requests currently handles TLS CA certs is incompatible with this feature- It tries to load a certificate bundle from the cacert.pem file provided by the certifi package, but this fails in the case where the provided certifi installation is packaged as part of a zip archive.
+Expected Result
+Making https requests using requests as part of a zip archive succeeds.
+Actual Result
+Making https calls using a requests installation from a zip file raises an IOError
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.6/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/usr/local/lib/python3.6/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "./zipapptest.pyz/__main__.py", line 2, in <module>
+  File "./zipapptest.pyz/requests/api.py", line 72, in get
+  File "./zipapptest.pyz/requests/api.py", line 58, in request
+  File "./zipapptest.pyz/requests/sessions.py", line 508, in request
+  File "./zipapptest.pyz/requests/sessions.py", line 618, in send
+  File "./zipapptest.pyz/requests/adapters.py", line 407, in send
+  File "./zipapptest.pyz/requests/adapters.py", line 226, in cert_verify
+OSError: Could not find a suitable TLS CA certificate bundle, invalid path: ./zipapptest.pyz/certifi/cacert.pem
+Reproduction Steps
+I generated a minimal zip that should execute the following code:
+import requests
+requests.get('https://www.google.com')
+Reproduced within a python:3 docker container
+# will generate a barebones zip archive from the contents of this folder
+mkdir zipapptest
+
+# produce a 2 line __main__.py that reproduces the bug
+cat >zipapptest/__main__.py <<EOF
+import requests
+requests.get('https://www.google.com')
+EOF
+
+# I will try to include the requests dependency in the archive
+pip install -t zipapptest requests
+
+# generate an executable zip from the above folder
+python -m zipapp --python $(which python) zipapptest
+
+# try to run the generated archive
+./zipapptest.pyz
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.3"
+  },
+  "platform": {
+    "release": "4.9.49-moby",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "1000114f"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}
+This command is only available on Requests v2.16.4 and greater. Otherwise,
+please provide some basic information about your system (Python version,
+operating system, &c).

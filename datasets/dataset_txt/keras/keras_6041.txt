@@ -1,0 +1,45 @@
+Contributor
+pminervini commented on 28 Jan 2016
+Dear everyone,
+what follows is not really a bug, but IMO it can be considered a sort of counter-intuitive behavior.
+When enforcing unitary norm constraints on an embedding layer, the constraints are enforced on the columns of the embedding matrix (the embedding vector dimension) instead of the rows (the no. of embedding vectors).
+For instance consider the following setting, in which we have two embedding vectors of size 10:
+import numpy as np
+from keras.models import Sequential
+from keras.layers.embeddings import Embedding
+from keras.layers.core import Flatten, TimeDistributedDense, Activation
+
+from keras.constraints import unitnorm
+
+model = Sequential()
+embedding_layer = Embedding(input_dim=2, output_dim=10, input_length=1, W_constraint=unitnorm())
+model.add(embedding_layer)
+model.add(Flatten())
+model.add(Dense(output_dim=1))
+model.add(Activation('sigmoid'))
+
+model.compile(loss='binary_crossentropy', optimizer='adagrad')
+model.fit(np.array([[0]]), np.array([0]), batch_size=1, nb_epoch=5, verbose=0)
+
+embedding_matrix = embedding_layer.params[0].get_value()
+
+print(embedding_matrix.shape)
+print(np.linalg.norm(embedding_matrix[1, :]))
+print(np.linalg.norm(embedding_matrix[:, 1]))
+The unitary norm is enforced on each column of the matrix; in my opinion, it could make sense to enforce it on its rows (the actual embedding vectors).
+(2, 10)
+2.25984
+1.0
+At the moment I'm working around this by using a custom Constraint:
+class FixedNorm(Constraint):
+    def __init__(self, m=1.):
+        self.m = m
+
+    def __call__(self, p):
+        p = K.transpose(p)
+        unit_norm = p / (K.sqrt(K.sum(K.square(p), axis=0)) + 1e-7)
+        unit_norm = K.transpose(unit_norm)
+        return unit_norm * self.m
+
+    def get_config(self):
+        return {'name': self.__class__.__name__, 'm': self.m}

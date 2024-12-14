@@ -1,0 +1,133 @@
+tereka114 commented on 31 Dec 2015
+Hi!
+Now I implement DAG-CNNs
+（http://arxiv.org/pdf/1505.05232.pdf）
+It models cannot be compiled for error. but I cannot found node don't connect.
+Visualize graph is expected graph.
+Why errors happen this model?
+Traceback (most recent call last):
+File "/Users/Tereka/Programing/MachineLearningCombinator/mlc/model/keras_recipe.py", line 315, in
+model.compile('sgd', {'output':'categorical_crossentropy'})
+File "build/bdist.macosx-10.9-x86_64/egg/keras/models.py", line 1047, in compile
+File "build/bdist.macosx-10.9-x86_64/egg/keras/optimizers.py", line 79, in get_updates
+File "build/bdist.macosx-10.9-x86_64/egg/keras/optimizers.py", line 47, in get_gradients
+File "build/bdist.macosx-10.9-x86_64/egg/keras/backend/theano_backend.py", line 373, in gradients
+File "/Users/Tereka/.pyenv/versions/2.7.8/lib/python2.7/site-packages/theano/gradient.py", line 545, in grad
+handle_disconnected(elem)
+File "/Users/Tereka/.pyenv/versions/2.7.8/lib/python2.7/site-packages/theano/gradient.py", line 532, in handle_disconnected
+raise DisconnectedInputError(message)
+theano.gradient.DisconnectedInputError: grad method was asked to compute the gradient with respect to a variable that is not part of the computational graph of the cost, or is used only by a non-differentiable operator: <TensorType(float32, 4D)>
+Backtrace when the node is created:
+File "build/bdist.macosx-10.9-x86_64/egg/keras/backend/theano_backend.py", line 34, in variable
+return theano.shared(value=value, name=name, strict=False)
+def built_layer_before_fc(input_shape,n_filter):
+    g = Graph()
+    input_name = "input"
+    conv_name = "conv"
+    activate_conv = "activate"
+    g.add_input(name=input_name, input_shape=input_shape)
+
+    g.add_node(Convolution2D(n_filter,3,3),name=conv_name,input=input_name)
+    g.add_node(PReLU(),name=activate_conv, input=conv_name)
+
+    g.add_output("output",activate_conv)
+
+    return g
+
+def built_fc_layer(input_shape,average_layer,n_class=447):
+    g = Graph()
+    pooling_size = list(input_shape)
+    pooling_size.pop(0)
+
+    input_name = "input"
+    average_pool_name = "avg_pool"
+    avg_normalize = "avgn"
+    flatten_name = "flatten"
+    dense_output = "dense_out"
+
+    g.add_input(input_name, input_shape)
+
+    g.add_node(AveragePooling2D(pool_size=(2,2)),name=average_pool_name,input=input_name)
+    g.add_node(BatchNormalization(),name=avg_normalize,input=average_pool_name)
+    g.add_node(Flatten(), name=flatten_name, input=avg_normalize)
+    g.add_node(Dense(n_class),name=dense_output,input=flatten_name)
+
+    g.add_output("output",dense_output)
+
+    return g
+
+def built_pool_layer(input_shape):
+    g = Graph()
+    input_name = "input"
+    normalize_name = "norm"
+    max_pool_name = "mx_pool1"
+    g.add_input(input_name, input_shape)
+    g.add_node(BatchNormalization(),normalize_name,input_name)
+    g.add_node(MaxPooling2D(pool_size=(2,2)),max_pool_name,normalize_name)
+    g.add_output("output",max_pool_name)
+
+    return g
+
+def dag_content(input_shape,n_filter=64,n_class=100,n_conv=5):
+    dag_cnn_content = Graph()
+    input_name = "input"
+    dag_cnn_content.add_input(input_name, input_shape)
+
+    layer_names = []
+
+    conv_name = None
+    pool_layer_name = None
+    fc_layer_name = None
+
+    for i in xrange(n_conv):
+        conv_name = "conv{}".format(i)
+        pool_layer_name = "pool{}".format(i)
+        fc_layer_name = "fc{}".format(i)
+
+        conv_layer = built_layer_before_fc(input_shape,n_filter)
+        fc_layer = built_fc_layer(cinput_shape(conv_layer),2,n_class)
+        pool_layer = built_pool_layer(cinput_shape(conv_layer))
+
+        print i,input_shape,cinput_shape(conv_layer),cinput_shape(fc_layer),cinput_shape(pool_layer)
+        dag_cnn_content.add_node(conv_layer,conv_name,input_name)
+        print input_name,conv_name
+        dag_cnn_content.add_node(fc_layer,fc_layer_name,conv_name)
+        print conv_name,fc_layer_name
+        dag_cnn_content.add_node(pool_layer,pool_layer_name,conv_name)
+        print conv_name,pool_layer_name
+
+        input_shape = cinput_shape(pool_layer)
+
+        layer_names.append(fc_layer_name)
+        input_name = pool_layer_name
+        n_filter = n_filter * 2
+
+        #fc_layer.compile('sgd', {'output':'categorical_crossentropy'})
+    conv_name = "conv{}".format(n_conv)
+    fc_layer_name = "fc{}".format(n_conv)
+
+    conv_layer = built_layer_before_fc(input_shape,n_filter)
+    fc_layer = built_fc_layer(cinput_shape(conv_layer),2,n_class)
+
+    print input_shape,cinput_shape(conv_layer),cinput_shape(fc_layer)
+
+    dag_cnn_content.add_node(conv_layer,conv_name,input_name)
+    print input_name,conv_name
+    dag_cnn_content.add_node(fc_layer,fc_layer_name,conv_name)
+    print conv_name,fc_layer_name
+    layer_names.append(fc_layer_name)
+    print layer_names
+
+    dag_cnn_content.add_node(Activation("softmax"), name='softmax_layer', inputs=layer_names,merge_mode="sum")
+
+    dag_cnn_content.add_output("output", 'softmax_layer')
+    return dag_cnn_content
+
+def built_dagcnns(input_shape,n_filter=64,n_class=100,n_conv=5):
+    dag_cnn_content_g = dag_content(input_shape,n_filter,n_class,n_conv)
+
+    return dag_cnn_content_g
+
+if __name__ == '__main__':
+    model = built_dagcnns((3,256,256),n_filter=64,n_class=447,n_conv=5)
+    model.compile('sgd', {'output':'categorical_crossentropy'})

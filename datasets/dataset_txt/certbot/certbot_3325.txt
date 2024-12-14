@@ -1,0 +1,28 @@
+erebus2 commented on 3 Oct 2015
+Moving this here from https://github.com/letsencrypt/letsencrypt-debian/issues/6
+When I try to build letsencrypt on Debian, I get the following error:
+ERROR: test_csr_no_sans (acme.crypto_util_test.PyOpenSSLCertOrReqSANTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/directory/letsencrypt-debian-master/acme/acme/crypto_util_test.py", line 88, in test_csr_no_sans
+    self.assertEqual(self._call_csr('csr-nosans.pem'), [])
+  File "/directory/letsencrypt-debian-master/acme/acme/crypto_util_test.py", line 78, in _call_csr
+    return self._call(test_util.load_csr, name)
+  File "/directory/letsencrypt-debian-master/acme/acme/crypto_util_test.py", line 72, in _call
+    return _pyopenssl_cert_or_req_san(loader(name))
+  File "/directory/letsencrypt-debian-master/acme/acme/crypto_util.py", line 141, in _pyopenssl_cert_or_req_san
+    for i in range(cert_or_req.get_extension_count())]
+  File "/directory/letsencrypt-debian-master/acme/acme/jose/util.py", line 44, in __getattr__
+    return getattr(self._wrapped, name)
+AttributeError: 'X509Req' object has no attribute 'get_extension_count'
+It seems to me that the cause of this issue is in file acme/acme/crypto_util.py, lines 137 to 141:
+if hasattr(cert_or_req, 'get_extensions'):  # X509Req
+        extensions = cert_or_req.get_extensions()
+    else:  # X509
+        extensions = [cert_or_req.get_extension(i)
+                      for i in range(cert_or_req.get_extension_count())]
+This means that an X509Req object is supposed to have a get_extensions() method while an X509 object is supposed to have two methods called get_extension() and get_extension_count().
+However, as far as I can tell, an X509Req object is not supposed to provide any of the aforementioned methods. This means that the if-condition fails on X509Req objects (which doesn't seem to be what we want) and get_extension_count() is called on the X509Req object which causes the compiler error.
+Gotcha: The missing get_extensions() method was added in python-openssl v0.15 which is not in Debian Stable (jessie).
+Is there a way to make this work with python-openssl v0.14? [or maybe even earlier?]
+If the answer is no, we would have to require v0.15 of python-openssl as a build-dependency in debian/control.

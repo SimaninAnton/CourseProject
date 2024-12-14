@@ -1,0 +1,60 @@
+rohit-gupta commented on 10 Apr 2016
+Hi, I have been trying out a simple Siamese triplet CNN somewhat like the MNIST Siamese example. But very strangely I am getting a MemoryError while compiling the model. This seems strange to me, there is no big dataset involved, just the model is being compiled. Would be really great if someone could explain why this is so. Thanks a lot in advance !
+from keras.models import Sequential, Graph
+from keras.layers.core import Dense, Dropout, Flatten
+from keras.layers.convolutional import Convolution2D, MaxPooling2D
+from keras.optimizers import SGD
+
+batch_size = 32
+nb_classes = 1
+nb_epoch = 200
+data_augmentation = True
+
+# input image dimensions
+img_rows, img_cols = 227, 227
+# the images are RGB
+img_channels = 3
+
+base_model = Sequential()
+
+base_model.add(Convolution2D(32, 3, 3, border_mode='same', input_shape=(img_channels, img_rows, img_cols), activation='relu'))
+
+base_model.add(Convolution2D(32, 3, 3, activation='relu'))
+base_model.add(MaxPooling2D(pool_size=(2, 2)))
+base_model.add(Dropout(0.25))
+
+base_model.add(Convolution2D(64, 3, 3, border_mode='same', activation='relu'))
+base_model.add(Convolution2D(64, 3, 3, activation='relu'))
+base_model.add(MaxPooling2D(pool_size=(2, 2)))
+base_model.add(Dropout(0.25))
+
+base_model.add(Flatten())
+
+model = Graph()
+model.add_input(name='input_image', input_shape=(img_channels, img_rows, img_cols))
+model.add_input(name='input_match_a', input_shape=(img_channels, img_rows, img_cols))
+model.add_input(name='input_match_b', input_shape=(img_channels, img_rows, img_cols))
+
+model.add_shared_node(base_model, name='shared_cnn', inputs=['input_image', 'input_match_a', 'input_match_b'], merge_mode='concat')
+
+model.add_node(Dense(1024, activation='relu'), name='fc1', input='shared_cnn')
+model.add_node(Dropout(0.5), name='drp1', input='fc1')
+model.add_node(Dense(1, activation='softmax'), name='output', input='drp1', create_output=True)
+
+sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(optimizer=sgd, loss={'output': 'binary_crossentropy'})
+Error Message:
+Error allocating 2378956800 bytes of device memory (out of memory). Driver report 1543741440 bytes free and 4294836224 bytes total 
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 1143, in compile
+    train_loss)
+  File "/usr/local/lib/python2.7/dist-packages/keras/optimizers.py", line 84, in get_updates
+    m = K.variable(np.zeros(K.get_value(p).shape))  # momentum
+  File "/usr/local/lib/python2.7/dist-packages/keras/backend/theano_backend.py", line 34, in variable
+    return theano.shared(value=value, name=name, strict=False)
+  File "/usr/local/lib/python2.7/dist-packages/theano/compile/sharedvalue.py", line 247, in shared
+    allow_downcast=allow_downcast, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/theano/sandbox/cuda/var.py", line 240, in float32_shared_constructor
+    deviceval = type_support_filter(value, type.broadcastable, False, None)
+MemoryError: ('Error allocating 2378956800 bytes of device memory (out of memory).', "you might consider using 'theano.shared(..., borrow=True)'")

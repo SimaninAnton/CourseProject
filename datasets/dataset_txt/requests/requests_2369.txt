@@ -1,0 +1,77 @@
+koenvb commented on Sep 20, 2012
+I was trying to use the httpie library which uses requests and I had a server implementation
+which strictly follows the RFC (http://www.ietf.org/rfc/rfc2617.txt)
+When using curl everything is fine, when using httpie, it did not work.
+after some help it looks like the nonce-count (nc) is not correctly generated
+nonce-count
+This MUST be specified if a qop directive is sent (see above), and
+MUST NOT be specified if the server did not send a qop directive in
+the WWW-Authenticate header field. The nc-value is the hexadecimal
+count of the number of requests (including the current request)
+that the client has sent with the nonce value in this request. For
+example, in the first request sent in response to a given nonce
+value, the client sends "nc=00000001". The purpose of this
+directive is to allow the server to detect request replays by
+maintaining its own copy of this count - if the same nc-value is
+seen twice, then the request is a replay. See the description
+below of the construction of the request-digest value.
+Curl request:
+GET /manage/policy HTTP/1.1
+User-Agent: curl/7.22.0 (x86_64-pc-linux-gnu) libcurl/7.22.0 OpenSSL/1.0.1 zlib/1.2.3.4 libidn/1.23 librtmp/2.3
+Host: 192.168.12.229:8080
+Accept: text/plain
+
+HTTP/1.1 401 Unauthorized
+DAV: 1,3
+Date: Wed, 19 Sep 2012 15:14:31 GMT
+Server: test-test/3.0.0-7a5aba4d7a9771c7d03bde211aa37be56b670444
+Content-Length: 0
+WWW-Authenticate:  Digest realm="test", qop="auth", nonce="2471f4d8618db6787377250976d29df6", opaque="6c375ad0468140c7b4404ba77b7464b9"
+
+GET /manage/policy HTTP/1.1
+Authorization: Digest username="admin", realm="test", nonce="2471f4d8618db6787377250976d29df6", uri="/manage/policy", cnonce="MDAwNjMx", nc=00000001, qop="auth", response="f38e88c6b3f63c423be7f38c9dc2a623", opaque="6c375ad0468140c7b4404ba77b7464b9"
+User-Agent: curl/7.22.0 (x86_64-pc-linux-gnu) libcurl/7.22.0 OpenSSL/1.0.1 zlib/1.2.3.4 libidn/1.23 librtmp/2.3
+Host: 192.168.12.229:8080
+Accept: text/plain
+
+HTTP/1.1 200 OK
+DAV: 1,3
+Date: Wed, 19 Sep 2012 15:14:31 GMT
+Server: test-test/3.0.0-7a5aba4d7a9771c7d03bde211aa37be56b670444
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 70
+Pragma: no-cache
+Cache-Control: no-cache
+Expires: Thu, 01 Jan 1970 00:00:00 GMT
+
+"4c94e07c5d44405889c11a0c71a091ac"
+"89d76185a2db4bdbb2a751b6e35003b0"
+httpie request:
+GET /manage/policy HTTP/1.1
+User-Agent: HTTPie/0.2.7
+Host: 192.168.12.229:8080
+Accept-Encoding: identity, deflate, compress, gzip
+Accept: text/plain
+
+HTTP/1.1 401 Unauthorized
+DAV: 1,3
+Date: Wed, 19 Sep 2012 15:16:40 GMT
+Server: test-test/3.0.0-7a5aba4d7a9771c7d03bde211aa37be56b670444
+Content-Length: 0
+WWW-Authenticate:  Digest realm="test", qop="auth", nonce="1810bc988a671e239bb10567e80ca92b", opaque="ec37b575badf48a2aec30bc9168cdcea"
+
+GET /manage/policy HTTP/1.1
+Authorization: Digest username="admin", realm="test", nonce="1810bc988a671e239bb10567e80ca92b", uri="/manage/policy", response="3c17eac558cba24a77f7bbf981e3cf75", opaque="ec37b575badf48a2aec30bc9168cdcea", qop=auth, nc=00000002, cnonce="9ab5326226636735"
+Accept-Encoding: identity, deflate, compress, gzip
+User-Agent: HTTPie/0.2.7
+Host: 192.168.12.229:8080
+Accept: text/plain
+
+HTTP/1.1 401 Unauthorized
+DAV: 1,3
+Date: Wed, 19 Sep 2012 15:16:40 GMT
+Server: test-test/3.0.0-7a5aba4d7a9771c7d03bde211aa37be56b670444
+Content-Length: 0
+WWW-Authenticate:  Digest realm="test", qop="auth", nonce="2925523a90abea51844ed1798a69874e", opaque="8a092396a826475e9b00b07e05e3a77a"
+The difference is in the nc=00000002 which should be nc=00000001 according to
+the standard? So I guess somewhere a counter should only start from 1 in stead of 2

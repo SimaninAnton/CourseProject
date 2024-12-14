@@ -1,0 +1,133 @@
+Marek-Arnold commented on 25 Nov 2016 •
+edited
+Hello
+First of all, thank you for the awsome keras! It really simplifies things.
+I am working on a project with word embeddings. It worked fine, but now i wanted to switch the backend from theano to tensorflow to do some benchmarks and ran in a strange issue.
+First a small net example, on theano it runs fine (as it should), but on tensorflow it reproduces the issue:
+def word2vec_embedding_layer(embeddings_path):
+    weights = np.load(open(embeddings_path, 'rb'))
+    return Embedding(input_dim=weights.shape[0], output_dim=weights.shape[1], weights=[weights], trainable=False, input_length=200)
+
+conv_size = 128
+dense_size = 64
+filter_length = 4
+
+conv = Convolution1D(nb_filter=conv_size,
+                     filter_length=filter_length,
+                     border_mode='valid',
+                     activation='relu',
+                     subsample_length=1)
+dense = Dense(dense_size)
+
+focus_model = Sequential()
+
+focus_model.add(word2vec_embedding_layer())
+
+focus_model.add(conv)
+focus_model.add(GlobalMaxPooling1D())
+
+focus_model.add(dense)
+focus_model.add(Activation('relu'))
+
+conv = Convolution1D(nb_filter=conv_size,
+                     filter_length=filter_length,
+                     border_mode='valid',
+                     activation='relu',
+                     subsample_length=1)
+dense = Dense(dense_size)
+context_model = Sequential()
+
+context_model.add(word2vec_embedding_layer())
+
+context_model.add(conv)
+context_model.add(GlobalMaxPooling1D())
+
+context_model.add(dense)
+context_model.add(Activation('relu'))
+
+model = Sequential()
+model.add(Merge([focus_model, context_model], mode='dot', dot_axes=1))
+model.add(Reshape((1,)))
+model.add(Dense(1, activation='sigmoid'))
+model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+
+#batch and validation generator both have a batch size of 1024 * 32
+#the data consists of two numpy int arrays with length 200, holding the indices
+#validation data has as label [0] or [1] for binary classification
+self.model.fit_generator(batch_generator, samples_per_epoch=1024*512, nb_epoch=4, validation_data=validation_generator, nb_val_samples=1024 * 128, max_q_size=32, verbose=1)
+The exception is thrown after the first gradient update, when the accuracy is calculated.
+The stacktrace:
+Epoch 1/4
+Traceback (most recent call last):
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 972, in _do_call
+    return fn(*args)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 954, in _run_fn
+    status, run_metadata)
+  File "/home/user/anaconda3/lib/python3.5/contextlib.py", line 66, in __exit__
+    next(self.gen)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/framework/errors.py", line 463, in raise_exception_on_not_ok_status
+    pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors.InvalidArgumentError: Incompatible shapes: [32768,1] vs. [1073741824,1]
+         [[Node: Equal = Equal[T=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"](_recv_dense_3_target_0, Floor)]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/mnt/output/pa1/python/MSE_PA1_arnd/pa1/test.py", line 906, in train_sentence_representations
+    net.train(keras_generator(batch_train), keras_generator(batch_test), num_iter=4, samples_per_epoch=1024*512, samples_for_validation=num_test_data)
+  File "/mnt/output/pa1/python/MSE_PA1_arnd/pa1/sentence_representation/net.py", line 77, in train
+    verbose=1)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/models.py", line 896, in fit_generator
+    pickle_safe=pickle_safe)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/engine/training.py", line 1451, in fit_generator
+    class_weight=class_weight)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/engine/training.py", line 1226, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 1096, in __call__
+    updated = session.run(self.outputs + [self.updates_op], feed_dict=feed_dict)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 717, in run
+    run_metadata_ptr)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 915, in _run
+    feed_dict_string, options, run_metadata)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 965, in _do_run
+    target_list, options, run_metadata)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 985, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors.InvalidArgumentError: Incompatible shapes: [32768,1] vs. [1073741824,1]
+         [[Node: Equal = Equal[T=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"](_recv_dense_3_target_0, Floor)]]
+
+Caused by op 'Equal', defined at:
+  File "<stdin>", line 1, in <module>
+  File "/mnt/output/pa1/python/MSE_PA1_arnd/pa1/test.py", line 873, in train_sentence_representations
+    net.init_model()
+  File "/mnt/output/pa1/python/MSE_PA1_arnd/pa1/sentence_representation/net.py", line 65, in init_model
+    model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/models.py", line 567, in compile
+    **kwargs)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/engine/training.py", line 648, in compile
+    append_metric(i, 'acc', acc_fn(y_true, y_pred))
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/metrics.py", line 10, in binary_accuracy
+    return K.mean(K.equal(y_true, K.round(y_pred)))
+  File "/home/user/anaconda3/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 638, in equal
+    return tf.equal(x, y)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/ops/gen_math_ops.py", line 726, in equal
+    result = _op_def_lib.apply_op("Equal", x=x, y=y, name=name)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/framework/op_def_library.py", line 749, in apply_op
+    op_def=op_def)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 2380, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/home/user/anaconda3/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 1298, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): Incompatible shapes: [32768,1] vs. [1073741824,1]
+         [[Node: Equal = Equal[T=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"](_recv_dense_3_target_0, Floor)]]
+Side note: 1073741824 = 32768 * 32768
+I have tested it on both the master branch of keras and the most recent one on pip, they both have the same issue.
+Thank you for looking in to this and sorry for the long post.
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

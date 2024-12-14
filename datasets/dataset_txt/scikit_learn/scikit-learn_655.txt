@@ -1,0 +1,217 @@
+karthi9295 commented on Mar 8, 2019
+Description
+Error while combining a KerasClassifier and Scikit-Learn Classifier into an ensemble using VotingClassifier(). Although Keras proveds a scikit-learn wrapper, which allows a Keras Sequential model to be used similar to the way you would use a scikit-learn classifier (similar inputs, outputs, methods like fit,predict, etc).
+Steps/Code to Reproduce
+import pandas
+from sklearn import model_selection
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import VotingClassifier
+url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv"
+names = ['preg', 'plas', 'pres', 'skin', 'test', 'mass', 'pedi', 'age', 'class']
+dataframe = pandas.read_csv(url, names=names)
+array = dataframe.values
+X = array[:,0:8]
+Y = array[:,8]
+seed = 7
+kfold = model_selection.KFold(n_splits=10, random_state=seed)
+
+estimators = []    # create the sub models
+model1 = LogisticRegression()
+estimators.append(('logistic', model1))
+model2 = DecisionTreeClassifier()
+estimators.append(('CART ', model2))
+model3 = SVC()
+estimators.append(('SVM', model3))
+
+print("The names and types of the   model in ensemble:")
+for e in estimators:
+    print("{0:s} : {1:s}".format( e[0], type(e[1]).__name__))
+
+ensemble = VotingClassifier(estimators)     # create the ensemble model
+results = model_selection.cross_val_score(ensemble, X, Y, cv=kfold)
+print(results.mean())
+print("cross_val_score of ensemble of 3 scikit-learn classifiers = {0:5.2f}".format( results.mean()))
+
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import cross_val_score
+import numpy
+
+def create_model():     # Function to create model, required for KerasClassifier
+     model = Sequential()    # create mode
+    model.add(Dense(12, input_dim=8, activation='relu'))
+    model.add(Dense(8, activation='relu'))
+    model.add(Dense(1, activation='sigmoid'))
+    # Compile model
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    return model
+
+load_from_csv = False
+seed = 7
+numpy.random.seed(seed)
+test_size = 0.33
+
+if load_from_csv:   # fix random seed for reproducibility    
+    dataset = numpy.loadtxt("pima-indians-diabetes.csv", delimiter=",")  # load pima indians dataset
+    # split into input (X) and output (Y) variables
+    X = dataset[:,0:8]
+    Y = dataset[:,8]
+
+X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size=test_size, random_state=seed)
+
+keras_model = KerasClassifier(build_fn=create_model, epochs=150, batch_size=10, verbose=0)    # create model
+keras_model.fit(X_train, Y_train, epochs=150, batch_size=10)
+result = keras_model.score(X_test, Y_test)
+print("Keras Model Accuracy: %.3f%%" % (result*100.0))
+
+estimators.append(('KERAS', keras_model))
+print("The names and types of the   model in ensemble:")
+for e in estimators:
+    print("{0:s} : {1:s}".format( e[0], type(e[1]).__name__))
+
+ensemble = VotingClassifier(estimators)    # create the ensemble model
+
+ensemble = VotingClassifier(estimators=estimators)
+results = model_selection.cross_val_score(ensemble, X, Y, cv=kfold)
+print(results.mean())
+print("cross_val_score of ensemble of 4 scikit & keras -learn classifiers = {0:5.2f}".format( results.mean()))
+Expected Results
+0.7264524948735476
+cross_val_score of ensemble of 4 scikit & keras -learn classifiers = 0.73
+Actual Results
+ValueError                                Traceback (most recent call last)
+<ipython-input-12-063fbe19123a> in <module>
+ 15 
+ 16 ensemble = VotingClassifier(estimators=estimators)
+ ---> 17 results = model_selection.cross_val_score(ensemble, X, Y, cv=kfold)
+ 18 print(results.mean())
+ 19 print("cross_val_score of ensemble of 4 scikit & keras -learn classifiers = {0:5.2f}".format( results.mean()))
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\model_selection\_validation.py in cross_val_score(estimator, X, y, groups, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch, error_score)
+400                                 fit_params=fit_params,
+401                                 pre_dispatch=pre_dispatch,
+--> 402                                 error_score=error_score)
+403     return cv_results['test_score']
+404 
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\model_selection\_validation.py in cross_validate(estimator, X, y, groups, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch, return_train_score, return_estimator, error_score)
+238             return_times=True, return_estimator=return_estimator,
+239             error_score=error_score)
+--> 240         for train, test in cv.split(X, y, groups))
+241 
+242     zipped_scores = list(zip(*scores))
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self, iterable)
+915             # remaining jobs.
+916             self._iterating = False
+--> 917             if self.dispatch_one_batch(iterator):
+918                 self._iterating = self._original_iterator is not None
+919 
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\parallel.py in dispatch_one_batch(self, iterator)
+757                 return False
+758             else:
+--> 759                 self._dispatch(tasks)
+760                 return True
+761 
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\parallel.py in _dispatch(self, batch)
+714         with self._lock:
+715             job_idx = len(self._jobs)
+--> 716             job = self._backend.apply_async(batch, callback=cb)
+717             # A job can complete so quickly than its callback is
+718             # called before we get here, causing self._jobs to
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in apply_async(self, func, callback)
+180     def apply_async(self, func, callback=None):
+181         """Schedule a func to be run"""
+--> 182         result = ImmediateResult(func)
+183         if callback:
+184             callback(result)
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\_parallel_backends.py in __init__(self, batch)
+547         # Don't delay the application, to avoid keeping the input
+548         # arguments in memory
+--> 549         self.results = batch()
+550 
+551     def get(self):
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\parallel.py in __call__(self)
+223         with parallel_backend(self._backend, n_jobs=self._n_jobs):
+224             return [func(*args, **kwargs)
+--> 225                     for func, args, kwargs in self.items]
+226 
+227     def __len__(self):
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\externals\joblib\parallel.py in <listcomp>(.0)
+223         with parallel_backend(self._backend, n_jobs=self._n_jobs):
+224             return [func(*args, **kwargs)
+--> 225                     for func, args, kwargs in self.items]
+226 
+227     def __len__(self):
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\model_selection\_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, return_n_test_samples, return_times, return_estimator, error_score)
+566         fit_time = time.time() - start_time
+567         # _score will return dict if is_multimetric is True
+--> 568         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
+569         score_time = time.time() - start_time - fit_time
+570         if return_train_score:
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\model_selection\_validation.py in _score(estimator, X_test, y_test, scorer, is_multimetric)
+603     """
+604     if is_multimetric:
+--> 605         return _multimetric_score(estimator, X_test, y_test, scorer)
+606     else:
+607         if y_test is None:
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\model_selection\_validation.py in _multimetric_score(estimator, X_test, y_test, scorers)
+633             score = scorer(estimator, X_test)
+634         else:
+--> 635             score = scorer(estimator, X_test, y_test)
+636 
+637         if hasattr(score, 'item'):
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\metrics\scorer.py in _passthrough_scorer(estimator, *args, **kwargs)
+239 def _passthrough_scorer(estimator, *args, **kwargs):
+240     """Function that wraps estimator.score"""
+--> 241     return estimator.score(*args, **kwargs)
+242 
+243 
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\base.py in score(self, X, y, sample_weight)
+286         """
+287         from .metrics import accuracy_score
+--> 288         return accuracy_score(y, self.predict(X), sample_weight=sample_weight)
+289 
+290 
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\ensemble\voting_classifier.py in predict(self, X)
+233 
+234         else:  # 'hard' voting
+--> 235             predictions = self._predict(X)
+236             maj = np.apply_along_axis(
+237                 lambda x: np.argmax(
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\sklearn\ensemble\voting_classifier.py in _predict(self, X)
+354     def _predict(self, X):
+355         """Collect results from clf.predict calls. """
+--> 356         return np.asarray([clf.predict(X) for clf in self.estimators_]).T
+
+~\AppData\Local\Continuum\anaconda3\envs\up2\lib\site-packages\numpy\core\numeric.py in asarray(a, dtype, order)
+536 
+537     """
+--> 538     return array(a, dtype, copy=False, order=order)
+539 
+540 
+
+ValueError: could not broadcast input array from shape (77,1) into shape (77)
+Versions
+Windows-10-10.0.17763-SP0
+Python 3.6.7 (default, Feb 28 2019, 07:28:18) [MSC v.1900 64 bit (AMD64)]
+NumPy 1.16.2
+SciPy 1.2.1
+Scikit-Learn 0.20.2

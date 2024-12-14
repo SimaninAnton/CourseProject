@@ -1,0 +1,86 @@
+data-steve commented on May 1, 2017 •
+edited
+Description
+At working I am building an ensemble model of RandomForests model using sklearn version 0.18. See basic code below. (Sorry that I can't show most of the code as it is from work.)
+rf_classifier = RandomForestClassifier(criterion='gini', max_depth = 11, random_state=0)
+adaboost_rf_classifier = AdaBoostClassifier(base_estimator=rf_classifier, n_estimators = 300, random_state=0)
+We had used this same setup last year with sklearn version 0.17 on a previous project and very similar data from our production system. The model was producing predict_proba predictions on a 2-class prediction in around 0.3 sec per curl submit of a single row of data. (It's being deployed in production with Flask on top of Tornado). Under the v 0.18 deploy, the same model was getting ~1.8 sec per curl submit. We have hundreds of thousands of new samples to predict on in production each day, so being 6 times slower without a good reason wasn't an easy pill to swallow.
+Long story short, for 2 days I profiled and optimized my feature pipeline code without any real reason to show for why the feature pipeline should be the cause of the problem. As last ditch effort, I rolled back our sklearn version to 0.17 and prediction time dropped back to .3 sec. So, it had to be something inside adaboost/randomforest between the 2 versions.
+Below I show the profiling work I did to show where the added time comes from.
+When I profiled the same code under the 2 versions, I found that much of time in the v 0.18 prediction was being taken up by 3007 calls to nametuple, as the %prun output below shows. It has to be coming from adaboost or randomforest. Because we have in adaboost 300 base RF estimators and each of the RF base estimators has 10 trees of its own. Finally, the model pipeline I built is 7 features in a FeatureUnion.
+#### v 0.18 model profile output
+ncalls tottime percall cumtime percall filename:lineno(function)
+3007 1.164 0 1.526 0.001 collections.py:305(namedtuple)
+3000 0.071 0 0.077 0.000 {method 'predict' of 'sklearn.tree._tree.Tree' objects}
+234546 0.06 0 0.076 0.000 collections.py:349(<genexpr>)
+45119 0.058 0 0.058 0.000 {method 'format' of 'str' objects}
+3000 0.049 0 0.154 0.000 tree.py:743(predict_proba)
+3007 0.043 0 1.614 0.001 func_inspect.py:160(getfullargspec)
+24089 0.028 0 0.104 0.000 {all}
+In 0.17 model profile output below, there is no namedtuple showing up anymore. If I look for a place that has the same 3007 number of calls, that would be cPickle.dumps or functools.py:39(wraps) as well as some parallel calls and some extends lists. I've added all the code here from v0.17 because there are several places where 3007 shows up. I have no idea if they do the same work as namedtuple, but cPickle.dumps is the only one taking sizable enough time and happens to be one-sixth the tottime of namedtuple.
+**I'm quite interested to know if namedtuple is a dependency that I can find a way to remove or if its the new normal. And more generally, why is the same prediction in 0.17 is 6 times faster than in 0.18. **
+### v 0.17 model profile output
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     3000    0.061    0.000    0.067    0.000 {method 'predict' of 'sklearn.tree._tree.Tree' objects}
+     3000    0.038    0.000    0.129    0.000 tree.py:648(predict_proba)
+     3007    0.020    0.000    0.020    0.000 {cPickle.dumps}
+     3664    0.017    0.000    0.017    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     3308    0.015    0.000    0.251    0.000 parallel.py:596(dispatch_one_batch)
+     3308    0.011    0.000    0.063    0.000 parallel.py:67(__init__)
+     3007    0.011    0.000    0.172    0.000 parallel.py:554(_dispatch)
+     3014    0.009    0.000    0.015    0.000 functools.py:17(update_wrapper)
+      300    0.008    0.000    0.305    0.001 weight_boosting.py:269(_samme_proba)
+     3007    0.008    0.000    0.046    0.000 parallel.py:144(delayed)
+      301    0.008    0.000    0.011    0.000 parallel.py:714(retrieve)
+      301    0.007    0.000    0.272    0.001 parallel.py:759(__call__)
+      300    0.006    0.000    0.294    0.001 forest.py:514(predict_proba)
+     3300    0.006    0.000    0.021    0.000 tree.py:358(_validate_X_predict)
+18789/18742    0.005    0.000    0.007    0.000 {len}
+     3300    0.005    0.000    0.052    0.000 forest.py:545(<genexpr>)
+     3007    0.005    0.000    0.151    0.000 parallel.py:71(__call__)
+    18664    0.005    0.000    0.005    0.000 {getattr}
+     3000    0.005    0.000    0.134    0.000 forest.py:123(_parallel_helper)
+     3007    0.003    0.000    0.155    0.000 parallel.py:177(__init__)
+      300    0.003    0.000    0.007    0.000 base.py:98(_partition_estimators)
+     3007    0.003    0.000    0.003    0.000 functools.py:39(wraps)
+    13966    0.003    0.000    0.003    0.000 base.py:99(get_shape)
+     3606    0.003    0.000    0.022    0.000 {method 'sum' of 'numpy.ndarray' objects}
+     6374    0.003    0.000    0.003    0.000 {isinstance}
+      306    0.003    0.000    0.015    0.000 validation.py:267(check_array)
+     3606    0.002    0.000    0.019    0.000 _methods.py:31(_sum)
+     9064    0.002    0.000    0.002    0.000 {setattr}
+     3639    0.002    0.000    0.003    0.000 base.py:1081(isspmatrix)
+     9322    0.002    0.000    0.002    0.000 parallel.py:74(__len__)
+     2111    0.002    0.000    0.002    0.000 {hasattr}
+      301    0.002    0.000    0.004    0.000 parallel.py:416(__init__)
+      306    0.001    0.000    0.004    0.000 validation.py:45(_assert_all_finite)
+     3640    0.001    0.000    0.001    0.000 data.py:25(_get_dtype)
+      304    0.001    0.000    0.006    0.000 validation.py:205(_ensure_sparse_format)
+     3027    0.001    0.000    0.001    0.000 {method 'pop' of 'list' objects}
+     3020    0.001    0.000    0.001    0.000 {method 'update' of 'dict' objects}
+      301    0.001    0.000    0.001    0.000 disk.py:34(memstr_to_kbytes)
+      313    0.001    0.000    0.002    0.000 {method 'join' of 'str' objects}
+      916    0.001    0.000    0.001    0.000 validation.py:155(<genexpr>)
+      301    0.001    0.000    0.001    0.000 logger.py:39(short_format_time)
+     3007    0.001    0.000    0.001    0.000 parallel.py:92(_verbosity_filter)
+      600    0.001    0.000    0.001    0.000 getlimits.py:94(__new__)
+      305    0.001    0.000    0.001    0.000 {method 'cumsum' of 'numpy.ndarray' objects}
+      306    0.001    0.000    0.003    0.000 validation.py:128(_shape_repr)
+     3104    0.001    0.000    0.001    0.000 {method 'append' of 'list' objects}
+      306    0.001    0.000    0.003    0.000 validation.py:107(_num_samples)
+        7    0.001    0.000    0.001    0.000 {method 'sort' of 'numpy.ndarray' objects}
+      335    0.001    0.000    0.001    0.000 {numpy.core.multiarray.empty}
+        1    0.001    0.001    0.001    0.001 {scipy.sparse._sparsetools.csr_sort_indices}
+     3007    0.001    0.000    0.001    0.000 parallel.py:160(delayed_function)
+      300    0.001    0.000    0.017    0.000 forest.py:313(_validate_X_predict)
+      303    0.001    0.000    0.001    0.000 {numpy.core.multiarray.copyto}
+        3    0.001    0.000    0.001    0.000 {scipy.sparse._sparsetools.csr_matmat_pass1}
+     3007    0.001    0.000    0.001    0.000 {method 'extend' of 'list' objects}
+        2    0.001    0.000    0.001    0.000 {method 'searchsorted' of 'numpy.ndarray' objects}
+      301    0.001    0.000    0.306    0.001 weight_boosting.py:759(<genexpr>)
+      313    0.001    0.000    0.001    0.000 base.py:545(__getattr__)
+        6    0.001    0.000    0.307    0.051 {sum}
+      303    0.001    0.000    0.002    0.000 numeric.py:148(ones)
+     3007    0.001    0.000    0.001    0.000 parallel.py:182(get)
+I've solved our problem for now, but of course we don't want to stay locked in an old version or in my own ignorance. So I'm submitting this to know if in future projects we should just assume there's a way I don't know about yet to not take the hit with namedtuple in adaboost/randomforest or that this is the new normal.
+Thanks for your help.

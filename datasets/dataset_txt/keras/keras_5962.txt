@@ -1,0 +1,256 @@
+hx364 commented on 12 Feb 2016
+Hi guys:
+I am working on sentiment classification on document level. The idea is to use a convolution layer to extract a sentence representation for each sentence, then feed the sentence representation into a LSTM/GRU for classification.
+It's very similar to the fig1 in this paper: http://arxiv.org/pdf/1411.4389v3.pdf, except that the prediction is only made at the last time step.
+First I used a embedding layer to transform the index to word embeddings.
+Then use a convolution layer to learn a sentence representation for each sentence.
+And then pass through a GRU to 5-class classification (on the yelp dataset)
+Because I should use convolution over time steps, so I used the wonderful kera_extra module. The code snippet is below:
+maxlen_doc = 7 #number of sentences in a document
+maxlen_sent = 50 #number of words in a sentence
+nb_filters = 100
+nb_lstm_neurons= 100
+filter_length = 5
+vocab_size, wv_dims = embedding_mat.shape #embedding mat is the embedding matrix
+
+x.shape
+(1238889L, 7L, 50L)
+
+model = Sequential()
+model.add(Reshape((maxlen_doc * maxlen_sent, ), input_shape=(maxlen_doc, maxlen_sent)))
+model.add(Embedding(vocab_size, wv_dims, weights=[embedding_mat], input_length=maxlen_sent*maxlen_doc))
+model.add(Reshape((maxlen_doc, 1, maxlen_sent, wv_dims)))
+model.add(TimeDistributedConvolution2D(nb_filters, filter_length, wv_dims, border_mode='valid',
+                                       input_shape=(maxlen_doc,1,maxlen_sent, wv_dims)))
+model.add(Activation('relu'))
+model.add(TimeDistributedMaxPooling2D(pool_size=(maxlen_sent - filter_length+1, 1)))
+model.add(TimeDistributedFlatten())
+model.add(Activation('relu'))
+model.add(GRU(100))
+model.add(Dropout(0.5))
+model.add(Dense(5))
+model.add(Activation('softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+And the error message is below, Any thoughs would be appreciated:
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-178-5f42276ad4f2> in <module>()
+----> 1 model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+C:\Anaconda2\lib\site-packages\keras\models.pyc in compile(self, optimizer, loss, class_mode)
+    406         self.X_test = self.get_input(train=False)
+    407 
+--> 408         self.y_train = self.get_output(train=True)
+    409         self.y_test = self.get_output(train=False)
+    410 
+
+C:\Anaconda2\lib\site-packages\keras\layers\containers.pyc in get_output(self, train)
+    126 
+    127     def get_output(self, train=False):
+--> 128         return self.layers[-1].get_output(train)
+    129 
+    130     def set_input(self):
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_output(self, train)
+    656 
+    657     def get_output(self, train=False):
+--> 658         X = self.get_input(train)
+    659         return self.activation(X)
+    660 
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_output(self, train)
+    947 
+    948     def get_output(self, train=False):
+--> 949         X = self.get_input(train)
+    950         output = self.activation(K.dot(X, self.W) + self.b)
+    951         return output
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_output(self, train)
+    622 
+    623     def get_output(self, train=False):
+--> 624         X = self.get_input(train)
+    625         if self.p > 0.:
+    626             if train:
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\recurrent.pyc in get_output(self, train)
+    125     def get_output(self, train=False):
+    126         # input shape: (nb_samples, time (padded with zeros), input_dim)
+--> 127         X = self.get_input(train)
+    128         assert K.ndim(X) == 3
+    129         if K._BACKEND == 'tensorflow':
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_output(self, train)
+    656 
+    657     def get_output(self, train=False):
+--> 658         X = self.get_input(train)
+    659         return self.activation(X)
+    660 
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\extra.pyc in get_output(self, train)
+     47 
+     48     def get_output(self, train=False):
+---> 49         X = self.get_input(train)
+     50         finaloutput = K.tdflatten(X)
+     51         return finaloutput
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\extra.pyc in get_output(self, train)
+    225 
+    226     def get_output(self, train=False):
+--> 227         X = self.get_input(train)
+    228         input_dim = self.input_shape
+    229         Y = K.collapsetime(X) #collapse num_samples and num_timesteps
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_output(self, train)
+    656 
+    657     def get_output(self, train=False):
+--> 658         X = self.get_input(train)
+    659         return self.activation(X)
+    660 
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\extra.pyc in get_output(self, train)
+    143 
+    144     def get_output(self, train=False):
+--> 145         X = self.get_input(train)
+    146         input_dim = self.input_shape
+    147         Y = K.collapsetime(X) #collapse num_samples and num_timesteps
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_output(self, train)
+    737 
+    738     def get_output(self, train=False):
+--> 739         X = self.get_input(train)
+    740         return K.reshape(X, (-1,) + self.output_shape[1:])
+    741 
+
+C:\Anaconda2\lib\site-packages\keras\layers\core.pyc in get_input(self, train)
+    157                 if previous_layer_id in self.layer_cache:
+    158                     return self.layer_cache[previous_layer_id]
+--> 159             previous_output = self.previous.get_output(train=train)
+    160             if hasattr(self, 'layer_cache') and self.cache_enabled:
+    161                 previous_layer_id = '%s_%s' % (id(self.previous), train)
+
+C:\Anaconda2\lib\site-packages\keras\layers\embeddings.pyc in get_output(self, train)
+    100     def get_output(self, train=False):
+    101         X = self.get_input(train)
+--> 102         out = K.gather(self.W, X)
+    103         return out
+    104 
+
+C:\Anaconda2\lib\site-packages\keras\backend\theano_backend.pyc in gather(reference, indices)
+    132     Return: a tensor of same type as reference.
+    133     '''
+--> 134     return reference[indices]
+    135 
+    136 
+
+c:\scisoft\theano\theano\sandbox\cuda\var.pyc in __getitem__(self, *args)
+    160         # Defined to explicitly use the implementation from `_operators`, since
+    161         # the definition in `SharedVariable` is only meant to raise an error.
+--> 162         return _operators.__getitem__(self, *args)
+    163 
+    164 
+
+c:\scisoft\theano\theano\tensor\var.pyc in __getitem__(self, args)
+    500                             TensorVariable, TensorConstant,
+    501                             theano.tensor.sharedvar.TensorSharedVariable))):
+--> 502                 return self.take(args[axis], axis)
+    503             else:
+    504                 return theano.tensor.subtensor.advanced_subtensor(self, *args)
+
+c:\scisoft\theano\theano\tensor\var.pyc in take(self, indices, axis, mode)
+    532 
+    533     def take(self, indices, axis=None, mode='raise'):
+--> 534         return theano.tensor.subtensor.take(self, indices, axis, mode)
+    535 
+    536     # COPYING
+
+c:\scisoft\theano\theano\tensor\subtensor.pyc in take(a, indices, axis, mode)
+   2385                 [a.shape[:axis], indices.shape, a.shape[axis + 1:]])
+   2386         ndim = a.ndim + indices.ndim - 1
+-> 2387     return take(a, indices.flatten(), axis, mode).reshape(shape, ndim)
+
+c:\scisoft\theano\theano\tensor\subtensor.pyc in take(a, indices, axis, mode)
+   2363             return advanced_subtensor1(a.flatten(), indices)
+   2364         elif axis == 0:
+-> 2365             return advanced_subtensor1(a, indices)
+   2366         else:
+   2367             if axis < 0:
+
+c:\scisoft\theano\theano\gof\op.pyc in __call__(self, *inputs, **kwargs)
+    609         """
+    610         return_list = kwargs.pop('return_list', False)
+--> 611         node = self.make_node(*inputs, **kwargs)
+    612 
+    613         if config.compute_test_value != 'off':
+
+c:\scisoft\theano\theano\tensor\subtensor.pyc in make_node(self, x, ilist)
+   1685         ilist_ = theano.tensor.as_tensor_variable(ilist)
+   1686         if ilist_.type.dtype[:3] not in ('int', 'uin'):
+-> 1687             raise TypeError('index must be integers')
+   1688         if ilist_.type.ndim != 1:
+   1689             raise TypeError('index must be vector')
+
+TypeError: index must be integers
+1

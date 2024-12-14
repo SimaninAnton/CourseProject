@@ -1,0 +1,57 @@
+iwasaki-kenta commented on 28 Jan 2016
+Hello,
+I'm working on a music composition regression problem, and I am trying to get an output of a series of musical notes modeled in the tensor shape (number of batches of notes, number of notes per batch) based off a given input of 1D labels representing MIDI offsets. The output may have a different number of notes per batch, and is thus padded.
+The goal is to be able to extrapolate new batches of musical notes by giving an input of different MIDI offsets also in a 1D array.
+Ex:
+X training data: [1, 2, 3, 4]
+Y training data: [[74, 32, 52, 17], [16, 32, 51, 12]]
+I've tried padding the labels to be the same size as the output and tried feeding it into the network (first Embedding with 128 hidden dimensions, then into a LSTM) and masking off the padded values for both the number of notes per batch, only to be given an issue stating that the data is not of correct tensor shape from the Embedding layer to the LSTM.
+Anyone have a better reinforced implementation of these sorts of one-to-many recurrent neural networks, or does anyone recommend I remodel my dataset and in what way?
+Code so far:
+def trainChordDataset():
+    chordDataset = pickle.load(open("chord_data.p", "rb"))
+    samplesData = numpy.asarray(chordDataset[0])
+    samplesLabels = numpy.asarray(chordDataset[1])
+
+    print(samplesData)
+    print(samplesLabels)
+
+    print("Compiling neural network model for chord progressions...")
+
+    chordModel = Sequential()
+    chordModel.add(Embedding(len(samplesLabels), 128))  # Embed all labels to 128 hidden dimensions.
+    chordModel.add(LSTM(128, return_sequences=True))
+    chordModel.add(TimeDistributedDense(len(samplesData[0])))  # Dense out all features based off of time.
+    chordModel.add(Masking(-1))
+    chordModel.compile(loss='mean_squared_error', optimizer='adadelta')
+
+    print("Training chord progression model...")
+
+    for x in range(100):
+        history = chordModel.fit(samplesLabels, samplesData, batch_size=batchSize, nb_epoch=epochs, verbose=1,
+                                 validation_split=0.0, show_accuracy=True)
+    print("Chord progression model training has been completed.")
+Log:
+[[-1.0, -1.0, 1792.0, 40.0, 52.0] [-1.0, -1.0, 1365.0, 55.0, 59.0]
+ [-1.0, -1.0, 512.0, 69.0, 72.0] ..., [-1.0, -1.0, 1792.0, 33.0, 45.0]
+ [7936.0, 74.0, 78.0, 81.0, 86.0] [-1.0, -1.0, 7936.0, 38.0, 50.0]]
+[   0.     0.     1.5 ...,  631.   633.   633. ]
+Compiling neural network model for chord progressions...
+Training chord progression model...
+Epoch 1/25
+Traceback (most recent call last):
+  File "C:/Users/user/PycharmProjects/untitled/main.py", line 123, in <module>
+    trainChordDataset()
+  File "C:/Users/user/PycharmProjects/untitled/main.py", line 74, in trainChordDataset
+    validation_split=0.0, show_accuracy=True)
+  File "E:\Anaconda3\envs\py34\lib\site-packages\keras\models.py", line 581, in fit
+    shuffle=shuffle, metrics=metrics)
+  File "E:\Anaconda3\envs\py34\lib\site-packages\keras\models.py", line 239, in _fit
+    outs = f(ins_batch)
+  File "E:\Anaconda3\envs\py34\lib\site-packages\keras\backend\theano_backend.py", line 365, in __call__
+    return self.function(*inputs)
+  File "E:\Anaconda3\envs\py34\lib\site-packages\theano\compile\function_module.py", line 786, in __call__
+    allow_downcast=s.allow_downcast)
+  File "E:\Anaconda3\envs\py34\lib\site-packages\theano\tensor\type.py", line 177, in filter
+    data.shape))
+TypeError: ('Bad input argument to theano function with name "E:\\Anaconda3\\envs\\py34\\lib\\site-packages\\keras\\backend\\theano_backend.py:362"  at index 0(0-based)', 'Wrong number of dimensions: expected 2, got 1 with shape (100,).')

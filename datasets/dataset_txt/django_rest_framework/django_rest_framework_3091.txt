@@ -1,0 +1,32 @@
+pchiquet commented on 12 Apr 2012
+Like in your blog posts example I have 2 related models and I use a parameter passed in the URL to specify the related model instance.
+But these parameters are not validated (_args and *_kwargs parameters in CreateModelMixin.post).
+Therefore if an invalid ForeignKey value is passed, the sql request failed and it gives an 500 http error.
+This error occurs with the blog post example if we try to POST a comment on an invalid blog post:
+$ curl -X POST --data 'username=foo;comment=bar' http://rest.ep.io/blog-post/invalid-blog-post-id/comments/
+(...)
+IntegrityError at /blog-post/invalid-blog-post-id/comments/
+insert or update on table blogpost_comment violates foreign key constraint blogpost_comment_blogpost_id_fkey
+To fix this, I overrode CreateModelMixin to validate the value of my ForeignKey fields:
+class CheckRelatedAndCreateModelMixin(CreateModelMixin):
+  """
+  Override CreateModelMixin to check that the related objects exist (for each foreign key field)
+  """
+  def post(self, request, *args, **kwargs):
+    # validate foreign key values
+    model = self.resource.model
+
+    for field in model._meta.fields:
+      if isinstance(field, ForeignKey) and kwargs.has_key(field.name):
+        # check the related object exists
+        relatedModel = field.rel.to
+        try:
+          relatedModel.objects.get(pk=kwargs[field.name])
+        except relatedModel.DoesNotExist:
+          detail = {'field_errors' :
+                      {field.name : u'No %s found for pk "%s"' % (field.rel.to.__name__, kwargs[field.name])}
+                   }
+          raise ErrorResponse(status.HTTP_400_BAD_REQUEST, detail)
+
+    # create the instance
+    return super(CheckRelatedAndCreateModelMixin, self).post(request, *args, **kwargs)

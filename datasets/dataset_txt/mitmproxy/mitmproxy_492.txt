@@ -1,0 +1,78 @@
+httpbob commented on 17 Dec 2017
+Hi there,
+Thanks a lot for this awesome project. I'm trying to achieve something with it but I have issues for the moment.
+Below is what I'm trying to do:
+CLIENT APP -> MITMPROXY -> BUYPROXIES -> INTERNET
+Why ?
+Because I would like to modify/update the HTML content returned by the INTERNET thanks to MITMPROXY installed locally alongside my CLIENT APP.
+IMPORTANT: My CLIENT APP is connecting to BUYPROXIES directly from its code. That's why I use proxychain to create a tunnel
+What is BUYPROXIES ?
+BUYPROXIES are HTTP(S) proxies that my CLIENT APP is connecting to in order to do its job
+System information
+$ mitmproxy --version
+Mitmproxy version: 2.0.2 (release version) 
+Python version: 3.5.2
+Platform: Linux-4.4.0-62-generic-x86_64-with-Ubuntu-16.04-xenial
+SSL version: OpenSSL 1.0.2g  1 Mar 2016
+Linux distro: Ubuntu 16.04 xenial
+Steps to reproduce the problem:
+Depedencies/Requirements: curl, mitmproxy, proxychains installed on Linux + HTTP(S) Proxies
+Proxychains configuration on local computer:
+$ cat /etc/proxychains.conf
+socks5 127.0.0.1 9999
+Running mitmdump(socks mode) on local computer & port 9999
+$ mitmdump --socks -p 9999
+Proxy server listening at http://0.0.0.0:9999
+Testing that BUYPROXIES works with a DIRECT connection:
+Direct connection from CLIENT APP -> BUYPROXIES:
+$ curl -X GET -k -x 'https://xxx.xxx.xxx.xxx:80' -U 'proxyuser:proxypass' 'https://httpbin.org/ip'
+{
+"origin": "xxx.xxx.xxx.xxx"
+}
+If it works then we try a connection through MITMPROXY before BUYPROXIES:
+Chained connection from CLIENT APP -> MITMPROXY -> BUYPROXIES:
+$ proxychains curl -X GET -k -x 'https://xxx.xxx.xxx.xxx:80' -U 'proxyuser:proxypass' 'https://httpbin.org/ip'
+ProxyChains-3.1 (http://proxychains.sf.net)
+|R-chain|-<>-127.0.0.1:9999-<><>-xxx.xxx.xxx.xxx:80-<><>-OK
+curl: (56) Received HTTP code 400 from proxy after CONNECT
+Not working with the socks mode, let's try regular mode:
+$ cat /etc/proxychains.conf
+http 127.0.0.1 9999
+Then re-launching MITMPROXY
+$ mitmdump -p 9999
+Proxy server listening at http://0.0.0.0:9999
+Then trying to connect via CURL:
+$ proxychains curl -X GET -k -x 'https://xxx.xxx.xxx.xxx:80' -U 'proxyuser:proxypass' 'https://httpbin.org/ip'
+ProxyChains-3.1 (http://proxychains.sf.net)
+|R-chain|-<>-127.0.0.1:9999-<><>-xxx.xxx.xxx.xxx:80-<><>-OK
+curl: (56) Received HTTP code 400 from proxy after CONNECT
+Still not working , let's try transparent mode:
+$ cat /etc/proxychains.conf
+http 127.0.0.1 9999
+Then re-launching MITMPROXY
+$ mitmdump -T -p 9999
+Proxy server listening at http://0.0.0.0:9999
+127.0.0.1:51004: clientconnect
+127.0.0.1:51004: Transparent mode failure: OSError(92, 'Protocol not available')
+127.0.0.1:51004: clientdisconnect
+The transparent mode returns an error so I gave up
+Trying the upstream mode:
+$ mitmdump -v --upstream 'http://xxx.xxx.xxx.xxx:80' --upstream-auth 'proxyuser:proxypass' -p 9999
+Proxy server listening at http://0.0.0.0:9999
+Then I failed connecting with the following command ( CURL trying to connect through BUYPROXIES ):
+$ proxychains curl -X GET -k -x 'https://xxx.xxx.xxx.xxx:80' -U 'proxyuser:proxypass' 'https://httpbin.org/ip'
+ProxyChains-3.1 (http://proxychains.sf.net)
+|R-chain|-<>-127.0.0.1:9999-<><>-xxx.xxx.xxx.xxx:80-<><>-OK
+curl: (56) Received HTTP code 400 from proxy after CONNECT
+But I make successful connection with this command ( CURL without proxy connections ):
+$ proxychains curl -X GET -k 'https://httpbin.org/ip'
+ProxyChains-3.1 (http://proxychains.sf.net)
+|R-chain|-<>-127.0.0.1:9999-<><>-50.19.240.192:443-<><>-OK
+{
+  "origin": "xxx.xxx.xxx.xxx"
+}
+I know that I'm trying to build a Proxy connection inside another proxy connection.
+Earlier, i made it work with SSH via tunnels.
+Do you think it's doable through MITMPROXY technology ?
+Thanks a lot for your time and help on this.
+Best regards,

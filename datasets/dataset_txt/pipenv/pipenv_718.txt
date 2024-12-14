@@ -1,0 +1,51 @@
+nunosilva800 commented on 23 Aug 2018
+Hi, I have a Ruby on Rails app and I use capistrano to manage deployments.
+Hold on, I'll get to the python-related questions soon, don't kick me out yet fellow programmers
+Very shortly, Capistrano deployments are based on release folders:
+app/releases/... contains a folder for each release (deployment)
+app/current is a symlink to the current release folder
+app/shared/... shared stuff (logs, configs, etc)
+Now I have a feature that requires a small python lib, so I created a small API service to serve that, and configured my EC2 machines with pyenv and pipenv.
+Now I'm in your world
+I've setup systemd to manage this service, like so:
+# /etc/systemd/system/gunicorn_talon.service
+
+[Unit]
+Description=gunicorn daemon for Talon API
+After=network.target
+
+[Service]
+Type=simple
+
+PIDFile=/home/ubuntu/app/shared/tmp/pids/gunicorn.pid
+User=ubuntu
+Group=ubuntu
+
+WorkingDirectory=/home/ubuntu/app/current/talon-api
+
+ExecStartPre=/home/ubuntu/.pyenv/shims/pipenv install
+ExecStart=/home/ubuntu/.pyenv/shims/pipenv run gunicorn -c ./gunicorn.conf.py \
+          --pid /home/ubuntu/app/shared/tmp/pids/gunicorn.pid \
+          src.server:app
+
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s TERM $MAINPID
+
+PrivateTmp=true
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+Everything works
+Buuuuut... with every deployment, a new folder is created by pipenv:
+$ du -h -d1 ~/.local/share/virtualenvs
+256M ./talon-api-UbVgp5Ia
+256M ./talon-api-I1_mIxYT
+256M ./talon-api-kDAWfXdc
+256M ./talon-api-qIDymUwE
+This eventually kill the EC2 instance by taking over the disk space. Not good.
+I managed to mitigate this with the flags install --deploy --system, which reduced the size of these folders to ~26 MB. Still, it does not feel like a solution.
+I was hoping for a flag that allows an install dir, or something similar to ruby's bundler, so that I can keep the dependencies installed under the shared folder or even the release folder for example (which gets cleaned up after X releases).
+Thanks.
+$ pipenv --support

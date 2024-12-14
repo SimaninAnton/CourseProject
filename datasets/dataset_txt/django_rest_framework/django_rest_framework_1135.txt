@@ -1,0 +1,54 @@
+Contributor
+rubendura commented on 21 Jul 2016
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+import django
+django.setup()
+from django.contrib.auth import get_user_model
+from django.db import models
+from django.conf import settings
+from rest_framework import serializers, test
+
+
+class Item(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL,
+                             on_delete=models.CASCADE)
+    item_number = models.IntegerField()
+
+    class Meta:
+       unique_together = (('user', 'item_number'),)
+
+
+class ItemSerializer(serializers.ModelSerializer):
+    user = serializers.PrimaryKeyRelatedField(read_only=True,
+                                              default=serializers.CurrentUserDefault())
+    class Meta:
+        model = Item
+        fields = ('id', 'item_number', 'user')
+
+
+User = get_user_model()
+user = User.objects.create_user(username='asdf')
+request = test.APIRequestFactory().post('/')
+request.user = user
+
+item = Item.objects.create(user=user, item_number=3)
+
+data = {'item_number': item.item_number}
+
+context = {'request': request}
+
+serializer = ItemSerializer(data=data, context=context)
+
+assert not serializer.is_valid(), 'Should be False!'
+Expected behavior
+The serializer should not be valid. This is the case using djangorestframework == 3.3.0
+Actual behavior
+The serializer is valid. This is the case using djangorestframework == 3.4.0
+I've tracked the root of the issue and it seems to be pull request #4192, where a new condition is added to get_unique_together_validators(): "and not field.read_only"

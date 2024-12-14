@@ -1,0 +1,28 @@
+Contributor
+pavgup commented on 9 Mar 2015
+Using the installation notes on https://letsencrypt.readthedocs.org/en/latest/using.html#installation, I attempted to give letsencrypt a whirl on a fresh Ubuntu 14.10 x64 digitalocean droplet. For some weird reason (and I repeated this more than once), when you use the virtualenv commands to get everything going, there are failures in pulling in the right includes -- in particular, the m2crypto package dies while trying to use swig. Here's what I ran:
+  virtualenv --no-site-packages -p python2 venv
+  ./venv/bin/python setup.py install
+  sudo ./venv/bin/letsencrypt
+Running that, you always end up with the build failing when swig takes over -- I've abbreviated the logs a tidbit here, but this is what you see:
+  copying M2Crypto/SSL/ssl_dispatcher.py -> build/lib.linux-x86_64-2.7/M2Crypto/SSL
+  copying M2Crypto/SSL/Connection.py -> build/lib.linux-x86_64-2.7/M2Crypto/SSL
+  copying M2Crypto/SSL/cb.py -> build/lib.linux-x86_64-2.7/M2Crypto/SSL
+  copying M2Crypto/SSL/Checker.py -> build/lib.linux-x86_64-2.7/M2Crypto/SSL
+  copying M2Crypto/SSL/timeout.py -> build/lib.linux-x86_64-2.7/M2Crypto/SSL
+  running build_ext
+  building 'M2Crypto.__m2crypto' extension
+  swigging SWIG/_m2crypto.i to SWIG/_m2crypto_wrap.c
+  swig -python -I/usr/include/python2.7 -I/usr/include -I/usr/include/openssl -includeall -modern -o   SWIG/_m2crypto_wrap.c SWIG/_m2crypto.i
+  SWIG/_evp.i:12: Error: Unable to find 'openssl/opensslconf.h'
+  SWIG/_ec.i:7: Error: Unable to find 'openssl/opensslconf.h'
+  error: command 'swig' failed with exit status 1
+The file that swig (which has both a 3.x and 2.x branch in the repo -- might be valuable to be explicit about this need) is looking for is located in /usr/include/x86_64-linux-gnu/openssl/opensslconf.h, but there is no effective include to find that header. Seeing that it was struggling to find that file, I ended up stumbling into a discussion about the libssl-dev package (under the larger openssl package) that is important for the deb/ubuntu folks: http://askubuntu.com/questions/523831/opensslconf-h-not-found/594486#594486. In the end, I put in a bit of effort, but it certainly seemed like a problem with the m2crypto or virtualenv setups. And here's what cements it for me -- I was able to comfortably come up with two working solutions to keep things chugging along.
+Use the ubuntu-supplied m2crypto package (inside the cloned letsencrypt directory, of course) to avoid having to compile the package (meh.):
+sudo apt-get install -y python-m2crypto
+virtualenv --system-site-packages -p python2 venv
+./venv/bin/python setup.py install
+I then gave pip a shot at running the installation and that seemed to go a lot more smoothly. To be clear, I didn't use any of the virtualenv commands (:(), and essentially ran (again inside the cloned letsencrypt directory):
+sudo apt-get install -y python-pip
+pip install -e .
+I have a sneaking suspicion these directions: https://letsencrypt.readthedocs.org/en/latest/using.html#installation could use a once over.

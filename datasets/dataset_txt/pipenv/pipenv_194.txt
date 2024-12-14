@@ -1,0 +1,100 @@
+MatthewWilkes commented on 16 Apr 2019 •
+edited
+Issue description
+I expect to be able to override elements in [packages] by reproducing them in [dev-packages] to declare development-time differences.
+For example, the following pipfile:
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+funniest = {editable = true,path = "."}
+
+[packages]
+funniest = {path = "."}
+
+[requires]
+python_version = "3.7"
+with setup.py:
+  from setuptools import setup
+
+  setup(name='funniest',
+        version='0.1',
+        description='The funniest joke in the world',
+        url='http://github.com/storborg/funniest',
+        author='Flying Circus',
+        author_email='flyingcircus@example.com',
+        license='MIT',
+        packages=['funniest'],
+        zip_safe=False)
+(example taken from the python packaging docs)
+and two empty directories, funniest and foo. The reason for the foo directory is so we can be in a working directory where funniest is not importable from the cwd, as this masks the error.
+Expected result
+I expect that if I run pipenv install the funniest package will be installed into the virtual environment. Changes to the current working directory are not applied until reinstallation.
+If I run pipenv install --dev the funniest package will be installed as editable, so the current working directory is.
+That is (paths and output simplified):
+example$ cd foo
+example/foo$ pipenv --rm
+...
+example/foo$ pipenv install
+...
+example/foo$ pipenv run python -c 'import pkg_resources; print(pkg_resources.require("funniest")[0].location)'
+~/.local/share/virtualenvs/example-BaUoFXTC/lib/python3.7/site-packages
+and
+example/foo$ pipenv --rm
+...
+example/foo$ pipenv install --dev
+...
+example/foo$ pipenv run python -c 'import pkg_resources; print(pkg_resources.require("funniest")[0].location)'
+example/
+The generated lockfile looks like:
+Actual result
+The editable option in [dev-packages] is masked by the version in [packages].
+example$ cd foo
+example/foo$ pipenv --rm
+...
+example/foo$ pipenv install
+...
+example/foo$ pipenv run python -c 'import pkg_resources; print(pkg_resources.require("funniest")[0].location)'
+~/.local/share/virtualenvs/example-BaUoFXTC/lib/python3.7/site-packages
+and
+example/foo$ pipenv --rm
+...
+example/foo$ pipenv install --dev
+...
+example/foo$ pipenv run python -c 'import pkg_resources; print(pkg_resources.require("funniest")[0].location)'
+~/.local/share/virtualenvs/example-BaUoFXTC/lib/python3.7/site-packages
+The generated lockfile is:
+{
+    "_meta": {
+        "hash": {
+            "sha256": "35c958102b69fd89f6d04c31de2f9fb49cef92dbcaec95c68f0fd314274fa3c9"
+        },
+        "pipfile-spec": 6,
+        "requires": {
+            "python_version": "3.7"
+        },
+        "sources": [
+            {
+                "name": "pypi",
+                "url": "https://pypi.org/simple",
+                "verify_ssl": true
+            }
+        ]
+    },
+    "default": {
+        "funniest": {
+            "path": "."
+        }
+    },
+    "develop": {
+        "funniest": {
+            "path": "."
+        }
+    }
+}
+Note the lack of editable lines in the develop entry.
+Steps to replicate
+Install a local package in both --dev and normal modes, differing by their editable flag. The difference is dropped during the locking stage.
+$ pipenv --support

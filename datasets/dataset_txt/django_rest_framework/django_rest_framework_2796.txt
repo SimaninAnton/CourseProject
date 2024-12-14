@@ -1,0 +1,126 @@
+donspaulding commented on 27 Jun 2013
+Given some customized Serializer and HRF fields, as follows:
+class RelativeHyperlinkedRelatedField(HyperlinkedRelatedField):
+    def get_url(self, obj, view_name, request, format):
+        lookup_field = getattr(obj, self.lookup_field)
+        kwargs = {self.lookup_field: lookup_field}
+        return reverse(view_name, kwargs=kwargs, request=None, format=format)
+
+    def get_identity(self, data):
+        try:
+            return data.get('resource_uri', None)
+        except AttributeError:
+            return None
+
+
+class PCPModelSerializer(HyperlinkedModelSerializer):
+    """
+    Adds both a relative and absolute URI field on all serialized instances.
+    """
+    _hyperlink_field_class = RelativeHyperlinkedRelatedField  # Controls the nature of related URIs
+    field_mapping = HyperlinkedModelSerializer.field_mapping.copy()
+
+    def get_identity(self, data):
+        try:
+            return data.get('resource_uri', None)
+        except AttributeError:
+            return None
+
+    def get_default_fields(self):
+        """
+        Customize our URI fields.
+        """
+        fields = super(HyperlinkedModelSerializer, self).get_default_fields()
+
+        if self.opts.view_name is None:
+            self.opts.view_name = self._get_default_view_name(self.opts.model)
+
+        uri_fields = {
+            'resource_uri': RelativeHyperlinkedIdentityField(
+                view_name=self.opts.view_name,
+                lookup_field=self.opts.lookup_field
+            ),
+            'absolute_uri': HyperlinkedIdentityField(
+                view_name=self.opts.view_name,
+                lookup_field=self.opts.lookup_field
+            )
+        }
+        for uri_field_name, uri_field in uri_fields.items():
+            if uri_field_name not in fields:
+                fields.insert(0, uri_field_name, uri_field)
+        return fields
+
+
+def partially_nested(serializer_class, serializer_kwargs=None, include_fields=None, exclude_fields=None):
+    serializer_kwargs = serializer_kwargs or {}
+    partial_fields = set(include_fields or []) - set(exclude_fields or [])
+    default_fields = set(serializer_class(**serializer_kwargs).fields)
+    excluded_fields = tuple(default_fields - partial_fields)
+
+    def get_fields(self, *args, **kwargs):
+        fields = super(self.__class__, self).get_fields(*args, **kwargs)
+        for field_name in excluded_fields:
+            fields.pop(field_name, None)
+        return fields
+    new_serializer_class = type(
+        serializer_class.__name__,  # New class name
+        (serializer_class,),  # New class bases (must be a tuple)
+        {'get_fields': get_fields},   # New class attributes
+    )
+    return new_serializer_class(**serializer_kwargs)
+And the following serializer definitions:
+class AttachmentSerializer(PCPModelSerializer):
+    class Meta:
+        model = Attachment
+        fields = ('payment')
+
+class PaymentSerializer(PCPModelSerializer):
+    attachments = partially_nested(
+        AttachmentSerializer,
+        include_fields=['resource_uri', 'absolute_uri']
+    )
+    class Meta:
+        model = Payment
+And when attempting to PUT a Payment object back to the /api/payments/ endpoint (which is a ModelViewSet pointing to PaymentSerializer as its class), like so:
+{
+  "resource_uri": "/api/payments/12/",
+  "attachments": [
+        {"resource_uri": "/api/attachments/43/"},
+        {"resource_uri": "/api/attachments/44/"}
+  ]
+}
+I get the following traceback:
+Traceback (most recent call last):
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/django/core/handlers/base.py", line 111, in get_response
+    response = callback(request, *callback_args, **callback_kwargs)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/viewsets.py", line 78, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/django/views/decorators/csrf.py", line 77, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/views.py", line 327, in dispatch
+    response = self.handle_exception(exc)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/views.py", line 324, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/mixins.py", line 129, in update
+    if serializer.is_valid():
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 479, in is_valid
+    return not self.errors
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 471, in errors
+    ret = self.from_native(data, files)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 867, in from_native
+    instance = super(ModelSerializer, self).from_native(data, files)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 317, in from_native
+    attrs = self.restore_fields(data, files)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 243, in restore_fields
+    field.field_from_native(data, files, field_name, reverted_data)
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 398, in field_from_native
+    if serializer.is_valid():
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 479, in is_valid
+    return not self.errors
+  File "/Users/don/Development/python/virtualenvs/pcp/lib/python2.7/site-packages/rest_framework/serializers.py", line 447, in errors
+    identities = [self.get_identity(self.to_native(obj)) for obj in objects]
+TypeError: 'RelatedManager' object is not iterable
+objects in that bottom frame is the Django Payment model's "attachments" reverse related manager.
+Any idea what I'm not supplying to DRF so that it knows to use Payment.attachments.all() or something similar?
+Thanks,
+Don Spaulding

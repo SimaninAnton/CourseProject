@@ -1,0 +1,95 @@
+pyro-dev commented on Apr 24, 2015
+Hello everyone
+Here is a piece of code that used to work until Requests 2.6.0
+    def __init__(self, proxy=None):
+        super(Model, self).__init__()
+        self.br = requests.Session()
+        if proxy is not None:
+            self.br.proxies = {"http": proxy, "https": proxy}
+
+    def __open_http(self, encoding, root_url):
+        if codecs.lookup(encoding).name == "shift_jis":
+            encoding = "cp932"
+        def open_http(method, url, values):
+            val = {x: y.encode(encoding) for (x, y) in values if y}
+            url = urljoin(root_url, url)
+            if method == "GET":
+                return self.br.get(url=url, params=val)
+            elif method == "POST":
+                return self.br.post(url=url, params=val)
+        return open_http
+
+    def login(self, user, password):
+        url = "http://mysite.html"
+        data = {"aACTION": "mailbox"}
+        reply = self.br.get(url=url, params=data)
+        doc = lxml.html.fromstring(reply.text)
+        form = doc.forms[1]
+        form.fields["aEMAIL"] = user
+        form.fields["aPASSWORD"] = password
+        response = lxml.html.submit_form(form, open_http=self.__open_http(encoding=reply.encoding, root_url=reply.url))
+Since I upgraded to 2.6.1, I noticed that this login function would fail when I'm behind a proxy.
+I did some debugging in the console, with 2.6.2, and could get the following.
+the code works just fine with no proxy
+when calling self.br.post(url=url, params=val), I always need to call it twice before having a valid reply. The first time results in a ResponseNotReady exception
+when calling directly from requests.post instead of session.post, it works from the first time, even behind a proxy
+Here is also the stacktrace I get
+Traceback (most recent call last):
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 544, in urlopen
+    body=body, headers=headers)
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 374, in _make_request
+    httplib_response = conn.getresponse()
+  File "C:\Python34\lib\http\client.py", line 1164, in getresponse
+    raise ResponseNotReady(self.__state)
+http.client.ResponseNotReady: Request-sent
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 544, in urlopen
+    body=body, headers=headers)
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 374, in _make_request
+    httplib_response = conn.getresponse()
+  File "C:\Python34\lib\http\client.py", line 1164, in getresponse
+    raise ResponseNotReady(self.__state)
+http.client.ResponseNotReady: Request-sent
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python34\lib\site-packages\requests\adapters.py", line 370, in send
+    timeout=timeout
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 597, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\util\retry.py",line 245, in increment
+    raise six.reraise(type(error), error, _stacktrace)
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\packages\six.py", line 309, in reraise
+    raise value.with_traceback(tb)
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 544, in urlopen
+    body=body, headers=headers)
+  File "C:\Python34\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 374, in _make_request
+    httplib_response = conn.getresponse()
+  File "C:\Python34\lib\http\client.py", line 1164, in getresponse
+    raise ResponseNotReady(self.__state)
+requests.packages.urllib3.exceptions.ProtocolError: ('Connection aborted.', ResponseNotReady('Request-sent',))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "F:\MyApp\MyApp.py", line 148, in updateModel
+    data_model.login(myaddress, mypassword)
+  File "F:\MyApp\model.py", line 108, in login
+    response = lxml.html.submit_form(form, open_http=self.__open_http(encoding=reply.encoding, root_url=reply.url))
+  File "C:\Python34\lib\site-packages\lxml\html\__init__.py", line 953, in submit_form
+    return open_http(form.method, url, values)
+  File "F:\MyApp\model.py", line 97, in open_http
+    return self.br.post(url=url, params=val)
+  File "C:\Python34\lib\site-packages\requests\sessions.py", line 508, in post
+    return self.request('POST', url, data=data, json=json, **kwargs)
+  File "C:\Python34\lib\site-packages\requests\sessions.py", line 465, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Python34\lib\site-packages\requests\sessions.py", line 573, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Python34\lib\site-packages\requests\adapters.py", line 415, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', ResponseNotReady('Request-sent',))

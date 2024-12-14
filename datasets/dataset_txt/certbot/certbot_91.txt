@@ -1,0 +1,20 @@
+luxaritas commented on 21 Aug 2019 •
+edited
+I recently went to renew a certificate (using --nginx), and it failed, with the following error detail:
+https://[...]/.well-known/acme-challenge/weSY0T7Z4HutLkI                                                                                                             onP0f6b0eVbWJPyJhcvKnCvrLPqA
+   [54.89.146.238]: "<!DOCTYPE html PUBLIC\n\"-//W3C//DTD XHTML 1.0
+   Transitional//EN\"\n\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd                                                                                                             \">\n<html>"
+(This is a page being defaulted to under nginx with how I have it set up - I tried on a server configured differently, and I just got a standard nginx 404)
+The letsencrypt logs didn't provide any additional insight other than the regenerated nginx config, which I wound up deducing was ok. Then I looked at the nginx logs:
+2019/08/21 01:57:34 [notice] 24772#0: signal process started
+2019/08/21 01:57:34 [emerg] 14538#0: invalid value "TLSv1.3" in /etc/letsencrypt/options-ssl-nginx.conf:11
+Manually editing out the TLSv1.3 in /etc/letsencrypt/options-ssl-nginx.conf resolved the issue, and I confirmed that nginx wasn't reloading at all with the new config, meaning the acme-challenge entry never took. After digging around, it looks like this was introduced in #7274. Oddly, comments in #7205 (the issue being resolved) suggest this seemed to have been tested successfully, and in the pull itself there is a comment which encounters the same error, but logged as a warn: #7274 (comment). I'm assuming there's something having to due with the nginx install/config parameters (I installed through the @amzn-updates yum repo) that changed the log level for that? If you need to see the config file for some reason, let me know, but from what I'm seeing it should have nothing to do with that.
+Versions:
+Amazon Linux 2018.03
+Certbot 0.37.1 via certbot-auto
+Full nginx -V:
+nginx version: nginx/1.14.1
+built by gcc 4.8.5 20150623 (Red Hat 4.8.5-28) (GCC)
+built with OpenSSL 1.0.2k-fips  26 Jan 2017
+TLS SNI support enabled
+configure arguments: --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/var/run/nginx.pid --lock-path=/var/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_geoip_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-google_perftools_module --with-debug --with-cc-opt='-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -m64 -mtune=generic' --with-ld-opt=' -Wl,-E'

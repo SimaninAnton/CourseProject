@@ -1,0 +1,62 @@
+Contributor
+toranb commented on 26 Feb 2013
+I started using the django-filter to restrict django orm query_sets by company. This works great for a list api view because the filter_backend is a 1st class citizen
+class MultipleObjectAPIView(MultipleObjectMixin, GenericAPIView):
+    """
+    Base class for generic views onto a queryset.
+    """
+
+    paginate_by = api_settings.PAGINATE_BY
+    paginate_by_param = api_settings.PAGINATE_BY_PARAM
+    pagination_serializer_class = api_settings.DEFAULT_PAGINATION_SERIALIZER_CLASS
+    filter_backend = api_settings.FILTER_BACKEND
+
+    def filter_queryset(self, queryset):
+        """
+        Given a queryset, filter it with whichever filter backend is in use.
+        """
+        if not self.filter_backend:
+            return queryset
+        backend = self.filter_backend()
+        return backend.filter_queryset(self.request, queryset, self)
+But to filter on the retrieve / update / delete side of things this filter backend hook does not yet exist.
+Could we add something in the SingleObjectMixin to filter using your configured backend? This would help anyone who needs to exclude customers based on some criteria
+Here is a spike I threw together that solves this (spike code btw)
+class SingleObjectMixin(object):
+      """
+      Provides the ability to retrieve a single object for further manipulation.
+      """
+      model = None
+      queryset = None
+      slug_field = 'slug'
+      context_object_name = None
+      slug_url_kwarg = 'slug'
+      pk_url_kwarg = 'pk'
+
+      #more code ommitted
+
+      def get_queryset(self):
+          """
+          Get the queryset to look an object up against. May not be called if
+          `get_object` is overridden.
+          """
+          if self.queryset is None:
+              if self.model:
+                  # spike!
+                  from rest_framework.settings import api_settings
+                  filter_backend = api_settings.FILTER_BACKEND
+                  queryset = self.model._default_manager.all()
+                  if not filter_backend:
+                      return queryset
+                  backend = filter_backend()
+                  return backend.filter_queryset(self.request, queryset, self)
+              else:
+                raise ImproperlyConfigured(u"%(cls)s is missing a queryset. Define "
+                                           u"%(cls)s.model, %(cls)s.queryset, or override "
+                                             u"%(cls)s.get_object()." % {
+                                                'cls': self.__class__.__name__                               
+                                        })
+          return self.queryset._clone()
+I already have this issue as an open question of sorts on the google group
+https://groups.google.com/forum/?fromgroups=#!topic/django-rest-framework/rJK2b_0rmGc
+Can we get a productive discussion going about this feature or can I submit a pull request to get the ball rolling? I hate to be on a custom fork for too long :D

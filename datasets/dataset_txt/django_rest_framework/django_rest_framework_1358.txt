@@ -1,0 +1,28 @@
+Contributor
+mlissner commented on 29 Dec 2015
+I just tried to document my API and realized that I would have to document all of the filters and ordering_fields that were in place, making for a LOT of work.
+I wrote a little class to display this data in the OPTIONS request:
+class SimpleMetadataWithFilters(SimpleMetadata):
+    """Override SimpleMetadata, adding info about filters"""
+
+    def determine_metadata(self, request, view):
+        metadata = super(SimpleMetadataWithFilters, self).determine_metadata(request, view)
+        filters = OrderedDict()
+        for filter_name, filter_type in view.filter_class.base_filters.items():
+            filter_name = filter_name.split('__')[0]
+            attrs = OrderedDict()
+            attrs['type'] = filter_type.__class__.__name__
+            choices = filter_type.extra.get('choices', False)
+            if choices:
+                attrs['choices'] = [
+                    {
+                        'value': choice_value,
+                        'display_name': force_text(choice_name, strings_only=True)
+                    }
+                    for choice_value, choice_name in choices
+                ]
+            filters[filter_name] = attrs
+        metadata['filters'] = filters
+        metadata['ordering'] = view.ordering_fields
+        return metadata
+The code above works well and is in my system, but I wonder if we can't merge this into DRF. I imagine more could be done here, but this alone is a big improvement.

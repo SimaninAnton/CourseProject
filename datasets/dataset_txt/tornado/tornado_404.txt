@@ -1,0 +1,94 @@
+judeaugustinej commented on 14 Dec 2016
+hello.py
+from tornado import gen
+from tornado.ioloop import IOLoop
+from tornado.httpserver import HTTPServer
+from tornado.options import parse_command_line
+from tornado import web
+
+import psycopg2
+import momoko
+
+
+class BaseHandler(web.RequestHandler):
+    @property
+    def db(self):
+        return self.application.db
+
+
+class TutorialHandler(BaseHandler):
+    def get(self):
+        self.write('Some text here!')
+        self.finish()
+
+def create_app():
+    application = web.Application([
+        (r'/', TutorialHandler)
+    ], debug=True)
+
+    ioloop = IOLoop.instance()
+
+    application.db = momoko.Pool(
+        dsn='dbname=postgres user=devstack password=root',
+        size=1,
+        ioloop=ioloop,
+    )
+
+    # this is a one way to run ioloop in sync
+    future = application.db.connect()
+    ioloop.add_future(future, lambda f: ioloop.stop())
+    ioloop.start()
+    future.result()  # raises exception on connection error
+    return application, ioloop
+
+if __name__ == "__main__":
+    parse_command_line()
+    application, ioloop = create_app()
+    http_server = HTTPServer(application)
+    http_server.listen(8888, 'localhost')
+    ioloop.start()
+test_hello.py
+import unittest
+
+import tornado.ioloop
+from tornado.httpclient import HTTPRequest
+from tornado.testing import AsyncHTTPTestCase, gen_test, bind_unused_port
+from tornado.httpserver import HTTPServer
+
+from hello import create_app
+
+class SimpleTest(AsyncHTTPTestCase):
+
+    def get_app(self):
+        ioloop, application = create_app()
+        return application
+
+    def get_new_ioloop(self):
+        ioloop, _ = create_app()
+        return ioloop
+
+    def test_endpoint_status_code(self):
+        response = self.fetch("/", method='GET')
+        self.assertEqual(response.code, 200)
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+error msg
+python test_hello.py
+/simple_momko_app$ python test_hello.py 
+test_endpoint_status_code (__main__.SimpleTest) ... ERROR
+
+======================================================================
+ERROR: test_endpoint_status_code (__main__.SimpleTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/devstack/Desktop/tornado_learning/learn_testing_in_tornado/simple_momko_app/env/local/lib/python2.7/site-packages/tornado/testing.py", line 375, in setUp
+    super(AsyncHTTPTestCase, self).setUp()
+  File "/home/devstack/Desktop/tornado_learning/learn_testing_in_tornado/simple_momko_app/env/local/lib/python2.7/site-packages/tornado/testing.py", line 232, in setUp
+    self.io_loop.make_current()
+AttributeError: 'Application' object has no attribute 'make_current'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (errors=1)

@@ -1,0 +1,55 @@
+danchyy commented on 30 May 2018 •
+edited
+I created my custom data generator which extends the Sequence class, implemented the __get_item__, __len__ and on_epoch_end methods.
+The job that I do in __get_item__ method is following: I retrieve the file names of files which should be in given batch (determined based on index given in __get_item__ method and size of batch which I set). After that, I load the numpy array and append them in list, same goes with labels.
+In the end, I create numpy arrays of regular lists that are my data and labels. Following code can be viewed here:
+    def __getitem__(self, index):
+        start_index, end_index = index * self.batch_size, (index + 1) * self.batch_size
+        curr_file_names = self.file_names[start_index: end_index]
+        features, labels = [], []
+        for file_name in curr_file_names:
+            with open(file_name) as in_file:
+                json_data = json.load(in_file)
+            label = json_data["class"]
+            updated_label = int(label) - 1  # SO WE CAN MOVE FIRST LABEL TO ZERO
+            labels.append(updated_label)
+            curr_feature = np.load(json_data["features_path"])
+            features.append(curr_feature)
+        print("Features: ", end=" ")
+        print(np.array(features).shape)
+        print("\n")
+        return np.array(features), np.array(to_categorical(labels, num_classes=self.num_of_classes))
+
+    def __len__(self):
+        return int(np.ceil(len(self.file_names) / float(self.batch_size)))
+Now, I left the 3 prints there because I use them as sanity check, I'll give out the log later on. Following code is my call of fit_generator method on my model:
+        history = self.model.fit_generator(
+            generator=self.train_generator,
+            epochs=self.config.trainer.num_epochs,
+            steps_per_epoch=steps_per_epoch,
+            verbose=self.config.trainer.verbose_training,
+            validation_data=self.validation_generator,
+            validation_steps=validation_steps,
+            callbacks=self.callbacks
+        )
+Train generator is the one that works on train data, while test generator is the one working on validation/test data. But that one doesn't matter as it only reaches couple of iterations before crashing.
+What happens is that I can successfully run several iterations (the progress bar increases, and number of batches in epoch is increasing but then I get the ValueError: Error when checking input: expected lstm_1_input to have 3 dimensions, but got array with shape (32, 1) on input layer of my LSTM model. Here is the log output of the mentioned problem:
+Epoch 1/20
+Features dimensions:  (32, 40, 2048) # 1. iter
+Features dimensions:  (32,) # 2. ERROR OCCURS HERE
+Features dimensions:  (32, 40, 2048) # 3.iter
+Features dimensions:  (32, 40, 2048) # ...
+Features dimensions:  (32, 40, 2048)
+Features dimensions:  (32, 40, 2048)
+Features dimensions:  (32, 40, 2048)
+Features dimensions:  (32, 40, 2048)
+Features dimensions:  (32, 40, 2048)
+Features dimensions:  (32,)
+Features dimensions:  (32,)
+Features dimensions:  (32, 40, 2048)
+  1/292 [..............................] - ETA: 547s - loss: 4.6812 - acc: 0.0625
+Now as you can see I get one successful iteration after which I instantly get the error which I mentioned before but the location of error isn't always the same, sometimes the training crashes at 2nd iteration, sometimes after 20, and similar situations. I figured that it could be happening because of some multithreading issues but I am not sure how to approach this problem. I also tried reproducing this issue on both CPU and GPU, and it happens in both cases.
+I followed following official notes on how to build own generator and also took a peek at this stanford tutorial on how to build one.
+By the way, use case of my data generator is to load sequences for my LSTM model, so I'm not working with images here. I have already created one model which used flow_from_directory option to load images for classification, but I cannot apply that here.
+What is the issue here, and is there any appropriate alternative which could make my work even more easier?
+1

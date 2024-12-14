@@ -1,0 +1,67 @@
+KrzysztofMadejski commented on 27 Feb 2016
+Model: I have Articles, each connected to its Domain
+Case: on CREATE Article I would like to connect it to relevant domain automatically parsing article src_url without specying Domain object (see Serializer code before)
+Option 1: I could do it as a dedicated view, but there I would have to create Domain object and specify full url, but it seems quite weird to specify full url.
+Option 2: Make a hook that would be called after to_internal_values and remove firing validators in to_internal_values (they are called afterwards if I'm right)
+Sth like:
+ def run_validation(self, data=empty):
+        """
+        We override the default `run_validation`, because the validation
+        performed by validators and the `.validate()` method should
+        be coerced into an error dictionary with a 'non_fields_error' key.
+        """
+        (is_empty_value, data) = self.validate_empty_values(data)
+        if is_empty_value:
+            return data
+
+        value = self.to_internal_value(data)
+        value = self.pre_validation_hook(value)
+        try:
+            self.run_validators(value)
+            value = self.validate(value)
+            assert value is not None, '.validate() should return the validated data'
+        except (ValidationError, DjangoValidationError) as exc:
+            raise ValidationError(detail=get_validation_error_detail(exc))
+
+        return value
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Code
+class Domain(models.Model):
+    src = models.CharField(max_length=100, unique=True)
+
+    @classmethod
+    def host_from_url(cls, url):
+        o = urlparse(url)
+        host = o.hostname
+        if host.startswith('www.'):
+            host = host[4:]
+        return host
+
+class Article(models.Model):
+    src = models.URLField(max_length=600, unique=True)
+    domain = models.ForeignKey(Domain, on_delete=models.PROTECT, null=True)
+
+class DomainSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Domain
+
+class ArticleSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Article
+
+    def validate(self, data):
+        if data.get('domain', None) is None and data.get('src', None) is not None:
+            host = Domain.host_from_url(data['src'])
+            domain = Domain.objects.filter(src=host).first()
+            if domain is None:
+                Domain.new(src=host)
+            # TODO why serializers.to_internal_value runs validation if there are run afterwards?
+            data['domain'] = domain
+
+        return super(ArticleSerializer, self).validate(data)

@@ -1,0 +1,50 @@
+Contributor
+tprestegard commented on 3 Nov 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+With Python 2.7 and Django 1.11.16:
+from rest_framework.fields import DecimalField
+dec = DecimalField(16, 6).to_internal_value(1234567890.123456)
+print(dec)
+I don't think the same issue exists in Python 3 (well, at least Python 3.6) since converting a float to a str with str() seems to preserve 16 digits, compared to 12 for Python 2.7.
+Expected behavior
+>>> 1234567890.123456
+Actual behavior
+>>> 1234567890.120000
+Notes
+This problem is occurring due to the usage of django.utils.encoding.smart_text to convert the float to a string before converting it to a decimal.Decimal within the to_internal_value() method (see here):
+smart_text(1234567890.123456)
+>>> u'1234567890.12'
+Proposed change
+If the input is a float, convert to a quantized decimal.Decimal, then back to a string, and then continue with the function as before. See the diff. I am happy to make this a pull request if this is deemed a reasonable fix.
+Testing
+Here's a unit test that iterates over lots of floats and tests their conversion to decimal.Decimals:
+import decimal
+import math
+from django.test import SimpleTestCase
+from rest_framework.fields import DecimalField
+
+class TestDecimalField(SimpleTestCase):
+
+    def test_lots_of_floats(self):
+        DECIMAL_PLACES = 6
+        raw_int = 1234567890
+
+        MAX_DIGITS = int(math.ceil(math.log10(raw_int))) + DECIMAL_PLACES
+        df = DecimalField(MAX_DIGITS, DECIMAL_PLACES)
+        for exp in range(0, DECIMAL_PLACES):
+            for num in range(0, 10):
+                decimal_places_as_int = num * (10**exp)
+                raw_float = raw_int + decimal_places_as_int * \
+                    (10**(-1*DECIMAL_PLACES))
+                raw_str = str(raw_int) + '.' + '{{:0>{dp}}}'.format(
+                    dp=DECIMAL_PLACES).format(decimal_places_as_int)
+                output = df.to_internal_value(raw_float)
+                self.assertEqual(output.to_eng_string(), raw_str)
+I also ran the DRF unit tests after making this change and they all passed (other than the ones that were skipped due to usage of Django < 2.0).

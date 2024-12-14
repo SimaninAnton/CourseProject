@@ -1,0 +1,23 @@
+Contributor
+mkagenius commented on 30 Aug 2016 •
+edited
+To test this bug, edit the code in flowlist.py from
+r = self.master.replay_request(self.flow) to r = self.master.replay_request(self.flow, block=True)
+And then run mitmproxy and try to replay any request. Mitmproxy will halt and nothing will happen ever.
+In master.py, the parameter block if given True, causes mitmproxy to halt (waiting in an infinite loop, see below)
+def replay_request(self, f, block=False):
+The function gets stuck because the ask method goes in an infinite loop
+file: http_replay.py line no: around 45
+request_reply = self.channel.ask("request", self.flow)
+The ask method in controller.py goes in an infinite loop because the queue.Empty always comes true (I checked):
+        while not self.should_exit.is_set():
+            try:
+                # The timeout is here so we can handle a should_exit event.
+                g = m.reply.q.get(timeout=0.5)
+                print(g,"----000---")
+            except queue.Empty:  # pragma: no cover
+                print("continue")
+                continue
+Any idea why this calling of join() in case of block=True will cause the queue to be empty and if block is False, queue gets some element in it after few milliseconds (as I saw) and hence breaks out of the infinite loop.
+My guess is that:
+handler(f) function in controller.py gets executed in case of block=False (causes commit message an population of queue with the HTTPFlow) and not in case of block=True

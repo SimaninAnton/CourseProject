@@ -1,0 +1,49 @@
+zackw commented on 6 Jan 2018
+Expected Behavior
+The documentation leads me to believe that an error handler registered like so:
+app.config["TRAP_HTTP_EXCEPTIONS"] = True
+@app.errorhandler(HTTPException)
+def handle_http_error(err):
+    return flask.render_template("_error.html",
+                                 errcode=err.code,
+                                 errname=err.name,
+                                 errdescription=err.description), err.code
+... should be called for any HTTP error. (The requirement to set TRAP_HTTP_EXCEPTIONS is inadequately clear, but that's an unrelated problem.)
+Actual Behavior
+Instead, this configuration causes any HTTP error to turn into a 500 internal server error with this traceback:
+127.0.0.1 - - [06/Jan/2018 13:09:57] "GET /fnord.html HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1997, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1985, in wsgi_app
+    response = self.handle_exception(e)
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1540, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "/usr/lib/python3/dist-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1982, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1614, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1517, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "/usr/lib/python3/dist-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1612, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/usr/lib/python3/dist-packages/flask/app.py", line 1598, in dispatch_request
+    return self.view_functions[rule.endpoint](**req.view_args)
+  File "/home/.../mysite.py", line 35, in page
+    flask.abort(404)
+  File "/usr/lib/python3/dist-packages/werkzeug/exceptions.py", line 707, in abort
+    return _aborter(status, *args, **kwargs)
+  File "/usr/lib/python3/dist-packages/werkzeug/exceptions.py", line 687, in __call__
+    raise self.mapping[code](*args, **kwargs)
+I dug around in the debugger a little: this is from the perspective of the handle_user_exception frame:
+>>> self.error_handler_spec
+{None: {None: {<class 'werkzeug.exceptions.HTTPException'>: <function handle_http_error at 0x7fe7f49b4400>}}}
+My application does not use blueprints, so the outer None in this structure is correct, and _find_error_handler understands it. However, the inner None does not correspond to any HTTP code, and so _find_error_handler is unable to pass through that layer of nesting and do the intended lookup by class.
+Environment
+Python version: 3.6.4
+Flask version: 0.12.2
+Werkzeug version: 0.13

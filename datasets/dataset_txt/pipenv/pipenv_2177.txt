@@ -1,0 +1,144 @@
+jotunskij commented on 16 Sep 2017
+TL;DR at the bottom.
+I have written a small library running pipenv which can be found at https://github.com/kth/everest_util, with a setup.py that looks like this:
+from setuptools import setup
+from pipenv.project import Project
+
+lockfile = Project().lockfile_content
+requirements = [package for (package, _) in lockfile['default'].iteritems()]
+
+setup(name='everest_util',
+      version='1.1',
+      description='Utility library for KTHs CD/CI pipeline',
+      url='http://github.com/KTH/everest_util',
+      author='Jens Tinglev',
+      author_email='tinglev@kth.se',
+      license='MIT',
+      packages=['everest_util', 'everest_util.systems', 'everest_util.entities'],
+      zip_safe=False,
+      install_requires=requirements)
+In another project I then depend on this package with the following PIpfile:
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+
+[dev-packages]
+mock = "*"
+green = "*"
+coverage = "*"
+
+[packages]
+flask = "*"
+requests = "*"
+coloredlogs = "*"
+pydocumentdb = "*"
+pipenv = "*"
+
+[packages.everest_util]
+git = "https://github.com/kth/everest_util.git"
+And no errors are given when running pipenv install:
+➜  dizin git:(master) ✗ pipenv install
+Creating a virtualenv for this project...
+⠋New python executable in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: [removed]/.local/share/virtualenvs/dizin-iLyeLnTE
+No package provided, installing all dependencies.
+Pipfile found at [removed]/Repos/dizin/Pipfile. Considering this to be the project home.
+Pipfile.lock not found, creating...
+Locking [dev-packages] dependencies...
+Locking [packages] dependencies...
+Updated Pipfile.lock!
+Installing dependencies from Pipfile.lock...
+[================================] 28/28 - 00:00:24
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+So far so good. But if I attempt to run the application (pipenv run python run.py) I get the following error:
+Traceback (most recent call last):
+  File "run.py", line 11, in <module>
+    from everest_util.entities.application import Application
+  File "[removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages/everest_util/entities/application.py", line 11, in <module>
+    import yaml
+ImportError: No module named yaml
+So, the pyyaml dependency for everest_util clearly didn't get installed. Running ls on the virtualenv /bin directory seems to confirm this (and that all the other dependencies of everest_util got installed):
+➜  dizin git:(master) ✗ ls [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/bin
+activate         activate_this.py easy_install     humanfriendly    pip-compile      pip2.7           python-config    pythonz          virtualenv-clone
+activate.csh     chardetect       easy_install-2.7 pew              pip-sync         pipenv           python2          pythonz_install  wheel
+activate.fish    coloredlogs      flask            pip              pip2             python           python2.7        virtualenv
+So this is the first problem that I'm having. The second part - the weird one - comes next.
+Let's try to install the everest_util through the pipenv CLI and not the Pipfile:
+➜  dizin git:(master) ✗ pipenv install git+https://github.com/KTH/everest_util.git#egg=everest_util
+Installing git+https://github.com/KTH/everest_util.git#egg=everest_util...
+Requirement already satisfied: everest_util from git+https://github.com/KTH/everest_util.git#egg=everest_util in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages
+Collecting pyyaml (from everest_util)
+Requirement already satisfied: humanfriendly in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: coloredlogs in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: requests in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: flask in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: urllib3 in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: monotonic in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: markupsafe in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: chardet in [removed].local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: werkzeug in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: jinja2 in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: itsdangerous in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: certifi in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: idna in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Requirement already satisfied: click in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/lib/python2.7/site-packages (from everest_util)
+Installing collected packages: pyyaml
+Successfully installed pyyaml-3.12
+
+Adding git+https://github.com/KTH/everest_util.git#egg=everest_util to Pipfile's [packages]...
+Locking [dev-packages] dependencies...
+Locking [packages] dependencies...
+Updated Pipfile.lock!
+So, now all of a sudden the pyyaml dependency got installed. Let's see if the application works.
+➜  dizin git:(master) ✗ ./run_locally.sh 
+2017-09-16 06:50:24 modules.log INFO Log level set to "DEBUG"
+2017-09-16 06:50:24 __main__ INFO Starting application
+2017-09-16 06:50:24 __main__ WARNING Dizin is running in dry run mode. No actual integrations will be run.
+Sure does. Let's see what our Pipfile looks like now:
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+
+[dev-packages]
+mock = "*"
+green = "*"
+coverage = "*"
+
+[packages]
+flask = "*"
+requests = "*"
+coloredlogs = "*"
+pydocumentdb = "*"
+pipenv = "*"
+
+[packages.everest-util]
+git = "https://github.com/kth/everest-util.git"
+Seems ok. But look carefully at the everest_util name. The underscores have been replaced with dashes. Let's try to run pipenv install again after removing our virtualenv and Pipfile.lock:
+➜  dizin git:(master) ✗ rm -rf [removed]/.local/share/virtualenvs/dizin-iLyeLnTE
+➜  dizin git:(master) ✗ rm Pipfile.lock 
+➜  dizin git:(master) ✗ pipenv install                                               
+Creating a virtualenv for this project...
+⠋New python executable in [removed]/.local/share/virtualenvs/dizin-iLyeLnTE/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: [removed]/.local/share/virtualenvs/dizin-iLyeLnTE
+No package provided, installing all dependencies.
+Pipfile found at [removed]/Repos/dizin/Pipfile. Considering this to be the project home.
+Pipfile.lock not found, creating...
+Locking [dev-packages] dependencies...
+Locking [packages] dependencies...
+Updated Pipfile.lock!
+Installing dependencies from Pipfile.lock...
+An error occured while installing! 27/28 - 00:00:01
+Collecting everest-util from git+https://github.com/kth/everest-util.git#egg=everest-util
+  Cloning https://github.com/kth/everest-util.git to /private/var/folders/h2/tw5rv3wn1wl2ysmc72h7l9sw0000gn/T/pip-build-LpebYL/everest-util
+remote: Repository not found.
+fatal: repository 'https://github.com/kth/everest-util.git/' not found
+
+Command "git clone -q https://github.com/kth/everest-util.git /private/var/folders/h2/tw5rv3wn1wl2ysmc72h7l9sw0000gn/T/pip-build-LpebYL/everest-util" failed with error code 128 in None
+
+[================================] 27/28 - 00:00:23
+TL;DR: All dependencies from package residing on github are not getting installed when using Pipfile, but are installed when using the pipenv CLI. Doing this rewrites the url to the package in the Pipfile making it so that reinstallation is not possible.

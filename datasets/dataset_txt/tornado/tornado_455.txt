@@ -1,0 +1,99 @@
+thisisx7 commented on 26 Aug 2016
+I want to use async/await in python3.5 instead gen.coroutine
+the code works well
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+
+
+from datetime import timedelta
+from tornado.httpclient import AsyncHTTPClient
+from tornado import ioloop, gen, queues
+
+
+@gen.coroutine
+def fetch(url):
+    print('fetcing', url)
+    response = yield AsyncHTTPClient().fetch(url, raise_error=False)
+    return response
+
+_q = queues.Queue()
+
+
+@gen.coroutine
+def run():
+    try:
+        url = yield _q.get()
+        res = yield fetch(url)
+        html = res.body
+        print("success")
+    finally:
+        _q.task_done()
+
+
+@gen.coroutine
+def worker():
+    while not _q.empty():
+        yield run()
+
+
+@gen.coroutine
+def main():
+    for i in range(1000):    
+        # generate some url
+        url = ""
+        yield _q.put(url)
+    for _ in range(100):  
+        worker()
+    yield _q.join(timeout=timedelta(seconds=30))
+
+
+if __name__ == '__main__':
+    ioloop.IOLoop.current().run_sync(main)
+But when I used async/await like this
+#!/usr/bin/env python
+# encoding: utf-8
+
+
+from datetime import timedelta
+from tornado.httpclient import AsyncHTTPClient
+from tornado import ioloop, gen, queues
+
+
+async def fetch(url):
+    print('fetcing', url)
+    response = await AsyncHTTPClient().fetch(url, raise_error=False)
+    return response
+
+_q = queues.Queue()
+
+
+async def run():
+    try:
+        url = await _q.get()
+        res = await fetch(url)
+        html = res.body
+        # print(html)
+    finally:
+        _q.task_done()
+
+
+async def worker():
+    while not _q.empty():
+        await run()
+
+
+async def main():
+    for i in range(1000):
+        # generate some url
+        url = ""
+        await _q.put(url)
+    for _ in range(10):
+        worker()
+    await _q.join(timeout=timedelta(seconds=30))
+
+
+if __name__ == '__main__':
+    ioloop.IOLoop.current().run_sync(main)
+Then I got WARNING :test.py:38: RuntimeWarning: coroutine 'worker' was never awaited worker()
+It seems that the worker didn't run correctly.
+Is there anything wrong?

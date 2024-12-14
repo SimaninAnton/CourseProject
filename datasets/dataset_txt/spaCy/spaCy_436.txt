@@ -1,0 +1,59 @@
+Contributor
+fizban99 commented on 12 Aug 2019
+According to the PhraseMatcher usage guide
+If you need to match large terminology lists, you can also use the PhraseMatcher
+and in the Rule-based matching section
+The PhraseMatcher is useful if you already have a large terminology list or gazetteer consisting of single or multi-token phrases that you want to find exact instances of in your data.
+and
+The Matcher isn’t as blazing fast as the PhraseMatcher
+I was suprised at finding out that the Matcher seems to be significantly faster for single-term terminology lists when using "LOWER". Here is a sample code using a sample text from project Gutenberg and the results with %timeit:
+import nltk
+from nltk.corpus import gutenberg
+from spacy.matcher import PhraseMatcher
+from spacy.matcher import Matcher
+from spacy.lang.en import English
+
+nltk.download("gutenberg")
+nlp = English()
+doc = nlp(gutenberg.raw("carroll-alice.txt"))
+words = ["alice", "she", "tired", "sitting", "sister"]
+
+# with PhraseMatcher
+matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
+terminology = list(nlp.tokenizer.pipe(words))
+matcher.add("Test1", None, *terminology)
+%timeit matches = matcher(doc)
+# Result: 359 ms ± 55.5 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+
+# with Matcher
+matcher = Matcher(nlp.vocab)
+terminology = [{"LOWER": {"IN": words}}]
+matcher.add("Test1", None, terminology)
+%timeit matches = matcher(doc)
+#Result: 65.1 ms ± 5.01 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
+On the other hand, when not using "LOWER", the difference favours the PhraseMatcher:
+import nltk
+from nltk.corpus import gutenberg
+from spacy.matcher import PhraseMatcher
+from spacy.matcher import Matcher
+from spacy.lang.en import English
+
+nltk.download("gutenberg")
+nlp = English()
+doc = nlp(gutenberg.raw("carroll-alice.txt"))
+words = ["alice", "she", "tired", "sitting", "sister"]
+
+# with PhraseMatcher
+matcher = PhraseMatcher(nlp.vocab)
+terminology = list(nlp.tokenizer.pipe(words))
+matcher.add("Test1", None, *terminology)
+%timeit matches = matcher(doc)
+# Result: 39.1 ms ± 979 µs per loop (mean ± std. dev. of 7 runs, 10 loops each)
+
+# with Matcher
+matcher = Matcher(nlp.vocab)
+terminology = [{"ORTH": {"IN": words}}]
+matcher.add("Test2", None, terminology)
+%timeit matches = matcher(doc)
+#Result: 54.8 ms ± 1.97 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
+I would suggest reviewing the usage guide about the benefits of the PhraseMatcher limitting it to multi-term terminology or ORTH values. Alternatively, review the code to see why the PhraseMather performs poorly when using LOWER...

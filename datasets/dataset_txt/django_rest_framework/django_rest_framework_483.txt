@@ -1,0 +1,56 @@
+zubchick commented on 12 Feb 2018 •
+edited
+I found a memory leak in APIView code caused by circular references.
+Minimal working example :
+(tested with python2.7 and rest-framework from master)
+app.py
+#!/usr/bin/env python
+import sys
+
+from django.conf.urls import url
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+
+class AnonymousUser(object):
+    pass
+
+
+class MemoryLeakView(APIView):
+    def post(self, request, **kwargs):
+        self._20_megabyte = "0123456789abcdef" * 64 * 1024 * 20
+        return Response({'a': 'done'})
+
+
+urlpatterns = [
+    url(r'^memory-leak/$', MemoryLeakView.as_view()),
+]
+
+
+if __name__ == "__main__":
+    from django.core.management import execute_from_command_line
+    execute_from_command_line([sys.argv[0], 'runserver'])
+settings.py
+DEBUG = True
+MIDDLEWARE_CLASSES = []
+INSTALLED_APPS = ['rest_framework', 'app']
+ROOT_URLCONF = 'app'
+
+REST_FRAMEWORK = {
+    'UNAUTHENTICATED_USER': 'app.AnonymousUser',
+}
+SECRET_KEY = '123'
+Expected behavior
+The same amount of memory before and after POST request.
+Actual behavior
+Every request curl -i -XPOST 'http://127.0.0.1:8000/memory-leak/' adds ~20Mb to memory usage of the process.
+The cause
+The couse of the problem is circular references from APIView to Request and back (and from APIView to Response and back). All these objects (and many others) remain in memory as a garbage, not collected by gc for certain reasons.
+Reference from APIView to request here, then back through parser_context.
+Reference from APIView to response here, then back through renderer_context.
+Ideas
+The first idea I had was to wrap context references with weakref.proxy here, here, and here.
+This fixes the issue (I've tested), but because of questionable design decisions, view references are sometimes used after the view destruction (for example response.render() internally calls get_default_renderer that expects view). So it could not be a sufficient solution.
+A proper way to fix this is to change get_*context functions and return only objects are needed to request and response, without the whole view.
+9

@@ -1,0 +1,31 @@
+aprescott commented on 4 Dec 2015
+Found this while using letsencrypt 0.1.0.
+I have /etc/nginx/nginx.conf which has these sections in its http {} (among other configuration):
+ssl_prefer_server_ciphers   on;
+ssl_ciphers  DEFAULT:!aNULL:!eNULL:!ADH:!RC4:!RC2:!DES:+HIGH:+MEDIUM:!LOW:!SSLv2:!EXP:!MD5:!DSS:!PSK;
+ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+(Note this existing configuration is a default in a http {} block in /etc/nginx/nginx.conf, not specific to any individual server {}.)
+It then uses
+include sites-enabled/*.conf;
+to pull in /etc/nginx/sites-enabled/example.com.conf, which defines an existing SSL-enabled server:
+server {
+  server_name www.example.com;
+  rewrite ^ https://example.com$request_uri? permanent;
+}
+
+server {
+  # ...
+
+  listen 443 ssl spdy;
+  server_name example.com;
+
+  ssl                  on;
+  ssl_certificate      ssl/foo-cert.pem;
+  ssl_certificate_key  ssl/foo-key.key;
+
+  ssl_session_cache    shared:SSL:5m;
+  ssl_session_timeout  5m;
+  # ...
+}
+After accounting for #921 (which causes problems because of the ssl_session_cache) I found that letsencrypt --nginx -d example.com will correctly update the example.com.conf file to have the correct ssl_certificate and ssl_certificate_key values. It doesn't, however, seem to include options-ssl-nginx.conf anywhere. (Before touching anything to do with letsencrypt, I did a git init . in my /etc/nginx directory, which has let me git diff on the file changes.)
+I'm not sure what I was expecting, though. I guess I thought that the server {} block in example.com.conf would get the include options-ssl-nginx.conf. Does that override the SSL configuration for only https://example.com, and leave the /etc/nginx/nginx.conf default? Is that actually expected because of -d example.com?

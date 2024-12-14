@@ -1,0 +1,44 @@
+MycChiu commented on 5 Jul 2016
+Currently Tensorflow(TF) backend is about 2-4X slower than Theano on gpu during runtime.
+I was really intrigued by the result, since according to the benchmark, vanilla TF's performance actually comes quite close to most of the best-performers in the field.
+After spending the past few days tinkering with the TF backend, I found 2 possible ways to bring down the TF runtime, and I think I should share publicly, so others can save their time.
+1. The image_dim_ordering setting
+according to this thread setting the dim_ordering parameter to 'tf' could cut the runtime in half, and that's because TF's default input shape for image is different from that of Theano, and we are doing additional transpose operations when we encounter 'th' dim_ordering. (The transpose ops seem quite redundant as of TF 0.8.0, and I have opened another issue discussing why. #3149)
+2. modify TF-backend's relu code
+Theano has built-in leaky-relu support, and TF doesn't. To be back-end agnostic, Keras added external support for leaky relu in TF backend, and the code looks like this
+(from keras/backend/tensorflow_backend.py)
+def relu(x, alpha=0., max_value=None):
+
+    negative_part = tf.nn.relu(-x)
+    x = tf.nn.relu(x)
+    if max_value is not None:
+        x = tf.clip_by_value(x, tf.cast(0., dtype=_FLOATX),
+                             tf.cast(max_value, dtype=_FLOATX))
+    if isinstance(alpha, (tuple, list, np.ndarray)) or np.isscalar(alpha):
+        alpha = tf.constant(alpha, dtype=_FLOATX)
+    x -= alpha * negative_part
+    return x
+However, with this implementation, TF is forced to compute the values and the gradients for the negative parts even when alpha is 0. To avoid this, Theano uses a switch internally to skip the calculation when alpha is 0. I tried to mimic the switch operation with
+def relu(x, alpha=0., max_value=None):
+    negative_part = tf.nn.relu(-x)
+    x = tf.nn.relu(x)
+    if max_value is not None:
+        x = tf.clip_by_value(x, tf.cast(0., dtype=_FLOATX),
+                             tf.cast(max_value, dtype=_FLOATX))
+    if isinstance(alpha, (tuple, list, np.ndarray)) or np.isscalar(alpha):
+        alpha = tf.constant(alpha, dtype=_FLOATX)
+    leaked_x = x - alpha * negative_part
+    x = switch(alpha, leaked_x, x) #switch is defined in the original tensorflow_backend.py
+    return x
+but for some reason, it doesn't reduce the runtime at all, so I just temporarily commented out the leaky calculations like this.
+def relu(x, alpha=0., max_value=None):
+    x = tf.nn.relu(x)
+    if max_value is not None:
+        x = tf.clip_by_value(x, tf.cast(0., dtype=_FLOATX),
+                             tf.cast(max_value, dtype=_FLOATX))
+    if isinstance(alpha, (tuple, list, np.ndarray)) or np.isscalar(alpha):
+        alpha = tf.constant(alpha, dtype=_FLOATX)
+
+    return x
+Right now, with both fixes, I was able to bring the runtime of mnist_cnn.py with TF backend to about 1.5X of Theano backend. There is probably still some room for improvement, but I haven't found a good way to profile Keras code, so anything beyond this will be quite hard for me.
+2

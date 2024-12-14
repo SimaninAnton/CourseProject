@@ -1,0 +1,32 @@
+s36srini commented on 2 Jul 2019
+Here is how I'm creating the model:
+# Initialization and Compilation
+mobileNet = keras.applications.mobilenet.MobileNet(weights='imagenet') # ImageNet 2012 trained weights
+
+pruning_params = {'pruning_schedule': sparsity.PolynomialDecay(
+                        initial_sparsity=0.0, final_sparsity=0.5,
+                        begin_step=0, end_step=40000, frequency=200)}
+
+model_for_pruning = sparsity.prune_low_magnitude(mobileNet, **pruning_params)
+
+mobileNet.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+When using the backend context manager below, do the imagenet weights get reset?
+    iterator = dataset.make_initializable_iterator()
+    next_batch = iterator.get_next()
+    with keras.backend.get_session().as_default() as sess:
+        sess.run(iterator.initializer, feed_dict={filenames: files})
+        while True:
+            inputs, labels = sess.run(next_batch)
+            yield inputs, labels`
+Here is my call for training:
+# Train the MobileNet model with its imagenet weights (faster convergence) and have it prune
+mobileNet.fit_generator(
+    generator=input_fn('train'),
+    validation_data=input_fn('validation'),
+    steps_per_epoch=1024,
+    validation_steps=128,
+    workers=0,
+    verbose=1,
+    epochs=1,
+    callbacks=[checkpoint, tensorboard, update_step]
+)

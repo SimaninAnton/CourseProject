@@ -1,0 +1,125 @@
+AntreasAntoniou commented on 27 Feb 2017
+Hello everyone,
+I am trying to implement a CNN LSTM which I have done before in keras. However this time, I am trying to use a graph based (Not Sequential) CNN model, which means I have to use the "Model()" class which requires inputs and outputs. Now when I do this I get an error that I need to provide input for both the internal CNN as well as the TimeDistributed Input. Normally the time distributed layer should pass the CNN inputs, which causes a weird error. For more context:
+My resnet cnn network:
+def get_resnet_single_image_model_no_softmax(load_weights=None):
+    # first, let's define a vision model using a Sequential model.
+    # this model will encode an image into a vector.
+    vision_model = Sequential()
+    vision_model.add(Convolution2D(64, 3, 3, activation='relu', border_mode='same', input_shape=(64, 64, 1)))
+    vision_model.add(BatchNormalization(mode=2))
+    vision_model.add(Convolution2D(64, 3, 3, activation='relu'))
+    vision_model.add(BatchNormalization(mode=2))
+    vision_model.add(MaxPooling2D((2, 2)))
+
+    # vision_model.add(Convolution2D(128, 3, 3, activation='relu', border_mode='same'))
+    # vision_model.add(Convolution2D(128, 3, 3, activation='relu'))
+    # vision_model.add(Convolution2D(128, 3, 3, activation='relu'))
+    # vision_model.add(MaxPooling2D((2, 2)))
+    cnn_input = Input(shape=(64, 64, 1), dtype='float32', name='cnn_input')
+
+    x = vision_model(cnn_input)
+    x = conv_block(x, 3, [64, 64, 128], stage=2, block='a', strides=(1, 1))
+    x = identity_block(x, 3, [64, 64, 128], stage=2, block='b')
+    x = identity_block(x, 3, [64, 64, 128], stage=2, block='c')
+
+    x = conv_block(x, 3, [128, 128, 128], stage=3, block='a')
+    x = identity_block(x, 3, [128, 128, 128], stage=3, block='b')
+    x = identity_block(x, 3, [128, 128, 128], stage=3, block='c')
+    x = identity_block(x, 3, [128, 128, 128], stage=3, block='d')
+
+    x = conv_block(x, 3, [128, 128, 128], stage=4, block='a')
+    x = identity_block(x, 3, [128, 128, 128], stage=4, block='b')
+    x = identity_block(x, 3, [128, 128, 128], stage=4, block='c')
+    x = identity_block(x, 3, [128, 128, 128], stage=4, block='d')
+    x = identity_block(x, 3, [128, 128, 128], stage=4, block='e')
+    x = identity_block(x, 3, [128, 128, 128], stage=4, block='f')
+
+    x = conv_block(x, 3, [128, 128, 128], stage=5, block='a')
+    x = identity_block(x, 3, [128, 128, 128], stage=5, block='b')
+    x = identity_block(x, 3, [128, 128, 128], stage=5, block='c')
+
+    x = MaxPooling2D((2, 2))(x)
+    x = Flatten()(x)
+    x = BatchNormalization()(x)
+    main_model = Model(input=cnn_input, output=x)
+    if load_weights is not None:
+        main_model.load_weights(load_weights, by_name=True)
+    return main_model
+And my CNN LSTM Model:
+def get_lstm_resnet_batchnorm(max_sequence_length, cnn_weights):
+    # first, let's define a vision model using a Sequential model.
+    # this model will encode an image into a vector.
+    vision_model = get_resnet_single_image_model_no_softmax(cnn_weights)
+    print(vision_model.summary())
+    main_input = Input(shape=(max_sequence_length, 64, 64, 1), dtype='float32', name='cnn_input')
+    x = TimeDistributed(vision_model)(main_input)
+    x = LSTM(output_dim=1024)(x)
+    x = BatchNormalization()(x)
+    x = Dense(output_dim=1024, activation='relu')(x)
+    predictions = Dense(output_dim=1, activation='sigmoid')(x)
+    main_model = Model(input=main_input, output=predictions)
+    main_model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+    print(main_model.summary())
+    return main_model
+The error I get on runtime is:
+W tensorflow/core/framework/op_kernel.cc:975] Invalid argument: You must feed a value for placeholder tensor 'cnn_input' with dtype float
+  [[Node: cnn_input = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+W tensorflow/core/framework/op_kernel.cc:975] Invalid argument: You must feed a value for placeholder tensor 'cnn_input' with dtype float
+  [[Node: cnn_input = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+Traceback (most recent call last):
+  File "train_lstm_resnet_batchnorm.py", line 101, in <module>
+    train_model()
+  File "train_lstm_resnet_batchnorm.py", line 87, in train_model
+    validation_data=[x_val, y_val])
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/Keras-1.2.0-py2.7.egg/keras/engine/training.py", line 1143, in fit
+    initial_epoch=initial_epoch)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/Keras-1.2.0-py2.7.egg/keras/engine/training.py", line 843, in _fit_loop
+    outs = f(ins_batch)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 1603, in __call__
+    feed_dict=feed_dict)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 766, in run
+    run_metadata_ptr)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 964, in _run
+    feed_dict_string, options, run_metadata)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1014, in _do_run
+    target_list, options, run_metadata)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1034, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'cnn_input' with dtype float
+  [[Node: cnn_input = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+  [[Node: moments_75/sufficient_statistics/Shape/_1519 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_2099_moments_75/sufficient_statistics/Shape", tensor_type=DT_INT32, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+Caused by op u'cnn_input', defined at:
+  File "train_lstm_resnet_batchnorm.py", line 101, in <module>
+    train_model()
+  File "train_lstm_resnet_batchnorm.py", line 80, in train_model
+    base_model = model.get_lstm_resnet_batchnorm(max_len, "{}_weights".format(cnn_name))
+  File "/home/antreas/NDSB_2017/model.py", line 141, in get_lstm_resnet_batchnorm
+    vision_model = get_resnet_single_image_model_no_softmax(cnn_weights)
+  File "/home/antreas/NDSB_2017/model.py", line 524, in get_resnet_single_image_model_no_softmax
+    cnn_input = Input(shape=(64, 64, 1), dtype='float32', name='cnn_input')
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/Keras-1.2.0-py2.7.egg/keras/engine/topology.py", line 1193, in Input
+    input_tensor=tensor)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/Keras-1.2.0-py2.7.egg/keras/engine/topology.py", line 1111, in __init__
+    name=self.name)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/Keras-1.2.0-py2.7.egg/keras/backend/tensorflow_backend.py", line 310, in placeholder
+    x = tf.placeholder(dtype, shape=shape, name=name)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/array_ops.py", line 1587, in placeholder
+    name=name)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/ops/gen_array_ops.py", line 2043, in _placeholder
+    name=name)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/op_def_library.py", line 759, in apply_op
+    op_def=op_def)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2240, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/home/antreas/anaconda2/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 1128, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'cnn_input' with dtype float
+  [[Node: cnn_input = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+  [[Node: moments_75/sufficient_statistics/Shape/_1519 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_2099_moments_75/sufficient_statistics/Shape", tensor_type=DT_INT32, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+Any tips?
+3

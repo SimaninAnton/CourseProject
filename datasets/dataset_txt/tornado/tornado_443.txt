@@ -1,0 +1,15 @@
+Contributor
+leynos commented on 22 Sep 2016 •
+edited
+The handling of the X-Forwarded-For header appears to be incorrect.
+Squid and Nginx append each new step in the chain to the end of the list. See the Wikipedia article, which cites the Squid documentation here ("header values are iterated in reverse order"). The format given on Wikipedia is:
+X-Forwarded-For: client, proxy1, proxy2
+This is consistent with my experience of Nginx, which has passed the client IP as the first address in the chain.
+The behaviour in question (line 229 of httpserver.py):
+ip = ip.split(',')[-1].strip()
+A more correct implementation would be ip = ip.split(',')[0].strip()
+Furthermore, the value in question may contain a port number. This is handled by Nginx, for example (see here). Tornado strictly rejects this value if it not an ip address. It may be worth stripping off any port suffix, by, e.g.:
+if (ip.startswith('[') and not ip.endswith(']')) or ('.' in ip and ':' in ip):
+    ip = ip.rsplit(':', 1)[0]
+The first clause of the "if" condition checks for IPv6 addresses with a port stated, and the second checks for IPv4 addresses with a port. An alternative might be to use urlparse.
+I believe this would provide a more useful implementation of the X-Forwarded-For handler where multiple proxies are chained.

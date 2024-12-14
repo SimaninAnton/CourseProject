@@ -1,0 +1,75 @@
+Contributor
+mjdietzx commented on 8 Mar 2017
+This bug is easy to reproduce when training GANs but probably occurs in other cases as well. In GANs, batch normalization cannot be used in the discriminator. If BN is used in discriminator you will get errors like:
+W tensorflow/core/framework/op_kernel.cc:993] Invalid argument: You must feed a value for placeholder tensor 'input_1' with dtype float
+         [[Node: input_1 = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1022, in _do_call
+    return fn(*args)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1004, in _run_fn
+    status, run_metadata)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/contextlib.py", line 66, in __exit__
+    next(self.gen)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/framework/errors_impl.py", line 469, in raise_exception_on_not_ok_status
+    pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'input_1' with dtype float
+         [[Node: input_1 = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "gan.py", line 329, in <module>
+    main(sys.argv[1], gen_model_path, disc_model_path)
+  File "gan.py", line 321, in main
+    adversarial_training(data_dir, generator_model_path, discriminator_model_path)
+  File "gan.py", line 262, in adversarial_training
+    loss_real, loss_generated = train_discriminator_step()
+  File "gan.py", line 246, in train_discriminator_step
+    l_r = discriminator_model.train_on_batch(x, -np.ones(batch_size))
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/engine/training.py", line 1610, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 2065, in __call__
+    feed_dict=feed_dict)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 767, in run
+    run_metadata_ptr)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 965, in _run
+    feed_dict_string, options, run_metadata)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1015, in _do_run
+    target_list, options, run_metadata)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 1035, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: You must feed a value for placeholder tensor 'input_1' with dtype float
+         [[Node: input_1 = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+Caused by op 'input_1', defined at:
+  File "gan.py", line 329, in <module>
+    main(sys.argv[1], gen_model_path, disc_model_path)
+  File "gan.py", line 321, in main
+    adversarial_training(data_dir, generator_model_path, discriminator_model_path)
+  File "gan.py", line 155, in adversarial_training
+    generator_input_tensor = layers.Input(shape=(rand_dim, ))
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/engine/topology.py", line 1373, in Input
+    input_tensor=tensor)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/engine/topology.py", line 1284, in __init__
+    name=self.name)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 346, in placeholder
+    x = tf.placeholder(dtype, shape=shape, name=name)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/ops/array_ops.py", line 1520, in placeholder
+    name=name)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/ops/gen_array_ops.py", line 2149, in _placeholder
+    name=name)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/framework/op_def_library.py", line 763, in apply_op
+    op_def=op_def)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 2395, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 1264, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'input_1' with dtype float
+         [[Node: input_1 = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+What seems to be happening is the computational graphs are separate between generator and discriminator but once you defined combined (something like this):
+combined_output = discriminator_model(generator_model(generator_input_tensor))
+combined_model = models.Model(inputs=[generator_input_tensor], outputs=[combined_output], name='combined')
+things get kinda messed up somehow. basically trying to train a batch on the discriminator will fail b/c now the batch norm layers think a placeholder tensor must be fed for the generators input. although training the generator and combined model will work fine.
+You can reproduce this in keras 1 and 2 (try cGAN branch for keras 1 and wGAN branch for keras 2) https://github.com/wayaai/GAN-Sandbox
+1

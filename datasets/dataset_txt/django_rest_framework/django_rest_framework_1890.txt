@@ -1,0 +1,23 @@
+DavidMuller commented on 8 Apr 2015
+It is currently difficult to define custom "create" permissions via DRF's Base permission class:
+has_permission() checks raw requests
+has_object_permission() only checks detail views ("object has already been created")
+What would you think about adding the following hook:
+has_create_permission(self, request, view, validated_serializer)
+has_create_permission() would allow a custom permission class to check the contents of a validated serializer (.is_valid() == True) and choose to authorize the creation based on the current user (request.user).
+The CreateModelMixin could be updated to call this new hook. Very roughly, something like:
+def create(self, request, *args, **kwargs):
+    serializer = self.get_serializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # check "create" permissions
+    self.check_create_permissions(request, serializer)
+
+    self.perform_create(serializer)
+    headers = self.get_success_headers(serializer.data)
+    return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+def check_create_permissions(self, request, validated_serializer):
+    for permission in self.get_permissions():
+        if not permission.has_create_permission(request, self, validated_serializer):
+            self.permission_denied(request)

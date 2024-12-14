@@ -1,0 +1,22 @@
+dusek commented on 3 Jan 2016
+When one has a multidomain certificate with many SANs (Subject Alternative Names), there can come a situation where one wants to remove certain SANs from the certificate when renewing (e.g. the removed domain is no longer used - "retired", or it has become relevant in another multidomain certificate instead; in both cases, to keep things clean, I want to remove the no longer needed SAN from the multidomain certificate).
+The problem is when renewing with the reduced set of SANs, letsencrypt does not modify the existing certificate "branch", but creates a new one, usually with the -0001 suffix. That is quite understandable, as it is a potentially destructive action; however in many cases (e.g. the one I am describing above), it is not what the user wants/expects.
+Example:
+Multidomain certificate created and repeatedly renewed with --domains domain.tld,s1.domain.tld,s2.domain.tld,s3.domain.tld exists in /etc/letsencrypt/live/domain.tld.
+Now I want to remove e.g. s3.domain.tld, so I run with --domains domain.tld,s1.domain.tld,s2.domain.tld. Since there is no way currently to specify the intention to modify the SAN list in the existing /etc/letsencrypt/live/domain.tld "branch" (is it called "lineage"?), I end up with /etc/letsencrypt/live/domain.tld (and same in archive and renewal) untouched, and instead a new "branch" ("lineage"?) created in /etc/letsencrypt/live/domain.tld-0001 with the requested domain list.
+This presents a few problems:
+I have to modify server config to point to the new certificate path (i.e. /etc/letsencrypt/live/domain.tld --> /etc/letsencrypt/live/domain.tld-0001)
+I really don't like the "-0001" stuff optically
+it leaves /etc/letsencrypt/{live,archive,renewal}/domain.tld on disk with no further purpose
+A workaround could be to (neither was tested):
+delete /etc/letsencrypt/{live,archive,renewal}/domain.tld before doing the renewal that removes the SAN – that is a little bit disconcerting, as there will be a period where no cert will be on disk (possible downtime, if the renewal should fail, I have to restore working certificates from archive)
+do as above (i.e. let it create the "branch" with -0001 suffix), and then somehow "rename" domain.tld-0001 to domain.tld (again, possible downtime, possible to mess up, waste of time...)
+edit the /etc/letsencrypt/renewal/domain.tld.conf file - the domains key (and perhaps the [[webroot_map]] section) - that does not work, as letsencrypt gets the list of domains directly from the certificate itself (found it in code somewhere)
+If it is of interest, there is also a relevant LE Community thread.
+So I propose that letsencrypt has some means to be told that one wants to use an existing "branch" ("mileage"?) for the new certificate, even if it meant to remove some SANs from the domain.
+I think from the UI point of view, for lot of cases what is decisive is the main SAN domain name, which is listed first. That often identifies "what" certificate it is, and letsencrypt already uses it for CN and for naming the "branch" ("lineage"?) on disk. In case of renewal with removing domains, the user usually uses the same CN.
+So I think that a lot (if not the majority) of these cases would be covered by some option like --compress (physics opposite to "--expand" ), which would look whether a certificate with same CN but some SANs removed w.r.t. its current list of SANs is requested, and if yes, would update the same certificate "branch" ("lineage"?), instead of creating a new one with -0001 suffix, with the new certificate with reduced list of SANs.
+Users using compress in their cron scripts or even .ini files would then just have to be advised that for this to work, they have to preserve the CN (i.e. the first domain in the domain list), and should obviously not use the same CN in more than one certificate (that could go into the documentation of the --compress option which the user would have to turn on explicitly, thus having been informed/warned).
+Thanks.
+10
+2

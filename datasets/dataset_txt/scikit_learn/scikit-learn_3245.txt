@@ -1,0 +1,107 @@
+ghost commented on Jan 22, 2016
+Generally, my python code does following three steps
+run multiprocess to scrape search results from search engine
+scrape text from each url in the list(without multiprocessing) using python requests library
+run fit_partial method of LDA class object from scikit learn library
+The program runs fine when I only scarped total of 50~80 urls, but when there are many urls,the program hangs at step 3 after finishing three to eight fit_partial method and printing logs
+   [Parallel(n_jobs=4)]: Done   4 out of   4 | elapsed:    0.1s finished
+   [Parallel(n_jobs=4)]: Done   4 out of   4 | elapsed:    0.1s finished
+   [Parallel(n_jobs=4)]: Done   4 out of   4 | elapsed:    0.1s finished
+   [Parallel(n_jobs=4)]: Done   4 out of   4 | elapsed:    0.1s finished
+If I check process cpu usages, all python processes have zero cpu usages
+When I divide above three steps into two python files(One python script doing step 1 and 2 and save the result as files using pickle dump and another script doing step 3 after loading the saved files), the second python file(which contains step 3) runs fine and causes no problem.
+So, I ran two simulations. In the first simulation I only omitting step 2. In the second Simulation only omitting step 1. In each simulation I loaded saved result of step 1 and step 2, instead of running the actual step.
+First simulation ran fine, but second simulation hanged.
+Which gives conclusion that step 2 is causing step 3 to hang. Bellow is the code for step 2. All results are added to a dictionary object that uses urls as keys.
+It seems calling bellow function hundreds of times is causing the freeze.
+def parse_information(url):
+
+    print(url)
+
+    try:
+        response = requests.get(url, verify=False)
+    except:
+        raise Exception("requests exception")
+
+    obj_bs = BeautifulSoup(response.text, "html.parser")
+
+    meta_refresh = obj_bs.find("meta", {"http-equiv": "refresh"})
+
+    if meta_refresh is not None:
+        refresh_url = meta_refresh["content"].lower().rsplit("url=")[1]
+        rup = urlparse(refresh_url)
+        if rup.netloc == "":
+            up = urlparse(url)
+            return parse_information(up.scheme + "://" + up.netloc + refresh_url)
+        return parse_information(refresh_url)
+
+    meta_charset = obj_bs.find(lambda tag: tag.name == 'meta' and 'charset' in tag.attrs)
+    http_equivs = obj_bs.findAll(lambda tag: tag.name == 'meta' and 'http-equiv' in tag.attrs)
+
+    if meta_charset is not None:
+        response.encoding = meta_charset["charset"]
+    elif len(http_equivs) > 0:
+        content_charset = ""
+        for http_equiv in http_equivs:
+            if http_equiv["http-equiv"].lower() == "content-type":
+                content_charset = http_equiv["content"]
+                break
+        if content_charset != "":
+            parse_charset = content_charset.split("charset=")
+            if len(parse_charset) > 1:
+                response.encoding = parse_charset[1]
+        else:
+            response.encoding = "shift_jis"
+    else:
+        response.encoding = "shift_jis"
+    obj_bs = BeautifulSoup(response.text, "html.parser")
+
+    info_dict = dict(title="", h1="", keywords="", description="", h2="")
+
+    tag_title = obj_bs.find("title")
+    info_dict["title"] = tag_title.text if tag_title is not None else ""
+
+    tag_h1 = obj_bs.find("h1")
+    info_dict["h1"] = tag_h1.text if tag_h1 is not None else ""
+
+    tags_h2 = obj_bs.findAll("h2")
+    info_dict["h2"] = "|".join([tag_h2.text.strip("\t\r\n ") for tag_h2 in tags_h2]) if len(tags_h2) > 0 else ""
+
+    metas = obj_bs.findAll(lambda tag: tag.name == 'meta' and 'name' in tag.attrs)
+
+    for meta in metas:
+        if meta["name"] == "keywords":
+            info_dict["keywords"] = meta.get("content", "")
+        elif meta["name"] == "description":
+            info_dict["description"] = meta.get("content", "")
+
+    htot = html2text.HTML2Text()
+    htot.ignore_links = True
+    htot.images_to_alt = True
+    htot.ignore_emphasis = True
+
+    pure_text = htot.handle(response.text).lower()
+
+    noun_dict = japanese_noun_dict(pure_text)
+
+    if len(noun_dict) == 0:
+        num_nouns = 0
+    else:
+        num_nouns = reduce(lambda a, b: a + b, noun_dict.values())
+
+    return {"info": info_dict, "noun": {"num": num_nouns, "freq": noun_dict}}
+Bellow is code for step 3. g_result_lda.model is scikit-learn LatentDirichletAllocation class object. corpus_data is document-word matrix created from the url texts
+g_result_lda = TextLDA(documents=corpus_data, n_topics=n_topic)
+
+len_corpus = len(g_result_lda.corpus_data)
+
+start_index = 0
+
+while start_index < len_corpus:
+
+    end_index = start_index + 20 if start_index + 20 < len_corpus else len_corpus
+    g_result_lda.model.partial_fit(g_result_lda.corpus_data[start_index:end_index])
+    start_index = start_index +20
+Does anyone have any idea what is causing the problem?
+Does scikit-learn Library have conflict with requests library?
+I am learning python on OSX, using python 3.5.0

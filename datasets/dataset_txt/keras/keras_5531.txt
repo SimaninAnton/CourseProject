@@ -1,0 +1,72 @@
+Contributor
+braingineer commented on 11 Apr 2016
+Hi all,
+currently, accuracy is
+def categorical_accuracy(y_true, y_pred):
+    return K.mean(K.equal(K.argmax(y_true, axis=-1),
+                          K.argmax(y_pred, axis=-1)))
+I am running an RNN with variable length sentences and I want to get the accuracy of predictions at every time step. So basically, for a 3dim tensor, I have a binary matrix. I want each timestep of each batch to only be counted in the accuracy mean if it has a 1 entry in the binary matrix.
+Proposed solution mwe (though, this is in theano, not using the abstracted keras backend.. but the change is trivial):
+import numpy as np
+import theano.tensor as T
+
+### (batch size=2, seq len=3, output classes=5)
+pred = np.arange(30, dtype=np.float32).reshape(2,3,5)
+pred /= pred.sum(axis=-1, keepdims=True)
+
+### target matrix to match pred
+target1 = np.ones_like(pred)
+target1[:,:,:-1] = 0
+
+### target matrix to match mask
+target2 = np.ones_like(pred)
+target2[:,:,:-1] = 0
+target2[0,-1,-1] = 0
+
+### mask; 
+# [   [1, 1, 0]
+#     [1, 1, 1]  ] 
+mask = np.ones(pred.shape[:-1])
+mask[0,-1] = 0
+
+# preserve last dimension 
+flat_shape = lambda mat: (reduce(lambda x,y: x*y, mat.shape[:-1]), mat.shape[-1])
+F_flat = lambda mat: T.reshape(mat, flat_shape(mat))
+
+# compare two matrices
+F_comp = lambda mat1, mat2: T.eq(T.argmax(mat1,axis=-1), T.argmax(mat2,axis=-1))
+
+# mask the matrix
+F_mask = lambda mat, mask: mat[mask.flatten().nonzero()]
+
+# get the mean
+F_mean = lambda mat: T.mean(mat)
+
+## current method for categorical accuracy
+F_score1 = lambda mat1, mat2: F_mean(F_comp(mat1, mat2))
+
+## masked method
+F_score2 = lambda mat1, mat2, mask: F_mean(F_mask(F_comp(F_flat(mat1), F_flat(mat2)), mask))
+
+F_score1(pred, target1).eval() ## returns 1.0
+F_score1(pred, target2).eval() ## returns 0.83
+F_score2(pred, target1, mask).eval() ## returns 1.0
+F_score2(pred, target2, mask).eval() ## returns 1.0
+edit: currently using this
+def categorical_accuracy(y_true, y_pred, mask=None):
+    if mask is not None:
+        eval_shape = (reduce(mul, y_true.shape[:-1]), y_true.shape[-1])
+        y_true_ = K.reshape(y_true, eval_shape)
+        y_pred_ = K.reshape(y_pred, eval_shape)
+        flat_mask = K.flatten(mask)
+        comped = K.equal(K.argmax(y_true_, axis=-1),
+                          K.argmax(y_pred_, axis=-1))
+        ## not sure how to do this in tensor flow
+        good_entries = flat_mask.nonzero()[0]
+        return K.mean(K.gather(comped, good_entries))
+
+    else:
+        return K.mean(K.equal(K.argmax(y_true, axis=-1),
+                              K.argmax(y_pred, axis=-1)))
+and i've shot from loss: 3.9160 - acc: 0.1424 to loss: 3.9165 - acc: 0.2614
+2

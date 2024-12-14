@@ -1,0 +1,21 @@
+tyrion commented on 14 Sep 2018 •
+edited by rpkilby
+If I want to raise an APIException in the get_queryset method of a GenericAPIView, I get an error (during the exception handling process) when browsing the html version of the APIs, because the renderer tries to call get_queryset again.
+This happens in the BrowsableAPIRenderer.get_filter_form method. There is a check to prevent running the method if the view does not use filters (see: renderers.py), but unfortunately every GenericAPIView always defines the filter_backends attribute.
+class ExampleView(GenericAPIView):
+    def get_queryset(self):
+        raise APIException('Error')
+
+    def get(self, request, format=None):
+        self.get_queryset()
+As a workaround I could use something like this, to hide the filter_backends attribute, but I think it's very ugly:
+class HideProperty:
+    def __get__(self, instance, owner):
+        raise AttributeError()
+
+class ExampleView(GenericAPIView):
+    filter_backends = HideProperty()
+    ...
+I noticed that there are many issues similar to this one (e.g. #4240 ), but none of them seem to address my problem of wanting to raise an APIException from get_queryset.
+If you consider having an empty list as filter_backends to be different than not having the attribute defined at all, then I would suggest checking if the attribute is None. This would allow me, at least, to override this behaviour in a subclass, without relying on hacks, by just defining filter_backends = None.
+Even though IMHO this behaviour is very counterintuitive and should be turned off by default.

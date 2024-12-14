@@ -1,0 +1,135 @@
+serg666 commented on 28 Aug 2017
+Hi!
+I have the following code:
+import logging
+import logging.config
+import tornado.ioloop
+import tornado.web
+
+config = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '%(asctime)s; %(process)d; %(threadName)s; %(levelname)s; %(name)s; %(message)s'
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'NOTSET',
+            'formatter': 'verbose',
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'app': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'tornado': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
+
+logging.config.dictConfig(config)
+
+log = logging.getLogger('app')
+
+class MainHandler(tornado.web.RequestHandler):
+    async def get(self):
+        self.write("Hello, world")
+        log.debug("message")
+        await self.flush()
+
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+    ])
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+Then I make request:
+curl -v http://127.0.0.1:8888/
+I can see logs like this:
+2017-08-27 21:08:07,435; 25640; MainThread; DEBUG; app; message
+2017-08-27 21:08:07,435; 25640; MainThread; INFO; tornado.access; 200 GET / (127.0.0.1) 1.10ms
+If app receive more then one request in parallel it is very hard to know what messages belongs to particular request, because all requests are processing in single thread asynchronously.
+In other frameworks requests are processed at its own thread, so we can know what messages belongs to particular request (by thread id on thread name).
+Obviously, I need to modify the above code like this:
+import logging
+import logging.config
+import tornado.ioloop
+import tornado.web
+
+
+class RequestFilter(logging.Filter):
+    def filter(self, record):
+        record.request_id = 64747675656 # -> somehow to get access to the current request that's being processed and get id of instance, like id(instance)
+        return super(RequestFilter, self).filter(record)
+
+config = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'request_filter': {
+            '()': RequestFilter,
+        },
+    },
+    'formatters': {
+        'verbose': {
+            'format': '%(asctime)s; %(process)d; %(request_id)d; %(levelname)s; %(name)s; %(message)s'
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'NOTSET',
+            'filters': ['request_filter'],
+            'formatter': 'verbose',
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'app': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'tornado': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
+
+logging.config.dictConfig(config)
+
+log = logging.getLogger('app')
+
+class MainHandler(tornado.web.RequestHandler):
+    async def get(self):
+        self.write("Hello, world")
+        log.debug("message")
+        await self.flush()
+
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+    ])
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+But how do I know which request it's processing at any given time (in RequestFilter.filter)?
+Is there some global information somewhere that I can use in Tornado to identify the current request that's being processed?
+So if it's possible, I could see something like this in logs:
+2017-08-27 21:33:24,827; 26367; 64747675656; DEBUG; app; message
+2017-08-27 21:33:24,828; 26367; 64747675656; INFO; tornado.access; 200 GET / (127.0.0.1) 1.50ms
+And I could to know what messages belongs to particular request, if app execute two or more requests asynchronously.

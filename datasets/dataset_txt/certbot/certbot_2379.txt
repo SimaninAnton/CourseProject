@@ -1,0 +1,48 @@
+majewsky commented on 22 Feb 2016
+I hacked up an autorenewal script that is supposed to run as a systemd service, activated by a timer unit once per week. Here's the code for the script and the systemd service: https://github.com/majewsky/system-configuration/blob/4fcde370974fcfb2a595f7f81297b807b895e002/hologram-nginx-and-letsencrypt.pkg.toml#L153-L198
+The script runs fine on my system when invoked as sudo -u letsencrypt -g letsencrypt /usr/bin/letsencrypt-allofthem, but fails with the following trace when run via systemctl start letsencrypt-allofthem.service:
+2016-02-22 17:05:38,984:DEBUG:letsencrypt.cli:Root logging level set at 30
+2016-02-22 17:05:38,990:INFO:letsencrypt.cli:Saving debug log to /var/log/letsencrypt/letsencrypt.log
+2016-02-22 17:05:38,995:DEBUG:letsencrypt.cli:letsencrypt version: 0.4.0
+2016-02-22 17:05:38,996:DEBUG:letsencrypt.cli:Arguments: ['--agree-tos', '--keep-until-expiring', '--webroot', '-w', '/srv/letsencrypt/', '-d', 'repo.holocm.org']
+2016-02-22 17:05:38,999:DEBUG:letsencrypt.cli:Discovered plugins: PluginsRegistry(PluginEntryPoint#webroot,PluginEntryPoint#null,PluginEntryPoint#manual,PluginEntryPoint#standalone)
+2016-02-22 17:05:39,036:DEBUG:letsencrypt.cli:Exiting abnormally:
+Traceback (most recent call last):
+  File "/usr/sbin/letsencrypt", line 9, in <module>
+    load_entry_point('letsencrypt==0.4.0', 'console_scripts', 'letsencrypt')()
+  File "/usr/lib/python2.7/site-packages/letsencrypt/cli.py", line 1978, in main
+    "Root (sudo) is required to run most of letsencrypt functionality.")
+  File "/usr/lib/python2.7/logging/__init__.py", line 1171, in warning
+    self._log(WARNING, msg, args, **kwargs)
+  File "/usr/lib/python2.7/logging/__init__.py", line 1278, in _log
+    self.handle(record)
+  File "/usr/lib/python2.7/logging/__init__.py", line 1288, in handle
+    self.callHandlers(record)
+  File "/usr/lib/python2.7/logging/__init__.py", line 1328, in callHandlers
+    hdlr.handle(record)
+  File "/usr/lib/python2.7/logging/__init__.py", line 751, in handle
+    self.emit(record)
+  File "/usr/lib/python2.7/site-packages/letsencrypt/log.py", line 64, in emit
+    self.width + self.PADDING_WIDTH)
+  File "/usr/lib/python2.7/site-packages/dialog.py", line 2675, in infobox
+    kwargs)
+  File "/usr/lib/python2.7/site-packages/dialog.py", line 1765, in _widget_with_no_output
+    widget_name, output))
+PythonDialogBug
+It appears to be crashing when trying to print a "you must be root" warning, because its stdin is connected to /dev/null. Because it's the "you must be root" warning, I want to note explicitly that runnign as non-root is not the problem. When invoked as sudo -u letsencrypt -g letsencrypt /usr/bin/letsencrypt-allofthem from an interactive session, the script completes successfully (although printing a useless "you must be root" warning).
+I tried to work around the problem by specifying StandardInput=tty in the systemd service file, but that just causes systemctl start to hang, with ps aux showing systemd-tty-ask-password-agent and pkttyagent processes that I don't know what they do:
+root     21255  1.0  0.0  71576  5240 pts/0    S+   18:21   0:00 sudo systemctl start --job-mode=ignore-dependencies letsencrypt-allofthem.service
+root     21256  0.0  0.0  21556  2504 pts/0    S+   18:21   0:00 systemctl start --job-mode=ignore-dependencies letsencrypt-allofthem.service
+root     21257  0.0  0.0   8488  1516 pts/0    S+   18:21   0:00 /usr/bin/systemd-tty-ask-password-agent --watch
+root     21258  0.0  0.0 273400  4244 pts/0    Sl+  18:21   0:00 /usr/bin/pkttyagent --notify-fd 4 --fallback
+stefan   21262  0.0  0.0  35872  3340 pts/1    R+   18:21   0:00 ps aux
+Any ideas how to workaround this? I'm tempted to just comment out the "you must be root" warning in the source code, but that will certainly break with the next update of the letsencrypt package. A proper solution might be handling non-interactive sessions without a useful FD 0 with more care.
+The involved software versions are systemd-229 and letsencrypt-0.4.0, both installed from the standard system packages from my distribution:
+$ cat /etc/os-release
+NAME="Arch Linux"
+ID=arch
+PRETTY_NAME="Arch Linux"
+ANSI_COLOR="0;36"
+HOME_URL="https://www.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://bugs.archlinux.org/"

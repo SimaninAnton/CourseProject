@@ -1,0 +1,135 @@
+BadrYoubiIdrissi commented on 26 Dec 2018
+I am trying to use the existing keras optimizers to find an input tensor that maximizes the activation of a neuron. I have read through this issue #4746 and tried to adapt the code in this reply #4746 (comment).
+I want to take a pretrained model and apply gradient descent on the input space with keras's optimizers (adam for example) to maximize the activation of a specific neuron.
+But when you execute this code, keras complains because the get_updates function doesn't expect tensors with partial shape like the input tensor.
+from keras.optimizers import Adam
+from keras.applications.densenet import DenseNet121
+import keras.backend as K
+
+#Load model
+model = DenseNet121(include_top=True, weights='imagenet')
+
+#Get different tensors from the model
+inputTensor = model.input
+layerName = 'pool1'
+filterIndex = 0
+neuronX = 0
+neuronY = 0
+outputTensor = model.get_layer(name=layerName).output
+
+#Defining the loss
+loss = -outputTensor[neuronX,neuronY,filterIndex]
+
+#Using Adam's get_updates
+opt = Adam()
+updates = opt.get_updates(loss, [inputTensor]) #PROBLEM IS HERE
+iterateFunc = K.function([inputTensor],[inputTensor, loss], updates=updates)
+inputImgData = 2*(np.random.random((1, signalLength, 1)) - 0.5)
+for i in range(100):
+    lossData, inputImgData = iterateFunc([inputImgData])
+    print("Current loss : {}".format(lossData))
+This gives the following stack trace
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/ops/array_ops.py in zeros(shape, dtype, name)
+   1554         shape = constant_op._tensor_shape_tensor_conversion_function(
+-> 1555             tensor_shape.TensorShape(shape))
+   1556       except (TypeError, ValueError):
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/constant_op.py in _tensor_shape_tensor_conversion_function(s, dtype, name, as_ref)
+    248     raise ValueError(
+--> 249         "Cannot convert a partially known TensorShape to a Tensor: %s" % s)
+    250   s_list = s.as_list()
+
+ValueError: Cannot convert a partially known TensorShape to a Tensor: (?, 224, 224, 3)
+
+During handling of the above exception, another exception occurred:
+
+TypeError                                 Traceback (most recent call last)
+<ipython-input-2-f41f99e5d2c8> in <module>()
+     19 #Using Adam's get_updates
+     20 opt = Adam()
+---> 21 updates = opt.get_updates(loss, [inputTensor]) #PROBLEM IS HERE
+     22 iterateFunc = K.function([inputTensor],[inputTensor, loss], updates=updates)
+     23 inputImgData = 2*(np.random.random((1, signalLength, 1)) - 0.5)
+
+~/.conda/envs/tf/lib/python3.6/site-packages/keras/legacy/interfaces.py in wrapper(*args, **kwargs)
+     89                 warnings.warn('Update your `' + object_name + '` call to the ' +
+     90                               'Keras 2 API: ' + signature, stacklevel=2)
+---> 91             return func(*args, **kwargs)
+     92         wrapper._original_function = func
+     93         return wrapper
+
+~/.conda/envs/tf/lib/python3.6/site-packages/keras/optimizers.py in get_updates(self, loss, params)
+    485                      (1. - K.pow(self.beta_1, t)))
+    486 
+--> 487         ms = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
+    488         vs = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
+    489         if self.amsgrad:
+
+~/.conda/envs/tf/lib/python3.6/site-packages/keras/optimizers.py in <listcomp>(.0)
+    485                      (1. - K.pow(self.beta_1, t)))
+    486 
+--> 487         ms = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
+    488         vs = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
+    489         if self.amsgrad:
+
+~/.conda/envs/tf/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py in zeros(shape, dtype, name)
+    700         dtype = floatx()
+    701     tf_dtype = tf.as_dtype(dtype)
+--> 702     v = tf.zeros(shape=shape, dtype=tf_dtype, name=name)
+    703     if py_all(v.get_shape().as_list()):
+    704         return variable(v, dtype=dtype, name=name)
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/ops/array_ops.py in zeros(shape, dtype, name)
+   1556       except (TypeError, ValueError):
+   1557         # Happens when shape is a list with tensor elements
+-> 1558         shape = ops.convert_to_tensor(shape, dtype=dtypes.int32)
+   1559     if not shape._shape_tuple():
+   1560       shape = reshape(shape, [-1])  # Ensure it's a vector
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in convert_to_tensor(value, dtype, name, preferred_dtype)
+   1046       name=name,
+   1047       preferred_dtype=preferred_dtype,
+-> 1048       as_ref=False)
+   1049 
+   1050 
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/ops.py in internal_convert_to_tensor(value, dtype, name, as_ref, preferred_dtype, ctx)
+   1142 
+   1143     if ret is None:
+-> 1144       ret = conversion_func(value, dtype=dtype, name=name, as_ref=as_ref)
+   1145 
+   1146     if ret is NotImplemented:
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/constant_op.py in _constant_tensor_conversion_function(v, dtype, name, as_ref)
+    226                                          as_ref=False):
+    227   _ = as_ref
+--> 228   return constant(v, dtype=dtype, name=name)
+    229 
+    230 
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/constant_op.py in constant(value, dtype, shape, name, verify_shape)
+    205   tensor_value.tensor.CopyFrom(
+    206       tensor_util.make_tensor_proto(
+--> 207           value, dtype=dtype, shape=shape, verify_shape=verify_shape))
+    208   dtype_value = attr_value_pb2.AttrValue(type=tensor_value.tensor.dtype)
+    209   const_tensor = g.create_op(
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/tensor_util.py in make_tensor_proto(values, dtype, shape, verify_shape)
+    440       nparray = np.empty(shape, dtype=np_dt)
+    441     else:
+--> 442       _AssertCompatible(values, dtype)
+    443       nparray = np.array(values, dtype=np_dt)
+    444       # check to them.
+
+~/.conda/envs/tf/lib/python3.6/site-packages/tensorflow/python/framework/tensor_util.py in _AssertCompatible(values, dtype)
+    351     else:
+    352       raise TypeError("Expected %s, got %s of type '%s' instead." %
+--> 353                       (dtype.name, repr(mismatch), type(mismatch).__name__))
+    354 
+    355 
+
+TypeError: Expected int32, got None of type '_Message' instead.
+I have the impression that the problem lies with the initialization of the moments in get_updates because it uses K.zeros which expects a full tensor shape. K.zeros_like on the other hand accepts partial shapes, maybe that should be used instead? I would do a pull request but i'm not familiar enough with the structure of Keras and testing.
+Or maybe there's even a better way of doing what I want?

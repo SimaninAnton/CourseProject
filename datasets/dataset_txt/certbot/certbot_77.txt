@@ -1,0 +1,25 @@
+Member
+bmw commented on 26 Sep 2019 •
+edited
+I briefly looked into problems such as #7390 which seem to be due to the switch from using platform.linux_distribution in the standard library to distro.linux_distribution from https://github.com/nir0s/distro.
+It seems like there are a lot of potential issues. In addition to the issue above, I've seen the same problem on Oracle Linux 6 when lsb-release is installed. The standard library seems to only use OS specific files in /etc (with a few exceptions on more obscure systems) while distro prefers /etc/os-release and lsb-release before those files.
+To resolve these issues for now, I think we should remove our dependency on distro, calling platform.linux_distribution() when it's available, and just using the value in platform.system_alias() if not. The relevant code is
+certbot/certbot/util.py
+Lines 387 to 401 in 8cb5756
+ info = platform.system_alias( 
+     platform.system(), 
+     platform.release(), 
+     platform.version() 
+ ) 
+ os_type, os_ver, _ = info 
+ os_type = os_type.lower() 
+ if os_type.startswith('linux'): 
+     info = distro.linux_distribution() 
+     # On arch, distro.linux_distribution() is reportedly ('','',''), 
+     # so handle it defensively 
+     if info[0]: 
+         os_type = info[0] 
+     if info[1]: 
+         os_ver = info[1] 
+Alternatively, we could keep distro and use it on Python 3.8 only but all of the problematic systems we've seen using this linux_distribution code are based on RHEL 6 which does not have Python 3.8 and since its return values are very different from what we're used to, I think there's not much value without taking the time to do additional work.
+I'd like to hear what others think here.

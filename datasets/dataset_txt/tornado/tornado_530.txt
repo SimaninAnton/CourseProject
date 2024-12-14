@@ -1,0 +1,75 @@
+viyatb commented on 23 Mar 2016
+Hi @bdarnell, I am having a problem in removing an error.
+Our proxy (OWTF mitm) has a function:
+    @tornado.web.asynchronous
+    def connect(self):
+        """
+        This function gets called when a connect request is received.
+        * The host and port are obtained from the request uri
+        * A socket is created, wrapped in ssl and then added to SSLIOStream
+        * This stream is used to connect to speak to the remote host on given port
+        * If the server speaks ssl on that port, callback start_tunnel is called
+        * An OK response is written back to client
+        * The client side socket is wrapped in ssl
+        * If the wrapping is successful, a new SSLIOStream is made using that socket
+        * The stream is added back to the server for monitoring
+        """
+        host, port = self.request.uri.split(':')
+        def start_tunnel():
+            try:
+                self.request.connection.stream.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                wrap_socket(
+                            self.request.connection.stream.socket,
+                            host,
+                            self.application.ca_cert,
+                            self.application.ca_key,
+                            self.application.ca_key_pass,
+                            self.application.certs_folder,
+                            success=ssl_success
+                           )
+            except tornado.iostream.StreamClosedError:
+                pass
+
+        def ssl_success(client_socket):
+            client = tornado.iostream.SSLIOStream(client_socket)
+            server.handle_stream(client, self.application.inbound_ip)
+
+        # Tiny Hack to satisfy proxychains CONNECT request to HTTP port.
+        # HTTPS fail check has to be improvised
+        def ssl_fail():
+            try:
+                self.request.connection.stream.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            except tornado.iostream.StreamClosedError:
+                pass
+            server.handle_stream(self.request.connection.stream, self.application.inbound_ip)
+
+        # Hacking to be done here, so as to check for ssl using proxy and auth
+        try:
+            s = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0))
+            upstream = tornado.iostream.SSLIOStream(s)
+            #start_tunnel()
+            upstream.set_close_callback(ssl_fail)
+            upstream.connect((host, int(port)), start_tunnel)
+        except Exception:
+            self.finish()
+It ran fine on Tornado 4.0.2 but the upgrade causes this error
+[E 160323 01:43:59 ioloop:629] Exception in callback None
+    Traceback (most recent call last):
+      File "/usr/local/lib/python2.7/dist-packages/tornado/ioloop.py", line 883, in start
+        handler_func(fd_obj, events)
+      File "/usr/local/lib/python2.7/dist-packages/tornado/stack_context.py", line 275, in null_wrapper
+        return fn(*args, **kwargs)
+      File "/usr/local/lib/python2.7/dist-packages/tornado/iostream.py", line 507, in _handle_events
+        self._handle_connect()
+      File "/usr/local/lib/python2.7/dist-packages/tornado/iostream.py", line 1376, in _handle_connect
+        do_handshake_on_connect=False)
+      File "/usr/local/lib/python2.7/dist-packages/tornado/netutil.py", line 519, in ssl_wrap_socket
+        return context.wrap_socket(socket, **kwargs)
+      File "/usr/lib/python2.7/ssl.py", line 350, in wrap_socket
+        _context=self)
+      File "/usr/lib/python2.7/ssl.py", line 537, in __init__
+        raise ValueError("check_hostname requires server_hostname")
+    ValueError: check_hostname requires server_hostname
+Multiple issues like this have been archived, for instance urllib3/urllib3#517.
+Using s = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0), server_hostname=host) seems to silence the errors, but the request never goes beyond the initial connect request.
+Is this tornado related or just a problem in SSL handshake in the proxy?

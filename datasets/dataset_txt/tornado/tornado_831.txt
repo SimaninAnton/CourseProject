@@ -1,0 +1,98 @@
+Contributor
+chrisseto commented on 7 May 2014
+I'm writing a video streaming application with tornado and I've hit some trouble with the actual streaming portion.
+Using just a static file handler the stream takes about 70 seconds to start.
+Override the hashing/etag/caching methods in staticfilehandler, like so:
+class StaticFileNoHash(StaticFileHandler):
+
+    def compute_etag(self):
+        return None
+
+    @classmethod
+    def get_content_version(cls, abspath):
+        return 1
+
+    @classmethod
+    def _get_cached_version(cls, abs_path):
+        return None
+Reduces the time to about 15 seconds, locally the latency wasn't noticeable.
+Using python-twisted there was not latency at all, the stream began instantly.
+So the next idea was to override the get and get_content method as follows:
+    def get(self, path, include_body=True):
+        #Assume that path is correct, validation will be handeled elsewhere
+        self.absolute_path = os.path.abspath(path)
+        self.path = self.absolute_path
+        if self.absolute_path is None:
+            return
+
+        self.modified = self.get_modified_time()
+        self.set_headers()
+
+        if self.should_return_304():
+            self.set_status(304)
+            return
+
+        request_range = None
+        range_header = self.request.headers.get("Range")
+        if range_header:
+            # As per RFC 2616 14.16, if an invalid Range header is specified,
+            # the request will be treated as if the header didn't exist.
+            request_range = httputil._parse_request_range(range_header)
+
+        if request_range:
+            start, end = request_range
+            size = self.get_content_size()
+            if (start is not None and start >= size) or end == 0:
+                # As per RFC 2616 14.35.1, a range is not satisfiable only: if
+                # the first requested byte is equal to or greater than the
+                # content, or when a suffix with length 0 is specified
+                self.set_status(416)  # Range Not Satisfiable
+                self.set_header("Content-Type", "text/plain")
+                self.set_header("Content-Range", "bytes */%s" % (size, ))
+                return
+            if start is not None and start < 0:
+                start += size
+            if end is not None and end > size:
+                # Clients sometimes blindly use a large range to limit their
+                # download size; cap the endpoint at the actual file size.
+                end = size
+            # Note: only return HTTP 206 if less than the entire range has been
+            # requested. Not only is this semantically correct, but Chrome
+            # refuses to play audio if it gets an HTTP 206 in response to
+            # ``Range: bytes=0-``.
+            if size != (end or size) - (start or 0):
+                self.set_status(206)  # Partial Content
+                self.set_header("Content-Range",
+                                httputil._get_content_range(start, end, size))
+        else:
+            start = end = None
+
+        content = self.get_content(self.absolute_path, start, end)
+        for chunk in content:
+            self.write(chunk)
+
+    @classmethod
+    def get_content(cls, abspath, start=None, end=None):
+        read = 0
+        chunk_size = 64 * 1024
+        with open(abspath, "rb") as file:
+            file.seek(start or 0)
+            while end is None or read < end:
+                if end and chunk_size + read > end:
+                    chunk_size = end - read
+                chunk = file.read(chunk_size)
+                if chunk:
+                    read += len(chunk)
+                    yield chunk
+                else:
+                    if end is None:
+                        return
+                    assert (start or 0) + read == end
+                    return
+The plan was to cut out some redundant checks.
+Ironically that seemed to increase the latency, to about 2 seconds locally.
+So I profiled the calls to get()
+80875 function calls (80844 primitive calls) in 0.591 seconds
+81140 function calls (81109 primitive calls) in 0.566 seconds
+Now that's odd no calls to get() are > 1 second.
+Any thoughts where the latency/lag is coming from? I'm at a complete loss.

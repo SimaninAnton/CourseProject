@@ -1,0 +1,15 @@
+Contributor
+Fuzion24 commented on 9 Oct 2014
+mitmproxy is fantastic for intercepting and modifying HTTP/HTTPS traffic. However, not all network traffic of interest fits into this category. For example, XMPP is a protocol which is XML based and does not rely on HTTP. In order to be able to handle traffic for these cases, we want to be able to support the capture of generalized TCP traffic which is SSL'ed.
+Test and merge SOCKS support
+Add --tcp switch and add checks for such around check_ignore_address/establish_ssl
+The following are some slightly cleaned up comments from @mhils on IRC:
+TL;DR: --ignore is checked before any call to establish_ssl() (which does the MITM stuff). If you want to intercept non-HTTP TLS connections, you probably want to do something similar, but after establish_ssl() has been called.
+generalized tcp proxy: if your traffic isn't encrypted using SSL, just use mitmdump -v --ignore regex-for-your-host (0.11 only) ignore patterns are documented here
+We currently have a couple of places where we call check_ignore_address() and may go over to TCP mode then. usually, check_ignore_address is closely followed by establish_ssl(). We'd need to add a --tcp switch which uses the same hostname pattern, but just gets executed after establish_ssl(), not before.
+well, we have a "generalized tcp proxy". which is "-v --ignore hostname", but if your traffic is protected using SSL, you probably want to strip that off before. By default, mitmproxy opens a SSL connection to the client and a separate SSL connection to the server. pretending to the client to actually be the server... Using --ignore, we don't event do anything SSL related, we take the raw TCP stream and forward it which means the client negotiates SSL with the real server.
+In other words, --ignore can be used to see what passes through, but if that communication is protected using SSL, you'll just see garbage. Now, you may ask: Why don't we do the SSL-MITM stuff and then pass through the cleartext, now readable for us?
+Answer: --ignore serves a different purpose. Some apps, most notably the apple store on iOS, cannot be intercepted, because they hardcoded a target cert we don't have a key for. --ignore makes it possible to debug an app while just letting this stuff pass through.
+e.g. you want to test an app which at some point makes an cert-pinned in-app purchase.
+So, that's the primary use case for --ignore.
+If you want to peek into non-HTTP SSL connections, you'd do our SSL MITM stuff first and then delegate it to the passthrough thingy.

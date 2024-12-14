@@ -1,0 +1,12 @@
+Member
+bmw commented on 13 Feb 2019 •
+edited
+The relevant lines of this file are https://github.com/certbot/certbot/blob/master/tests/letstest/scripts/test_letsencrypt_auto_certonly_standalone.sh#L25-L39.
+There are a few problems with this code.
+It uses LE's staging server meaning if the server is down, we can't successfully run tests.
+It's relying on openssl's lenient behavior of expired OCSP responses only being a warning rather than a fatal error which is not what we're doing in our OCSP code written using cryptography.
+After thinking about this a little bit, it's my opinion that instead of fixing the test here, we should remove them from this file and put them in our main integration tests.
+The thing that was previously nice about having this test in our test farm test was we got to test with the various versions of openssl used on these different platforms, however, now this isn't so easy. We will have pinned a version of cryptography that allows us to use cryptography rather than shelling out to OpenSSL and our "oldest" requirements don't work on various distros. We could either install unpinned dependencies like pip install cryptography<2.5 or create a 3rd set of pinnings which could be used for these tests, but both seem like a bad idea to me.
+Instead, if we put a test in our main integration tests, they'd be run with both new and old versions of our dependencies allowing us to continue testing with openssl on some platforms. This certainly isn't as thorough, but it's better than nothing and seems sufficient to me especially with the way we're using OCSP checks.
+We should be able to request the OCSP status of a certificate we revoked from boulder. jsha told me that we should be able to get a revoked response in <= 5s.
+If (and only if) running certbot certificates like is done in the tests linked above still prints TEST_CERT if it's unable to reach boulder, I think we should add this test to our integration tests as well. If not, we can probably just delete these files assuming they're not used elsewhere.

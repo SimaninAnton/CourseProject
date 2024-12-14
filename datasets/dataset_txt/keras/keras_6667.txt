@@ -1,0 +1,32 @@
+Contributor
+anjishnu commented on 11 Sep 2015
+I see that a lot of the examples have classes like the one attached below which basically encoder from some data format into a vector representation needed by the model.
+I think it makes sense for us to add these data encoders/decoders into Keras itself. They can provide an abstraction on top of the original data source that models need not be aware of. In terms of DNN training we could do something like.
+data_provider = FileSystemBackedTextDataProvider(data_encoder=CharacterTable(max_length=20))
+for i in range(200):
+X_data, y_labels = data_provider.get_train(num_samples=100000)
+model.fit(X_data, y_labels)
+This way we abstract away the handling of the data from the actual model - within the data_provider we can have support for preprocessing and loading large files in batches. (a.la: https://github.com/karpathy/char-rnn/blob/master/util/CharSplitLMMinibatchLoader.lua)
+Example of a data_encoder:
+class CharacterTable(object):
+    """
+    Given a set of characters:
+    + Encode them to a one hot integer representation
+    + Decode the one hot integer representation to their character output
+    + Decode a vector of probabilties to their character output
+    """
+    def __init__(self, chars, maxlen):
+        self.chars = sorted(set(chars))
+        self.char_indices = dict((c, i) for i, c in enumerate(self.chars))
+        self.indices_char = dict((i, c) for i, c in enumerate(self.chars))
+        self.maxlen = maxlen
+    def encode(self, C, maxlen=None):
+        maxlen = maxlen if maxlen else self.maxlen
+        X = np.zeros((maxlen, len(self.chars)))
+        for i, c in enumerate(C):
+            X[i, self.char_indices[c]] = 1
+        return X
+    def decode(self, X, calc_argmax=True):
+        if calc_argmax:
+            X = X.argmax(axis=-1)
+        return ''.join(self.indices_char[x] for x in X)

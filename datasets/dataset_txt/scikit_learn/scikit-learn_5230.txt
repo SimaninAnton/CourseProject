@@ -1,0 +1,30 @@
+Member
+ogrisel commented on Sep 11, 2012
+Some pipelinable scikit-learn estimators such as the vectorizers accept lists of string as input. When passing this kind input datastructure to the GridSearchCV object, the strings are actually unboxed which can be very wasteful if the longest string of the collection is much larger than the median (which is quite common in practice).
+The reason is that check_arrays (used in GridSearchCV) is using np.array(list_of_strings) without giving a dtype which causes the unboxing of the strings to the maximum size of the collection:
+>>> from sklearn.utils import check_arrays
+>>> from pprint import pprint
+>>> l = [('%02d' % i) * i for i in range(10)]
+>>> pprint(l)
+['',
+ '01',
+ '0202',
+ '030303',
+ '04040404',
+ '0505050505',
+ '060606060606',
+ '07070707070707',
+ '0808080808080808',
+ '090909090909090909']
+>>> sum(len(s) for s in l)
+90
+>>> a = check_arrays(l)[0]
+>>> a
+array(['', '01', '0202', '030303', '04040404', '0505050505',
+       '060606060606', '07070707070707', '0808080808080808',
+       '090909090909090909'], 
+      dtype='|S18')
+>>> a.nbytes
+180
+To avoid this, we should probably build arrays for text document of variable length with np.array(list_of_strings, dtype=np.object_) to avoid the memory wasteful string unboxing instead.
+The np.array(list_of_strings) pattern also occurs inside the CountVectorizer code itself (for the list of terms and building the vocabulary). Here again passing np.array(list_of_strings, dtype=np.object_) might save memory.

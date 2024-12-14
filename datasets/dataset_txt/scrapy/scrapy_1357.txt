@@ -1,0 +1,47 @@
+hartleybrody commented on Sep 6, 2014
+I was having issues suppressing loglines to stdout, as mentioned here:
+https://groups.google.com/forum/#!topic/scrapy-users/pJfN8BfF_fM
+The logging settings I used were:
+LOG_LEVEL = 'WARNING'
+LOG_FILE = '/path/to/scrapy.log'
+LOG_STDOUT = False
+I was logging from a spider, and had set log.start(loglines="INFO") in the spider's init method. When I tailed the LOG_FILE, I was only seeing messages that were WARNING or higher, but I was still seeing INFO on stdout.
+@nramirezuy made a great proof of concept here that shows the desired behavior:
+https://gist.github.com/nramirezuy/e75d8c041b07a8edb44f
+But if you add a log.start() statement to the init method of the DummySpider, then you'll see everything on stdout, and only warnings and above in the log file.
+$> scrapy crawl dummy -s LOG_LEVEL=WARNING
+2014-09-05 17:13:48-0400 [scrapy] INFO: Scrapy 0.24.4 started (bot: chrome_store_crawler)
+2014-09-05 17:13:48-0400 [scrapy] INFO: Optional features available: ssl, http11
+2014-09-05 17:13:48-0400 [scrapy] INFO: Overridden settings: {'NEWSPIDER_MODULE': 'crawler.spiders', 'LOG_LEVEL': 'WARNING', 'SPIDER_MODULES': ['crawler.spiders'], 'BOT_NAME': 'chrome_store_crawler', 'USER_AGENT': 'MagicMikeBot (+http://www.magicmike.io)', 'LOG_FILE': '/Users/hartley/Desktop/scrapy.log', 'DOWNLOAD_DELAY': 0.3}
+2014-09-05 17:13:48-0400 [scrapy] INFO: Enabled extensions: LogStats, TelnetConsole, CloseSpider, WebService, CoreStats, SpiderState
+2014-09-05 17:13:48-0400 [scrapy] INFO: Enabled downloader middlewares: HttpAuthMiddleware, DownloadTimeoutMiddleware, UserAgentMiddleware, RetryMiddleware, DefaultHeadersMiddleware, MetaRefreshMiddleware, HttpCompressionMiddleware, RedirectMiddleware, CookiesMiddleware, ChunkedTransferMiddleware, DownloaderStats
+2014-09-05 17:13:48-0400 [scrapy] INFO: Enabled spider middlewares: HttpErrorMiddleware, OffsiteMiddleware, RefererMiddleware, UrlLengthMiddleware, DepthMiddleware
+2014-09-05 17:13:48-0400 [scrapy] INFO: Enabled item pipelines: CsvExporterPipeline
+2014-09-05 17:13:48-0400 [dummy] INFO: Spider opened
+2014-09-05 17:13:48-0400 [dummy] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2014-09-05 17:13:49-0400 [scrapy] INFO: INFO
+2014-09-05 17:13:49-0400 [scrapy] WARNING: WARNING
+2014-09-05 17:13:49-0400 [scrapy] ERROR: ERROR
+2014-09-05 17:13:49-0400 [scrapy] CRITICAL: CRITICAL
+2014-09-05 17:13:49-0400 [dummy] INFO: Closing spider (finished)
+2014-09-05 17:13:49-0400 [dummy] INFO: Dumping Scrapy stats:
+    {'downloader/request_bytes': 219,
+     'downloader/request_count': 1,
+     'downloader/request_method_count/GET': 1,
+     'downloader/response_bytes': 1569,
+     'downloader/response_count': 1,
+     'downloader/response_status_count/200': 1,
+     'finish_reason': 'finished',
+     'finish_time': datetime.datetime(2014, 9, 5, 21, 13, 49, 648787),
+     'log_count/CRITICAL': 1,
+     'log_count/ERROR': 1,
+     'log_count/WARNING': 1,
+     'response_received_count': 1,
+     'scheduler/dequeued': 1,
+     'scheduler/dequeued/memory': 1,
+     'scheduler/enqueued': 1,
+     'scheduler/enqueued/memory': 1,
+     'start_time': datetime.datetime(2014, 9, 5, 21, 13, 48, 914450)}
+2014-09-05 17:13:49-0400 [dummy] INFO: Spider closed (finished)
+This might actually be a bug with Twisted, as I see Scrapy's log.msg() is a pretty thin wrapper around theirs. Just wanted to drop it here first as it might be a problem with Scrapy's use of their logger:
+https://github.com/scrapy/scrapy/blob/master/scrapy/log.py#L132

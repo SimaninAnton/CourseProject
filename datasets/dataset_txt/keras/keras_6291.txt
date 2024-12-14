@@ -1,0 +1,24 @@
+sebastianruder commented on 9 Dec 2015
+I'd like to do aspect-based sentiment analysis using a CNN. For this purpose, I not only want to feed my sentence into the network, but want to condition my network on the target aspect for which it should predict the sentiment. I've seen multiplication used for conditioning on a target attribute, e.g. in [1], but I think concatenating the word embeddings with the aspect embedding feature should be enough. Basically, I'd like to do a similar thing as the authors of [2] for representing discrete features like part-of-speech tags, but would like to have one feature per sentence instead of one feature per word. However, I haven't been able to merge the two embedding layers together successfully.
+I encode sentences as sequences with a max_len of 100 and max_features of 10000. The input shape of the first embedding layer, seq_embedding, is (None, 100) and the output shape is (None, 100, 300).
+I have one target aspect per sentence, so max_len would be 1. There are 14 different aspects, so I would have an input dimension of 14. The input shape of the second embedding layer, cat_embedding, is thus (None, 1). I'd like to embed this into a space that has fewer dimensions than the word embeddings, so the output shape could be (None, 1, 50).
+I'm aware that for concatentation, all input dimensions except the concatenation axis must match exactly. I could pad the aspect up to max_len, but I don't think that would make a lot of sense for a sentence-level feature. So I assume I would need to use the same embedding size of 300 to obtain a merged output shape of (None, 101, 300), but I haven't been able to do this successfully. Is there another way?
+My current implementation looks like this:
+graph = Graph()
+graph.add_input(name='sequences', input_shape=(max_len, ), dtype='int')
+graph.add_input(name='categories', input_shape=(1, ), dtype='int')
+graph.add_node(Embedding(max_features, embedding_size, weights=weights, input_length=max_len), name='seq_embedding', input='sequences')
+graph.add_node(Embedding(len(category2id), embedding_size, weights=None, input_length=1), name='cat_embedding', input='categories')
+graph.add_node(Convolution1D(nb_filter=nb_filters, filter_length=filter_length, border_mode="valid", activation="relu", subsample_length=1), name='conv', inputs=['seq_embedding', 'cat_embedding'], merge_mode='concat')
+graph.add_node(MaxPooling1D(pool_length=max_len - filter_length + 1), name='pool', input='conv') # set pool_length=2 to halve the output, like this, we essentially pool over the whole column size of the convolutional feature map
+graph.add_node(Flatten(), name='flat', input='pool')
+graph.add_node(Dense(hidden_size, activation='relu'), name='dense', input='flat')
+graph.add_node(Dropout(dropout_rate), name='dropout', input='dense')
+graph.add_node(Dense(3, activation='softmax'), name='softmax', input='dropout')
+graph.add_output(name='output', input='softmax')
+graph.compile(loss={'output': 'categorical_crossentropy'}, optimizer='adadelta')
+Please let me know about flaws in my reasoning, what you think makes more sense, and how I can fix my implementation.
+Thanks a lot for your help!
+[1] Kiros, R., Zemel, R., & Salakhutdinov, R. (2014). A Multiplicative Model for Learning Distributed Text-Based Attribute Representations. arXiv Preprint arXiv:1406.2710, 1–11. Retrieved from http://arxiv.org/abs/1406.2710
+[2] Collobert, R., Weston, J., Bottou, L., Karlen, M., Kavukcuoglu, K., & Kuksa, P. (2011). Natural Language Processing (almost) from Scratch. Journal of Machine Learning Research, 12(Aug), 2493–2537. Retrieved from http://arxiv.org/abs/1103.0398
+1

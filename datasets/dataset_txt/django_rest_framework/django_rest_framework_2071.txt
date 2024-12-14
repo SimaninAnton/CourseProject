@@ -1,0 +1,31 @@
+Harper04 commented on 18 Jan 2015
+In my project i use ForeignKeys with the to_field property to link on a uuid Field. That UUID field is Unique but NOT the primary key for a few reasons. (Including that mysql uses the dumbest indextype possible for primary keys and i need to scale. you cannot change that)
+I do also have multiple peers with possible network outage that have to create database entries. So using UUIDs all over is the only feasable way. Therefore i need to serialize my ForeignKeys to the uuid field specified in to_field and deserialize from it.
+Despite my unusual requirements i think using to_field to unique but not primary keys is perfectly fine and should be supported.
+>>> b = Statement(device_id="335680b80f204e25a0e23caa052a3e83", rule_id="d19b314a8cb04a558798d6d8026cc56e", evalOperator="EQ", evalDesiredState=False)
+>>> x=StatementSerializer(b)
+>>> json = JSONRenderer().render(x.data)
+>>> json
+'{"id":null,"created":null,"modified":null,"uuid":"8846412b-5b07-485a-9f2b-d41c0902a98c","evalOperator":"EQ","evalDesiredState":false,"device":"335680b80f204e25a0e23caa052a3e83","rule":"d19b314a8cb04a558798d6d8026cc56e"}'
+Serialization works kind of. Notice that i have to/can use key_id syntax -> device:
+>>> mod_json = json.replace('rule','rule_id').replace('device',"device_id").replace('user',"user_id")
+>>> json_data = JSONParser().parse(BytesIO(json))
+>>> mjson_data = JSONParser().parse(BytesIO(mod_json))
+>>> xx=StatementSerializer(data=json_data)
+>>> xx.is_valid()
+False
+>>> xx.errors
+ReturnDict([('device', [u'Incorrect type. Expected pk value, received unicode.']), ('user', [u'Incorrect type. Expected pk value, received unicode.']), ('rule', [u'Incorrect type. Expected pk value, received unicode.'])])
+
+
+>>> xx=StatementSerializer(data=mjson_data)
+>>> x.is_valid()
+False
+>>> x.errors
+ReturnDict([('device', [u'This field is required.']), ('user', [u'This field is required.']), ('rule', [u'This field is required.'])])
+Note: I also tried replacing with _id for deserialization but even that does not work. IMHO it should.
+class PrimaryKeyRelatedField(RelatedField):
+    def use_pk_only_optimization(self):
+        return True
+A hotfix could be disabling use_pk_only_optimization in PrimaryKeyRelatedField. It deserialized correctly that way but .data etc. still shows the primary key like:
+ReturnDict([(u'id', None), ('created', None), ('modified', None), ('uuid', u'43c93954-e9c3-4e90-9d40-c1a87f68cb73'), ('evalOperator', 'EQ'), ('evalDesiredState', False), ('user', 1L), ('device', 2L), ('rule', 2L)])

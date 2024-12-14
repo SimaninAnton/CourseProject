@@ -1,0 +1,68 @@
+slora commented on 14 Oct 2014
+I'm trying to filter a model (Product) by using a related field nested within that model (ProductProcessPlatform).
+models.py
+class Product(models.Model):
+   ...
+    product_process_platforms = models.ManyToManyField(ProcessPlatform, through='ProductProcessPlatform', related_name='product_process_platform_set')
+   ...
+class ProductProcessPlatform(models.Model):
+   ...
+    product = models.ForeignKey(Product, blank=True, null=True)
+    process_platform = models.ForeignKey(ProcessPlatform, blank=True, null=True)
+    initial_datetime = models.DateTimeField(blank=True, null=True)
+    end_datetime = models.DateTimeField(blank=True, null=True)
+   ...
+To do so, I've been only able to get to a workaround by following this pattern: overriding the get_queryset() method within the viewset by creating a queryset that implements the desired filters (it worked) and apply those same filters to the serialization of that field. If I don't do this, I'm getting the main model correctly filtered but the related field provides all the objects instead of just the filtered ones.
+The kind of filtering I've implemented is url parameter filtering. So I want to list the Products within a given time range:
+domain.com/products/?initial_datetime=YYYY-MM-DDTHH:MM:SS&end_datetime=YYYY-MM-DDTHH:MM:SS
+My solution is based on the official doc and this post and this other.
+views.py
+class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+    model = Product
+    serializer_class = ProductSerializer
+    def get_queryset(self):
+        initial_datetime = self.request.QUERY_PARAMS.get('initial_datetime', None)
+        end_datetime = self.request.QUERY_PARAMS.get('end_datetime', None)
+
+        products_qs = Product.objects.all()
+        if initial_datetime is not None and end_datetime is not None:
+            products_qs = Product.objects.filter(Q(productprocessplatform__end_datetime__gte=initial_datetime) |
+                                                 Q(productprocessplatform__end_datetime__isnull=True),
+                                                 Q(productprocessplatform__initial_datetime__lte=end_datetime)).distinct()
+        elif initial_datetime is not None:
+            products_qs = Product.objects.filter(productprocessplatform__initial_datetime__gte=initial_datetime).distinct()
+        elif end_datetime is not None:
+            products_qs = Product.objects.filter(productprocessplatform__end_datetime__lte=end_datetime).distinct()
+
+        return products_qs
+and serializers.py
+class ProductProcessPlatformSerializer(ModelSerializer):
+
+    class Meta:
+        model = ProductProcessPlatform
+
+
+class ProductSerializer(ModelSerializer):
+    read_only = True
+    product_process_platforms = serializers.SerializerMethodField('get_product_process_platforms')# ProductProcessPlatformSerializer(source='productprocessplatform_set', many=True)
+
+    def get_product_process_platforms(self, product):
+        req_initial_datetime = self.context['view'].request.QUERY_PARAMS.get('initial_datetime', None)
+        req_end_datetime = self.context['view'].request.QUERY_PARAMS.get('end_datetime', None)
+
+        product_pps_qs = product.productprocessplatform_set.all()
+        if req_initial_datetime is not None and req_end_datetime is not None:
+            product_pps_qs = product.productprocessplatform_set.filter(Q(end_datetime__gte=req_initial_datetime) | Q(end_datetime__isnull=True), initial_datetime__lte=req_end_datetime).distinct()
+        elif req_initial_datetime is not None:
+            product_pps_qs = product.productprocessplatform_set.filter(initial_datetime__gte=req_initial_datetime).distinct()
+        elif req_end_datetime is not None:
+            product_pps_qs = product.productprocessplatform_set.filter(end_datetime__lte=req_end_datetime).distinct()
+
+        serializer = ProductProcessPlatformSerializer(instance=product_pps_qs, many=True, context=self.context)
+        return serializer.data
+
+    class Meta:
+        model = Product
+        depth = 4
+Maybe is something too specific, but I was wondering if there's another solution to avoid repeating filtering in the viewset and serializer classess.
+Thanks in advance!

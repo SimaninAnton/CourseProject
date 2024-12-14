@@ -1,0 +1,36 @@
+stuz5000 commented on 19 Sep 2019
+It looks like the steps to load a model and attach a pipline are both expensive in time and mutating. This makes it very expensive to construct a suite of tests that runs many pipeline variants with the same base model, and also tedious within the REPL when a minor change cause the need to reload a model.
+It would be great if:
+we could assume the model to be immutable
+operations to construct new pipeline didn't require the expensive reload of a model and instead returned an object with a modified pipeline.
+For example:
+@cached
+def load_model(modelname):
+    # Time consuming load, just once and user cached it
+    return spacy.load(modelname)
+
+#@cached  # Not needed
+def build_pipeline(modelname, feature1=False, feature2=False, ...):
+    nlp = load_model(modelname)
+    if feature1:
+        nlp = nlp.add_pipe( Feature1(), in_place=False  )  <<<<< in_place=False, returns new object
+    if feature2:
+        nlp = nlp.add_pipe( Feature2(), in_place=False )
+     ...
+    return nlp
+
+def test1():
+    # First call is slow
+    nlp = build_pipeline(modelname, feature1=False, feature2=False, ...)
+    ...
+
+def test2():
+    # Fast
+    nlp = build_pipeline(modelname, feature1=True, feature2=False, ...):
+
+def test3():
+    # Fast
+    nlp = build_pipeline(modelname, feature1=False, feature2=False, ...):
+...
+^^^ In this example, all that's needed is for add_pipe to return an nlp object with a pipeline with the added feature, leaving the original nlp object unchanged. Pandas back-fitted this pattern by adding and in_place parameter to decide if the instance should be modified, or a new instance returned - seems to work OK.
+Thanks.

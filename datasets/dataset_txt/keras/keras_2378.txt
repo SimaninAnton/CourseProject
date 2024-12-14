@@ -1,0 +1,102 @@
+Meehai commented on 15 May 2017 •
+edited
+Hello, I'm trying to use Keras to build a network model that has multiple inputs and uses CTC as loss function. My example is extremely close to the example of @fchollet (https://github.com/fchollet/keras/blob/master/examples/image_ocr.py).
+Here's the smallest example of my use case I could create in order to show the problem.
+https://gist.github.com/Meehai/c89b0ea46044402aa74dc64efe650067
+The model's summary is this:
+Layer (type)                     Output Shape          Param #     Connected to                     
+====================================================================================================
+network_input (InputLayer)       (None, 999, 100)      0                                            
+____________________________________________________________________________________________________
+time_distributed_1 (TimeDistribu (None, 999, 29)       2929        network_input[0][0]              
+____________________________________________________________________________________________________
+numeric_labels (InputLayer)      (None, 999)           0                                            
+____________________________________________________________________________________________________
+input_length (InputLayer)        (None, 1)             0                                            
+____________________________________________________________________________________________________
+label_length (InputLayer)        (None, 1)             0                                            
+____________________________________________________________________________________________________
+ctc (Lambda)                     (None, 1)             0           time_distributed_1[0][0]         
+                                                                   numeric_labels[0][0]             
+                                                                   input_length[0][0]               
+                                                                   label_length[0][0]               
+====================================================================================================
+Total params: 2,929
+Trainable params: 2,929
+Non-trainable params: 0
+____________________________________________________________________________________________________
+Using Theano this will work fine and will train the 2 epochs, while using Tensorflow I get the following error:
+Getting one batch
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1039, in _do_call
+    return fn(*args)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1021, in _run_fn
+    status, run_metadata)
+  File "/usr/lib/python3.5/contextlib.py", line 66, in __exit__
+    next(self.gen)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/errors_impl.py", line 466, in raise_exception_on_not_ok_status
+    pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: slice index 0 of dimension 0 out of bounds.
+  [[Node: ctc/scan/strided_slice = StridedSlice[Index=DT_INT32, T=DT_INT32, begin_mask=0, ellipsis_mask=0, end_mask=0, new_axis_mask=0, shrink_axis_mask=1, _device="/job:localhost/replica:0/task:0/cpu:0"](ctc/scan/Shape, ctc/scan/strided_slice/stack, ctc/scan/strided_slice/stack_1, ctc/scan/strided_slice/stack_2)]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "failing.py", line 58, in <module>
+    main()
+  File "failing.py", line 55, in main
+    model.fit_generator(generator=generator(1), steps_per_epoch=2, epochs=2)
+  File "/usr/local/lib/python3.5/dist-packages/keras/legacy/interfaces.py", line 88, in wrapper
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 1890, in fit_generator
+    class_weight=class_weight)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 1633, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/usr/local/lib/python3.5/dist-packages/keras/backend/tensorflow_backend.py", line 2229, in __call__
+    feed_dict=feed_dict)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 778, in run
+    run_metadata_ptr)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 982, in _run
+    feed_dict_string, options, run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1032, in _do_run
+    target_list, options, run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1052, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: slice index 0 of dimension 0 out of bounds.
+  [[Node: ctc/scan/strided_slice = StridedSlice[Index=DT_INT32, T=DT_INT32, begin_mask=0, ellipsis_mask=0, end_mask=0, new_axis_mask=0, shrink_axis_mask=1, _device="/job:localhost/replica:0/task:0/cpu:0"](ctc/scan/Shape, ctc/scan/strided_slice/stack, ctc/scan/strided_slice/stack_1, ctc/scan/strided_slice/stack_2)]]
+
+Caused by op 'ctc/scan/strided_slice', defined at:
+  File "failing.py", line 58, in <module>
+    main()
+  File "failing.py", line 53, in main
+    model = getModel()
+  File "failing.py", line 42, in getModel
+    label_length])
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 585, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/layers/core.py", line 659, in call
+    return self.function(inputs, **arguments)
+  File "failing.py", line 14, in ctc_lambda_func
+    return K.mean(K.ctc_batch_cost(labels, y_pred, input_length, label_length))
+  File "/usr/local/lib/python3.5/dist-packages/keras/backend/tensorflow_backend.py", line 3491, in ctc_batch_cost
+    sparse_labels = tf.to_int32(ctc_label_dense_to_sparse(y_true, label_length))
+  File "/usr/local/lib/python3.5/dist-packages/keras/backend/tensorflow_backend.py", line 3455, in ctc_label_dense_to_sparse
+    initializer=init, parallel_iterations=1)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/functional_ops.py", line 526, in scan
+    n = array_ops.shape(elems_flat[0])[0]
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/array_ops.py", line 497, in _SliceHelper
+    name=name)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/array_ops.py", line 655, in strided_slice
+    shrink_axis_mask=shrink_axis_mask)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/gen_array_ops.py", line 3568, in strided_slice
+    shrink_axis_mask=shrink_axis_mask, name=name)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/op_def_library.py", line 768, in apply_op
+    op_def=op_def)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py", line 2336, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py", line 1228, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): slice index 0 of dimension 0 out of bounds.
+  [[Node: ctc/scan/strided_slice = StridedSlice[Index=DT_INT32, T=DT_INT32, begin_mask=0, ellipsis_mask=0, end_mask=0, new_axis_mask=0, shrink_axis_mask=1, _device="/job:localhost/replica:0/task:0/cpu:0"](ctc/scan/Shape, ctc/scan/strided_slice/stack, ctc/scan/strided_slice/stack_1, ctc/scan/strided_slice/stack_2)]]
+I'm trying to understand if there's a limitation of Tensorflow and if yes, how can I work around it or am I doing something wrong in the example ?

@@ -1,0 +1,32 @@
+rrauenza commented on 22 Jun 2018
+Checklist
+[ x] I have verified that that issue exists against the master branch of Django REST framework.
+[x ] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[ x] This is not a usage question. (Those should be directed to the discussion group instead.)
+[ ?] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+In my application I'm trying to apply the concept of immutable fields. readonly prevents creation with the field -- which I want writable during create. But I don't want that field ever updated once created.
+I'm wondering if this would be a useful feature to generalize in the main project? Adding a flag to all of the fields classes, immutable.
+Right now I'm just doing this myself, which means it could be done in a 3rd party app ... but would require sublassing every single possible field.
+Here's my current implementation:
+class ImmutablePrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):       
+    pass                                                                         
+          
+class ImmutablePrimaryKeyValidatorMixin(object):                                 
+                                                                                 
+    def validate(self, attrs):                                                   
+        attrs = super(ImmutablePrimaryKeyValidatorMixin, self).validate(attrs)   
+        if self.instance is None:                                                
+            return attrs                                                         
+        for field, serializer in self.fields.items():                            
+            if not isinstance(serializer, ImmutablePrimaryKeyRelatedField):      
+                continue                                                         
+            if serializer.allow_null and attrs[serializer.source] is None:       
+                continue                                                         
+            old = getattr(self.instance, serializer.source)                      
+            if old != attrs[serializer.source]:                                 
+                raise serializers.ValidationError({field: "%s may not be updated after object creation." % field})
+        return attrs
+Ah, I see this was also proposed here as well, https://groups.google.com/forum/#!topic/django-rest-framework/N2stbqxSDMU , using immutable_fields in Meta. So this could also just be done with a Mixin, which probably argues for not including it in DRF?
+1

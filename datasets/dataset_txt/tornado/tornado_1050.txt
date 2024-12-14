@@ -1,0 +1,47 @@
+Contributor
+jparise commented on 2 Oct 2012
+If the remote client closes the connection while the server is performing an asynchronous operation, an IOError("Stream is closed") error is raised when the request handler completes the operation and calls finish().
+Uncaught exception GET / (127.0.0.1)
+    HTTPRequest(protocol='http', host='localhost:5000', method='GET', uri='/', version='HTTP/1.1', remote_ip='127.0.0.1', body='', headers={'Host': 'localhost:5000', 'Accept': '*/*', 'User-Agent': 'curl/7.24.0 (x86_64-apple-darwin12.0) libcurl/7.24.0 OpenSSL/0.9.8r zlib/1.2.5'})
+    Traceback (most recent call last):
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/web.py", line 1021, in _stack_context_handle_exception
+        raise_exc_info((type, value, traceback))
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/stack_context.py", line 258, in _nested
+        yield vars
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/stack_context.py", line 228, in wrapped
+        callback(*args, **kwargs)
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/gen.py", line 382, in inner
+        self.set_result(key, result)
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/gen.py", line 315, in set_result
+        self.run()
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/gen.py", line 345, in run
+        yielded = self.gen.send(next)
+      File "closed.py", line 15, in get
+        self.finish("Done")
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/web.py", line 722, in finish
+        self.request.finish()
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/httpserver.py", line 422, in finish
+        self.connection.finish()
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/httpserver.py", line 193, in finish
+        self._finish_request()
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/httpserver.py", line 229, in _finish_request
+        self.stream.read_until(b("\r\n\r\n"), self._header_callback)
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/iostream.py", line 153, in read_until
+        self._try_inline_read()
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/iostream.py", line 382, in _try_inline_read
+        self._check_closed()
+      File "/Users/jon/work/venv/lib/python2.7/site-packages/tornado/iostream.py", line 565, in _check_closed
+        raise IOError("Stream is closed")
+    IOError: Stream is closed
+This is reproducible for me using the following request handler code:
+    @tornado.web.asynchronous
+    @tornado.gen.engine
+    def get(self):
+        http = tornado.httpclient.AsyncHTTPClient()
+        response = yield tornado.gen.Task(http.fetch, "http://en.wikipedia.org/")
+        self.finish("Done")
+I can work around this in a custom RequestHandler subclass:
+    def finish(self, chunk=None):
+        if not self.request.connection.stream.closed():
+            super(RequestHandler, self).finish(chunk)
+This is similar to #81 but occurs on the latest Tornado 2.4 code base.

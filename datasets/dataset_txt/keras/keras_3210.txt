@@ -1,0 +1,118 @@
+isaacgerg commented on 15 Feb 2017 •
+edited
+keras 1.2.2, tf-gpu -.12.1
+Example code to show issue:
+'''Trains a simple convnet on the MNIST dataset.
+
+Gets to 99.25% test accuracy after 12 epochs
+(there is still a lot of margin for parameter tuning).
+16 seconds per epoch on a GRID K520 GPU.
+'''
+
+#from __future__ import print_function
+import numpy as np
+np.random.seed(1337)  # for reproducibility
+
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Activation, Flatten
+from keras.layers import Convolution2D, MaxPooling2D
+from keras.utils import np_utils
+from keras import backend as K
+
+batch_size = 128
+nb_classes = 10
+nb_epoch = 12
+
+# input image dimensions
+img_rows, img_cols = 28, 28
+# number of convolutional filters to use
+nb_filters = 32
+# size of pooling area for max pooling
+pool_size = (2, 2)
+# convolution kernel size
+kernel_size = (3, 3)
+
+# the data, shuffled and split between train and test sets
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+# make 2 categories
+y_train = y_train>=5
+y_test = y_test>=5
+
+if K.image_dim_ordering() == 'th':
+    X_train = X_train.reshape(X_train.shape[0], 1, img_rows, img_cols)
+    X_test = X_test.reshape(X_test.shape[0], 1, img_rows, img_cols)
+    input_shape = (1, img_rows, img_cols)
+else:
+    X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols, 1)
+    X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols, 1)
+    input_shape = (img_rows, img_cols, 1)
+
+X_train = X_train.astype('float32')
+X_test = X_test.astype('float32')
+X_train /= 255
+X_test /= 255
+print('X_train shape:', X_train.shape)
+print(X_train.shape[0], 'train samples')
+print(X_test.shape[0], 'test samples')
+
+# convert class vectors to binary class matrices
+Y_train = np_utils.to_categorical(y_train, 2)
+Y_test = np_utils.to_categorical(y_test, 2)
+
+model = Sequential()
+
+model.add(Convolution2D(nb_filters, kernel_size[0], kernel_size[1],
+                        border_mode='valid',
+                        input_shape=input_shape))
+model.add(Activation('relu'))
+model.add(Convolution2D(nb_filters, kernel_size[0], kernel_size[1]))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=pool_size))
+model.add(Dropout(0.25))
+
+model.add(Flatten())
+model.add(Dense(128))
+model.add(Activation('relu'))
+model.add(Dropout(0.5))
+model.add(Dense(2))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adadelta',
+              metrics=['accuracy', 'f1score', 'precision', 'recall'])
+
+model.fit(X_train, Y_train, batch_size=batch_size, nb_epoch=nb_epoch,
+          verbose=1, validation_data=(X_test, Y_test))
+score = model.evaluate(X_test, Y_test, verbose=0)
+print('Test score:', score[0])
+print('Test accuracy:', score[1])
+yields output:
+Using TensorFlow backend.
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\stream_executor\dso_loader.cc:128] successfully opened CUDA library cublas64_80.dll locally
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\stream_executor\dso_loader.cc:128] successfully opened CUDA library cudnn64_5.dll locally
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\stream_executor\dso_loader.cc:128] successfully opened CUDA library cufft64_80.dll locally
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\stream_executor\dso_loader.cc:128] successfully opened CUDA library nvcuda.dll locally
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\stream_executor\dso_loader.cc:128] successfully opened CUDA library curand64_80.dll locally
+X_train shape: (60000, 28, 28, 1)
+60000 train samples
+10000 test samples
+Train on 60000 samples, validate on 10000 samples
+Epoch 1/12
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\core\common_runtime\gpu\gpu_device.cc:885] Found device 0 with properties: 
+name: GeForce GTX TITAN Black
+major: 3 minor: 5 memoryClockRate (GHz) 0.98
+pciBusID 0000:01:00.0
+Total memory: 6.00GiB
+Free memory: 5.85GiB
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\core\common_runtime\gpu\gpu_device.cc:906] DMA: 0 
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\core\common_runtime\gpu\gpu_device.cc:916] 0:   Y 
+I c:\tf_jenkins\home\workspace\release-win\device\gpu\os\windows\tensorflow\core\common_runtime\gpu\gpu_device.cc:975] Creating TensorFlow device (/gpu:0) -> (device: 0, name: GeForce GTX TITAN Black, pci bus id: 0000:01:00.0)
+
+  128/60000 [..............................] - ETA: 1686s - loss: 0.7091 - acc: 0.4688 - fmeasure: 0.4687 - precision: 0.4688 - recall: 0.4688
+  384/60000 [..............................] - ETA: 567s - loss: 0.6981 - acc: 0.4922 - fmeasure: 0.4922 - precision: 0.4922 - recall: 0.4922 
+  640/60000 [..............................] - ETA: 343s - loss: 0.6845 - acc: 0.5609 - fmeasure: 0.5609 - precision: 0.5609 - recall: 0.5609
+ 1024/60000 [..............................] - ETA: 217s - loss: 0.6654 - acc: 0.6143 - fmeasure: 0.6143 - precision: 0.6143 - recall: 0.6143
+ 1408/60000 [..............................] - ETA: 159s - loss: 0.6427 - acc: 0.6456 - fmeasure: 0.6456 - precision: 0.6456 - recall: 0.6456
+ 1792/60000 [..............................] - ETA: 126s - loss: 0.6226 - acc: 0.6629 - fmeasure: 0.6629 - precision: 0.6629 - recall: 0.6629
+15

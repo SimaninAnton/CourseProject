@@ -1,0 +1,86 @@
+Contributor
+datumbox commented on 29 Jun 2017 •
+edited
+Loading a persisted model and setting the learning_phase=0 reduces the accuracy from 100% to 50% in binary classification problem.
+The below script contains a simple example that reproduces the problem on Keras 2.0.5 and TensorFlow 1.2 (Python 2.7, Ubuntu 14.04, Nvidia Quadro K2200 GPU). I use an extremely small dataset and I intentionally overfit the model.
+Snippet:
+import tensorflow as tf
+import numpy as np
+from keras.applications.resnet50 import ResNet50
+from keras.preprocessing import image
+from keras.models import Model, load_model
+from keras.layers import Dense, Flatten
+from keras import backend as K
+
+
+epochs = 5
+input_shape = (224, 224, 3)
+batch_size = 32
+seed = 42
+dataset_path = './data/cifar2tiny' # same train/test dataset to overfit it
+
+np.random.seed(seed)
+tf.set_random_seed(seed)
+
+
+K.set_learning_phase(1)
+base_model = ResNet50(weights='imagenet', include_top=False, input_shape=input_shape)
+
+x = base_model.output
+x = Flatten(name='flatten')(x)
+predictions = Dense(2, activation='softmax', name='predictions')(x)
+model = Model(inputs=base_model.input, outputs=predictions)
+
+for layer in model.layers[0:141]:
+    layer.trainable = False
+
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['accuracy'])
+
+train_gen = image.ImageDataGenerator().flow_from_directory(dataset_path, target_size=input_shape[:2], batch_size=batch_size, class_mode='categorical', shuffle=True, seed=seed)
+test_gen = image.ImageDataGenerator().flow_from_directory(dataset_path, target_size=input_shape[:2], batch_size=batch_size, class_mode='categorical', shuffle=True, seed=seed)
+train_steps = train_gen.samples//batch_size
+test_steps = test_gen.samples//batch_size
+
+model.fit_generator(train_gen, train_steps, epochs=epochs, validation_data=test_gen, validation_steps=test_steps)
+
+test_gen.reset()
+print('Before Save:', model.evaluate_generator(test_gen, test_steps)) # Accuracy close to 100%
+model.save('/tmp/tmpModel')
+
+K.clear_session()
+K.set_learning_phase(0)
+test_gen.reset()
+model = load_model('/tmp/tmpModel')
+print('After Load - learning_phase=0:', model.evaluate_generator(test_gen, test_steps)) # Accuracy close to 50%
+
+K.clear_session()
+K.set_learning_phase(1)
+test_gen.reset()
+model = load_model('/tmp/tmpModel')
+print('After Load - learning_phase=1:', model.evaluate_generator(test_gen, test_steps)) # Accuracy close to 100%
+Output:
+Found 100 images belonging to 2 classes.
+Found 100 images belonging to 2 classes.
+Epoch 1/5
+3/3 [==============================] - 6s - loss: 1.7213 - acc: 0.5833 - val_loss: 0.9526 - val_acc: 0.8438
+Epoch 2/5
+3/3 [==============================] - 3s - loss: 1.0977 - acc: 0.7642 - val_loss: 0.3841 - val_acc: 0.9559
+Epoch 3/5
+3/3 [==============================] - 3s - loss: 0.5245 - acc: 0.8649 - val_loss: 0.1062 - val_acc: 0.9706
+Epoch 4/5
+3/3 [==============================] - 3s - loss: 0.0637 - acc: 0.9885 - val_loss: 0.1152 - val_acc: 0.9853
+Epoch 5/5
+3/3 [==============================] - 4s - loss: 0.1557 - acc: 0.9688 - val_loss: 0.0218 - val_acc: 0.9896
+('Before Save:', [0.023946404457092285, 1.0])
+('After Load - learning_phase=0:', [7.8911511103312177, 0.51041666666666663])
+('After Load - learning_phase=1:', [0.028959342899421852, 0.98958333333333337])
+As you can see above, I explicitly save the model, clear the session and load it again. This is important for reproducing the problem. I don't believe that there is an issue on the persistence mechanism of Keras as the weights before and after the load() seem the same.
+Since ResNet50 does not contain any Dropout layer, I believe the problem is caused by the BatchNormalization layers. As far as I see on Keras source, during training we use the sample mean/variance of the mini-batch while during testing we use the rolling mean/variance.
+Any thoughts from Keras contributors? I'm happy to provide more info or investigate further.
+@fchollet Could you provide any hint/pointers where to look next?
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

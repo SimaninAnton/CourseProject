@@ -1,0 +1,158 @@
+DheerendraRathor commented on 11 Jul 2016 •
+edited
+I'm using tornado for WebSockets. On websockets I'm periodically sending pings and waiting for pong from client. For this I'm using call_later method on ioloop. But during unit testing (AsyncHTTPTestCase) callbacks are not called after timeout.
+server.py
+import tornado.ioloop
+from tornado.options import define, parse_command_line, options
+import tornado.websocket
+import tornado.httpserver
+import tornado.web
+
+from datetime import datetime
+
+define('addr', help='Address to start server', default='127.0.0.1')
+define('port', help='Port to start tornado', type=int, default=8081)
+
+
+class WebSocketHandler(tornado.websocket.WebSocketHandler):
+
+    def __init__(self, application, request, **kwargs):
+        super().__init__(application, request, **kwargs)
+        self.io_loop = tornado.ioloop.IOLoop.instance()
+
+    def open(self, *args, **kwargs):
+        self.ping_timeout = self.io_loop.call_later(
+            delay=self.get_ping_timeout(initial=True),
+            callback=self._send_ping,
+        )
+
+        self.write_message('OK')
+
+    def check_origin(self, origin):
+        return True
+
+    def on_message(self, message):
+        self.write_message(message)
+
+    @staticmethod
+    def get_ping_timeout(initial: bool=False) -> int:
+        """
+        Args:
+            initial: First is true when it is initial ping to be sent
+        """
+        return 2
+
+    @staticmethod
+    def get_pong_timeout() -> int:
+        """
+        Returns pong timeout for pong
+        """
+        return 2
+
+    def on_pong(self, data):
+        print('Received pong')
+        if hasattr(self, 'ping_timeout'):
+            # clear timeout set by for ping pong (heartbeat) messages
+            self.io_loop.remove_timeout(self.ping_timeout)
+
+        # send new ping message after `get_ping_timeout` time
+        self.ping_timeout = self.io_loop.call_later(
+            delay=self.get_ping_timeout(),
+            callback=self._send_ping,
+        )
+
+    def _send_ping(self):
+        """
+        Send ping message to client.
+
+        Creates a time out for pong message.
+        If timeout is not cleared then closes the connection.
+        """
+        print('Sending ping')
+        self.ping(b'a')
+        self.ping_timeout = self.io_loop.call_later(
+            delay=self.get_pong_timeout(),
+            callback=self._connection_timeout,
+        )
+
+    def _connection_timeout(self):
+        """ If no pong message is received within the timeout then close the connection """
+        print("Ping pong timeout")
+        self.close(None, 'Connection Timeout')
+
+
+def get_tornado_app():
+    """
+    Return a tornado web application instance which includes url config
+    """
+
+    return tornado.web.Application(
+        [
+            (r'/', WebSocketHandler),
+        ]
+    )
+
+
+def main():
+    """
+    Configure and start tornado server
+    """
+    parse_command_line()
+    tornado_app = get_tornado_app()
+    server = tornado.httpserver.HTTPServer(tornado_app)
+    server.listen(options.port, options.addr)
+
+    quit_command = 'CONTROL-C'
+    print(datetime.now().strftime('%B %d, %Y - %X'))
+    print(
+        'Tornado Version: {tornado_version}\n'
+        'Starting tornado server at {addr}:{port}\n'
+        'Quit Server with {quit_command}'.format(
+            tornado_version=tornado.version,
+            addr=options.addr,
+            port=options.port,
+            quit_command=quit_command,
+        )
+    )
+
+    tornado.ioloop.IOLoop.instance().start()
+
+
+if __name__ == '__main__':
+    main()
+Unit test (test_server.py)
+import tornado.ioloop
+from tornado import websocket, gen
+
+from server import get_tornado_app
+
+from tornado.testing import gen_test, AsyncHTTPTestCase
+
+
+class TestPingPong(AsyncHTTPTestCase):
+
+    def get_app(self):
+        return get_tornado_app()
+
+    def tearDown(self):
+        tornado.ioloop.IOLoop.instance().stop()
+
+    def setUp(self):
+        super().setUp()
+
+    def test_http_on_ws(self):
+        response = self.fetch('/')
+        self.assertTrue(response.code, 400)
+
+    @gen_test(timeout=15)
+    def test_ping_pong(self):
+
+        url = 'ws://localhost:%d/' % self.get_http_port()
+
+        ws = yield websocket.websocket_connect(url, io_loop=self.io_loop)
+        msg = yield ws.read_message()
+
+        self.assertEqual(msg, 'OK')
+        yield gen.sleep(12)
+I'm using python -m tornado.testing discover to execute unit tests. When I connect to websocket using Javascript, I can see ping pong callbacks running perfectly, it is the unit tests when they are not executing as expected.
+2

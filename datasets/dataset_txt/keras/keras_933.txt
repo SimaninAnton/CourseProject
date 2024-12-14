@@ -1,0 +1,49 @@
+Max-Fu commented on 26 Jun 2018 •
+edited
+When trying to reproduce Polygon RNN++ (Efﬁcient Interactive Annotation of Segmentation Datasets with Polygon-RNN++, arxiv: https://arxiv.org/pdf/1803.09693.pdf), I am wondering if the attention weighted feature (3.2) on each hidden state of ConvLSTM can be implemented. I tried TimeDistributed, return_sequence = True, and return_state = True; however, I don't know if I have gotten the right output (check the stated problem below.
+    # branch 2 : ConvLSTM 
+    # to ConvLSTM decoders
+    # first ConvLSTM decoder
+    # filter = 64
+    convlstm1, state_h_1, state_c_1 = ConvLSTM2D(filters=64, kernel_size=(3, 3),
+                   input_shape=(-1, 28, 28, 128),
+                   padding='same', return_sequences=True, return_state=True)(X)
+    
+    print(convlstm1)
+    
+    # Attention weighted features (return_state=True)
+    
+    attention1 = TimeDistributed(Dense(128))(state_h_1)
+    
+    X = BatchNormalization(axis=1)(convlstm1)    
+    
+    # second ConvLSTM decoder
+    # filter = 16
+    convlstm2, state_h_2, state_c_2 = ConvLSTM2D(filters=16, kernel_size=(3, 3),
+                   padding='same', return_sequences=True, return_state=True)(X)
+    
+    # Attention weighted features (return_state=True)
+    attention2 = TimeDistributed(Dense(128))(state_h_2)
+    
+    X = BatchNormalization(axis=1)(convlstm2)
+    
+    # attention weighted features
+    
+    fatt = Add()([skipfeature, attention1, attention2])
+    alpha_t = Activation('softmax')(fatt)
+    f_t = Multiply()([skipfeature, alpha_t])
+    f_t = Concatenate()([f_t, convlstm2[-1], convlstm2[-2], polygon_preds]) 
+    # polygon_preds is the the first vertex prediction, y0
+    # I assume these will yield the last two output of the whole convolutional lstm process instead of the output 
+    # at time step t-1 and t-2
+    print(f_t)
+    
+    # Create model
+    model = Model(inputs=X_input, outputs=X, name='ResNet50')
+
+    return model
+The code above can be run without any bug. However, for layer f_t, I assume these will yield the last two output of the whole convolutional lstm process instead of the output at time step t-1 and t-2. Can anyone please help verify if this will return the output at time step t-1 and t-2?
+In addition, is there any way to add f_t as the input of the next time step (of the convlstm layers)? I cannot see the attention layer being added to model.summary(). So is there any way to integrate the attention layer to the model? The output of the model should be a series of one-hot encoding of the vertices.
+Thanks,
+Max
+P.S. skipfeature is the convolution encoder's output, shape: (?, 112, 112, 128)

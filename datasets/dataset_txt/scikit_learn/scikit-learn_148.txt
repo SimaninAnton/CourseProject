@@ -1,0 +1,59 @@
+Neeratyoy commented on Nov 15, 2019
+Description
+Certain pipeline estimators support None, 'drop' and 'passthrough'.
+While instantiating, the pipeline constructor appears to call _validate_steps() which flags the suitable error during creation.
+However, this can be bypassed by creating a legal object and then using set_params() to assign an illegal value which gets flagged only at runtime again.
+It will be helpful if there can be a validity check during the set_params() call. Unless this was a conscious decision.
+Steps/Code to Reproduce
+from sklearn.svm import SVC
+from sklearn.datasets import load_iris 
+from sklearn.pipeline import FeatureUnion, Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+iris = load_iris()
+X, y = iris.data, iris.target 
+
+ohe = OneHotEncoder(sparse=False, categories='auto')
+
+fu = FeatureUnion(transformer_list=[('ohe', ohe), ('scaler', 'passthrough')])  # fails
+# fails the check on instantiation owing to _validate_transformers()
+
+scaler = StandardScaler()
+fu = FeatureUnion(transformer_list=[('ohe', ohe), ('scaler', scaler)])  # passes
+
+clf = Pipeline([('union', fu), ('classifier', SVC(gamma='auto'))])
+clf.fit(X, y)  # passes
+
+clf[0].set_params(scaler=None)  
+clf.fit(X, y)  # passes
+# since FeatureUnion can take None as estimators
+
+clf[0].set_params(scaler='passthrough')  # passes
+clf.fit(X, y)  # fails
+# 'passthrough' not being recognised as a valid estimator implementing fit or fit_transform
+
+# Similar behaviour can be shown with the Pipeline object
+clf.set_params(union='passthrough')  # also works with None
+clf.fit(X, y)  # passes
+
+clf.set_params(union='drop')
+clf.fit(X, y)  # fails
+Expected Results
+The following commands should fail, instead of an error during runtime.
+clf[0].set_params(scaler='passthrough') 
+clf.set_params(union='drop')
+Actual Results
+The invalid assignment shows up only when fit or fit_transform is being called.
+Versions
+System:
+python: 3.6.8 (default, Oct 7 2019, 12:59:55) [GCC 8.3.0]
+executable: /usr/bin/python3
+machine: Linux-4.15.0-69-generic-x86_64-with-Ubuntu-18.04-bionic
+Python deps:
+pip: 19.2.2
+setuptools: 41.0.1
+sklearn: 0.21.3
+numpy: 1.16.4
+scipy: 1.2.0
+Cython: 0.29.13
+pandas: 0.24.1

@@ -1,0 +1,85 @@
+Diyago commented on 21 May 2019
+Please make sure that this is a Bug or a Feature Request and provide all applicable information asked by the template.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+System information
+Have I written custom code (as opposed to using example directory):
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04):
+Ubuntu 18.04
+TensorFlow backend (yes / no): yes
+TensorFlow version: 1.13
+Keras version: 2.2.4
+Python version: 3.6
+CUDA/cuDNN version: 9.0
+GPU model and memory: 1070ti
+You can obtain the TensorFlow version with:
+python -c "import tensorflow as tf; print(tf.GIT_VERSION, tf.VERSION)"
+You can obtain the Keras version with:
+python -c 'import keras as k; print(k.version)'
+Describe the current behavior
+Current approach - Data is generated only then next batch is proceeded. Even If I use custom datagen. I have something like this:
+class DataGenerator(Sequence):
+'''
+Sample usage:
+test_generator = DataGenerator(x_train, y_train, 1, 
+                           image_sizes, image_sizes, 1, True)
+Xtest, ytest = test_generator.__getitem__(1)
+plt.imshow(Xtest[0])
+plt.show()
+plt.imshow(ytest[0, :,:,0])
+plt.show()
+'''
+def __init__(self, X, y, batch_size,  height,width, nb_y_features, augmentation = True):
+    'Initialization'
+    self.batch_size = batch_size
+    self.X = X
+    self.y = y
+    self.indexes = None
+    self.currentIndex = 0
+    self.augmentation = augmentation
+    self.on_epoch_end()
+    self.height = height
+    self.width = width
+    self.nb_y_features = nb_y_features
+
+def __len__(self):
+
+    'Denotes the number of batches per epoch'
+    return int(np.ceil(len(self.X) / self.batch_size))
+
+def __getitem__(self, index):
+    'Generate one batch of data'
+    # Generate indexes of the batch
+    data_index_min = int(index*self.batch_size)
+    data_index_max = int(min((index+1)*self.batch_size, len(self.indexes)))
+    indexes = self.indexes[data_index_min:data_index_max]
+
+    this_batch_size = len(indexes) # The last batch can be smaller than the others
+
+    X = np.empty((this_batch_size, self.width, self.height, 3)) #, dtype=int)
+    y = np.empty((this_batch_size, self.width, self.height, self.nb_y_features), dtype=int)
+
+    for i, sample_index in enumerate(indexes):
+        data_index = self.indexes[index * self.batch_size + i]
+        X_sample, y_sample = self.X[data_index].copy(), self.y[data_index].copy()
+        if self.augmentation:
+            augmented = aug()(image=X_sample, mask=y_sample)
+
+            image_augm = augmented['image']
+            mask_augm = augmented['mask']#.reshape(self.width, self.height, self.nb_y_features)
+            X[i, ...] = image_augm
+            y[i, ...] = mask_augm
+
+        else:
+            X[i, ...] = X_sample
+            y[i, ...] = y_sample
+
+    return X, y
+
+def on_epoch_end(self):
+    'Updates indexes after each epoch'
+    self.indexes = list(range(len(self.X)))
+    np.random.shuffle(self.indexes)
+Describe the expected behavior
+In TensorFlow's Dataset API, we can use dataset.prefetch(buffer_size=xxx) to preload other batches' data while GPU is processing the current batch's data, therefore, I can make full use of GPU. How to modify current code to get it start working with preloading batches behavior.
+Code to reproduce the issue
+Calling fit predict in keras

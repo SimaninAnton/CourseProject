@@ -1,0 +1,80 @@
+Contributor
+rmax commented on Dec 22, 2016 •
+edited
+This happens on Twisted trunk and with latest Scrapy master.
+$ scrapy shell http://localhost:8081/
+2016-12-22 12:52:01 [scrapy.utils.log] INFO: Scrapy 1.2.2 started (bot: scrapybot)
+2016-12-22 12:52:01 [scrapy.utils.log] INFO: Overridden settings: {'LOGSTATS_INTERVAL': 0, 'DUPEFILTER_CLASS': 'scrapy.dupefilters.BaseDupeFilter'}
+2016-12-22 12:52:01 [scrapy.middleware] INFO: Enabled extensions:
+['scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.corestats.CoreStats']
+2016-12-22 12:52:01 [scrapy.middleware] INFO: Enabled downloader middlewares:
+['scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2016-12-22 12:52:01 [scrapy.middleware] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2016-12-22 12:52:01 [scrapy.middleware] INFO: Enabled item pipelines:
+[]
+2016-12-22 12:52:01 [scrapy.extensions.telnet] DEBUG: Telnet console listening on 127.0.0.1:6023
+2016-12-22 12:52:01 [scrapy.core.engine] INFO: Spider opened
+Traceback (most recent call last):
+  File "/Users/rolando/miniconda3/envs/dev/bin/scrapy", line 11, in <module>
+    load_entry_point('Scrapy', 'console_scripts', 'scrapy')()
+  File "/Users/rolando/Projects/sh/scrapy/scrapy/cmdline.py", line 142, in execute
+    _run_print_help(parser, _run_command, cmd, args, opts)
+  File "/Users/rolando/Projects/sh/scrapy/scrapy/cmdline.py", line 88, in _run_print_help
+    func(*a, **kw)
+  File "/Users/rolando/Projects/sh/scrapy/scrapy/cmdline.py", line 149, in _run_command
+    cmd.run(args, opts)
+  File "/Users/rolando/Projects/sh/scrapy/scrapy/commands/shell.py", line 71, in run
+    shell.start(url=url)
+  File "/Users/rolando/Projects/sh/scrapy/scrapy/shell.py", line 47, in start
+    self.fetch(url, spider)
+  File "/Users/rolando/Projects/sh/scrapy/scrapy/shell.py", line 112, in fetch
+    reactor, self._schedule, request, spider)
+  File "/Users/rolando/Projects/gh/twisted/src/twisted/internet/threads.py", line 122, in blockingCallFromThread
+    result.raiseException()
+  File "/Users/rolando/Projects/gh/twisted/src/twisted/python/failure.py", line 372, in raiseException
+    raise self.value.with_traceback(self.tb)
+TypeError: 'float' object is not iterable
+(Pdb) w
+  /Users/rolando/Projects/sh/scrapy/scrapy/utils/defer.py(45)mustbe_deferred()
+-> result = f(*args, **kw)
+  /Users/rolando/Projects/sh/scrapy/scrapy/core/downloader/handlers/__init__.py(65)download_request()
+-> return handler.download_request(request, spider)
+  /Users/rolando/Projects/sh/scrapy/scrapy/core/downloader/handlers/http11.py(61)download_request()
+-> return agent.download_request(request)
+  /Users/rolando/Projects/sh/scrapy/scrapy/core/downloader/handlers/http11.py(286)download_request()
+-> method, to_bytes(url, encoding='ascii'), headers, bodyproducer)
+  /Users/rolando/Projects/gh/twisted/src/twisted/web/client.py(1601)request()
+-> parsedURI.originForm)
+  /Users/rolando/Projects/gh/twisted/src/twisted/web/client.py(1378)_requestWithEndpoint()
+-> d = self._pool.getConnection(key, endpoint)
+  /Users/rolando/Projects/gh/twisted/src/twisted/web/client.py(1264)getConnection()
+-> return self._newConnection(key, endpoint)
+  /Users/rolando/Projects/gh/twisted/src/twisted/web/client.py(1276)_newConnection()
+-> return endpoint.connect(factory)
+  /Users/rolando/Projects/gh/twisted/src/twisted/internet/endpoints.py(779)connect()
+-> EndpointReceiver, self._hostText, portNumber=self._port
+  /Users/rolando/Projects/gh/twisted/src/twisted/internet/_resolver.py(174)resolveHostName()
+-> onAddress = self._simpleResolver.getHostByName(hostName)
+  /Users/rolando/Projects/sh/scrapy/scrapy/resolver.py(21)getHostByName()
+-> d = super(CachingThreadedResolver, self).getHostByName(name, timeout)
+> /Users/rolando/Projects/gh/twisted/src/twisted/internet/base.py(276)getHostByName()
+-> timeoutDelay = sum(timeout)
+After digging, I found out that the addition of DNS_TIMEOUT was not effective at all: 85aa3c7#diff-92d881d6568986904888f43c885240e2L13
+Previously, on Twisted <=16.6.0, the method getHostByName was always called with a default timeout: https://github.com/twisted/twisted/blob/twisted-16.6.0/src/twisted/internet/base.py#L565-L573
+But now, on Twisted trunk, the method is called without a timeout parameter: https://github.com/twisted/twisted/blob/trunk/src/twisted/internet/_resolver.py#L174
+This makes the caching resolver to use the default value timeout=60.0 which causes the error: https://github.com/twisted/twisted/blob/twisted-16.6.0/src/twisted/internet/base.py#L259-L268

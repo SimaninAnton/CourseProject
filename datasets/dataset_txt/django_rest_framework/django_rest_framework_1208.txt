@@ -1,0 +1,37 @@
+andhieka commented on 9 May 2016
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a Django model with unique_together constraint. This model should have at least one ForeignKey field, which is included in the unique_together constraint. For example:
+class Foo(models.Model):
+    bar = models.ForeignKey('Bar')
+    name = models.CharField(max_length=255)
+
+    class Meta:
+        unique_together = (('bar', 'name',),)
+Create a DRF ModelSerializer for the model class. This ModelSerializer has one extra write_only field that references the related object by primary key. For example,
+class FooSerializer(serializers.ModelSerializer):
+    bar = BarSerializer(read_only=True)
+    bar_id = IntegerField(write_only=True)
+
+    class Meta:
+        model = Foo
+        fields = ('bar', 'name', 'bar_id',)
+Try creating using FooSerializer, for example by using this data:
+{
+    "bar_id": 1,
+    "name": "Foo instance 1"
+}
+Expected behavior
+The creation process should be successful.
+Actual behavior
+foo_serializer.is_valid(raise_exception=True) raises exception that is raised by UniqueTogetherValidator, with message along this line: "bar is needed".
+Reasoning
+ModelSerializer class allows the referencing of related objects by ID for models without unique_together constraints. Adding a unique_together constraint should not change the behaviour. Indeed, the DRF documentation mentions this:
+The UniqueTogetherValidation class always imposes an implicit constraint that all the fields it applies to are always treated as required.
+However, I think UniqueTogetherValidator, should behave consistently with the framework by being able to tolerate the change from bar to bar_id.

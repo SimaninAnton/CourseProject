@@ -1,0 +1,55 @@
+ghost commented on 31 Dec 2016
+When implementing an architecture similar to the ResNet50 example code, a TypeError is thrown due to the combination of BatchNormalization and merge layer. The error only occurs when the code is executed on a GPU. Here is a simplified script that should be able to reproduce the error:
+from keras.datasets import mnist
+from keras.models import Model
+from keras.layers import Dense, Activation, Flatten, Input, merge
+from keras.layers import Convolution2D, BatchNormalization
+from keras.utils import np_utils
+
+def conv_block(inp):        
+    x = Convolution2D(32, 1, 1)(inp)
+    x = BatchNormalization(axis=1)(x)
+    x = Activation('relu')(x)
+     
+    shortcut = Convolution2D(32, 1, 1)(inp)
+    shortcut = BatchNormalization(axis=1)(shortcut)        
+
+    x = merge([x, shortcut], mode='sum')
+    x = Activation('relu')(x)
+    return x
+
+def resnet():
+    inputs = Input(batch_shape=(32,1,28,28))
+
+    x = Convolution2D(64, 3, 3)(inputs)
+    x = Activation('relu')(x)
+
+    x = conv_block(x)
+
+    x = Flatten()(x)
+    x = Dense(10)(x)
+    x = Activation('softmax')(x)
+
+    model = Model(input=inputs, output=x)
+    return model
+
+def main():
+    (X_train, Y_train), (X_test, Y_test) = mnist.load_data()
+
+    X_train = X_train.reshape(X_train.shape[0], 1, 28, 28)
+    X_test = X_test.reshape(X_test.shape[0], 1, 28, 28)
+
+    Y_train = np_utils.to_categorical(Y_train, 10)
+    Y_test = np_utils.to_categorical(Y_test, 10)
+
+    model = resnet()
+
+    model.compile(loss='mse', optimizer='sgd')
+    model.fit(X_train, Y_train, validation_data=(X_test, Y_test))
+
+if __name__ == "__main__":
+    main()
+When commenting out the line shortcut = BatchNormalization(axis=1)(shortcut), no error appears. Also, when setting the trainable parameter of the first 8 layers to False, the script shows the desired behavior. Here is the complete error message:
+TypeError: ('IfElse requires same types for true and false return values', GpuFromHost.0, Elemwise{second,no_inplace}.0, CudaNdarrayType(float32, 4D), TensorType(float32, 4D))
+Any suggestions on how to solve this issue?
+1

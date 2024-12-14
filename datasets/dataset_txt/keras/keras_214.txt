@@ -1,0 +1,143 @@
+dunfrey commented on 23 May 2019
+I'm training my network by 10 epochs, but never the validation accuracy not increase or decrease, is the same result whole time. Loss is changing, but the accuracy doesn't.
+The network is the PoseNet: https://github.com/alleboudy/DLinCV/blob/master/scripts/keras-posenet/scripts/posenet.py
+I just suppress the intermediates output, using the outputs of the last (XYZ and WPQR predictions).
+Using a GTX 1080 everything is working but using RTX 2070 is not working as expected.
+dataset: ~ 35k images
+epochs: 10 (or more, but nothing happens)
+batch size: 100
+optimizer: adam
+losses functions: MSE
+def create_posenet(weights_path=None):
+    ## POSENET
+    with tf.device('/device:GPU:0'):
+    inputs = Input((config.IMG_HEIGHT, config.IMG_WIDTH, config.IMG_CHANNELS))
+    init     = Conv2D(64,(7,7),padding='same',activation='relu',name='init/conv1')(inputs)
+    init     = MaxPooling2D(pool_size=(3,3),strides=(2,2),padding='valid',name='init/max1')(init)
+    init     = BatchNormalization(name='init/norm1')(init)    
+    init     = Conv2D(64, (1,1),padding='same',activation='relu',name='init/conv2_1')(init)
+    init     = Conv2D(192,(3,3),padding='same',activation='relu',name='init/conv2_3')(init)
+    init     = BatchNormalization(name='init/nomr2')(init)
+    init_out = MaxPooling2D(pool_size=(3,3),strides=(2,2),padding='valid',name='init/3x3')(init)
+
+    #inception 1
+    icp_1_1x1        = Conv2D(64, (1,1),padding='same',activation='relu',name='icp_1/1x1')(init_out)
+    icp_1_3x3_reduce = Conv2D(96, (1,1),padding='same',activation='relu',name='icp_1/3x3_reduce')(init_out)
+    icp_1_3x3        = Conv2D(128,(3,3),padding='same',activation='relu',name='icp_1/3x3')(icp_1_3x3_reduce)
+    icp_1_5x5_reduce = Conv2D(16, (1,1),padding='same',activation='relu',name='icp_1/5x5_reduce')(init_out)
+    icp_1_5x5        = Conv2D(32, (5,5),padding='same',activation='relu',name='icp_1/5x5')(icp_1_3x3_reduce)
+    icp_1_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_1/pool')(init_out)
+    icp_1_pool_proj  = Conv2D(32, (1,1),padding='same',activation='relu',name='icp_1/pool_proj')(icp_1_pool)
+    icp_1_output     = concatenate([icp_1_1x1,icp_1_3x3,icp_1_5x5,icp_1_pool_proj],name='icp_1/output')
+
+    #inception 2
+    icp_2_1x1        = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_2/1x1')(icp_1_output)
+    icp_2_3x3_reduce = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_2/3x3_reduce')(icp_1_output)
+    icp_2_3x3        = Conv2D(192,(3,3),padding='same',activation='relu',name='icp_2/3x3')(icp_2_3x3_reduce)
+    icp_2_5x5_reduce = Conv2D(32, (1,1),padding='same',activation='relu',name='icp_2/5x5_reduce')(icp_1_output)
+    icp_2_5x5        = Conv2D(96, (5,5),padding='same',activation='relu',name='icp_2/5x5')(icp_2_5x5_reduce)
+    icp_2_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_2/pool')(icp_1_output)
+    icp_2_pool_proj  = Conv2D(64, (1,1),padding='same',activation='relu',name='icp_2/pool_proj')(icp_2_pool)
+    icp_2_output     = concatenate([icp_2_1x1,icp_2_3x3,icp_2_5x5,icp_2_pool_proj],name='icp_2/output')
+
+    pool2_3x3_icp3   = MaxPooling2D(pool_size=(3,3),strides=(2,2),padding='valid',name='pool3/3x3_s2')(icp_2_output)
+
+    #inception 3
+    icp_3_1x1        = Conv2D(192,(1,1),padding='same',activation='relu',name='icp_3/1x1')(pool2_3x3_icp3)
+    icp_3_3x3_reduce = Conv2D(96, (1,1),padding='same',activation='relu',name='icp_3/3x3_reduce')(pool2_3x3_icp3)
+    icp_3_3x3        = Conv2D(208,(3,3),padding='same',activation='relu',name='icp_3/3x3')(icp_3_3x3_reduce)
+    icp_3_5x5_reduce = Conv2D(16, (1,1),padding='same',activation='relu',name='icp_3/5x5_reduce')(pool2_3x3_icp3)
+    icp_3_5x5        = Conv2D(48, (5,5),padding='same',activation='relu',name='icp_3/5x5')(icp_3_5x5_reduce)
+    icp_3_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_3/pool')(pool2_3x3_icp3)
+    icp_3_pool_proj  = Conv2D(64, (1,1),padding='same',activation='relu',name='icp_3/pool_proj')(icp_3_pool)
+    icp_3_output     = concatenate([icp_3_1x1,icp_3_3x3,icp_3_5x5,icp_3_pool_proj],name='icp_3/output')
+
+    #inception 4
+    icp_4_1x1        = Conv2D(160,(1,1),padding='same',activation='relu',name='icp_4/1x1')(icp_3_output)
+    icp_4_3x3_reduce = Conv2D(112,(1,1),padding='same',activation='relu',name='icp_4/3x3_reduce')(icp_3_output)
+    icp_4_3x3        = Conv2D(224,(3,3),padding='same',activation='relu',name='icp_4/3x3')(icp_4_3x3_reduce)
+    icp_4_5x5_reduce = Conv2D(24, (1,1),padding='same',activation='relu',name='icp_4/5x5_reduce')(icp_3_output)
+    icp_4_5x5        = Conv2D(64, (5,5),padding='same',activation='relu',name='icp_4/5x5')(icp_4_5x5_reduce)
+    icp_4_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_4/pool')(icp_3_output)
+    icp_4_pool_proj  = Conv2D(64, (1,1),padding='same',activation='relu',name='icp_4/pool_proj')(icp_4_pool)
+    icp_4_output     = concatenate([icp_4_1x1,icp_4_3x3,icp_4_5x5,icp_4_pool_proj],name='icp_4_output')
+
+    #inception 5
+    icp_5_1x1        = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_5/1x1')(icp_4_output)
+    icp_5_3x3_reduce = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_5/3x3_reduce')(icp_4_output)
+    icp_5_3x3        = Conv2D(256,(3,3),padding='same',activation='relu',name='icp_5/3x3')(icp_5_3x3_reduce)
+    icp_5_5x5_reduce = Conv2D(24, (1,1),padding='same',activation='relu',name='icp_5/5x5_reduce')(icp_4_output)
+    icp_5_5x5        = Conv2D(64, (5,5),padding='same',activation='relu',name='icp_5/5x5')(icp_5_5x5_reduce)
+    icp_5_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_5/pool')(icp_4_output)
+    icp_5_pool_proj  = Conv2D(64, (1,1),padding='same',activation='relu',name='icp_5/pool_proj')(icp_5_pool)
+    icp_5_output     = concatenate([icp_5_1x1,icp_5_3x3,icp_5_5x5,icp_5_pool_proj],name='icp_5/output')
+
+    #inception 6
+    icp_6_1x1        = Conv2D(112,(1,1),padding='same',activation='relu',name='icp_6/1x1')(icp_5_output)
+    icp_6_3x3_reduce = Conv2D(144,(1,1),padding='same',activation='relu',name='icp_6/3x3_reduce')(icp_5_output)
+    icp_6_3x3        = Conv2D(288,(3,3),padding='same',activation='relu',name='icp_6/3x3')(icp_6_3x3_reduce)
+    icp_6_5x5_reduce = Conv2D(32, (1,1),padding='same',activation='relu',name='icp_6/5x5_reduce')(icp_5_output)
+    icp_6_5x5        = Conv2D(64, (5,5),padding='same',activation='relu',name='icp_6/5x5')(icp_6_5x5_reduce)
+    icp_6_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_6/pool')(icp_5_output)
+    icp_6_pool_proj  = Conv2D(64, (1,1),padding='same',activation='relu',name='icp_6/pool_proj')(icp_6_pool)
+    icp_6_output     = concatenate([icp_6_1x1,icp_6_3x3,icp_6_5x5,icp_6_pool_proj],name='icp_6/output')
+
+    #inception 7
+    icp_7_1x1        = Conv2D(256,(1,1),padding='same',activation='relu',name='icp_7/1x1')(icp_6_output)
+    icp_7_3x3_reduce = Conv2D(160,(1,1),padding='same',activation='relu',name='icp_7/3x3_reduce')(icp_6_output)
+    icp_7_3x3        = Conv2D(320,(3,3),padding='same',activation='relu',name='icp_7/3x3')(icp_7_3x3_reduce)
+    icp_7_5x5_reduce = Conv2D(32, (1,1),padding='same',activation='relu',name='icp_7/5x5_reduce')(icp_6_output)
+    icp_7_5x5        = Conv2D(128,(5,5),padding='same',activation='relu',name='icp_7/5x5')(icp_7_5x5_reduce)
+    icp_7_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_7/pool')(icp_6_output)
+    icp_7_pool_proj  = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_7/pool_proj')(icp_7_pool)
+    icp_7_output     = concatenate([icp_7_1x1,icp_7_3x3,icp_7_5x5,icp_7_pool_proj],name='icp_7/output')
+
+    pool3_3x3_icp8   = MaxPooling2D(pool_size=(3,3),strides=(2,2),padding='valid',name='pool4/3x3_s2')(icp_7_output)
+
+    #inception 8
+    icp_8_1x1        = Conv2D(256,(1,1),padding='same',activation='relu',name='icp_8/1x1')(pool3_3x3_icp8)
+    icp_8_3x3_reduce = Conv2D(160,(1,1),padding='same',activation='relu',name='icp_8/3x3_reduce')(pool3_3x3_icp8)
+    icp_8_3x3        = Conv2D(320,(3,3),padding='same',activation='relu',name='icp_8/3x3')(icp_8_3x3_reduce)
+    icp_8_5x5_reduce = Conv2D(32, (1,1),padding='same',activation='relu',name='icp_8/5x5_reduce')(pool3_3x3_icp8)
+    icp_8_5x5        = Conv2D(128,(5,5),padding='same',activation='relu',name='icp_8/5x5')(icp_8_5x5_reduce)
+    icp_8_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_8/pool')(pool3_3x3_icp8)
+    icp_8_pool_proj  = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_8/pool_proj')(icp_8_pool)
+    icp_8_output     = concatenate([icp_8_1x1,icp_8_3x3,icp_8_5x5,icp_8_pool_proj],name='icp_8/output')
+
+    #inception 9
+    icp_9_1x1        = Conv2D(384,(1,1),padding='same',activation='relu',name='icp_9/1x1')(icp_8_output)
+    icp_9_3x3_reduce = Conv2D(192,(1,1),padding='same',activation='relu',name='icp_9/3x3_reduce')(icp_8_output)
+    icp_9_3x3        = Conv2D(384,(3,3),padding='same',activation='relu',name='icp_9/3x3')(icp_9_3x3_reduce)
+    icp_9_5x5_reduce = Conv2D(48, (1,1),padding='same',activation='relu',name='icp_9/5x5_reduce')(icp_8_output)
+    icp_9_5x5        = Conv2D(128,(5,5),padding='same',activation='relu',name='icp_9/5x5')(icp_9_5x5_reduce)
+    icp_9_pool       = MaxPooling2D(pool_size=(3,3),strides=(1,1),padding='same',name='icp_9/pool')(icp_8_output)
+    icp_9_pool_proj  = Conv2D(128,(1,1),padding='same',activation='relu',name='icp_9/pool_proj')(icp_9_pool)
+    icp_9_output     = concatenate([icp_9_1x1,icp_9_3x3,icp_9_5x5,icp_9_pool_proj],name='icp_9/output')
+
+    # --- classification 3 --- #
+    cls_pose      = AveragePooling2D(pool_size=(2,2),strides=(1,1),name='pool5/7x7_s2')(icp_9_output)
+    cls_pose      = Flatten()(cls_pose)
+    cls_pose      = Dropout(0.5)(cls_pose)
+
+    cls_pose_xyz  = Dense(3,name='cls3_fc_pose_xyz')(cls_pose)
+    cls_pose_wpqr = Dense(4,name='cls3_fc_pose_wpqr')(cls_pose)
+
+    model_posenet = Model(inputs=[inputs], outputs=[cls_pose_xyz, cls_pose_wpqr])
+
+    model_posenet.compile(optimizer = 'adam', 
+                          loss = ['mse', 
+                                  'mse'],
+                          metrics = ['accuracy'])
+
+return model_posenet
+The output for XYZ PREDICTIONS not changing:
+Epoch 1/10 20165/20165 [==============================] - 61s 3ms/step - loss: 1.0996 - cls3_fc_pose_xyz_loss: 0.3909 - cls3_fc_pose_wpqr_loss: 0.7087 - cls3_fc_pose_xyz_acc: 0.9814 - cls3_fc_pose_wpqr_acc: 0.8663 - val_loss: 1.5001 - val_cls3_fc_pose_xyz_loss: 0.5134 - val_cls3_fc_pose_wpqr_loss: 0.9867 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.6472
+Epoch 2/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.2953 - cls3_fc_pose_xyz_loss: 0.1026 - cls3_fc_pose_wpqr_loss: 0.1927 - cls3_fc_pose_xyz_acc: 0.9819 - cls3_fc_pose_wpqr_acc: 0.8858 - val_loss: 1.2819 - val_cls3_fc_pose_xyz_loss: 0.4634 - val_cls3_fc_pose_wpqr_loss: 0.8185 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.6843
+Epoch 3/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1802 - cls3_fc_pose_xyz_loss: 0.0627 - cls3_fc_pose_wpqr_loss: 0.1175 - cls3_fc_pose_xyz_acc: 0.9838 - cls3_fc_pose_wpqr_acc: 0.9086 - val_loss: 1.2151 - val_cls3_fc_pose_xyz_loss: 0.3737 - val_cls3_fc_pose_wpqr_loss: 0.8414 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.7086
+Epoch 4/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1470 - cls3_fc_pose_xyz_loss: 0.0543 - cls3_fc_pose_wpqr_loss: 0.0927 - cls3_fc_pose_xyz_acc: 0.9854 - cls3_fc_pose_wpqr_acc: 0.9183 - val_loss: 1.2588 - val_cls3_fc_pose_xyz_loss: 0.3980 - val_cls3_fc_pose_wpqr_loss: 0.8608 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.6973
+Epoch 5/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1268 - cls3_fc_pose_xyz_loss: 0.0465 - cls3_fc_pose_wpqr_loss: 0.0804 - cls3_fc_pose_xyz_acc: 0.9875 - cls3_fc_pose_wpqr_acc: 0.9288 - val_loss: 1.2391 - val_cls3_fc_pose_xyz_loss: 0.4460 - val_cls3_fc_pose_wpqr_loss: 0.7931 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.6983
+Epoch 6/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1196 - cls3_fc_pose_xyz_loss: 0.0437 - cls3_fc_pose_wpqr_loss: 0.0759 - cls3_fc_pose_xyz_acc: 0.9886 - cls3_fc_pose_wpqr_acc: 0.9309 - val_loss: 1.1939 - val_cls3_fc_pose_xyz_loss: 0.3995 - val_cls3_fc_pose_wpqr_loss: 0.7943 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.7371
+Epoch 7/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1133 - cls3_fc_pose_xyz_loss: 0.0424 - cls3_fc_pose_wpqr_loss: 0.0709 - cls3_fc_pose_xyz_acc: 0.9901 - cls3_fc_pose_wpqr_acc: 0.9333 - val_loss: 1.1904 - val_cls3_fc_pose_xyz_loss: 0.4390 - val_cls3_fc_pose_wpqr_loss: 0.7514 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.7317
+Epoch 8/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1030 - cls3_fc_pose_xyz_loss: 0.0394 - cls3_fc_pose_wpqr_loss: 0.0636 - cls3_fc_pose_xyz_acc: 0.9910 - cls3_fc_pose_wpqr_acc: 0.9382 - val_loss: 1.2242 - val_cls3_fc_pose_xyz_loss: 0.4447 - val_cls3_fc_pose_wpqr_loss: 0.7796 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.7385
+Epoch 9/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.1056 - cls3_fc_pose_xyz_loss: 0.0394 - cls3_fc_pose_wpqr_loss: 0.0661 - cls3_fc_pose_xyz_acc: 0.9912 - cls3_fc_pose_wpqr_acc: 0.9395 - val_loss: 1.3230 - val_cls3_fc_pose_xyz_loss: 0.4622 - val_cls3_fc_pose_wpqr_loss: 0.8609 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.7091
+Epoch 10/10 20165/20165 [==============================] - 54s 3ms/step - loss: 0.0995 - cls3_fc_pose_xyz_loss: 0.0369 - cls3_fc_pose_wpqr_loss: 0.0626 - cls3_fc_pose_xyz_acc: 0.9912 - cls3_fc_pose_wpqr_acc: 0.9421 - val_loss: 1.2388 - val_cls3_fc_pose_xyz_loss: 0.4127 - val_cls3_fc_pose_wpqr_loss: 0.8261 - val_cls3_fc_pose_xyz_acc: 0.8663 - val_cls3_fc_pose_wpqr_acc: 0.6991

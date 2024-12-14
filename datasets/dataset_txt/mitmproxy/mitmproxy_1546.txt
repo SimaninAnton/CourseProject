@@ -1,0 +1,15 @@
+lexelby commented on 9 Jan 2015
+How to reproduce:
+$ mitmdump -P http://google.com -p 10001
+Then run top and see that it's using as much as 20% of a core.
+strace yields a fast scroll of short sleeps:
+select(0, NULL, NULL, NULL, {0, 2259})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 1000})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 2000})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 4000})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 2301})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 1000})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 2000})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 4000})  = 0 (Timeout)
+select(0, NULL, NULL, NULL, {0, 2401})  = 0 (Timeout)
+Master.tick (in controller.py) calls Queue.get with a timeout of 0.01. Queue in turn waits on a threading.Condition with that same timeout. Condition waits in increasingly large increments starting at 500usec in an attempt to avoid making the program unresponsive (to what? Probably KeyboardInterrupt?). It'll wait 500usec, 1000, 2000, 4000, and then the remainder to get up to 10000usec. End result: select() is called as often as 5000 times per second. A far cry from the 100Hz that one might expect from a 0.01 timeout :)

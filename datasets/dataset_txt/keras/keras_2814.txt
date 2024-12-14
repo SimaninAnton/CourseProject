@@ -1,0 +1,26 @@
+agibsonccc commented on 29 Mar 2017 •
+edited
+This is a very preliminary proposal for a deeplearning4j backend to keras.
+Right now we support model import:
+https://deeplearning4j.org/model-import-keras
+The idea is to add a runner for deeplearning4j based on:
+https://pypi.python.org/pypi/jnius
+Deeplearning4j has a tensor library called nd4j we use for all of our matrix operations. This is essentially a port of numpy's concepts to the JVM. From surveying the source code for the various backends it seems like it will be pretty straight forward to "fill in the blanks" so to speak for the various method calls needed.
+Deeplearning4j also has support for cudnn and co like the other frameworks. The concepts should map fairly nicely with some work.
+The low level details are as follows:
+jnius is a shiv layer between cython and JNI. Nd4j uses raw pointers and also our own garbage collection/memory management for cpus and gpus. From the looks of it the bulk of keras's input comes from numpy operations. A big point of hesitation we had in adding a formal backend was the standard way we've seen of doing python and java interop is via py4j which is network/gateway based. For deep learning this isn't going to work well. The only solution that made sense
+For nd4j, we will be adding methods to accept numpy pointers directly. This will allow us to implement the keras variable operations very similar to tensorflow and theano. This means being able to use the same buffers directly. Nd4j has similar factory methods for creating arrays to the python libraries. Being able to "parse" the pointers was all we really needed to add.
+Intended workflow: The backend will download (and allow the specification of) a jar file with all of the needed dependencies and store it locally. From there, jnius in the init.py will load the jar file and all the needed dependencies in to the python interpreter. From there training should work as normal.
+Deeplearning4j also has a UI which we can also allow access to.
+A few benefits we see coming from this:
+Distributed training on spark that runs via the JVM rather than python based RPC.
+Easy to use multi gpu parameter averaging (data parallelism) via access to our parallelwrapper library. See http://deeplearning4j.org/spark for the core idea behind the concepts.
+Better integration in to big data environments and Java/scala based deployments from keras models.
+Down the road from this: Access to our pre processing/ETL library datavec from python.
+Initial goals:
+1.Seamless integration via pointer passing rather than networked RPC that typically is baseline for interop between python and JVM coming from the spark crowd.
+2. Understanding gaps and major use cases keras developers have.
+3. Figuring out the delta in features we need to be completely compliant with the keras spec.
+4. Thanks to @EderSantana for news on auto diff. We would add: https://github.com/uniker9/JAutoDiff for nd4j
+11
+2

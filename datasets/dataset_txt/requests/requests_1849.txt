@@ -1,0 +1,36 @@
+patricklaw commented on Jan 10, 2014
+The HTTP 1.1 RFC specifies:
+"When a Content-Length is given in a message where a message-body is allowed, its field value MUST exactly match the number of OCTETs in the message-body. HTTP/1.1 user agents MUST notify the user when an invalid length is received and detected."
+See: http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
+Here is a simple repro. It seems like the call to requests.get should raise an exception rather than silently succeed. Note that python 2.x urllib2 has identical behavior to requests here, but I believe that constitutes a bug in urllib2. curl, on the other hand, outputs the message body but has a return code of 18 ("Partial file. Only a part of the file was transferred."). In python 3.3 (and presumably earlier releases of python 3.x) urllib.request raises http.client.IncompleteRead: IncompleteRead(5 bytes read, 15 more expected), which is in line with the spec.
+import SocketServer as socketserver
+import threading
+import requests
+import time
+
+class MyTCPHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        self.data = self.request.recv(1024)
+        self.request.sendall('HTTP/1.1 200 OK\r\n'
+                             'Server: truncator/0.0\r\n'
+                             'Content-Length: 20\r\n'
+                             'Connection: close\r\n\r\n'
+                             '12345')
+
+server = None
+def background_server():
+    global server
+    HOST, PORT = "localhost", 9999
+    server = socketserver.TCPServer((HOST, PORT), MyTCPHandler)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    t = threading.Thread(target=background_server)
+    t.daemon = True
+    t.start()
+    time.sleep(1)
+    r = requests.get('http://localhost:9999')
+    print(r.content)
+    server.shutdown()
+👍 2

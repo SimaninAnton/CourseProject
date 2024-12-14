@@ -1,0 +1,25 @@
+Contributor
+Erotemic commented on Dec 6, 2018
+Looking at the docs I see that roc_auc_score supports input where y_true is a binary multilabel indicator vector (of size [nsamples, nclasses]), and y_score is a [nsamples, nclasses] matrix of probabilities for each class.
+This is a nice feature, but I'm currently held back from using it because sample_weight can only specify per-item importance and not per-class importance. To see why this is important consider the hierarchical classification example with 7 classes (some of which are mutually exclusive and some of which are not).
+background
+object
+dog (supercategory=object)
+cat (supercategory=object)
+maine-coon (supercategory=cat)
+beagle (supercategory=dog)
+snoopy (supercategory=beagle)
+Say I have three examples of dog, cat, and beagle. The multi-label would be a positive value for the current class and all of its hierarchical ancestors (i.e. a beagle is also labeled as a dog and an object). For the above example the encoding is:
+[
+[0, 1, 1, 0, 0, 0, 0],
+[0, 1, 0, 1, 0, 0, 0],
+[0, 1, 1, 0, 0, 1, 0],
+]
+Perhaps a classifier predicts the following probability for the first dog example:
+[
+[0.0, 1.0, 0.9, 0.1, 0.0, 0.8, 0.2],
+]
+The probabilities look good. We score perfect for object, and very high for the dog category. However, there is a problem. We also have a high score for the beagle category, but our binary indicator vector says that we should predict false for that category. The issue is because "dog" is a coarse-grained class it actually might be an instance of a beagle, and we shouldn't penalize the classifier past the finest grained category we have.
+It would be nice if there was a way to encode the fact that we don't (or how much we) care about a specific label for each instance. For instance the function could either be extended to take sample_weights=[nsamples,nclasses] where an entry is 1 if we care about a particular instance being correctly assigned (or not) to a particular class, and 0 if we don't, or some intermediate value in between.
+Alternatively the multilabel encoding could be extended from binary to a trinary ground truth encoding where -1 means it should not be assigned that label, +1 means it should be assigned that label, and 0 means we don't care if it is assigned that label or not.
+I'm not 100% sure if this is a valid thing to do, but currently, as a workaround I'm simply setting all of the predicted probabilities for classes I don't care about to zero before using this function. I think this probably artificially inflates the score because the scoring code thinks that I care about how well I label those classes, and by definition I'm labeling them perfectly. I think a sample_weight solution would likely be the best approach.

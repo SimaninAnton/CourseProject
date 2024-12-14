@@ -1,0 +1,56 @@
+lukesneeringer commented on 28 Jun 2013
+Say I have a model:
+class MyModel(models.Model):
+    """Model representing my awesome stuff."""
+    label = models.CharField(max_length=50, editable=False)
+    private = models.BooleanField(default=False, blank=True)
+    created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True)
+Note that label there isn't editable, but private is.
+Background
+Also, a standard serializer and viewset:
+class MyModelSerializer(ModelSerializer):
+    class Meta:
+        exclude = ('created', 'modified')
+        model = MyModel
+        read_only_fields = ('label',)
+
+class MyModelViewSet(viewsets.ModelViewSet):
+    model = MyModel
+    serializer_class = MyModelSerializer
+Most things work as expected. If I make a record with a label foo and privacy off, I can issue a PUT request like this:
+PUT /mymodel/1/ HTTP/1.1
+Accept: application/json
+Content-Type: application/json
+
+{ "private": true }
+And get a response such as:
+HTTP/1.0 200 OK
+Allow: GET, PUT, HEAD, OPTIONS, DELETE, PATCH
+Vary: Accept, Cookie
+Content-Type: application/json; charset=utf-8
+X-Frame-Options: SAMEORIGIN
+Server: WSGIServer/0.2 CPython/3.3.2
+Date: Thu, 27 Jun 2013 23:30:18 GMT
+
+{"id": "1", "label": "foo", "private": true }
+That much is good.
+The Problem
+If I try to write to the read-only field:
+PUT /mymodel/1/ HTTP/1.1
+Accept: application/json
+Content-Type: application/json
+
+{ "label": "bar" }
+It doesn't overwrite the data -- that part is fine and good. However, I think that this behavior should result in an error. What you actually just get is a 200 response with the data unchanged:
+HTTP/1.0 200 OK
+Allow: GET, PUT, HEAD, OPTIONS, DELETE, PATCH
+Vary: Accept, Cookie
+Content-Type: application/json; charset=utf-8
+X-Frame-Options: SAMEORIGIN
+Server: WSGIServer/0.2 CPython/3.3.2
+Date: Thu, 27 Jun 2013 23:30:18 GMT
+
+{"id": "1", "label": "foo", "private": true }
+I believe this is wrong -- it amounts to a silent failure. Furthermore, the same behavior happens if you submit a key that the serializer doesn't actually understand -- it just silently ignores it. What if someone mistypes a key, and then wonders "why isn't it working?"
+There should be an option to make these failures loud: send down a 400 with an error message saying either that the field is read only or that it's unrecognized. In order to preserve back-compat, perhaps this should be a new setting.

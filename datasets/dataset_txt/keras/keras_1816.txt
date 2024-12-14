@@ -1,0 +1,42 @@
+wgxli commented on 3 Aug 2017 •
+edited
+Hello,
+I'm no expert on the internals of Keras, but I read over the implementation of Keras' SGD optimizer and believe there is an error in the way momentum is handled. The line of code moments = [K.zeros(shape) for shape in shapes] is run every time SGD.get_updates is called. Even though the new velocity is calculated, and then assigned by K.update(m, v), it appears that the newly calculated velocity is simply assigned to the newly initialized zero tensors created by the first line I mentioned. Each new call of get_updates creates empty moment tensors, overwrites SGD.weights, and updates the blank tensors; the momentum for each iteration is never used by the subsequent iteration, and is instead overwritten by the next call. This completely negates the effectiveness of momentum in the first place. This may explain observations such as the one made here.
+I believe the intended behavior is for moments = [K.zeros(shape) for shape in shapes] and self.weights = [self.iterations] + moments to be run once upon optimizer initialization, and for each get_update call to load the moment tensors from the previous iteration through moments = self.weights[1:].
+Below is a reimplementation of the get_updates method which fixes the error.
+def get_updates(self, params, constraints, loss):
+    grads = self.get_gradients(loss, params)
+    self.updates = []
+
+    lr = self.lr
+    if self.initial_decay > 0:
+        lr *= (1. / (1. + self.decay * self.iterations))
+        self.updates.append(K.update_add(self.iterations, 1))
+
+    # momentum
+    if not self.weights:
+        shapes = [K.get_variable_shape(p) for p in params]
+        moments = [K.zeros(shape) for shape in shapes]
+        self.weights = [self.iterations] + moments
+    else:
+        moments = self.weights[1:]
+        
+    for p, g, m in zip(params, grads, moments):
+        v = self.momentum * m - lr * g  # velocity
+        self.updates.append(K.update(m, v))
+
+        if self.nesterov:
+            new_p = p + self.momentum * v - lr * g
+        else:
+        new_p = p + v
+
+        # apply constraints
+        if p in constraints:
+            c = constraints[p]
+            new_p = c(new_p)
+
+        self.updates.append(K.update(p, new_p))
+    return self.updates
+Again, I may be misunderstanding the way Keras works internally. Feel free to correct any errors I have made.
+Sincerely,
+Samuel Li

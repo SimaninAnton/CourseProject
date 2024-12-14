@@ -1,0 +1,66 @@
+yananchen1989 commented on 28 Jul 2018
+I constructed a model which takes three english titles as input. The model takes the minimization of the triplet loss as the optimization direction. The output is the distance between pos and neg titles and the larger the distance is, the smaller log-loss is.
+But when I use the model to predict, I just want to send the model with the anchor title and the pos title, waiting for the score that model calculate on them.
+So how can I only get the score_pos as model's inference.
+By the way , when I send the inputs, the model should neglect the neg title.
+Any hints ?
+def get_model():
+    input_list = []
+    sequence_input_q = Input(shape=(maxlen, ), name = 'query')
+    sequence_input_tp = Input(shape=(maxlen, ), name = 'title_pos')
+    sequence_input_tn = Input(shape=(maxlen, ), name = 'title_neg')
+    input_list.append(sequence_input_q)
+    input_list.append(sequence_input_tp)
+    input_list.append(sequence_input_tn)
+    # initilize
+    embedding = Embedding(embed_ng.shape[0], 300, weights=[embed_ng], trainable=True)
+    # embedding
+    query_embed = embedding(sequence_input_q) # (?, 17, 300)
+    title_pos_embed = embedding(sequence_input_tp) # (?, 17, 300)
+    title_neg_embed = embedding(sequence_input_tn) # (?, 17, 300)
+    # cross
+    cross_pos = Dot(axes=[2, 2], normalize=False)([query_embed, title_pos_embed])
+    cross_pos = Reshape((maxlen, maxlen, 1))(cross_pos)
+
+    cross_neg = Dot(axes=[2, 2], normalize=False)([query_embed, title_neg_embed])
+    cross_neg = Reshape((maxlen, maxlen, 1))(cross_neg)    
+    # con2d
+    conv2d = Conv2D(filters=64, kernel_size=[3,3], padding='same', activation='relu')
+
+    conv1_pos = conv2d(cross_pos)
+    conv1_neg = conv2d(cross_neg)
+
+    poll2d = MaxPooling2D(pool_size=(2, 2),  padding='valid', data_format=None)
+
+    pool1_pos = poll2d(conv1_pos)# (?, 8, 8, 128)
+    pool1_neg = poll2d(conv1_neg)
+
+    flat_pos = Flatten()(pool1_pos)
+    flat_neg = Flatten()(pool1_neg)
+
+    mlp0 = Dense(1024,activation='relu')
+    pos_mlp0 = mlp0(flat_pos)
+    neg_mlp0 = mlp0(flat_neg)
+
+    mlp1 = Dense(512,activation='relu')
+    pos_mlp1 = mlp1(pos_mlp0)
+    neg_mlp1 = mlp1(neg_mlp0)    
+
+    mlp2 = Dense(1,activation='relu')
+    score_pos = mlp2(pos_mlp1)
+    score_neg = mlp2(neg_mlp1)    
+
+    sim_diff = subtract([score_pos, score_neg])
+    out = Dense(1, activation='sigmoid')(sim_diff)
+    model = Model(inputs = input_list, outputs = out )
+    return model 
+    
+model = get_model()
+
+model.compile(loss='binary_crossentropy',optimizer=Adam())
+
+batch_size = 500
+#label = tf.constant(1, tf.int32, [batch_size, ], name="label")
+label = np.ones(len(df_train['query']))
+model.fit(df_train,label, batch_size=batch_size, \
+    validation_data=(df_test, np.ones(len(df_test['query']))), epochs=10, verbose=1)

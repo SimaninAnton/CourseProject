@@ -1,0 +1,42 @@
+Savier commented on 7 Oct 2019 •
+edited
+See https://bugs.python.org/issue37373
+I failed to find failing tests in tornado, but loop's add_reader() now "not implemented" by default on windows and asyncio platform uses it.
+Here is the crash form Jupyter notebook:
+C:\Python38\Scripts>jupyter-notebook.exe
+Traceback (most recent call last):
+  File "c:\python38\lib\runpy.py", line 192, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "c:\python38\lib\runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "C:\Python38\Scripts\jupyter-notebook.exe\__main__.py", line 9, in <module>
+  File "c:\python38\lib\site-packages\jupyter_core\application.py", line 267, in launch_instance
+    return super(JupyterApp, cls).launch_instance(argv=argv, **kwargs)
+  File "c:\python38\lib\site-packages\traitlets\config\application.py", line 663, in launch_instance
+    app.initialize(argv)
+  File "<c:\python38\lib\site-packages\decorator.py:decorator-gen-7>", line 2, in initialize
+  File "c:\python38\lib\site-packages\traitlets\config\application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "c:\python38\lib\site-packages\notebook\notebookapp.py", line 1679, in initialize
+    self.init_webapp()
+  File "c:\python38\lib\site-packages\notebook\notebookapp.py", line 1442, in init_webapp
+    self.http_server.listen(port, self.ip)
+  File "c:\python38\lib\site-packages\tornado\tcpserver.py", line 152, in listen
+    self.add_sockets(sockets)
+  File "c:\python38\lib\site-packages\tornado\tcpserver.py", line 165, in add_sockets
+    self._handlers[sock.fileno()] = add_accept_handler(
+  File "c:\python38\lib\site-packages\tornado\netutil.py", line 279, in add_accept_handler
+    io_loop.add_handler(sock, accept_handler, IOLoop.READ)
+  File "c:\python38\lib\site-packages\tornado\platform\asyncio.py", line 99, in add_handler
+    self.asyncio_loop.add_reader(fd, self._handle_events, fd, IOLoop.READ)
+  File "c:\python38\lib\asyncio\events.py", line 501, in add_reader
+    raise NotImplementedError
+NotImplementedError
+I think patch is trivial:
+tornado/platform/asyncio.py :
+import sys
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+But it's too hard to me is to write tests.
+There is a note on the top of tornado/platform/asyncio.py describing situation, but it seems it pretends application must set such policy. I don't know which way is correct, my patch solves the problem for me, I think devs must communicate in all of three places - here, jupyter issues, python bugs to make a decision.

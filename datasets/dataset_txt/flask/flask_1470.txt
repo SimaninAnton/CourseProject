@@ -1,0 +1,40 @@
+mizhi commented on 17 Oct 2012
+I've written a flask app that uses a blueprint to implement an API. When I create the server, I use register_blueprint to make the api available. I added a url_prefix parameter as a parameter to the call to register_blueprint. Thus, in theory, I could add multiple versions of this api for different instances.
+As part of the blueprint, there is a particular method that needs to send a redirect to the requesting browser. This redirect is to another part of the blueprint. The problem is that url_prefix does not seem to be available within the request or current_app objects. At least, not in anyway that I've been able to see.
+Here's some code that illustrates the problem:
+# server.py
+blueprint = flask.Blueprint("mybp", __name__)
+
+@blueprint.before_request
+def before_request():
+    if not flask.request.url.endswith("/auth/login/"):
+        return flask.redirect( "/auth/login/")
+And here's the part where the app server is created:
+app = flask.Flask("myapp")
+app.register_blueprint(server.blueprint, url_prefix="/instance1")
+app.register_blueprint(server.blueprint, url_prefix="/instance2")
+The correct behaviors would be to go to "/instance1/auth/login" or "/instance2/auth/login." The problem is that the redirect code doesn't have a way (that I can see) of getting the url_prefix that was used to register the blueprint.
+My initial thought was to see if I could get a hold of the Blueprint object that was registered on the app and maybe it would have the url_prefix that I could prepend on the redirect line. This would look something like:
+@blueprint.before_request
+def before_request():
+    if not flask.request.url.endswith("/auth/login/"):
+        url_prefix = flask.current_app.blueprints[flask.request.blueprint].url_prefix
+        return flask.redirect(url_prefix + "/auth/login/")
+The problem is that the way blueprint is stored in Flask.register_blueprint (https://github.com/mitsuhiko/flask/blob/master/flask/app.py#L867):
+self.blueprints[blueprint.name] = blueprint
+means that each separate registration of blueprint shares the same blueprint object and url_prefix may not be valid between registrations. E.g. it's not enough to simply set url_prefix on the blueprint.
+My solution to this was to create a factory method:
+def make_blueprint(name, url_prefix):
+    blueprint = flask.Blueprint(name, __name__, url_prefix=url_prefix)
+
+    #
+    # Blueprint @route definitions follow
+    #
+
+    return blueprint
+and in the server creation code:
+app = flask.Flask("myapp")
+app.register_blueprint(server.make_blueprint("instance1", "/instance1"))
+app.register_blueprint(server.make_blueprint("instance2", "/instance2"))
+This works, and I have access to url_prefix in the instances. It wasn't critical for my project, but it was a surprising property of Flask.
+It seems awkward, and a violation of the principle-of-least surprise. Why wouldn't the blueprint methods have access to the url_prefix (or any other options passed in during blueprint registration)? Are there any more elegant solutions than the one above?

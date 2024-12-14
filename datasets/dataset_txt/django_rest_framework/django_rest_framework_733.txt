@@ -1,0 +1,120 @@
+caozhangni commented on 3 Jul 2017
+Hi, I have two models:
+class PrdLine(models.Model):
+    name = models.CharField(max_length=256, verbose_name='name', unique=True)
+    comment = models.CharField(max_length=256, null=True, blank=True, verbose_name='comment')
+
+    class Meta:
+        verbose_name = 'prdline'
+        verbose_name_plural = verbose_name
+
+
+class Project(models.Model):
+    name = models.CharField(max_length=256, verbose_name='name')
+    prdline = models.ForeignKey(PrdLine, on_delete=models.CASCADE, verbose_name='prdline')
+    comment = models.CharField(max_length=256, null=True, blank=True, verbose_name='comment')
+
+    class Meta:
+        unique_together = (('name', 'prdline'),)
+        verbose_name = 'project'
+        verbose_name_plural = verbose_name
+And I implement a custom relational field "PrdLineField":
+class PrdLineSerializer(ModelSerializer):
+
+    links = serializers.SerializerMethodField()
+    # id = serializers.IntegerField(required=False)
+
+    class Meta:
+        model = PrdLine
+        fields = ('id', 'name', 'comment', 'links')
+
+    def get_links(self, obj):
+        request = self.context['request']
+        return {
+            'self': reverse('prdline-detail',
+                            kwargs={'pk': obj.pk}, request=request)
+        }
+
+
+class PrdLineField(serializers.RelatedField):
+    def to_representation(self, value):
+        return {'id': value.id, 'name': value.name}
+
+    def to_internal_value(self, data):
+        return data
+
+    def get_queryset(self):
+        queryset = self.queryset
+        if isinstance(queryset, (QuerySet, Manager)):
+            queryset = queryset.all()
+        print(queryset)
+        return queryset
+
+
+class ProjectSerializer(ModelSerializer):
+
+    links = serializers.SerializerMethodField()
+    prdline = PrdLineField(label='prdline', )
+
+    class Meta:
+        model = Project
+        fields = ('id', 'name', 'prdline', 'comment', 'links')
+
+    def get_links(self, obj):
+        request = self.context['request']
+        return {
+            'self': reverse('project-detail',
+                            kwargs={'pk': obj.pk}, request=request)
+        }
+
+    def create(self, validated_data):
+        prdline = validated_data.pop('prdline', None)
+        project = Project(**validated_data)
+        project.prdline_id = prdline
+        project.save()
+        return project
+
+    def update(self, instance, validated_data):
+        prdline_id = validated_data.pop('prdline', None)['id']
+        setattr(instance, 'prdline_id', prdline_id)
+        for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+        instance.save()
+        return instance
+If i access list of projects, the effect of field 'prdline' is ok:
+[{
+        "id": 10,
+        "name": "eeeee",
+        "prdline": {
+            "name": "xxxxxxx",
+            "id": 1
+        },
+        "comment": "",
+        "links": {
+            "self": "http://192.168.154.133:9090/api/projects/10"
+        }
+    }]
+I can create a project with the following json：
+{
+    "name": "xxxxxx",
+    "prdline": 2,
+    "comment": "dddddd"
+}
+But I can not update the project through the above json,you must use:
+{
+    "id": 10,
+    "name": "eeeee",
+    "prdline": {
+        "name": "xxxxxxxx",
+        "id": 6
+    },
+    "comment": ""
+}
+Can I use the following json to update a project?
+{
+        "id": 10,
+        "name": "eeeee",
+        "prdline": 6
+        "comment": ""
+}
+Thank you for your help!

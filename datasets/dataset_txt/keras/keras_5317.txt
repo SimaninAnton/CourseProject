@@ -1,0 +1,15 @@
+Contributor
+udibr commented on 28 Apr 2016
+#2541
+If you have for example time series output with a mask then current code multiply the loss by
+1/mean(mask)
+https://github.com/fchollet/keras/blob/master/keras/engine/training.py#L319
+but this does not make much sense because different batches will have different scaling
+and as a result a higher weight in training will be given to batches that happens by accident to have many short samples (i.e. a lot of zeros in their mask)
+this also scales the reported loss by the same factor while you would expect the loss to be just the sum over all steps.
+instead what you should do is first find out if any of the samples in the batch was unmasked.
+In the case of time series this will happen in the rare case in which all the steps of a single sample had all mask elements set to 0.
+you should then compute the mean of the entire batch but only on the samples which were masked.
+For example by factoring by 1/mean(per_sample_mask)
+In most cases this will always be all samples so this bug had very little effect with this respect.
+However the usage of mean in the past over mask entered a single batch scaling factor which is usually was > 1 so after the PR your loss values should drop by a big factor

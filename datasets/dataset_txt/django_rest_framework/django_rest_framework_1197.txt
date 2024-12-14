@@ -1,0 +1,51 @@
+Contributor
+theromis commented on 17 May 2016
+I'm trying to build common authentication for both (DRF and original Django) projects. For this I need TokenView set csrf token.
+I've inherited TokenView as shown below. But stepped on another issue inside original user model.
+from django.middleware.csrf import CsrfViewMiddleware
+from django.middleware.csrf import rotate_token
+from django.contrib.auth.signals import user_logged_in
+
+class CsrfTokenView(views.TokenView):
+    csrf = CsrfViewMiddleware()
+
+    @method_decorator(sensitive_post_parameters('password'))
+    def post(self, request, *args, **kwargs):
+        response = super(CsrfTokenView, self).post(request, args, kwargs)
+
+        rotate_token(request)
+        user_logged_in.send(sender=request.user.__class__, request=request, user=request.user)
+        self.csrf.process_response(request, response)
+        return response
+backtrace:
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/django/core/handlers/base.py", line 149, in get_response
+    response = self.process_exception_by_middleware(e, request)
+  File "/usr/local/lib/python2.7/dist-packages/django/core/handlers/base.py", line 147, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/views/generic/base.py", line 68, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/utils/decorators.py", line 67, in _wrapper
+    return bound_func(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/views/decorators/csrf.py", line 58, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/utils/decorators.py", line 63, in bound_func
+    return func.__get__(self, type(self))(*args2, **kwargs2)
+  File "/usr/local/lib/python2.7/dist-packages/braces/views/_forms.py", line 22, in dispatch
+    return super(CsrfExemptMixin, self).dispatch(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/views/generic/base.py", line 88, in dispatch
+    return handler(request, *args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/utils/decorators.py", line 67, in _wrapper
+    return bound_func(*args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/views/decorators/debug.py", line 76, in sensitive_post_parameters_wrapper
+    return view(request, *args, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/django/utils/decorators.py", line 63, in bound_func
+    return func.__get__(self, type(self))(*args2, **kwargs2)
+  File "/opt/git/lonje/lonje/oauth2.py", line 22, in post
+    user_logged_in.send(sender=request.user.__class__, request=request, user=request.user)
+  File "/usr/local/lib/python2.7/dist-packages/django/dispatch/dispatcher.py", line 192, in send
+    response = receiver(signal=self, sender=sender, **named)
+  File "/usr/local/lib/python2.7/dist-packages/django/contrib/auth/models.py", line 23, in update_last_login
+    user.save(update_fields=['last_login'])
+TypeError: save() got an unexpected keyword argument 'update_fields'
+Looks like I'm moving in wrong direction. What can I do to have same authorized credentials only once?

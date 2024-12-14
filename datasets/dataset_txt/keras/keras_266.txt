@@ -1,0 +1,151 @@
+rb-determined-ai commented on 24 Apr 2019
+System information
+Have I written custom code (as opposed to using example directory): Yes
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Ubuntu 18.04
+TensorFlow backend (yes / no): yes
+TensorFlow version: 1.13.1
+Keras version: 2.4.4 (bug exists on latest master as well)
+Python version: 3.6.8
+CUDA/cuDNN version: not using cuda for this
+GPU model and memory: not using cuda for this
+Describe the current behavior
+If I set all the random seeds, use only the CPU, disable CPU multiprocessing, and I run the same experiment 10 times, the loss of the second train_for_step() call comes out as one of two different values each time.
+Describe the expected behavior
+The loss should be bit-perfect reproducible in this situation.
+Code to reproduce the issue
+import random
+random.seed(999)
+import numpy as np
+np.random.seed(999)
+import tensorflow as tf
+tf.set_random_seed(999)
+
+import keras
+from keras.layers import (Activation, Conv2D, Dense, Dropout, Flatten,
+                          MaxPooling2D, Layer)
+from keras.losses import categorical_crossentropy
+from keras.models import Sequential
+from keras.optimizers import RMSprop, Adam
+from keras.utils.data_utils import get_file
+
+session = tf.Session(
+        graph=tf.get_default_graph(),
+        config=tf.ConfigProto(intra_op_parallelism_threads=1,
+                              inter_op_parallelism_threads=1)
+        )
+keras.backend.set_session(session)
+
+# Model taken from the keras cifar10 example
+model = Sequential()
+# specifying input shape upfront does not matter
+#model.add(Conv2D(32, (3, 3), padding="same", input_shape=[ 32, 32, 3 ]))
+model.add(Conv2D(32, (3, 3), padding="same"))
+model.add(Activation("relu"))
+model.add(Conv2D(32, (3, 3)))
+model.add(Activation("relu"))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
+
+model.add(Conv2D(64, (3, 3), padding="same"))
+model.add(Activation("relu"))
+model.add(Conv2D(64, (3, 3)))
+model.add(Activation("relu"))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
+
+model.add(Flatten())
+model.add(Dense(512))
+model.add(Activation("relu"))
+# eliminating this dropout layer restores reproducibility:
+model.add(Dropout(0.5))
+model.add(Dense(10))
+model.add(Activation("softmax"))
+
+# setting decay to 0.0 or using Adam restores reproducibility
+optimizer = RMSprop(lr=1e-4, decay=1e-6)
+#optimizer = RMSprop(lr=1e-4, decay=0.0)
+#optimizer = Adam(lr=1e-4, decay=1e-6)
+model.compile(loss=categorical_crossentropy,
+              optimizer=optimizer,
+              metrics=[keras.metrics.categorical_accuracy,
+                       keras.metrics.categorical_accuracy])
+
+# metrics which break reproducibility:
+#   losses.categorical_hinge x1
+#   metrics.categorical_accuracy x2
+#   losses.hinge x2
+#   losses.mean_absolute_percentage_error x2
+
+# metrics which seem fine:
+#   losses.mean_squared_error
+#   losses.mean_absolute_error
+
+# build some phony data
+xtrain = np.ones([64,32,32,3])
+xtest = np.ones([64,32,32,3])
+ytrain = np.array([[1,0,0,0,0,0,0,0,0,0] for _ in range(64)])
+ytest = np.array([[1,0,0,0,0,0,0,0,0,0] for _ in range(64)])
+
+xtrain = xtrain.astype('float32')
+xtest = xtest.astype('float32')
+xtrain /= 255
+xtest /= 255
+
+# train two batches
+
+start = 0
+xbatch = xtrain[start:start+32]
+ybatch = ytrain[start:start+32]
+print( model.train_on_batch(xbatch, ybatch) )
+
+start = 32
+xbatch = xtrain[start:start+32]
+ybatch = ytrain[start:start+32]
+print( model.train_on_batch(xbatch, ybatch) )
+Check the reproducibility with the following command:
+for i in `seq 10` ; do python3 code_example.py 2>/dev/null | tail -n 1 ; done
+Result:
+[2.2911897, 1.0, 1.0]
+[2.2910979, 1.0, 1.0]
+[2.2910979, 1.0, 1.0]
+[2.2910979, 1.0, 1.0]
+[2.2911897, 1.0, 1.0]
+[2.2911897, 1.0, 1.0]
+[2.2910979, 1.0, 1.0]
+[2.2910979, 1.0, 1.0]
+[2.2911897, 1.0, 1.0]
+[2.2910979, 1.0, 1.0]
+Other info / logs
+There are a variety of things which affect whether or not the training is bit-perfect reproducible:
+The loss is always consistent after the first train_for_batch(). Training for three steps exhibits identical behavior to training for two steps (all losses come out to one of two values)
+Commenting out various layers restores reproducibility (see comments in code example)
+Eliminating the decay from RMSprop optimizer (or using Adam optimizer with decay) restores reproducibility
+Metric selection affects reproducibility. Some metrics break reproducibility when included twice, one metric, losses.categorical_hinge breaks reproducibility when included at all.
+I noticed no change in behavior when I used the git master branch.
+Inserting a tf.print() into the graph, while using the RMSprop with decay, will restore reproducibility. Patch:
+*** optimizers.py 2019-04-23 11:10:15.269380564 -0700
+--- new 2019-04-23 09:57:50.773179254 -0700
+***************
+*** 255,274 ****
+--- 255,275 ----
+      def get_updates(self, loss, params):
+          grads = self.get_gradients(loss, params)
+          accumulators = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
+          self.weights = accumulators
+          self.updates = [K.update_add(self.iterations, 1)]
+  
+          lr = self.lr
+          if self.initial_decay > 0:
+              lr = lr * (1. / (1. + self.decay * K.cast(self.iterations,
+                                                        K.dtype(self.decay))))
++         self.updates.append(tf.print(lr))
+  
+          for p, g, a in zip(params, grads, accumulators):
+              # update accumulator
+              new_a = self.rho * a + (1. - self.rho) * K.square(g)
+              self.updates.append(K.update(a, new_a))
+              new_p = p - lr * g / (K.sqrt(new_a) + self.epsilon)
+  
+              # Apply constraints.
+              if getattr(p, 'constraint', None) is not None:
+                  new_p = p.constraint(new_p)

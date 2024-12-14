@@ -1,0 +1,27 @@
+biertie commented on 3 Oct 2017 •
+edited
+I've encountered an avoidable bug in Flask's jsonify module.
+When trying to push a dictionary with includes one (or multiple) Decimal objects through jsonify we encounter the following error:
+TypeError: Decimal('1.600') is not JSON serializable
+I've traced back the error to the following python file:
+/usr/lib64/python2.7/site-packages/flask/json.py
+The JSON module used by Flask comes from 'itsdangerous' which doesn't seem like a great idea, mostly because the version seems depreciated.
+Since a lot of users run queries from the database through jsonify it is not unthinkable that more users are facing this issue, and have to jump around in hoolaphoops to get it working.
+By using the 'simplejson' module ( > 2.1 ; released on 11 Mar 2010) we can avoid this and use the 'use_decimals' option in simplejson.dump.
+Thefore I would like to propose the following codechange in flask/json.py:
+[import statement]
+# Try to use the default simplejson implementation. This is good for performance and stability.
+# Otherwise use the same json implementation as itsdangerous on which we
+# depend anyways.
+try:
+    import simplejson as _json
+except ImportError:
+    try:
+        from itsdangerous import simplejson as _json
+    except ImportError:
+        from itsdangerous import json as _json
+Environment
+Python version: 2.7
+Flask version: 0.12.2
+Werkzeug version: 0.12
+simplejson version: 3.11.1

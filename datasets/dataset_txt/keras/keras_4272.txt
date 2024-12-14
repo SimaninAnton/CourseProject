@@ -1,0 +1,60 @@
+Contributor
+parag2489 commented on 30 Sep 2016 •
+edited
+I came back to Keras after almost three months and saw a lot of change. I was trying to update my previously working network to Keras 1.1, when I encountered the following issue.
+My model compiles with merge but it doesn't with Merge. Eventually, I found it out by trial and error and made my code work. My model is a Siamese network having two channels, with a 256-D Dense layer each at the end (call them C1 and C2). Then I do C1-C2, add another dense in front of C1-C2 layer output, and then the loss. I previously used "Siamese" and "add_shared_layer", but they don't exist now, so I have to switch to functional API. My code is as follows:
+def create_base_seqNetwork(input_dim):
+    seq = Sequential()
+    seq.add(Convolution2D(64, 11, 11, border_mode='same', trainable=True, init='he_normal', activation='relu',
+                          W_regularizer=l2(regularizer), subsample=(2, 2), input_shape=input_dim))
+    seq.add(MaxPooling2D(pool_size=(2, 2)))
+    seq.add(Convolution2D(64, 5, 5, border_mode='same', trainable=True, init='he_normal', activation='relu',
+                          W_regularizer=l2(regularizer)))
+    seq.add(MaxPooling2D(pool_size=(2, 2)))
+    seq.add(Convolution2D(64, 3, 3, border_mode='same', trainable=True, init='he_normal', activation='relu',
+                          W_regularizer=l2(regularizer)))
+    seq.add(Convolution2D(64, 3, 3, border_mode='same', trainable=True, init='he_normal', activation='relu',
+                          W_regularizer=l2(regularizer)))
+    seq.add(Flatten())
+    seq.add(Dropout(0.5))
+    seq.add(Dense(1000, trainable=True, init='he_normal', activation='relu', W_regularizer=l2(regularizer)))
+    seq.add(Dropout(0.5))
+    seq.add(Dense(256, trainable=True, init='he_normal', activation='linear', W_regularizer=l2(regularizer)))
+    seq.add(Dropout(0.5))
+    return seq
+
+input_dim = (imgChannels,imgHeight,imgWidth)
+base_network = create_base_seqNetwork(input_dim)
+input_a = Input(shape=input_dim)
+input_b = Input(shape=input_dim)
+
+# because we re-use the same instance `base_network`,
+# the weights of the network
+# will be shared across the two branches
+processed_a = base_network(input_a)
+processed_b = base_network(input_b)
+processed_b = Lambda(lambda x:-x)(processed_b)
+
+############################################################
+# replace merge by Merge and the network won't compile
+model = merge([processed_a, processed_b], mode='sum')
+############################################################
+
+model = Dense(512,init='he_normal',activation='relu',trainable=True)(model)
+model = Dropout(0.5)(model)
+model = Dense(1,init='he_normal',activation='linear',trainable=True)(model)
+model = Model(input=[input_a, input_b], output=model)
+printing("Built the model")
+
+sgd = SGD(lr=LearningRate, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss=someLoss, optimizer=sgd)
+printing("Compilation finished")
+So as the question title says, what is the difference between "merge" and "Merge". I think "Merge" is used when you want to sum/concat/mul two Sequential() models. The "merge" is used when you are working with functional API. However, this is not written anywhere in the documentation. Additionally, Sequential documentation has a section called the "Merge" layer, but when I navigate to the functional API example, there is "merge" everywhere. This is a subtle difference, not very easy to observe unless written explicitly.
+Additionally, you can import "Merge/merge" in at least four different ways:
+from keras.layers import merge,  # works
+from keras.layers import Merge,  # doesn't work
+from keras.engine.topology.merge,  # works
+from keras.engine.toplogy.Merge # doesn't work
+So are two "merge" and the other two "Merge" any different?
+If "merge" and "Merge" are indeed substantially different, apart from making this clear, we will also need to change two LSTM diagrams, one in "Guide to Sequential Model" and the other one in the "Guide to Functional API". They both mention, "merge_1(Merge)". So it is natural to think there is only one such layer, and in my case, that was "Merge" for a long time.
+12

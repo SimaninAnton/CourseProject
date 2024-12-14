@@ -1,0 +1,70 @@
+rcousens commented on 10 Apr 2015
+Hello,
+I am encountering problems where requests using an Expect header are not handled correctly by mitmproxy 0.11.3 and cause curl to continually read from the open socket.
+I am using mitmproxy as a reverse proxy in the middle between a curl client and an Elasticsearch upstream server.
+When curl sends a POST body over 1024 bytes curl follows RFC-2616 by sending an Expect header (100-CONTINUE).
+When I don't use mitmproxy, curl sends it's 100-Continue, gets the response HTTP/1.1 100 Continue, sends the full request body and then 200 OK is returned from the server no problem (ignore the 400 BAD RESPONSE result in the below examples, it's just ElasticSearch saying the index already exists.)
+With mitmproxy and curl using the Expect header, mitmproxy shows the 100 No content response and then seems to leave curl hanging there indefinitely waiting on a response from the server and mitmproxy itself never records the follow up response after curl sends the full request body.
+I can overcome the issue by forcing curl to not send the Expect header. This seems to indicate to me mitmproxy is not handling the Expect header request/response flow correctly.
+curl through mitmproxy with Expect header
+* Connected to www.redeye.dev (127.0.0.1) port 19200 (#0)
+> POST /drawings_index HTTP/1.1
+> User-Agent: curl/7.29.0
+> Host: www.redeye.dev:19200
+> Accept: */*
+> Content-Length: 15752
+> Content-Type: application/x-www-form-urlencoded
+> Expect: 100-continue
+> 
+* Done waiting for 100-continue
+  0 15752    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0} [data not shown]
+< HTTP/1.1 100 Continue
+< Content-Length: 0
+
+... hangs here indefinitely with curl waiting to read the response from the server
+curl without mitmproxy with Expect header
+*   Trying 127.0.0.1...
+* Connected to www.redeye.dev (127.0.0.1) port 9200 (#0)
+> POST /drawings_index HTTP/1.1
+> User-Agent: curl/7.29.0
+> Host: www.redeye.dev:9200
+> Accept: */*
+> Content-Length: 15752
+> Content-Type: application/x-www-form-urlencoded
+> Expect: 100-continue
+> 
+< HTTP/1.1 100 Continue
+} [data not shown]
+< HTTP/1.1 400 Bad Request
+< Content-Type: application/json; charset=UTF-8
+< Content-Length: 85
+* HTTP error before end of send, stop sending
+< 
+{ [data not shown]
+100 15837  100    85  100 15752    532  98652 --:--:-- --:--:-- --:--:-- 99069
+* Closing connection 0
+Forcing curl to avoid the Expect header with -H "Expect: " through mitmproxy
+* Connected to www.redeye.dev (127.0.0.1) port 19200 (#0)
+> POST /drawings_index HTTP/1.1
+> User-Agent: curl/7.29.0
+> Host: www.redeye.dev:19200
+> Accept: */*
+> Content-Length: 15752
+> Content-Type: application/x-www-form-urlencoded
+> 
+} [data not shown]
+* upload completely sent off: 15752 out of 15752 bytes
+< HTTP/1.1 400 Bad Request
+< Content-Type: application/json; charset=UTF-8
+< Content-Length: 85
+< 
+{ [data not shown]
+100 15837  100    85  100 15752   2622   474k --:--:-- --:--:-- --:--:--  480k
+* Connection #0 to host www.redeye.dev left intact
+If I get a chance I'll dig into the source (not a Python programmer by trade) and see if I can work out what's going on.
+mitmproxy without Expect header
+   POST http://www.redeye.dev:9200/drawings_index
+        ← 400 application/json 85B 43.22kB/s
+mitmproxy with Expect header
+   POST http://www.redeye.dev:9200/drawings_index
+        ← 100 [no content] 30.87kB/s

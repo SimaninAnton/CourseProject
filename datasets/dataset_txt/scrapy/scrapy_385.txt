@@ -1,0 +1,65 @@
+tillroy commented on Apr 24, 2018 •
+edited
+Hello Scrapy team, thank you for your great work.
+I've implement all neccesary parts for anonymous scraping using Scrapy with Tor and Privoxy as proxy. It works great with HTTP protocol and returns values wich are expected. But in case of HTTPS - got 403 error. I know that it could be connected with User-Agent, but in this case it's setuped in download middleware:
+class Obscure(object):
+    def __init__(self, settings):
+        self.settings = settings
+        user_agent_list_file = self.settings.get('USER_AGENTS_FILE')
+
+        if not user_agent_list_file:
+            ua = self.settings.get('USER_AGENT', "Scrapy-bot")
+            self.user_agents = [ua]
+        else:
+            with open(user_agent_list_file, 'r') as f:
+                self.user_agents = [line.strip() for line in f.readlines()]
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        s = cls(crawler.settings)
+        return s
+
+    def change_tor_ip(self):
+        with Controller.from_port(port=9051) as controller:
+            controller.authenticate(password=self.settings.get('TOR_PASSWORD'))
+            controller.signal(Signal.NEWNYM)
+            controller.close()
+
+    def get_user_agent(self):
+        return choice(self.user_agents)
+
+    def process_request(self, request, spider):
+        self.change_tor_ip()
+        request.headers.setdefault('User-Agent', self.get_user_agent())
+        proxy_host = self.settings.get("PRIVOXY_HOST")
+        if proxy_host:
+            proxy_url = proxy_host
+            request.meta['proxy'] = proxy_url
+here is sertting.py:
+USER_AGENTS_FILE = "user_agents.txt"
+TOR_PORT = 9050
+TOR_PASSWORD = "pwd"
+PRIVOXY = "http://127.0.0.1:8118"
+and spider itself:
+class CheckIp(Spider):
+    name = "checkip"
+    # start_urls = ("http://icanhazip.com/",)
+    start_urls = ("https://botproxy.net/docs/how-to/how-to-solve-403-error-in-scrapy/",)
+
+    def parse(self, resp):
+
+        item = Ip()
+
+        request_headers = resp.request.headers
+        ua = request_headers.get("User-Agent")
+        ip = resp.text.strip()
+
+        item["ip"] = ip
+        item["ua"] = ua
+
+        return item
+But when i try to do the same with requests library i got 200 response with changed IP:
+r = requests.get('https://botproxy.net/docs/how-to/how-to-solve-403-error-in-scrapy/', proxies={"http": "http://127.0.0.1:8118"})
+print(r)
+Would be really grateful for your suggestions and comments
+Thank you

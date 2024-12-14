@@ -1,0 +1,129 @@
+BoltzmannBrain commented on 13 Aug 2016 •
+edited
+I have a generator to pass video data frame-by-frame to a Sequential model. To train the model I'm using fit_generator described here:
+  batchSize = 200
+  print "Starting training..."
+  model.fit_generator(
+    _frameGenerator(videoPath, dataPath, batchSize),
+    samples_per_epoch=5000,
+    nb_epoch=2,
+    callbacks=[PrintBatch()],
+    verbose=args.verbosity
+  )
+(I've added callbacks to print log info.)
+Below is my generator, that will accumulate 200 frames worth of data into X and Y -- i.e., batch size = 200.
+import cv2
+...
+def _frameGenerator(videoPath, dataPath, batchSize):
+  """
+  Yield X and Y data when the batch is filled.
+  """
+  camera = cv2.VideoCapture(videoPath)
+  width = camera.get(3)
+  height = camera.get(4)
+  frameCount = int(camera.get(7))  # Number of frames in the video file.
+
+  truthData = _prepData(dataPath, frameCount)
+
+  X = np.zeros((batchSize, 3, height, width))
+  Y = np.zeros((batchSize, 1))
+
+  batch = 0
+  for frameIdx, truth in enumerate(truthData):
+    ret, frame = camera.read()
+    if ret is False: continue
+
+    batchIndex = frameIdx%batchSize
+
+    X[batchIndex] = frame
+    Y[batchIndex] = truth
+
+    if batchIndex == 0 and frameIdx != 0:
+      batch += 1
+      print "now yielding batch", batch
+      yield X, Y
+With this setup I expect 25 batches (of 200 frames each) to be passed from the generator to fit_generator, per epoch; this would be 5000 total frames per epoch -- i.e., samples_per_epoch=5000. Then for subsequent epochs, fit_generator would reinitialize the generator such that we begin training again from the start of the video. Yet this is not the case. The printed output below shows a couple oddities:
+11 batches (2200 data samples) are passed before the model logs its first batch.
+After the first epoch is complete (after the model logs batches 0-24), the generator picks up where it left off. Shouldn't the new epoch start again from the beginning of the training dataset?
+Starting training...
+Epoch 1/2
+now yielding batch 1
+now yielding batch 2
+now yielding batch 3
+now yielding batch 4
+now yielding batch 5
+now yielding batch 6
+now yielding batch 7
+now yielding batch 8
+now yielding batch 9
+now yielding batch 10
+now yielding batch 11
+{'loss': 0.17430359, 'batch': 0, 'size': 200}
+now yielding batch 12
+{'loss': 3737.8875, 'batch': 1, 'size': 200}
+now yielding batch 13
+{'loss': 57103.0, 'batch': 2, 'size': 200}
+now yielding batch 14
+{'loss': 0.75166047, 'batch': 3, 'size': 200}
+now yielding batch 15
+{'loss': 0.74765885, 'batch': 4, 'size': 200}
+now yielding batch 16
+{'loss': 0.65361518, 'batch': 5, 'size': 200}
+now yielding batch 17
+{'loss': 2213.9226, 'batch': 6, 'size': 200}
+now yielding batch 18
+{'loss': 1.0152926, 'batch': 7, 'size': 200}
+now yielding batch 19
+{'loss': 1.0978817, 'batch': 8, 'size': 200}
+now yielding batch 20
+{'loss': 1.2816809, 'batch': 9, 'size': 200}
+now yielding batch 21
+{'loss': 1.0457447, 'batch': 10, 'size': 200}
+now yielding batch 22
+{'loss': 0.81737024, 'batch': 11, 'size': 200}
+now yielding batch 23
+{'loss': 0.76998961, 'batch': 12, 'size': 200}
+now yielding batch 24
+{'loss': 1.7846264, 'batch': 13, 'size': 200}
+now yielding batch 25
+{'loss': 2.209909, 'batch': 14, 'size': 200}
+now yielding batch 26
+{'loss': 2.4140291, 'batch': 15, 'size': 200}
+now yielding batch 27
+{'loss': 2.1680498, 'batch': 16, 'size': 200}
+now yielding batch 28
+{'loss': 2.0289741, 'batch': 17, 'size': 200}
+now yielding batch 29
+{'loss': 1.3026924, 'batch': 18, 'size': 200}
+now yielding batch 30
+{'loss': 0.94716966, 'batch': 19, 'size': 200}
+now yielding batch 31
+{'loss': 0.87124979, 'batch': 20, 'size': 200}
+now yielding batch 32
+{'loss': 0.91141301, 'batch': 21, 'size': 200}
+now yielding batch 33
+{'loss': 0.97045374, 'batch': 22, 'size': 200}
+now yielding batch 34
+{'loss': 0.81511378, 'batch': 23, 'size': 200}
+now yielding batch 35
+{'loss': 0.67119628, 'batch': 24, 'size': 200}
+526s - loss: 2523.2104
+Epoch 2/2
+now yielding batch 36
+{'loss': 0.54455316, 'batch': 0, 'size': 200}
+now yielding batch 37
+{'loss': 0.48123521, 'batch': 1, 'size': 200}
+now yielding batch 38
+{'loss': 0.41967782, 'batch': 2, 'size': 200}
+now yielding batch 39
+{'loss': 0.41290641, 'batch': 3, 'size': 200}
+now yielding batch 40
+{'loss': 0.40834817, 'batch': 4, 'size': 200}
+now yielding batch 41
+{'loss': 0.41192448, 'batch': 5, 'size': 200}
+now yielding batch 42
+{'loss': 0.33654153, 'batch': 6, 'size': 200}
+now yielding batch 43
+{'loss': 0.39498168, 'batch': 7, 'size': 200}
+If there is something incorrect in my understanding of fit_generator please explain. I've gone through the documentation, this example, and these related issues. When I get my project running I'll be more than happy to include this as an example for running video data
+I'm using Keras v1.0.7 with the TensorFlow backend.

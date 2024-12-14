@@ -1,0 +1,65 @@
+luoqishuai commented on Dec 20, 2019 •
+edited
+Description
+scrapy code
+            url='http://192.168.5.9:6010/predict?url={}'.format(response.meta['url'])
+            data={'html_url':response.meta['url'],'html_cn_text':cn_result}
+            meta['status_404']=True
+            meta['response']=response
+            meta['proxy']=''
+            return scrapy.FormRequest(url,formdata=data,callback=self.parse,dont_filter=True,meta=meta)
+flask gevent code
+monkey.patch_all()
+app = Flask(__name__)
+ctx=app.app_context()
+ctx.push()
+
+# 获取本机ip
+myaddr = '192.168.5.73'
+myport = 6010
+decide_404=Decide404()
+@app.route('/predict',methods=['POST','GET']) 
+def predict():
+    try:
+        start_time=time.time()
+        if request.method == "GET":
+            return 'http method need post'
+        elif request.method == "POST":
+            form = request.form
+            data = form.to_dict() #
+            html_url=data['html_url'] if 'html_url' in data else ''
+            html_text=data['html_cn_text']
+            score=decide_404.decide_model(html_text)
+            logging.info('url: {} ;text: {} ;predict: {} ;cost: {} ;'.format(html_url,html_text[:20],score,round(time.time()-start_time,2)))
+            return str(score)
+        else:
+            return 'None'
+    except Exception as e:
+        logging.info('error {} '.format(e),exc_info=True)
+        return 'None'
+server = WSGIServer(('', 6010), app)
+server.start()
+def serve_forever():
+    server.start_accepting()
+    server._stop_event.wait()
+
+if __name__ == "__main__":
+        try:
+            for i in range(32):
+                p = Process(target=serve_forever)
+                p.start()
+        except Exception as e:
+            logging.info('404 webserver false')
+            decide_404.send_email('404 webserver false')
+scrapy is responsible for sending post requests to my service, and the service is responsible for processing post requests and returning calculation results
+However, scrapy will soon catch in middlwares when making a request. /Scrapy_spider_9.log:2019-12-20 16:13:50 [root] INFO: get url https://news.10jqka.com.cn/tapp/news/ share / 616126829 / is 404 by error {'url': 'https://news.10jqka.com.cn/tapp/news/share/616126829/', 'retry': 0, 'url_format': 'https: / /news.10jqka.com.cn/tapp/news/share/()/ ',' article_id ': 616126829,' upload_type ':' news', 'download_timeout': 60.0, 'proxy': '', 'download_slot' : 'news.10jqka.com.cn', 'download_latency': 1.4705162048339844, 'status_404': True, 'response': <200 https://news.10jqka.com.cn/tapp/news/share/616126829/> , 'depth': 1, 'status': ResponseNeverReceived ([<twisted.python.failure.Failure twisted.internet.error.ConnectionDone: Connection was closed cleanly.>],)}
+[Exception. The server does not have extra anti-crawl processing.
+The server has captured the requested address:
+:: ffff: 192.168.5.9--[2019-12-20 16:13:58] "POST /predict?url=https://news.10jqka.com.cn/tapp/news/share/616126829/ HTTP / 1.1 "200 115 3.574375
+And the calculation will only return '0', '1', 'None'
+The request was recorded in the server's log and the result was obtained
+./decide_404.log:[2019-12-20 16: 13: 58,449] [decide_404.py:300] [INFO] [url: https://news.10jqka.com.cn/tapp/news/share/616126829 /; text: Jiahua Energy's monthly big order reveals the secret number of mobile straight flush financials; predict: 1; cost: 3.57;)
+Where is the setting wrong? Scrapy flask gevent?
+The server did not perform any additional anti-crawling measures on the request, why does scrapy catch exceptions such as Connection was closed cleanly.
+scrapy = 1.8.0 falsk =1.1.1 gevent =1.4.0
+What else do I need to provide?

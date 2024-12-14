@@ -1,0 +1,28 @@
+Maritel commented on 4 Apr 2017
+In reality this might be just a tensorflow (my backend) issue, but anyway:
+As a background, I am trying to implement a conditional GAN in Keras. My implementation has a generator and a discriminator. As an example, the generator accepts (20, 20, 1) inputs and returns (20, 20, 1) outputs. These are stacked by channel to produce a (20, 20, 2) input to the discriminator. The discriminator is supposed to decide whether it is seeing a ground-truth translation of the original (20, 20, 1) image or a translation by the generator. This is represented by 0=fake, 1=real.
+By itself, the discriminator is just a CNN for binary classification. Therefore, it can be trained by feeding data points with inputs of shape (20, 20, 2) and outputs in {0,1}. Therefore, if I write something like:
+# <disc> is the discriminator
+arbitrary_input = np.full(shape=(5, 20, 20, 2), fill_value=0.5)
+arbitrary_labels = np.array([1, 1, 0, 0, 1])
+disc.fit(arbitrary_input, arbitrary_labels, epochs=5)
+training will proceed without errors (obviously this is a useless dataset, though).
+However, when I insert the discriminator into the generator-discriminator stack:
+# <disc> is the discriminator, <gen> is the generator
+input = Input(shape=(20, 20, 1), name='stack_input')
+gen_output = gen(input)
+pair = Concatenate(axis=FEATURES_AXIS)([input, gen_output])
+disc_output = disc(gen_output)
+
+stack = Model(input, disc_output)
+stack.compile(optimizer='adam', loss='binary_crossentropy')
+
+arbitrary_input = np.full(shape=(5, 20, 20, 2), fill_value=0.5)
+arbitrary_labels = np.array([1, 1, 0, 0, 1])
+
+disc.fit(arbitrary_input, arbitrary_labels, epochs=5)
+suddenly I need to feed an extra placeholder. I get this error message on disc.fit():
+InvalidArgumentError (see above for traceback): You must feed a value for placeholder tensor 'stack_input' with dtype float
+  [[Node: stack_input = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+I haven't changed the discriminator at all, I have only included it in another model. Therefore disc.fit() should still work, right?
+There's a workaround available by freezing the weights of the generator and using fit() on the full stack, I think, but I do not understand why the method above doesn't work.

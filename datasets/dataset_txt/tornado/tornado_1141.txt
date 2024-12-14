@@ -1,0 +1,16 @@
+Contributor
+mankyd commented on 13 Aug 2011
+The autoreload module does not seem to provide any mechanism for shutting down applications in a clean manner before it starts up again. In code, you can see that it attempts to clean up file handles registered with ioloop, and then jumps straight into restarting itself:
+        for fd in io_loop._handlers.keys():
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+        if hasattr(signal, "setitimer"):
+            # Clear the alarm signal set by
+            # ioloop.set_blocking_log_threshold so it doesn't fire
+            # after the exec.
+            signal.setitimer(signal.ITIMER_REAL, 0, 0)
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+This is causing issues because connections to other resources (I have some global ZeroMQ sockets open in my application) are not freed up properly and restarting fails. Even calling IOLoop.stop() would help as then I could subclass it and provide the hooks that I need.

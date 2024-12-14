@@ -1,0 +1,23 @@
+zhufengyun commented on 31 Dec 2015
+considering a simple language model for variable length input with masking:
+model = Sequential()
+model.add(Embedding(len(chars), EMBEDD_SIZE, input_length=MAX_SEQ_LEN, mask_zero=True))
+model.add(LSTM(HIDDEN_SIZE, return_sequences=True))
+model.add(TimeDistributedDense(len(chars)))
+model.add(Activation('softmax'))
+input: [1 2 3 0 0 0 0 0 0 0]
+output: [2 3 4 0 0 0 0 0 0 0] ... something like this
+an error occurred during training:
+ValueError: Input dimension mis-match. (input[0].shape[1] = BATCH_SIZE, input[1].shape[1] = MAX_SEQ_LEN)
+Backtrace when the node is created:
+File "/home/f0/keras/keras/models.py", line 85, in weighted
+score_array *= mask
+the problem is we calculate the cross entropy by
+K.mean(K.categorical_crossentropy(y_pred, y_true), axis=-1),
+for sequence inputs, the calculation is actually
+mean over sequence length(sum over categories(element_wise y_true * log(y_pred))).
+so we have a score_array with shape of BATCH_SIZE * 1
+and a mask array with shape of BATCH_SIZE * MAX_SEQ_LEN.
+so we can not apply the mask by score_array *= mask.
+can we fix this by simply removing the K.mean() from the objective equation?
+other part of the weighted_objective() would not be affected because the score_array is reduced to 1D after the mask operation.

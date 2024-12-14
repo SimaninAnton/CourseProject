@@ -1,0 +1,28 @@
+brianmhunt commented on 5 Mar 2016
+Right now the --manual plugin requires user interaction, but there are some use cases where it needn't.
+For example, when using --manual with Google App Engine, one can automate that entire process, but it's quite convoluted.
+The process could be vastly simplified if, instead of using manual input, the --manual plugin took a shell command, that I would imagine could work as follows:
+User calls letsencrypt --manual --shell-command "./upload-script --server=example.com" -d example.com -d www.example.com
+Let's Encrypt calls upload-script, and pipes the challenges to the standard input, something like:
+example.com challenge-filename-1 challenge-1 
+www.example.com challenge-filename-2 challenge-2
+It would be trivial to generalize this with another argument like --shell-pipe-format with options such as csv, tsv, json, etc.
+Once the shell command completes Let's Encrypt runs the challenge.
+Example
+In the case of Google App Engine, a simplistic upload-script might look like (and my bash is a little rusty, but I hope it conveys the point):
+# Write the challenge files to a place where AppEngine will read/publish them
+CHALLENGE_PATH = "app/acme/challenges"
+while read line
+do
+  CHALLENGE=$line[2]
+  CHALLENGE_FILE="$CHALLENGE_PATH$line[1]"
+  echo CHALLENGE > CHALLENGE_FILE
+while done < "${1:-/dev/stdin//:/ }"
+
+# Publish to AppEngine
+appcfg.py update app
+Once the script completes (and presuming that acme/challenges publishes to ./well-known/...), Let's Encrypt should validate successfully against the App Engine.
+I find this nicely abstracts the validation process.
+Compare this to the fragile monstrosities I have created to accomplish the same that carefully read and interpret the output of Let's Encrypt.
+(In retrospect my time would have been better applied writing a patch for or alternative to --manual – sorry I missed that opportunity; I hope to return to it as time permits, but I wanted to take the time share this to see if there is interest in such a patch and in case someone else might be able to pick it up)
+1

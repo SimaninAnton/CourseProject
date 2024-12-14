@@ -1,0 +1,68 @@
+scubbo commented on Oct 31, 2016
+Either one or two issues here, but probably related (please let me know if you'd rather have them raised separately):
+Entries in requests.post data that have empty values are not transmitted
+Entries in requests.post data that have whitespace-only values are not transmitted when entered as a json string, but are when entered as a dictionary
+See the following demonstration code:
+#!/usr/bin/env python
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
+import cgi
+import requests
+
+class Handler(BaseHTTPRequestHandler):
+  def do_POST(self):
+    print 'Got a post request'
+    self.send_response(200)
+    self.send_header('Content-type', 'application/json')
+    self.end_headers()
+    form = cgi.FieldStorage(
+      fp=self.rfile, 
+      headers=self.headers,
+      environ={
+        'REQUEST_METHOD':'POST',
+        'CONTENT_TYPE':'application/json',
+      })
+    print 'Data is:' + str(form)
+    for key in form:
+      print 'Key: ' + key + ', Value: ' + form[key].value
+    return
+
+if __name__ == '__main__':
+  server_address=('',8080)
+  httpd = HTTPServer(server_address, Handler)
+  Thread(target=httpd.serve_forever).start()
+
+  requests.post('http://localhost:8080', data='{"key1":""}')
+  requests.post('http://localhost:8080', data={'key2':''})
+  requests.post('http://localhost:8080', data='{"key3":" "}')
+  requests.post('http://localhost:8080', data={'key4':' '})
+
+  httpd.shutdown()
+Expected output:
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [MiniFieldStorage('key1', '')])
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [MiniFieldStorage('key2', '')])
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [MiniFieldStorage('key3', ' ')])
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [MiniFieldStorage('key4', ' ')])
+Key: key4, Value:
+Actual output:
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [])
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [])
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [])
+Got a post request
+127.0.0.1 - - [30/Oct/2016 17:24:20] "POST / HTTP/1.1" 200 -
+Data is:FieldStorage(None, None, [MiniFieldStorage('key4', ' ')])
+Key: key4, Value:

@@ -1,0 +1,109 @@
+cibic89 commented on Sep 14, 2019 •
+edited by glemaitre
+Description
+Current implementation sorts labels internally and this is not always ideal.
+Steps/Code to Reproduce
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder as le
+import xgboost as xgb # pip install xgboost --upgrade
+
+## Make a dummy dataframe
+df1 = pd.DataFrame(
+    {"x1": [0,4,2,5],
+     "x2": [10,14,12,15],
+     "x3": [20,24,22,25],
+     "y": ["a", "b", "missing", "z"]}
+)
+for i in range(15):
+    df1 = df1.append(df1, ignore_index = True)
+print(df1.shape)
+display(df1.head()) # can't remove "missing" response example as I need to prepare test set for prediction too and if I leave in NaN's label encoder will throw an error
+
+## Make another dataframe encoding object/categorical data
+df2 = df1.copy()
+resp_var_le = le()
+df2["y"] = resp_var_le.fit_transform(df2["y"])
+print(resp_var_le.classes_)
+display(df2.head())
+
+## Prepare for xgboost
+param = {}
+n_trees = 10
+param["verbosity"] = 1
+param["tree_method "] = "approx"
+param["learning_rate "] = 0.3
+param["max_depth "] = 6
+param['random_state '] = 123 # seed
+param['objective'] = 'multi:softprob'
+param["eval_metric"] = "mlogloss"
+
+## Fit a model with nothing missing
+param['num_class'] = len(df2["y"].unique())
+xgb_train = xgb.DMatrix(data = df2.drop(columns = ["y"]), label = df2["y"].values)
+xgb_model = xgb.train(params = param, dtrain = xgb_train)
+
+## Try and fit a model with the missing label dataframe
+df3 = df2.drop(df2[df2["y"] == resp_var_le.transform(["missing"])[0]].index) # can't include test set in training therefore test set examples need to be removed!
+display(df3.head(), df3.describe(include = "all"))
+print(df3["y"].unique()) # this returns [0, 1, 3] - if I can turn off labelencoder's sorting then I could have the test-set's encoded response as the largest value then simply filtering out, adjust the number of classes and fit a model. Explain why there's even a need to internally sort the values anyway?!
+
+param['num_class'] = len(df3["y"].unique())
+xgb_train_missing_resp = xgb.DMatrix(data = df3.drop(columns = ["y"]), label = df3["y"].values)
+xgb_model_missing_resp = xgb.train(params = param, dtrain = xgb_train_missing_resp)
+Expected Results
+Fit model
+Actual Results
+The last command will return this: "XGBoostError: [01:56:51] ./xgboost-win64_release_0.90/src/objective/multiclass_obj.cu:110: SoftmaxMultiClassObj: label must be in [0, num_class)."
+Versions
+Could not locate executable g77
+Could not locate executable f77
+Could not locate executable ifort
+Could not locate executable ifl
+Could not locate executable f90
+Could not locate executable DF
+Could not locate executable efl
+Could not locate executable gfortran
+Could not locate executable f95
+Could not locate executable g95
+Could not locate executable efort
+Could not locate executable efc
+Could not locate executable flang
+don't know how to compile Fortran code on platform 'nt'
+
+System:
+    python: 3.7.4 (default, Aug  9 2019, 18:34:13) [MSC v.1915 64 bit (AMD64)]
+executable: .\Anaconda3\python.exe
+   machine: Windows-10-10.0.18362-SP0
+
+BLAS:
+    macros: 
+  lib_dirs: 
+cblas_libs: cblas
+
+Python deps:
+       pip: 19.2.2
+setuptools: 41.0.1
+   sklearn: 0.21.2
+     numpy: 1.16.4
+     scipy: 1.3.1
+    Cython: 0.29.13
+    pandas: 0.25.1
+
+.\Anaconda3\lib\site-packages\numpy\distutils\system_info.py:639: UserWarning: 
+    Atlas (http://math-atlas.sourceforge.net/) libraries not found.
+    Directories to search for the libraries can be specified in the
+    numpy/distutils/site.cfg file (section [atlas]) or by setting
+    the ATLAS environment variable.
+  self.calc_info()
+.\Anaconda3\lib\site-packages\numpy\distutils\system_info.py:639: UserWarning: 
+    Blas (http://www.netlib.org/blas/) libraries not found.
+    Directories to search for the libraries can be specified in the
+    numpy/distutils/site.cfg file (section [blas]) or by setting
+    the BLAS environment variable.
+  self.calc_info()
+.\Anaconda3\lib\site-packages\numpy\distutils\system_info.py:639: UserWarning: 
+    Blas (http://www.netlib.org/blas/) sources not found.
+    Directories to search for the sources can be specified in the
+    numpy/distutils/site.cfg file (section [blas_src]) or by setting
+    the BLAS_SRC environment variable.
+  self.calc_info()

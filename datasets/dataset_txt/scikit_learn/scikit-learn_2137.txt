@@ -1,0 +1,96 @@
+alialani12 commented on Jun 12, 2017
+Hi guys
+I have an idea to use the RBM as the first step to reconstruct the input and features extraction then feed it's output to the CNN algorithm the datasets I plan to use are MNIST and CIFAR-10. the problem I face is how I can feed the RBM output to the CNN as input. the code I am playing with is as follow.
+Please any suggestion or idea in this matter will be high appreciated
+import the necessary packages
+from keras.datasets import cifar10
+from matplotlib import pyplot
+from scipy.misc import toimage
+from sklearn.metrics import classification_report
+from nolearn.dbn import DBN
+import numpy as np
+import numpy
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import Flatten
+from keras.layers.convolutional import Conv2D
+from keras.layers.convolutional import MaxPooling2D
+from keras.utils import np_utils
+from keras import backend as K
+K.set_image_dim_ordering('th')
+import keras
+#%%
+load data
+(trainX, trainY), (testX, testY) = cifar10.load_data()
+print('Train set size : ', trainX.shape[0])
+print('Test set size : ', testX.shape[0])
+#%%
+#Reshaping input arrays from (3,32,32) in to ((50000L, 3072L)) to fe it to the RBM
+trainY = trainY.flatten()
+testY = testY.flatten()
+n_labels = len(np.unique(trainY))
+n_train = trainX.shape[0]
+n_test = testX.shape[0]
+height= trainX.shape[1]
+width = trainX.shape[2]
+n_channels = trainX.shape[3]
+print(n_train, n_test, height, width, n_channels)
+trainX = trainX.reshape((n_train,heightwidthn_channels))
+testX = testX.reshape((n_test,heightwidthn_channels))
+print(trainX.shape, trainY.shape)
+print(testX.shape, testY.shape)
+#%%
+normalize inputs from 0-255 to 0.0-1.0
+trainX = trainX.astype('float32')
+testX = testX.astype('float32')
+trainX = trainX / 255.0
+testX = testX / 255.0
+#%%
+train the RBM with 3072 input units and 500 hidden units
+here we use the nolearn library due to there is no RBM implemetion in keras
+dbn = DBN(
+[trainX.shape[1], 500, 10],
+learn_rates = 0.1,
+learn_rate_decays = 0.9,
+epochs = 10,
+verbose = 2)
+print(dbn.summary())
+hist=dbn.fit(trainX, trainY)
+#%%
+#there are 10 classes for this problem,
+#so we can expect the binary matrix to have a width of 10.
+trainY = np_utils.to_categorical(trainY)
+testY = np_utils.to_categorical(testY)
+num_classes = testY.shape[1]
+#%%
+#Define the CNN Model
+def baseline_model():
+# create model
+model = Sequential()
+model.add(Conv2D(32, 5, 5, border_mode='valid',
+input_shape=(3, 32, 32), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.2))
+model.add(Conv2D(32, 3, 3, border_mode='valid', activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dense(num_classes, activation='softmax'))
+# Compile model
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+return model
+build the model
+model = baseline_model()
+print(model.summary())
+#%%
+reshap the dataset so we can fed it the CNN model
+trainX = trainX.reshape(trainX.shape[0], 3, 32, 32).astype('float32')
+testX = testX.reshape(testX.shape[0], 3, 32, 32).astype('float32')
+#%%
+Fit the model
+hist1 = model.fit(trainX, trainY, validation_data=(testX, testY), nb_epoch=10, batch_size=200, verbose=2)
+#%%
+Final evaluation of the model
+scores = model.evaluate(testX, testY, verbose=0)
+print("Accuracy: %.2f%%" % (scores[1]*100))

@@ -1,0 +1,20 @@
+dunk commented on 23 May 2019 •
+edited
+The DRF routers combine the URL with the HTTP Method to determine which CRUD action to invoke. However, this is done in a rather opaque an non-reusable way. Inside a nested function a couple of stack frames up where our code gets invoked, the appropriate methods are monkey patched onto the view. Later, in the dispatch method, the HTTP method is used to dynamically look up the correct method, which is later invoked.
+The problem with this strategy is that anything downstream in userland can't just hook into this decision system. It's dynamically set and dynamically invoked. Thankfully we are not totally frozen out, because the actions are set on the view as the action_map member, which we can at least interrogate. But that interrogation necessarily requires duplicating the mapping that DRF is doing dynamically further up the stack.
+How about a concrete example you say? Sure thing.
+A lot of people using DRF are doing CRUD. Bear in mind, despite the name, DRF advertises itself as being for creating general "Web APIs" Therefore many applications also need per-CRUD-endpoint permissions. By default six automatically-mapped endpoints are defined: create, retrieve, list, update, partial_update, and destroy. But these quite obviously map to the familiar, general set of CRUD operations: create, read, update, and delete. While I am sure that exceptions to this can be found, they are the exception rather than the rule; if you can update then you can probably partial-update. If you can view a list of resources, you can by definition view individual resources. And as DRF is chiefly providing people with a CRUD interface to their data, I think that there should be some support for this mechanism in the built-in permissions classes. I have included below a simple implementation of such a permission.
+The problem here is not that his code is inherently complex; it's a mere few lines. Nor that it was an immense stretch to locate the view.action_map, though that certainly took a fair bit of time, and especially to grok the dynamic-add-dynamic-invoke-defined-in-a-nested-function thing, buried amongst some fairly involved core library code. No, the real problem here is that it took absolutely ages to convince myself that I wasn't being an idiot, and that, yes, in fact this determination is kept totally internal to DRF, is done dynamically, and is pretty much impossible to hook into. That wasted a lot of time, and, given the generality of the problem, it would be nice if others could be saved from fruitlessly navigating down that particular dead-end. A good modular interface prevents the user from having to dig into the library code, and in this case I think that is unfortunately a bit lacking.
+class CRUDPermission(BasePermission):
+    view_method_to_crud_operation = { "create": "create", "retrieve": "read", "list": "read", "update": "update", "partial_update": "update", "destroy": "delete"}
+
+    def has_permission(self, request, view):
+        action = view.action_map.get(request.method.lower())
+        if not action:
+            return True
+
+        return getattr(self, self.view_method_to_crud_operation[action])(request, view, action)
+
+    def create(self, request, view, action): # And so on
+        pass
+1

@@ -1,0 +1,72 @@
+adriaant commented on Dec 18, 2013
+URLs can contain a semicolon as per http://www.ietf.org/rfc/rfc1738.txt
+The website http://www.vd.nl/ redirects as follows (using curl):
+curl -IL 'http://www.vd.nl/'
+HTTP/1.1 302 Moved Temporarily
+Server: Unknown
+Vary: Accept-Encoding
+Content-Type: text/plain
+Date: Wed, 18 Dec 2013 08:21:31 GMT
+Location: http://www.vd.nl/index.jsf?noCookieCheck=true
+Transfer-Encoding: chunked
+Connection: Keep-Alive
+Set-Cookie: JSESSIONID=509416AD306056112AD4457880BC7FBD.mirvd110; Domain=www.vd.nl; Path=/;HttpOnly
+Set-Cookie: X-Mapping-egldpcee=00BA6EB61567615AFB15FACB74D67EE1; path=/
+
+HTTP/1.1 302 Moved Temporarily
+Server: Unknown
+Vary: Accept-Encoding
+Content-Type: text/plain
+Date: Wed, 18 Dec 2013 08:21:31 GMT
+Location: http://www.vd.nl/index.jsf;jsessionid=7B0827ACDBDA874DD62277173C1709B3.mirvd112
+Transfer-Encoding: chunked
+Connection: Keep-Alive
+Set-Cookie: JSESSIONID=7B0827ACDBDA874DD62277173C1709B3.mirvd112; Domain=www.vd.nl; Path=/;HttpOnly
+Set-Cookie: X-Mapping-egldpcee=309EF29094DD6794869AC642FE42E744; path=/
+
+HTTP/1.1 200 OK
+Server: Unknown
+Vary: Accept-Encoding
+Content-Type: text/html;charset=UTF-8
+Date: Wed, 18 Dec 2013 08:21:31 GMT
+Transfer-Encoding: chunked
+Connection: Keep-Alive
+Set-Cookie: X-Mapping-egldpcee=75FACE26A300BA579BA2B1C5BE336FA3; path=/
+X-Powered-By: JSF/1.2
+Requests 2.1.0, however, strips the url right at the semicolon, making it go into a redirect loop:
+    1: redirect to http://www.vd.nl/index.jsf?noCookieCheck=true [302]
+    2: redirect to http://www.vd.nl/index.jsf [302]
+    3: redirect to http://www.vd.nl/ [301]
+    4: redirect to http://www.vd.nl/index.jsf?noCookieCheck=true [302]
+    5: redirect to http://www.vd.nl/index.jsf [302]
+    6: redirect to http://www.vd.nl/ [301]
+    7: redirect to http://www.vd.nl/index.jsf?noCookieCheck=true [302]
+    8: redirect to http://www.vd.nl/index.jsf [302]
+etc.
+using sample code:
+import requests
+
+url = 'http://www.vd.nl/'
+
+headers = {
+    'Accept-Encoding': 'identity, deflate, compress, gzip',
+    'Accept': '*/*',
+    'Connection': 'close',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_5) AppleWebKit/536.30.1 (KHTML, like Gecko) Version/6.0.5 Safari/536.30.1'
+            }
+s = requests.session()
+s.keep_alive = False
+response = s.get(url, verify=False, timeout=30, headers=headers, stream=True, allow_redirects=False)
+responsecode = response.status_code
+if responsecode >= 300 and responsecode < 400 and response.headers.get('location'):
+    redirect_counter = 1
+    print "    %d: redirect to %s [%d]" % (redirect_counter, response.headers.get('location'), responsecode)
+    for redirect in s.resolve_redirects(response, response.request):
+        redirect_counter += 1
+        responsecode = redirect.status_code
+        new_location = redirect.headers.get('location')
+        if responsecode >= 300 and responsecode < 400 and new_location:
+            print "    %d: redirect to %s [%d]" % (redirect_counter, new_location, responsecode)
+        else:
+            break
+response.close()

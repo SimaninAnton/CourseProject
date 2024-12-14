@@ -1,0 +1,27 @@
+Contributor
+gaffney commented on 8 Jan 2015
+Hey Tom,
+We have quite a few base serializers that have their own methods and fields, etc., and serializer subclasses that use a subset of these fields declared in the parent.
+This setup breaks after upgrading to 3.0 due to this particular configuration assertion:
+ImproperlyConfigured: Field `blah_field` has been declared on serializer
+`MySerializer`, but is missing from `Meta.fields`.
+I do not see the point of this assertion, as inheritance worked as expected before, which allowed for cleaner and more extensible serializers. Do you remember why this was added?
+Also, is there a clean way to work around this assertion? Currently I have a hack in the top-level serializer to work around this limitation, which makes this aspect of rest_framework to behave how it used to in 2.4:
+class BaseSerializer(serializers.ModelSerializer):
+
+  def get_fields(self):
+    # hack; see rest_framework issue #2388
+    declared_fields     = copy.deepcopy(self._declared_fields)
+    meta_field_names    = getattr(self.Meta, 'fields', None)
+    new_declared_fields = OrderedDict()
+
+    for field_name in meta_field_names:
+      if field_name not in declared_fields:
+        continue
+      new_declared_fields[field_name] = declared_fields[field_name]
+
+    self._declared_fields = new_declared_fields
+
+    return super(BaseSerializer, self).get_fields()
+P.S. For reference, this validation addition was made in this commit: 87734be
+1

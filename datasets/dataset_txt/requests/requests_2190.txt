@@ -1,0 +1,45 @@
+Contributor
+matthewlmcclure commented on Feb 24, 2013
+The change for #1159 regressed the fix for #1096. Recomputing Content-Length for requests that transmit OAuth params in the request body is broken again. Here's a test case:
+[mlm@matt-mmf-macbook.local:~]
+$ ipython
+Python 2.7.3 (default, Sep 15 2012, 19:45:36) 
+Type "copyright", "credits" or "license" for more information.
+
+IPython 0.13.1 -- An enhanced Interactive Python.
+?         -> Introduction and overview of IPython's features.
+%quickref -> Quick reference.
+help      -> Python's own help system.
+object?   -> Details about 'object', use 'object??' for extra details.
+
+In [1]: import requests
+
+In [2]: from requests_oauthlib import OAuth1
+
+In [3]: oauth = OAuth1(client_key=u'a-client-id', client_secret=u'a-client-secret', callback_uri=u'http://example.com/oauth_callback', signature_type=u'BODY')
+In [4]: req = requests.Request(method='POST', url='http://example.com/request_token', headers={ 'Accept': 'application/x-www-form-urlencoded', 'Content-Type': 'application/x-www-form-urlencoded' }, auth=oauth).prepare()
+
+In [5]: req.__dict__Out[5]: 
+{'body': u'oauth_nonce=119221505668693451461361716039&oauth_timestamp=1361716039&oauth_version=1.0&oauth_signature_method=HMAC-SHA1&oauth_consumer_key=a-client-id&oauth_callback=http%3A%2F%2Fexample.com%2Foauth_callback&oauth_signature=azH8mCrSMYvEpQ7oonDIoIq38oQ%3D',
+ 'headers': {'Accept': 'application/x-www-form-urlencoded',
+  'Content-Length': '0',
+  'Content-Type': u'application/x-www-form-urlencoded'},
+ 'hooks': {'response': []},
+ 'method': 'POST',
+ 'url': u'http://example.com/request_token'}
+
+In [6]: resp = requests.request(method='POST', url='http://example.com/request_token', headers={ 'Accept': 'application/x-www-form-urlencoded', 'Content-Type': 'application/x-www-form-urlencoded' }, allow_redirects=False, auth=oauth)
+
+In [7]: resp.request.__dict__
+Out[7]: 
+{'body': u'oauth_nonce=40755579898176978971361716049&oauth_timestamp=1361716049&oauth_version=1.0&oauth_signature_method=HMAC-SHA1&oauth_consumer_key=a-client-id&oauth_callback=http%3A%2F%2Fexample.com%2Foauth_callback&oauth_signature=Ti910zdRt%2BC5UxLG2dJ5eJ%2BkZ90%3D',
+ 'headers': {'Accept': 'application/x-www-form-urlencoded',
+  'Accept-Encoding': 'gzip, deflate, compress',
+  'Content-Length': '0',
+  'Content-Type': u'application/x-www-form-urlencoded',
+  'User-Agent': 'python-requests/1.1.0 CPython/2.7.3 Darwin/11.4.2'},
+ 'hooks': {'response': []},
+ 'method': 'POST',
+ 'url': u'http://example.com/request_token'}
+
+In [9]: 

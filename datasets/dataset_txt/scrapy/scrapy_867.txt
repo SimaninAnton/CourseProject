@@ -1,0 +1,109 @@
+BuGoNee commented on Jul 21, 2016 •
+edited
+I want scraping http://www.lagou.com with proxy.
+I collected a lot of proxy server like this:
+{'https': 'https://110.72.7.236:8123'}
+some of server can use http, some just support https.
+I have some code check server is ok:
+import requests
+
+proxies = [
+ {'https': 'https://39.66.5.213:8998'},
+ {'https': 'https://111.200.106.5:8123'},
+ {'https': 'https://110.72.7.236:8123'},
+ {'https': 'https://123.180.122.83:8998'}
+]
+checkUrl = 'http://www.lagou.com/
+
+def _check_proxy(proxy, timeout = None):
+    try:
+        r = requests.get(checkUrl, proxies =  proxy ,timeout = timeout)
+        return r.status_code
+   except:
+        return 0
+
+def main():
+    for proxy in proxies:
+        print proxy, _check_proxy(proxy, timeout=20)
+main()
+I think proxy server states is health.
+BUT, when I proxy to scrapy , it's not ok, my proxy middleware code:
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
+
+import pdb
+import random
+import base64
+import time
+import datetime
+from codec import convert
+from scrapy import signals
+from scrapy.utils.project import get_project_settings
+
+settings = get_project_settings()
+
+class ProxyMiddleware(object):
+
+    def __init__(self, settings):
+        self.proxies = settings.get('PROXIES', [])
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        middleware = cls(crawler.settings)
+        crawler.signals.connect(middleware.spider_opened, signals.spider_opened)
+        crawler.signals.connect(middleware.spider_closed, signals.spider_closed)
+        return middleware
+
+    def spider_closed(self, spider):
+        pass
+
+    def spider_opened(self, spider):
+        self.PROXIES = [
+{'username': '', 'ip': '119.29.120.97', 'password': '', 'type': 'https', 'port': '80'},
+{'username': '', 'ip': '115.46.68.190', 'password': '', 'type': 'https', 'port': '8123'},
+{'username': '', 'ip': '60.163.3.9', 'password': '', 'type': 'https', 'port': '8118'},
+{'username': '', 'ip': '171.37.134.201', 'password': '', 'type': 'https', 'port': '8123'},
+]
+
+
+    def process_request(self, request, spider):
+        # Don't overwrite with a random one (server-side state for IP)
+        #  if 'proxy' in request.meta:
+            #  return
+        proxy = random.choice(self.PROXIES)
+        proxy_user_pass = proxy['username'] +':'+ proxy['password'] if proxy['username'] else ''
+        print proxy_user_pass
+        request.meta['proxy'] = "%s://%s:%s" % (proxy['type'], proxy['ip'], proxy['port'])
+        #  request.meta['proxy'] = "http://%s:%s" % (proxy['ip'], proxy['port'])
+        #  request.meta['proxy'] = 'https://180.76.163.61:10000'
+        print request.meta
+        if proxy_user_pass:
+            basic_auth = 'Basic ' + base64.encodestring(proxy_user_pass)
+            request.headers['Proxy-Authorization'] = basic_auth
+
+    def process_exception(self, request, exception, spider):
+        proxy = request.meta['proxy']
+        spider.logger.error('%s! Removing failed proxy <%s>, %d proxies left' % (
+            exception, proxy, len(self.proxies)))
+        try:
+            self.proxies.remove(proxy)
+        except ValueError:
+            pass
+some error like this:
+2016-07-21 16:50:10 [scrapy] DEBUG: Retrying <POST http://www.lagou.com/jobs/positionAjax.json?px=new&needAddtionalResult=false> (failed 1 times): [<twisted.python.failure.Failure <class 'twisted.internet.error.ConnectionLost'>>]
+2016-07-21 16:50:10 [scrapy] DEBUG: Retrying <POST http://www.lagou.com/jobs/positionAjax.json?px=new&needAddtionalResult=false> (failed 2 times): An error occurred while connecting: [Failure instance: Traceback (failure with no frames): <class 'twisted.internet.error.ConnectionLost'>: Connection to the other side was lost in a non-clean fashion: Connection lost.
+].
+2016-07-21 16:50:10 [scrapy] DEBUG: Gave up retrying <POST http://www.lagou.com/jobs/positionAjax.json?px=new&needAddtionalResult=false> (failed 3 times): An error occurred while connecting: [Failure instance: Traceback (failure with no frames): <class 'twisted.internet.error.ConnectionLost'>: Connection to the other side was lost in a non-clean fashion: Connection lost.
+].
+2016-07-21 16:50:10 [lagou_new] ERROR: An error occurred while connecting: [Failure instance: Traceback (failure with no frames): <class 'twisted.internet.error.ConnectionLost'>: Connection to the other side was lost in a non-clean fashion: Connection lost.
+].! Removing failed proxy https://1.59.94.112:8998, 0 proxies left
+2016-07-21 16:50:10 [scrapy] DEBUG: Retrying <POST http://www.lagou.com/jobs/positionAjax.json?px=new&needAddtionalResult=false> (failed 1 times): An error occurred while connecting: [Failure instance: Traceback (failure with no frames): <class 'twisted.internet.error.ConnectionLost'>: Connection to the other side was lost in a non-clean fashion: Connection lost.
+].
+I did some test:
+{'https':'https://180.76.163.61:10000'} can support http, when i use it.
+request.meta['proxy'] = 'https://180.76.163.61:10000'
+it's worked!
+else server cannot support http, will did not work.

@@ -1,0 +1,58 @@
+rvignesh89 commented on 11 Sep 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Create a decimal field with a MinValueValidator and a custom error message.
+class ItemModel(models.Model):
+    price = models.DecimalField(decimal_places=2, 
+                                max_digits=10, 
+                                validators=[MinValueValidator(limit_value=0, 
+                                                    message='Price has to be >= 0.')])
+
+class ItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ItemModel
+        fields = '__all__'
+
+data = {'price': -1}
+serializer = ItemSerializer(data, partial=True)
+serializer.is_valid()
+Expected behavior
+serializer.errors['price'] == ['Price has to be >= 0.'] 
+Actual behavior
+serializer.errors['price'] == ['Ensure this value is greater than or equal to 0.'] 
+Extra
+I've drilled down this problem to be here,
+    # Ensure that min_value is passed explicitly as a keyword arg,
+    # rather than as a validator.
+    min_value = next((
+        validator.limit_value for validator in validator_kwarg
+        if isinstance(validator, validators.MinValueValidator)
+    ), None)
+    if min_value is not None and isinstance(model_field, NUMERIC_FIELD_TYPES):
+        kwargs['min_value'] = min_value
+        validator_kwarg = [
+            validator for validator in validator_kwarg
+            if not isinstance(validator, validators.MinValueValidator)
+        ]
+Based on my understanding of the codebase a fix looks something like this.
+    # Ensure that max_value is passed explicitly as a keyword arg,
+    # rather than as a validator.
+    min_value, message = next((
+        (validator.limit_value, validator.message) for validator in validator_kwarg
+        if isinstance(validator, validators.MinValueValidator)
+    ), (None, None))
+    if min_value is not None and isinstance(model_field, NUMERIC_FIELD_TYPES):
+        kwargs['min_value'] = min_value
+        kwargs['error_messages'] = {'min_value': message}
+        validator_kwarg = [
+            validator for validator in validator_kwarg
+            if not isinstance(validator, validators.MinValueValidator)
+        ]
+The same problem also exists for other type of validators because they seem to be constructed in a similar manner.
+I'll submit a PR with a failing test to confirm the issue on master.

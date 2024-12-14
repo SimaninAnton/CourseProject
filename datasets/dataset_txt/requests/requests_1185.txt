@@ -1,0 +1,71 @@
+anarcat commented on Jan 7, 2016
+I can reproducibly get ResourceWarnings when running incomplete requests with iter_lines.
+this is my test code:
+#!/usr/bin/python3
+
+from contextlib import closing
+import re
+import time
+import warnings
+
+import requests
+
+print("requests %s" % requests.__version__)
+
+max_bytes = 640*1024
+def test_get_title_close(url):
+    response = requests.get(url, stream=True)
+
+    try:
+        content = ''
+        for line in response.iter_lines(decode_unicode=True):
+            content += line
+            if '</title>' in content or len(content) > max_bytes:
+                break
+    except (UnicodeDecodeError, TypeError):
+          # Fail silently when data can't be decoded
+          return
+    finally:
+        # need to close the connexion because we have not read all the data
+        response.connection.close()
+    response.connection.close()
+
+    print('title found: %s' % re.sub(r'^.*<title>', '', re.sub(r'</title>.*$', '', content)))
+
+def test_get_title_closing(url):
+    with closing(requests.get(url, stream=True)) as response:
+        try:
+            content = ''
+            for line in response.iter_lines(decode_unicode=True):
+                content += line
+                if '</title>' in content or len(content) > max_bytes:
+                    break
+        except (UnicodeDecodeError, TypeError):
+              # Fail silently when data can't be decoded
+              return
+        finally:
+            # need to close the connexion because we have not read all the data
+            response.close()
+            # also trying the undocumented ones
+            response.connection.close()
+
+        print('title found: %s' % re.sub(r'^.*<title>', '', re.sub(r'</title>.*$', '', content)))
+
+warnings.filterwarnings('default')
+test_get_title_closing('http://example.com/') # this should not warn, but does
+test_get_title_close('http://example.com/') # this should not warn, but does also
+it's taken from this pull request: sopel-irc/sopel#988 - which tries to switch an irc bot from using a homegrown http library to the more standard "requests". the original code does not yield such warnings even though it also does HTTPS connections.
+here is the output:
+$ python3 test_requests_fail.py
+requests 2.9.1
+title found: Example Domain
+../test_requests_fail.py:53: ResourceWarning: unclosed <socket.socket fd=4, family=AddressFamily.AF_INET6, type=SocketType.SOCK_STREAM, proto=6, laddr=('2607:f2c0:f00f:8f00:ea9a:8fff:fe6e:f60', 39628, 0, 0), raddr=('2606:2800:220:1:248:1893:25c8:1946', 80, 0, 0)>
+  test_get_title_closing('http://example.com/') # this should not warn, but does
+title found: Example Domain
+../test_requests_fail.py:54: ResourceWarning: unclosed <socket.socket fd=4, family=AddressFamily.AF_INET6, type=SocketType.SOCK_STREAM, proto=6, laddr=('2607:f2c0:f00f:8f00:ea9a:8fff:fe6e:f60', 39630, 0, 0), raddr=('2606:2800:220:1:248:1893:25c8:1946', 80, 0, 0)>
+  test_get_title_close('http://example.com/') # this should not warn, but does also
+notice how i tried my best to close the resources, using various methods, none of which work. there's something definitely fishy about the way this works.
+this is on Debian Jessie 8.2, with the latest requests installed from pip (2.9.1), or jessie-backports (2.8.1-1~bpo8+1) and Python 3.4.2.
+oddly enough, older requests versions do not have that problem: 2.4.3 from plain old jessie is actually fine!
+so it sure looks like something broke since 2.4.3 in the fix proposed in #1882 and #2004.
+👍 1

@@ -1,0 +1,73 @@
+afettouhi commented on Aug 13, 2019
+I am currently doing some exercises with Kernel Density Estimation and I am trying to run this piece of code:
+from sklearn.datasets import load_digits
+from sklearn.model_selection import GridSearchCV
+
+digits = load_digits()
+
+bandwidths = 10 ** np.linspace(0, 2, 100)
+grid = GridSearchCV(KDEClassifier(), {'bandwidth': bandwidths}, cv=3)
+grid.fit(digits.data, digits.target)
+
+scores = [val.mean_validation_score for val in grid.cv_results_]
+but as the title says I get an
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+<ipython-input-29-15a5f685e6d6> in <module>
+      8 grid.fit(digits.data, digits.target)
+      9 
+---> 10 scores = [val.mean_validation_score for val in grid.cv_results_] 
+
+<ipython-input-29-15a5f685e6d6> in <listcomp>(.0)
+      8 grid.fit(digits.data, digits.target)
+      9 
+---> 10 scores = [val.mean_validation_score for val in grid.cv_results_] 
+AttributeError: 'str' object has no attribute 'mean_validation_score'
+regarding mean_validation_score and I don't understand why. The code is directly out of a book with a few changes due to running an up to date scikit learn package. Here is the original code snippet:
+from sklearn.datasets import load_digits
+from sklearn.grid_search import GridSearchCV
+
+digits = load_digits()
+
+bandwidths = 10 ** np.linspace(0, 2, 100)
+grid = GridSearchCV(KDEClassifier(), {'bandwidth': bandwidths})
+grid.fit(digits.data, digits.target)
+
+scores = [val.mean_validation_score for val in grid.grid_scores_]
+Forgot to add how KDEClassifier is defined:
+from sklearn.base import BaseEstimator, ClassifierMixin
+
+
+class KDEClassifier(BaseEstimator, ClassifierMixin):
+    """Bayesian generative classification based on KDE
+
+    Parameters
+    ----------
+    bandwidth : float
+        the kernel bandwidth within each class
+    kernel : str
+        the kernel name, passed to KernelDensity
+    """
+    def __init__(self, bandwidth=1.0, kernel='gaussian'):
+        self.bandwidth = bandwidth
+        self.kernel = kernel
+
+    def fit(self, X, y):
+        self.classes_ = np.sort(np.unique(y))
+        training_sets = [X[y == yi] for yi in self.classes_]
+        self.models_ = [KernelDensity(bandwidth=self.bandwidth,
+                                        kernel=self.kernel).fit(Xi)
+                        for Xi in training_sets]
+        self.logpriors_ = [np.log(Xi.shape[0] / X.shape[0])
+                            for Xi in training_sets]
+        return self
+
+    def predict_proba(self, X):
+        logprobs = np.array([model.score_samples(X)
+                                for model in self.models_]).T
+        result = np.exp(logprobs + self.logpriors_)
+        return result / result.sum(1, keepdims=True)
+
+    def predict(self, X):
+        return self.classes_[np.argmax(self.predict_proba(X), 1)]
+I am using the latest stable version of scikit-learn from miniconda3 on Arch Linux.

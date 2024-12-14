@@ -1,0 +1,70 @@
+fangpenlin commented on 11 Feb 2010
+Hi,
+I tried to run the helloworld demo under windows, but I got some errors. Tornado uses fcntl for controlling file. For running the demo, I modified some parts of original tornado. Actually, I don't really understand all of those fcntl operations for, especially the waker in IOLoop, however, without that the helloworld demo works find under windows. I don't have time to test other demos. Tornado really looks good, compare to twisted, it is simple and powerful. This is just a good begining, as a windows user, I hope it would be possible to develop tornado application under Windows in future. :D
+Regards
+Victor Lin.
+Here is the patch:
+diff --git a/tornado/httpserver.py b/tornado/httpserver.py
+index 4e5ae76..ded4623 100644
+--- a/tornado/httpserver.py
++++ b/tornado/httpserver.py
+@@ -18,7 +18,6 @@
+import cgi
+import errno
+-import fcntl
+import functools
+import ioloop
+import iostream
+@@ -136,9 +135,11 @@ class HTTPServer(object):
+"""
+assert not self._socket
+self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
+   flags = fcntl.fcntl(self._socket.fileno(), fcntl.F_GETFD)
+   flags |= fcntl.FD_CLOEXEC
+   fcntl.fcntl(self._socket.fileno(), fcntl.F_SETFD, flags)
+   if os.name != 'nt':
+       import fcntl
+       flags = fcntl.fcntl(self._socket.fileno(), fcntl.F_GETFD)
+       flags |= fcntl.FD_CLOEXEC
+       fcntl.fcntl(self._socket.fileno(), fcntl.F_SETFD, flags)
+ self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+ self._socket.setblocking(0)
+ self._socket.bind((address, port))
+diff --git a/tornado/ioloop.py b/tornado/ioloop.py
+index 35d90cd..20f2863 100644
+--- a/tornado/ioloop.py
++++ b/tornado/ioloop.py
+@@ -18,7 +18,6 @@
+import bisect
+import errno
+-import fcntl
+import logging
+import os
+import select
+@@ -90,12 +89,13 @@ class IOLoop(object):
+ # Create a pipe that we send bogus data to when we want to wake
+ # the I/O loop when it is idle
+   r, w = os.pipe()
+   self._set_nonblocking(r)
+   self._set_nonblocking(w)
+   self._waker_reader = os.fdopen(r, "r", 0)
+   self._waker_writer = os.fdopen(w, "w", 0)
+   self.add_handler(r, self._read_waker, self.WRITE)
+   if os.name != 'nt':
+       r, w = os.pipe()
+       self._set_nonblocking(r)
+       self._set_nonblocking(w)
+       self._waker_reader = os.fdopen(r, "r", 0)
+       self._waker_writer = os.fdopen(w, "w", 0)
+       self.add_handler(r, self._read_waker, self.WRITE)
+@classmethod
+def instance(cls):
+@@ -271,10 +271,10 @@ class IOLoop(object):
+pass
+def _set_nonblocking(self, fd):
+   import fcntl
+ flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+ fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+class _Timeout(object):
+"""An IOLoop timeout, a UNIX timestamp and a callback"""
+def init(self, deadline, callback):

@@ -1,0 +1,83 @@
+bhavikngala commented on 29 Dec 2018
+Hi,
+My loss function uses the weight of the last layer (call it S) and output of the intermediate layer (call it h). S is 3x2 matrix and h is batch_size x 3 matrix. The loss function computes mean and variance using S and h and then compute the log-likelihood from a multivariate normal distribution.
+Mean(batch x 2 tensor) is computed as = h x S
+Covariance(batch x 2 x 2 tensor) is computed as = S' x diag(h) x S
+where x is matrix multiplication, S' is transpose of S, diag(h) is batch of diagonal matrices for each row in h.
+Now computing mean is straightforward whereas computing covariance requires couple of reshape, and permute_dimensions operations.
+I am using adam optimizer. here is where I get error when I run the fit model function.
+I get the following error:
+Error in py_call_impl(callable, dots$args, dots$keywords) : 
+  InvalidArgumentError: -1 is not between 0 and 3
+  [[{{node training_9/Adam/gradients/loss_13/S_loss/transpose_4_grad/InvertPermutation}} = InvertPermutation[T=DT_INT32, _class=["loc:@training_9/Adam/gradients/loss_13/S_loss/transpose_4_grad/transpose"], _device="/job:localhost/replica:0/task:0/device:CPU:0"](loss_13/S_loss/transpose_4/perm)]]
+
+Detailed traceback: 
+  File "/home/ophiuchus/miniconda3/envs/keras/lib/python3.6/site-packages/keras/engine/training.py", line 1039, in fit
+    validation_steps=validation_steps)
+  File "/home/ophiuchus/miniconda3/envs/keras/lib/python3.6/site-packages/keras/engine/training_arrays.py", line 199, in fit_loop
+    outs = f(ins_batch)
+  File "/home/ophiuchus/miniconda3/envs/keras/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 2715, in __call__
+    return self._call(inputs)
+  File "/home/ophiuchus/miniconda3/envs/keras/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 2675, in _call
+    fetched = 
+the code to reproduce this error is:
+library(keras)
+library(tensorflow)
+
+# Define Model --------------------------------------------------------------
+
+# input layer
+inputs <- layer_input(shape = c(2))
+intermediate1 <- inputs %>% layer_dense(units = 32, activation = 'sigmoid')
+log.h <- intermediate1 %>% layer_dense(units = 3, name = 'log_h' , kernel_regularizer = regularizer_l1(0.001))
+predictions <- log.h %>% layer_dense(units = 2, name = 'S', use_bias = FALSE, kernel_regularizer = regularizer_l1(0.001))
+
+# create model
+model <- keras_model(inputs = inputs, outputs = predictions)
+
+
+# Loss & Compile -----------------------------------------------------------
+
+loss.nll.2 = function(y_true, y_pred){
+  loss.S <- k_variable(get_weights(get_layer(model, 'S'))[[1]]) # get layer weight
+  loss.S_T <- k_transpose(loss.S)                               
+  
+  h.exp <- k_exp(log.h)
+  h.diag <- tf$matrix_diag(h.exp)               # n x 3 x 3      # shape
+  h.diag <- k_reshape(h.diag, shape=c(-1L, 3L)) # (n * 3) x 3
+  h.diag <- k_transpose(h.diag)                 # 3 x (n * 3)
+  
+  dx.var.train <- k_dot(loss.S_T, h.diag)       # 2 x (n * 3)
+  dx.var.train <- k_transpose(dx.var.train)     # (n * 3) x 2
+  dx.var.train <- k_reshape(dx.var.train, shape=c(-1L, 3L, 2L))      # n x 3 x 2
+  dx.var.train <- k_permute_dimensions(dx.var.train, c(0L, 2L, 1L))  # n x 2 x 3
+  dx.var.train <- k_reshape(dx.var.train, shape=c(-1L, 3L))          # (n * 2) x 3
+  dx.var.train <- k_dot(dx.var.train, loss.S)                        # (n * 2) x 2
+  dx.var.train <- k_reshape(dx.var.train, shape=c(-1L, 2L, 2L))      # n x 2 x 2
+  dx.var.train <- k_permute_dimensions(dx.var.train, c(0L, 2L, 1L))  # n x 2 x 2
+  
+  dx.mean.train <- k_dot(h.exp,loss.S)
+  
+  nll <- -k_sum(tf$contrib$distributions$MultivariateNormalFullCovariance(loc=dx.mean.train, covariance_matrix=dx.var.train)$log_prob(y_true))
+  return(nll)
+}
+
+model %>% compile(
+  optimizer = 'adam',
+  loss = loss.nll.2
+)
+
+
+# Training & Evaluation ----------------------------------------------------
+
+x_train <- matrix(rexp(200, rate=.1), ncol=2)
+y_train <- matrix(rexp(200, rate=.1), ncol=2)
+
+# Fit model to data
+history <- model %>% fit(
+  x_train, y_train,
+  epochs = 1000,
+  verbose = 1
+)
+I have changed the computation graph, but the loss function is exactly the same as I will be using it.
+Please help me solve this error.

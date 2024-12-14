@@ -1,0 +1,63 @@
+Contributor
+adamjstewart commented on Oct 9, 2018 •
+edited
+Description
+I'm trying to tune a MLPClassifier using GridSearchCV and the Adam optimizer. Most of the time, it works fine, but no matter what hyperparameters I search over, it will occasionally crash with an OverflowError.
+Steps/Code to Reproduce
+Here is a snippet of the relevant code showing which hyperparameters I'm trying to tune.
+model = MLPClassifier(early_stopping=True)
+
+# Perform a grid search over the hyperparameter space
+hidden_layer_sizes = []
+for num_layer in range(1, 6):
+   for size_exp in range(5, 11):
+        hidden_layer_sizes.append([2 ** size_exp] * num_layer)
+
+param_grid = {
+    'hidden_layer_sizes': hidden_layer_sizes,
+    'activation': ['logistic', 'tanh', 'relu'],
+    'learning_rate_init': [10**i for i in range(-5, 0)],
+    'beta_1': [0.9, 0.99, 0.999],
+    'beta_2': [0.99, 0.999, 0.9999],
+}
+
+clf = GridSearchCV(model, param_grid, n_jobs=-1)
+clf.fit(train_data, train_labels)
+I realize that you can't actually reproduce this without the dataset, but the dataset is rather large.
+Expected Results
+I realize that OverflowError is OverflowError, but why must this crash the entire grid search? I would expect all hyperparameter combinations that result in an error to be handled internally with a try-except block. At the end, the best combination that didn't result in an error should be reported.
+Actual Results
+If even a single hyperparameter combination out of thousands results in an OverflowError, the entire program crashes, wasting dozens of CPU hours. I see an error message like the following:
+Traceback (most recent call last):
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 350, in __call__
+    return self.func(*args, **kwargs)
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 131, in __call__
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 131, in <listcomp>
+    return [func(*args, **kwargs) for func, args, kwargs in self.items]
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/model_selection/_validation.py", line 437, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/neural_network/multilayer_perceptron.py", line 973, in fit
+    hasattr(self, "classes_")))
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/neural_network/multilayer_perceptron.py", line 378, in _fit
+    intercept_grads, layer_units, incremental)
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/neural_network/multilayer_perceptron.py", line 522, in _fit_stochastic
+    self._optimizer.update_params(grads)
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/neural_network/_stochastic_optimizers.py", line 43, in update_params
+    updates = self._get_updates(grads)
+  File "/mnt/bwpy/single/usr/lib/python3.6/site-packages/sklearn/neural_network/_stochastic_optimizers.py", line 263, in _get_updates
+    (1 - self.beta_1 ** self.t))
+OverflowError: (34, 'Numerical result out of range')
+I tried skipping the search over beta_1 and beta_2, but that also resulted in an OverflowError. I can keep narrowing my search, but that runs the risk of finding suboptimal hyperparameters.
+Versions
+>>> import platform; print(platform.platform())
+Linux-3.0.101-0.47.106.29-default-x86_64-with-SuSE-11-x86_64
+>>> import sys; print("Python", sys.version)
+Python 3.5.5 (default, May 29 2018, 17:40:43) 
+[GCC 4.9.3 20150626 (Cray Inc.)]
+>>> import numpy; print("NumPy", numpy.__version__)
+NumPy 1.14.2
+>>> import scipy; print("SciPy", scipy.__version__)
+SciPy 1.0.0
+>>> import sklearn; print("Scikit-Learn", sklearn.__version__)
+Scikit-Learn 0.19.0

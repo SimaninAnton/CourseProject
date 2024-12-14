@@ -1,0 +1,87 @@
+Contributor
+ipod825 commented on 23 Feb 2016
+Keras up to date
+I am creating a customized Embedding layer (not related to this issue).
+And I found that currently Keras can not restore customized layer from the json file.
+I am wondering if this feature could be added.
+Here's the demonstration code:
+from keras.models import Sequential
+from keras.layers.core import Dense
+from keras.models import model_from_json
+
+class MyDense(Dense):
+    pass
+
+model = Sequential()                                                                                                                  
+model.add(Dense(1,input_shape=(1,)))
+model.add(MyDense(2))
+
+with open('arch.json','w') as f:
+    f.write(model.to_json())
+
+with open('arch.json') as f:
+    model = model_from_json(f.read())
+The error
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "test.py", line 16, in <module>
+    model = model_from_json(f.read())
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 166, in model_from_json
+    return model_from_config(config, custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 177, in model_from_config
+    model = container_from_config(config, custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/dist-packages/keras/utils/layer_utils.py", line 43, in container_from_config
+    init_layer = container_from_config(layer)
+  File "/usr/local/lib/python2.7/dist-packages/keras/utils/layer_utils.py", line 92, in container_from_config
+    base_layer = get_layer(name, layer_dict)
+  File "/usr/local/lib/python2.7/dist-packages/keras/utils/layer_utils.py", line 158, in get_layer
+    instantiate=True, kwargs=kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/utils/generic_utils.py", line 14, in get_from_module
+    str(identifier))
+Exception: Invalid layer: MyDense
+_The following content is not related to the issue, just FYI_
+As for what I am customizing is that I want to have an Embedding layer that takes the input value 0 as a special "padding" value and always masks it (return a zero vector). The mask_zero argument for the current Embedding layer seems to have is restriction. So here's my implementation
+_Edit:_ the following code is not working, see my following comment.
+from keras.layers.embeddings import Embedding
+from keras import backend as K
+
+class MyEmbedding(Embedding):
+    def __init__(self, input_dim, output_dim, use_mask=True, **kwargs):
+        self.use_mask = use_mask
+        super(MyEmbedding, self).__init__(input_dim, output_dim, **kwargs)
+
+    def get_output(self, train=False):
+        X = self.get_input(train)
+        if self.use_mask:
+            m = np.ones((self.input_dim, self.output_dim))
+            m[0] = [0]*self.output_dim
+            mask = tf.constant(m, dtype=self.W.dtype)
+            outW = K.gather(self.W, X)
+            outM = K.gather(mask, X)
+            return outW*outM
+        else:
+            return K.gather(self.W, X)
+
+X=np.array([[0,1,0,3,4,5,6,7,8]], dtype=int)
+vocab_size = 20
+embedding_dims=5
+maxlen=X.shape[1]
+nb_filter = 6
+
+model = Sequential()                                                                                                                  
+model.add(MyEmbedding(vocab_size, embedding_dims, input_length=maxlen))
+model.compile(loss='binary_crossentropy',optimizer='rmsprop')
+res=model.predict(X)
+
+print res
+output
+[[[ 0.         -0.          0.          0.         -0.        ]
+  [ 0.00761573  0.00920419  0.00722519 -0.02769184  0.0452749 ]
+  [ 0.         -0.          0.          0.         -0.        ]
+  [-0.01034943  0.03811032  0.00812729  0.03817354  0.01925316]
+  [ 0.02252543  0.00013244  0.04560836  0.01439902 -0.0076145 ]
+  [ 0.01063932 -0.04808068 -0.01984252  0.01601735 -0.02099224]
+  [ 0.01180154 -0.00712313 -0.0364526  -0.02017177  0.00699649]
+  [ 0.00908728  0.00743253  0.01532008  0.01521033 -0.00685816]
+  [ 0.03965466 -0.01324381 -0.00641351  0.03919233  0.0306194 ]]]
+1

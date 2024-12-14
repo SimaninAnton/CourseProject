@@ -1,0 +1,35 @@
+Contributor
+pierreglaser commented on Feb 27, 2019
+Using LogisticRegresion with solver="saga" uses a thread-based backend if possible (see these lines)
+However, I observed performance issues (potentially due to over-subscription?)
+import itertools
+import time
+
+import numpy as np
+from sklearn.externals.joblib import parallel_backend
+from sklearn.linear_model.logistic import LogisticRegression
+from sklearn.datasets import make_classification
+
+
+X, y = make_classification(n_samples=100000, n_features=10, n_informative=5,
+                           n_classes=10)
+
+for backend, n_jobs in itertools.product(['threading', 'loky'], [1, 2, 4]):
+    with parallel_backend(backend):
+        clf = LogisticRegression(solver='saga', n_jobs=n_jobs)
+        t0 = time.time()
+        clf.fit(X, y)
+        total_time = time.time() - t0
+        print("backend: {:>9} n_jobs: {} total time: ({:.3f}, "
+              " n_iter: {})".format(backend, n_jobs, total_time,
+                                   np.mean(clf.n_iter_)))
+yields
+backend: threading n_jobs: 1 total time: (7.078,  n_iter: 14.6)
+backend: threading n_jobs: 2 total time: (8.821,  n_iter: 14.8)
+backend: threading n_jobs: 4 total time: (30.201,  n_iter: 14.8)
+backend:      loky n_jobs: 1 total time: (7.394,  n_iter: 14.3)
+backend:      loky n_jobs: 2 total time: (5.375,  n_iter: 15.0)
+backend:      loky n_jobs: 4 total time: (3.994,  n_iter: 15.2)
+I traced the number of iterations to make sure it is not simply a matter of convergence.
+Monitoring CPU usage showed a big (~50%) proportion of system calls.
+ping @ogrisel @jeremiedbb

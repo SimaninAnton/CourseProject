@@ -1,0 +1,107 @@
+Member
+jnothman commented on May 15, 2019
+I've not seen this error before, but it appeared in a run of https://travis-ci.org/MacPython/scikit-learn-wheels/jobs/532625822
+=================================== FAILURES ===================================
+____________ test_numerical_gradients[categorical_crossentropy-3-3] ____________
+loss = <sklearn.ensemble._hist_gradient_boosting.loss.CategoricalCrossEntropy object at 0xea7ca70c>
+n_classes = 3, prediction_dim = 3
+    @pytest.mark.parametrize('loss, n_classes, prediction_dim', [
+        ('least_squares', 0, 1),
+        ('binary_crossentropy', 2, 1),
+        ('categorical_crossentropy', 3, 3),
+    ])
+    @pytest.mark.skipif(Y_DTYPE != np.float64,
+                        reason='Need 64 bits float precision for numerical checks')
+    def test_numerical_gradients(loss, n_classes, prediction_dim):
+        # Make sure gradients and hessians computed in the loss are correct, by
+        # comparing with their approximations computed with finite central
+        # differences.
+        # See https://en.wikipedia.org/wiki/Finite_difference.
+    
+        rng = np.random.RandomState(0)
+        n_samples = 100
+        if loss == 'least_squares':
+            y_true = rng.normal(size=n_samples).astype(Y_DTYPE)
+        else:
+            y_true = rng.randint(0, n_classes, size=n_samples).astype(Y_DTYPE)
+        raw_predictions = rng.normal(
+            size=(prediction_dim, n_samples)
+        ).astype(Y_DTYPE)
+        loss = _LOSSES[loss]()
+        get_gradients, get_hessians = get_derivatives_helper(loss)
+    
+        # only take gradients and hessians of first tree / class.
+        gradients = get_gradients(y_true, raw_predictions)[0, :].ravel()
+        hessians = get_hessians(y_true, raw_predictions)[0, :].ravel()
+    
+        # Approximate gradients
+        # For multiclass loss, we should only change the predictions of one tree
+        # (here the first), hence the use of offset[:, 0] += eps
+        # As a softmax is computed, offsetting the whole array by a constant would
+        # have no effect on the probabilities, and thus on the loss
+        eps = 1e-9
+        offset = np.zeros_like(raw_predictions)
+        offset[0, :] = eps
+        f_plus_eps = loss(y_true, raw_predictions + offset / 2, average=False)
+        f_minus_eps = loss(y_true, raw_predictions - offset / 2, average=False)
+        numerical_gradients = (f_plus_eps - f_minus_eps) / eps
+    
+        # Approximate hessians
+        eps = 1e-4  # need big enough eps as we divide by its square
+        offset[0, :] = eps
+        f_plus_eps = loss(y_true, raw_predictions + offset, average=False)
+        f_minus_eps = loss(y_true, raw_predictions - offset, average=False)
+        f = loss(y_true, raw_predictions, average=False)
+        numerical_hessians = (f_plus_eps + f_minus_eps - 2 * f) / eps**2
+    
+        def relative_error(a, b):
+            return np.abs(a - b) / np.maximum(np.abs(a), np.abs(b))
+    
+>       assert np.allclose(numerical_gradients, gradients, rtol=1e-5)
+E       assert False
+E        +  where False = <function allclose at 0xf381c104>(array([-0.64964834,  0.10708545, -0.83398866,  0.10629453,  0.44373527,\n        0.08899548, -0.83443275,  0.07020295, ...960789, -0.81210505,  0.73497786,  0.65676109,\n       -0.85916674,  0.1741709 , -0.90590824,  0.86137142,  0.56198912]), array([-0.6496482 ,  0.1070854 , -0.83398855,  0.1062944 ,  0.44373494,\n        0.08899599, -0.8344329 ,  0.07020274, ... 0.73497766,  0.65676105,\n       -0.8591667 ,  0.17417073, -0.90590787,  0.86137116,  0.56198937],\n      dtype=float32), rtol=1e-05)
+E        +    where <function allclose at 0xf381c104> = np.allclose
+eps        = 0.0001
+f          = array([1.0488174 , 0.56517448, 1.79569847, 0.59564502, 1.43763009,
+       1.07168997, 1.79837861, 1.07783202, 0.746260...  , 0.80112454, 1.67187229, 1.38843168, 1.81498174,
+       1.96017823, 0.30144766, 2.3634807 , 4.30620007, 1.45354332])
+f_minus_eps = array([1.04888236, 0.56516377, 1.79578187, 0.59563439, 1.43758572,
+       1.07168107, 1.79846205, 1.077825  , 0.746313...69, 0.80110058, 1.6719535 , 1.38835818, 1.81491606,
+       1.96026415, 0.30143024, 2.36357129, 4.30611393, 1.45348712])
+f_plus_eps = array([1.04875243, 0.56518519, 1.79561507, 0.59565565, 1.43767447,
+       1.07169887, 1.79829517, 1.07783904, 0.746208...31, 0.8011485 , 1.67179108, 1.38850518, 1.81504742,
+       1.96009232, 0.30146507, 2.36339011, 4.30628621, 1.45359952])
+get_gradients = <function get_derivatives_helper.<locals>.get_gradients at 0xea8d4f5c>
+get_hessians = <function get_derivatives_helper.<locals>.get_hessians at 0xea8d4e3c>
+gradients  = array([-0.6496482 ,  0.1070854 , -0.83398855,  0.1062944 ,  0.44373494,
+        0.08899599, -0.8344329 ,  0.07020274, ... 0.73497766,  0.65676105,
+       -0.8591667 ,  0.17417073, -0.90590787,  0.86137116,  0.56198937],
+      dtype=float32)
+hessians   = array([0.22760543, 0.09561812, 0.13845165, 0.0949959 , 0.24683425,
+       0.0810757 , 0.13815466, 0.06527431, 0.249331...59044, 0.1947855 , 0.22542597,
+       0.12099929, 0.14383529, 0.08523881, 0.11941087, 0.24615732],
+      dtype=float32)
+loss       = <sklearn.ensemble._hist_gradient_boosting.loss.CategoricalCrossEntropy object at 0xea7ca70c>
+n_classes  = 3
+n_samples  = 100
+numerical_gradients = array([-0.64964834,  0.10708545, -0.83398866,  0.10629453,  0.44373527,
+        0.08899548, -0.83443275,  0.07020295, ...960789, -0.81210505,  0.73497786,  0.65676109,
+       -0.85916674,  0.1741709 , -0.90590824,  0.86137142,  0.56198912])
+numerical_hessians = array([0.2276054 , 0.09561805, 0.13845169, 0.09499588, 0.24683424,
+       0.08107572, 0.13815464, 0.06527432, 0.249331...05, 0.18219595, 0.15259038, 0.19478543, 0.22542599,
+       0.12099934, 0.14383532, 0.08523884, 0.11941079, 0.24615732])
+offset     = array([[0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,
+        0.0001, 0.0001, 0.0001, 0.0001, 0.0001...    ,
+        0.    , 0.    , 0.    , 0.    , 0.    , 0.    , 0.    , 0.    ,
+        0.    , 0.    , 0.    , 0.    ]])
+prediction_dim = 3
+raw_predictions = array([[-6.86589477e-01,  1.48733161e-02, -3.75665896e-01,
+        -3.82236374e-02,  3.67974474e-01, -4.47237002e-02,
+...-3.53371688e-01,  1.65650770e+00,
+         1.51191283e+00, -9.06804293e-01, -7.77217334e-01,
+        -7.39228090e-01]])
+relative_error = <function test_numerical_gradients.<locals>.relative_error at 0xea8d4ecc>
+rng        = <mtrand.RandomState object at 0xeba58bbc>
+y_true     = array([0., 1., 0., 1., 1., 2., 0., 2., 0., 0., 0., 2., 1., 2., 2., 0., 1.,
+       1., 1., 1., 0., 1., 0., 0., 1., 2., ...2., 0., 0., 0., 0., 0., 0., 2., 0., 2., 1., 1., 1.,
+       0., 1., 1., 1., 0., 1., 2., 0., 1., 2., 0., 2., 0., 1., 2.])

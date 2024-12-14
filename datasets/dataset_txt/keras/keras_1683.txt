@@ -1,0 +1,218 @@
+jgardin commented on 7 Sep 2017 •
+edited
+System:
+Ubuntu 16.04 LTS (64-bit)
+Intel® Xeon(R) CPU E5-2643 v4 @ 3.40GHz × 12
+2x Titan X Pascal
+Keras-2.0.8
+Tensorflow 1.3.0
+Issue:
+Script creates model and compiles model with no errors, however model.summary() does not report the correct model architecture, and layers are absent in model.layers.
+Code:
+import numpy as np
+from numpy.random import randint
+import pandas as pd
+import keras
+import sys
+import itertools
+import tensorflow as tf
+from keras import preprocessing
+from keras.utils import to_categorical
+from keras.models import Sequential, Model
+from keras.layers import Dense, Dropout, Activation, Flatten, Input, Embedding, LSTM, Bidirectional, Lambda, concatenate, add, Embedding, TimeDistributed
+from keras.layers.convolutional import Conv3D, MaxPooling3D, AveragePooling3D
+from keras.layers.normalization import BatchNormalization, regularizers
+from keras.optimizers import Adam
+
+#################################
+###  Define The Parameters
+#################################
+
+#####  Input Dimensions
+channels = 1
+timesteps = 16
+height = 112
+width = 112
+
+#####  Conv layer parameters
+convFilters = 16
+convKernel = (3, 3, 3)
+poolKernel = (2, 2, 2)
+
+####  BiLSTM parameters
+possible_words = ['foo','bar','phi','alpha']
+num_words=len(possible_words)
+embed_size=32
+max_length=12
+lstm_depth=128
+l2_norm=1e-4
+
+#####  MLP parameters
+MLP_Gtheta_width=1000
+MLP_Fphi_width_layer1=256
+MLP_Fphi_width_layer2=128
+MLP_Fphi_width_layer3=64
+MLP_Fphi_width_layer4=32
+
+####   Output parameters
+num_answers = 1
+learningRate = 1e-4
+
+#### Training parameters
+training_steps = 2300000
+validation_steps = 230000
+epochs = 100
+batch_size = 15
+
+################################
+###  Set up the Conv3dNet
+################################
+
+input_1 = Input((channels, timesteps, height, width))
+
+model_ = Conv3D(convFilters,convKernel, data_format='channels_first', padding='same', kernel_initializer='he_normal')(input_1)
+model_ = BatchNormalization()(model_)
+model_ = Activation('relu')(model_)
+model_ = MaxPooling3D(pool_size=poolKernel, data_format='channels_first', padding='same')(model_)
+
+model_ = Conv3D(convFilters*2,convKernel, data_format='channels_first', padding='same', kernel_initializer='he_normal')(model_)
+model_ = BatchNormalization()(model_)
+model_ = Activation('relu')(model_)
+model_ = MaxPooling3D(pool_size=poolKernel, data_format='channels_first', padding='same')(model_)
+
+model_ = Conv3D(convFilters*4,convKernel, data_format='channels_first', padding='same', kernel_initializer='he_normal')(model_)
+model_ = BatchNormalization()(model_)
+model_ = Activation('relu')(model_)
+model_ = MaxPooling3D(pool_size=poolKernel, data_format='channels_first', padding='same')(model_)
+
+#################################
+###  Set up the biLSTM
+#################################
+
+input_2 = Input(shape=(max_length,))
+embed_layer = Embedding(num_words,embed_size)(input_2)
+biLSTM_layer = Bidirectional(LSTM(lstm_depth, implementation=2, return_sequences=False, recurrent_regularizer=regularizers.l2(l2_norm), recurrent_dropout=0.25))(embed_layer)
+
+################################
+###  Set up the RelationModule
+################################
+
+ConvFeatures = []
+
+ConvShape = model_.shape
+timeD, heightD, widthD = ConvShape[2], ConvShape[3], ConvShape[4]
+
+for i in range(timeD):
+        for j in range(heightD):
+                for k in range(widthD):
+                        featVec = model_[:,:,i,j,k]
+                        ConvFeatures.append(featVec)
+
+RelationNet = []
+
+for pair in itertools.combinations(ConvFeatures,2):
+        RelationNet.append(concatenate([pair[0],pair[1],biLSTM_layer]))
+#####################################################################
+###  Set up the Gtheta MLP
+###  See "A simple neural network module for relational reasoning"
+###  https://arxiv.org/pdf/1706.01427.pdf
+#####################################################################
+
+
+Gtheta_input = tf.stack(RelationNet,axis=1)
+Gtheta_ = TimeDistributed(Dense(MLP_Gtheta_width))(Gtheta_input)
+Gtheta_ = TimeDistributed(BatchNormalization())(Gtheta_)
+Gtheta_ = TimeDistributed(Activation('relu'))(Gtheta_)
+
+Gtheta_ = TimeDistributed(Dense(MLP_Gtheta_width))(Gtheta_)
+Gtheta_ = TimeDistributed(BatchNormalization())(Gtheta_)
+Gtheta_ = TimeDistributed(Activation('relu'))(Gtheta_)
+
+Gtheta_ = TimeDistributed(Dense(MLP_Gtheta_width))(Gtheta_)
+Gtheta_ = TimeDistributed(BatchNormalization())(Gtheta_)
+Gtheta_ = TimeDistributed(Activation('relu'))(Gtheta_)
+
+Gtheta_ = TimeDistributed(Dense(MLP_Gtheta_width))(Gtheta_)
+Gtheta_ = TimeDistributed(BatchNormalization())(Gtheta_)
+Gtheta_ = TimeDistributed(Activation('relu'))(Gtheta_)
+
+###################################
+###  Addition layer
+###################################
+
+AdditionLayer = tf.reduce_sum(Gtheta_,axis=1)
+
+######################################################################
+### Set up the Fphi MLP
+###  See "A simple neural network module for relational reasoning"
+###  https://arxiv.org/pdf/1706.01427.pdf
+######################################################################
+
+Fphi_ = Dense(MLP_Fphi_width_layer1)(AdditionLayer)
+Fphi_ = BatchNormalization()(Fphi_)
+Fphi_ = Activation('relu')(Fphi_)
+
+Fphi_ = Dense(MLP_Fphi_width_layer2)(Fphi_)
+Fphi_ = BatchNormalization()(Fphi_)
+Fphi_ = Activation('relu')(Fphi_)
+
+Fphi_ = Dense(MLP_Fphi_width_layer3)(Fphi_)
+Fphi_ = BatchNormalization()(Fphi_)
+Fphi_ = Activation('relu')(Fphi_)
+
+Fphi_ = Dense(MLP_Fphi_width_layer4)(Fphi_)
+Fphi_ = BatchNormalization()(Fphi_)
+Fphi_ = Activation('relu')(Fphi_)
+
+###############################
+### Output Layer and Compile
+###############################
+
+output_ = Dense(num_answers)(Fphi_)
+output_ = Activation('sigmoid')(output_)
+
+RelationNet_ = Model(inputs=[input_1,input_2],outputs=[output_])
+
+RelationNet_.compile(optimizer=Adam(lr=learningRate), loss='binary_crossentropy', metrics=['accuracy'])
+
+RelationNet_.summary()
+Output:
+>>> RelationNet_.summary()
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+input_1 (InputLayer)         (None, 1, 16, 112, 112)   0         
+_________________________________________________________________
+conv3d_1 (Conv3D)            (None, 16, 16, 112, 112)  448       
+_________________________________________________________________
+batch_normalization_1 (Batch (None, 16, 16, 112, 112)  448       
+_________________________________________________________________
+activation_1 (Activation)    (None, 16, 16, 112, 112)  0         
+_________________________________________________________________
+max_pooling3d_1 (MaxPooling3 (None, 16, 8, 56, 56)     0         
+_________________________________________________________________
+conv3d_2 (Conv3D)            (None, 32, 8, 56, 56)     13856     
+_________________________________________________________________
+batch_normalization_2 (Batch (None, 32, 8, 56, 56)     224       
+_________________________________________________________________
+activation_2 (Activation)    (None, 32, 8, 56, 56)     0         
+_________________________________________________________________
+max_pooling3d_2 (MaxPooling3 (None, 32, 4, 28, 28)     0         
+_________________________________________________________________
+conv3d_3 (Conv3D)            (None, 64, 4, 28, 28)     55360     
+_________________________________________________________________
+batch_normalization_3 (Batch (None, 64, 4, 28, 28)     112       
+_________________________________________________________________
+activation_3 (Activation)    (None, 64, 4, 28, 28)     0         
+_________________________________________________________________
+max_pooling3d_3 (MaxPooling3 (None, 64, 2, 14, 14)     0         
+_________________________________________________________________
+activation_12 (Activation)   (None, 64, 2, 14, 14)     0         
+=================================================================
+Total params: 70,448
+Trainable params: 70,056
+Non-trainable params: 392
+_________________________________________________________________
+
+RelationNet_.layers
+[<keras.engine.topology.InputLayer object at 0x7f2737b20978>, <keras.layers.convolutional.Conv3D object at 0x7f26f13f7898>, <keras.layers.normalization.BatchNormalization object at 0x7f26ff4f1128>, <keras.layers.core.Activation object at 0x7f26f1390da0>, <keras.layers.pooling.MaxPooling3D object at 0x7f26f1390b70>, <keras.layers.convolutional.Conv3D object at 0x7f26f13b18d0>, <keras.layers.normalization.BatchNormalization object at 0x7f26f13f7b70>, <keras.layers.core.Activation object at 0x7f26f131a898>, <keras.layers.pooling.MaxPooling3D object at 0x7f26f130cb70>, <keras.layers.convolutional.Conv3D object at 0x7f26f13320f0>, <keras.layers.normalization.BatchNormalization object at 0x7f26f12ffcf8>, <keras.layers.core.Activation object at 0x7f26f1289c88>, <keras.layers.pooling.MaxPooling3D object at 0x7f26f1289a58>, <keras.layers.core.Activation object at 0x7f26ad557ac8>]

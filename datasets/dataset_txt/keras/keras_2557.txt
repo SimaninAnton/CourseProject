@@ -1,0 +1,46 @@
+Contributor
+abnera commented on 25 Apr 2017
+I have a working classification model that I use for fine-tuning/transfer learning of image classification.
+Model Creation:
+base_model = Xception(input_shape=(299, 299, 3),
+                          weights='imagenet', include_top=False, pooling='avg')
+top_model = Sequential()
+top_model.add(Dense(101, activation='softmax', input_shape=base_model.output_shape[1:]))
+model = Model(inputs=base_model.input, outputs=top_model(base_model.output))
+I first create the bottleneck features of exception which outputs (samples, features) 2D ndarray.
+Bottleneck Features:
+generator = ImageDataGenerator(rescale=1. / 255).flow_from_directory("...",
+                                                                         target_size=(299,299),
+                                                                         batch_size=16,
+                                                                         class_mode=None,
+                                                                         shuffle=False)
+    features = model.predict_generator(generator,
+                                       generator.samples // 16,
+                                       max_q_size=256,
+                                       verbose=1)
+    labels = to_categorical(generator.classes.tolist(), num_classes=101)
+I use this features to Train my Top Model:
+top_model.fit(train_features, train_labels,
+                  batch_size=16,
+                  epochs=50,
+                  validation_data=(validation_features, validation_labels),
+                  callbacks=callbacks_list)
+The Top Model learns super fast and get's expected validation loss and accuracy that I desire. However, when loading this top_model weights and base_model weights into my fine-tune model it just does not want to learn. It does not even begin with the same training loss and training accuracy as it left of in the Top Model Training. Even if I freeze all base_model layers in the fine-tuning to emulate same behavior as top model training it still does not want to train.
+Fine-Tune:
+base_model = load_model(base_model_path)
+top_model = load_model(top_model_path)
+model = Model(inputs=base_model.input, outputs=top_model(base_model.output))
+
+model.fit_generator(train_generator,
+                            steps_per_epoch=train_generator.samples // 16,
+                            epochs=50,
+                            validation_data=validation_generator,
+                            validation_steps=validation_generator.samples // 16,
+                            max_q_size=256,
+                            workers=1,
+                            callbacks=callbacks_list)
+I skipped some portions of the code both these is the main core of the code. If I train the entire model during top model training and just freeze the base model it works as expected. But I wanted to save the time by creating the bottleneck features and making top model training significantly faster, since the frozen layers output fix values.
+It seems that the problem is that when using model.predict() to get a feature representation of an image we do not end up with the same features as when we use model.fit() to pass and image to the same frozen layers. I believe it's because on the layers without any weights. I tried this example with both Xception Model and with VGG16 to ensure it's not directly related to BN layers.
+@fchollet I followed your gist tutorials. Can you share any ligth as to why the Fine-Tuning is not learning? It's able to load the weights correctly and create the exact model as I originally wanted.
+@joelthchao Do you have any experience with this?
+Basically, I need a Keras expert to help with this odd behavior. The Fine-Tune just stalls with no desire to learn as if it does not understand the features it just learned on the top model?

@@ -1,0 +1,34 @@
+Member
+rth commented on Oct 24, 2018
+This is a request for comments to define how the integration / dependence on joblib could evolve (or not evolve) in the future. There was some earlier discussion about this in #8494 and #12345
+Vendoring vs defining joblib as a dependency
+Currently, we are vendoring joblib under sklearn.utils.joblib. For 0.20, #11166 added the optional unvendoring of joblib using the SKLEARN_SITE_JOBLIB environment variable, then #11471 restructured the access to the vendored joblib via sklearn.utils.
+The advantages of vendoring is that,
+the included version can be exactly controlled, which in particular helps ensuring that pickles will not break for a given scikit-learn version.
+we can claim that scikit-learn doesn't have any dependencies besides scipy, numpy.
+when users upgrade we are certain that the bundled dependency will also upgrade
+some of the other advantages of vendoring given e.g. as reason for bundling urllib3 as part of requests in psf/requests#1812 (comment) do not apply in our case: joblib is not an implementation detail, and its use is not likely to change in the future; scikit-learn is not vendorable itself in any case because of C/Cython code, and users are likely to be using some packaging solution already to install numpy / scipy.
+The disadvantages of vendoring are,
+any bug fix in vendored packages (this include joblib which itself vendors loky and cloudpickle) require a release of scikit-learn. Scikit-learn is a large package with C extensions that take much more effort to release than pure python vendored packages. As a results, scikit-learn releases happen relatively unfrequently meaning that most users will keep using vendored code with bugs that has been fixed upstream. Currently that applies to sklearn 0.20.0 and joblib 0.12.5 (although 0.12.6 has not been released yet).
+we end up owning issues related to vendored packages. Anything with a traceback that points to scikit-learn will end up on our issue tracker, even when there is nothing scikit-learn can do about the orginal issue e.g. #12434, #12263 etc At the same time, some of the errors tracebacks will not be found in the trackers of the corresponding projects which breaks the usual Github workflow.
+this adds maintance overhead for scikit-learn,
+releases become dependent on joblib releases, and although it's not an issue because the joblib team is amaizing and very reactive, it's one extra constraint in our already slow release cycle and yet another thing to keep track of.
+joblib 0.12 is currently 13k lines of code -- that's a lot of code, so for any git grep or LGTM warnings (#12167) will need some filtering. Also need to explain in reviews that changing vendored code is not recommended.
+the 0.20.1 release will contain multiple fixes in vendored loky: do we need to document all of them in what's new, only provide a summary, link to the corresponding joblib or maybe loky release notes etc?
+vendoring is typically considered be bad by distrubution maintainers as it makes patching (for security vulnerabilities among other things) harder. In fact, numerous Linux distributions have unvendored joblib,
+Fedora
+Debian Sid (unstable) says that 0.20 is compatible with joblib > 0.9.2 which is hmm quite optimistic.
+Ubuntu Bionic also shows 0.19.1 compatible with joblib > 0.9.2
+Gentoo as previously discussed in #8494
+some appear to be preserving some alias in sklearn.externals.joblib some are not.
+So in practice part of out distributions channels are currently unvendoring joblib, while for for PyPi and conda we vendor it. #12350 also illustrates that actually supporting multiple joblib versions is not that much work code wise. I have not seen much issues reported by e.g. Ubuntu users due to the fact that they use an unvendored joblib.
+The questions are,
+what should be done long term for sklearn.externals.joblib and to prevent users using in in third party code (e.g. by raising some warning) ?
+what is the actual range of joblib versions we could reasonably support for 0.20 : 0.11+ seems likely but possibly earlier ones would also work? What are the known issues with switching joblib versions with respect to pickle compatibility, Memory cache consistency, and whether this can break any guarantees we currently provide. Having a good understanding of this would also help distribution maintainers.
+Does it make sense to also unvendor on other distribution channels? I do believe it makes sense for conda which would only leave PyPi and the question whether the overhead we currently have is worth it (as compared to dependency say with version pinning).
+Exposed joblib API
+If we only used joblib internally in the code base it would be one thing. But we are also currently exposing part of the public API of joblib as part of scikit-learn API, first in sklearn.externals.joblib and since recently in sklearn.utils.{Parallel,parallel_backend,Memory,...} and suggest users use it in examples. This creates confusion for users which project implements this functionality, and corresponds to code that is not really documented in scikit-learn.
+One solution could be to remove all these public joblib attributes (except for joblib.__version__) and say that to run examples users need to install joblib (independently of whether we vendor it or not internally). Currently, to run examples users are expected to install pandas, matplotlib, scikit-image but for some reason they can't install joblib. This does mean that model serialization would require joblib, and the question is when what happens when one mixes vendored and site joblib with different versions for parallel capability. Though it's a question worth considering even now: say one wants to use scikit-image with joblib and scikit-learn together which would lead to such situation.
+Comments would be very appreciated.
+cc @jnothman @GaelVaroquaux @amueller @ogrisel @lesteve @qinhanmin2014 @yarikoptic
+👍 2

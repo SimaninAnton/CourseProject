@@ -1,0 +1,87 @@
+Contributor
+redapple commented on Nov 9, 2016
+From https://stackoverflow.com/questions/40499288/python-scrapy-sitemapspider-callbacks-not-being-called
+Sitemap spider for http://www.newegg.com/Siteindex_USA.xml fails to parse sub-sitemaps files.
+Excerpt from sitemap file:
+<?xml version="1.0" encoding="utf-8"?>
+<sitemapindex xmlns="http://www.google.com/schemas/sitemap/0.9">
+<sitemap>
+<loc>http://www.newegg.com/Sitemap/USA/newegg_sitemap_store01.xml.gz</loc>
+<lastmod>2016-11-06</lastmod>
+</sitemap>
+<sitemap>
+<loc>http://www.newegg.com/Sitemap/USA/newegg_sitemap_product01.xml.gz</loc>
+<lastmod>2016-11-06</lastmod>
+</sitemap>
+...
+Example spider:
+import scrapy
+
+
+class NeweggSpider(scrapy.spiders.SitemapSpider):
+    name = "newegg"
+    allowed_domains = ["newegg.com"]
+    sitemap_urls = ['http://www.newegg.com/Siteindex_USA.xml']
+
+    def parse(self, response):
+        self.logger.info('parsing %r' % response.url)
+With scrapy 1.2, you get the following exceptions:
+$ scrapy runspider spider.py 
+2016-11-09 15:53:10 [scrapy] INFO: Scrapy 1.2.1 started (bot: scrapybot)
+(...)
+2016-11-09 15:53:10 [scrapy] INFO: Spider opened
+2016-11-09 15:53:10 [scrapy] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2016-11-09 15:53:10 [scrapy] DEBUG: Telnet console listening on 127.0.0.1:6023
+2016-11-09 15:53:11 [scrapy] DEBUG: Crawled (200) <GET http://www.newegg.com/Siteindex_USA.xml> (referer: None)
+2016-11-09 15:53:11 [scrapy] DEBUG: Crawled (200) <GET http://www.newegg.com/Sitemap/USA/newegg_sitemap_store01.xml.gz> (referer: http://www.newegg.com/Siteindex_USA.xml)
+2016-11-09 15:53:11 [scrapy] ERROR: Spider error processing <GET http://www.newegg.com/Sitemap/USA/newegg_sitemap_store01.xml.gz> (referer: http://www.newegg.com/Siteindex_USA.xml)
+Traceback (most recent call last):
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/utils/defer.py", line 102, in iter_errback
+    yield next(it)
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/spidermiddlewares/offsite.py", line 29, in process_spider_output
+    for x in result:
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/spidermiddlewares/referer.py", line 22, in <genexpr>
+    return (_set_referer(r) for r in result or ())
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/spidermiddlewares/urllength.py", line 37, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/spidermiddlewares/depth.py", line 58, in <genexpr>
+    return (r for r in result or () if _filter(r))
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/spiders/sitemap.py", line 44, in _parse_sitemap
+    s = Sitemap(body)
+  File "/home/paul/.virtualenvs/scrapy12/local/lib/python2.7/site-packages/scrapy/utils/sitemap.py", line 17, in __init__
+    rt = self._root.tag
+AttributeError: 'NoneType' object has no attribute 'tag'
+The root cause seem to be that the server sends .xml.gz files, and gzip-encodes them:
+GET /Sitemap/USA/newegg_sitemap_product29.xml.gz HTTP/1.1
+Accept-Language: en
+Accept-Encoding: gzip,deflate
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+User-Agent: Scrapy/1.2.1 (+http://scrapy.org)
+Host: www.newegg.com
+Referer: http://www.newegg.com/Siteindex_USA.xml
+
+HTTP/1.1 200 OK
+Content-Type: application/x-gzip
+Last-Modified: Tue, 08 Nov 2016 18:44:56 GMT
+Accept-Ranges: bytes
+ETag: "471fb033f039d21:0"
+Server: NEWEGG
+x-server-id: 106
+X-Served-By: 40015
+X-Ver: 08161601
+x-newegg-flow: MISS
+X-newegg-index: 0
+Accept-Ranges: bytes
+X-Frame-Options: SAMEORIGIN
+Vary: Accept-Encoding
+Content-Encoding: gzip
+Expires: Wed, 09 Nov 2016 14:15:46 GMT
+Cache-Control: max-age=0, no-cache, no-store
+Pragma: no-cache
+Date: Wed, 09 Nov 2016 14:15:46 GMT
+Transfer-Encoding:  chunked
+Connection: keep-alive
+Connection: Transfer-Encoding
+So scrapy should first gunzip the body to get that "raw" .xml.gz file, and then gunzip again to get a valid XML sitemap file.
+But HttpCompressionMiddleware does not touch the response since is_gzipped() returns True, leaving it for subsequent layers to interpret.
+❤️ 1

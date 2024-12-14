@@ -1,0 +1,69 @@
+jessemcbride commented on Jan 9, 2018 •
+edited
+In an effort to prevent JSON hijacking, some providers append while(1); before their JSON response. This doesn't appear to be filtered out by requests automatically, and the end result is a ValueError.
+Expected Result
+A JSON response of this form:
+while(1);{"some": "json"}
+should properly translate to a Python dictionary when calling response.json():
+{
+     "some": "json"
+}
+Actual Result
+response.json() results in an exception:
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/local/lib/python2.7/site-packages/requests/models.py", line 892, in json
+    return complexjson.loads(self.text, **kwargs)
+  File "/usr/local/Cellar/python/2.7.13/Frameworks/Python.framework/Versions/2.7/lib/python2.7/json/__init__.py", line 339, in loads
+    return _default_decoder.decode(s)
+  File "/usr/local/Cellar/python/2.7.13/Frameworks/Python.framework/Versions/2.7/lib/python2.7/json/decoder.py", line 364, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/usr/local/Cellar/python/2.7.13/Frameworks/Python.framework/Versions/2.7/lib/python2.7/json/decoder.py", line 382, in raw_decode
+    raise ValueError("No JSON object could be decoded")
+ValueError: No JSON object could be decoded
+Reproduction Steps
+import requests
+
+broken = requests.get('https://gist.githubusercontent.com/jessemcbride/3306f72e92f08deff1e32c3df5c7b7c8/raw/621e5e94040486004b3b8e22157f2fb5d73a3686/test')
+
+broken.json() # throws an exception
+
+working = requests.get('https://gist.githubusercontent.com/jessemcbride/cc091ea99560b9b5c13632d19fefaa75/raw/1fc92d404c6f9113d83d6fdee00e4a59410a7032/test2')
+
+working.json() # renders properly
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "2.7.13"
+  },
+  "platform": {
+    "release": "16.7.0",
+    "system": "Darwin"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "100020ef"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}
+FWIW, I'm not totally convinced that requests should be responsible for fixing this. I'd like to open that up for discussion, though, as we were surprised by the behavior.

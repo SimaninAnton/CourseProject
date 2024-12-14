@@ -1,0 +1,96 @@
+Contributor
+patyork commented on 8 Dec 2016 •
+edited
+The Problem
+I wanted to jump back into SpeechRec, with Keras instead of my own NN code, so I started with the OCR code that uses the CTC (connectionist temporal classification) algorithm for label alignment as a jumpstart into how Keras now handles temporal data. Relevant PR #3436 and the code here.
+The first red flag was the docstring which says:
+The table below shows normalized edit distance values. Theano uses
+a slightly different CTC implementation, so some Theano-specific
+hyperparameter tuning would be needed to get it to match Tensorflow.
+Norm. ED (edit distance)
+Epoch | TF | TH
+10 | 0.072| 0.272
+20 | 0.032 | 0.115
+30 | 0.024 | 0.098
+40 | 0.023 | 0.108
+Now, all things regarding the model the same, the backend used to implement a loss function should not affect the results, especially to this degree.
+I went ahead and ran the code, using the Theano backend, and saw no learning past a Normalized Edit Distance of .85 - this value for an edit distance means the output is essentially random, with the model just having learned the distribution of letters; this was backed up by the visual validation examples, where the model generally output a string of 'a's, 'e's, and 's's, which I assume are the most commonly used letters. This OOTB model ran for the default 50 epochs with the OOTB optimizer.
+I swapped optimizers and used RMSProp and AdaDelta which generally see some learning where standard SGD may bounce around a local minimum. The output from both these models at 50 epochs was the same as the above, with the model just having learned to output the most-used letters, 'aes'.
+Having implemented CTC myself, both in vanilla Numpy and Theano, and having used the implementations successfully in implementing the DeepSpeech paper a few years ago, I tried to reconcile my implementations with the Keras backend. The GIST is here, and should be recreatable.
+The Tests
+The output from the script is below. I consider the "Graves' DP Algorithm" to be a correct implementation of the CTC Algorithm; I had also created a pure recursive implementation that was extremely slow, but demonstrably correct according to the paper. I used that implementation to doublecheck the DP code, and the two implementations have always given the same output for every alphabet and input sequences (that didn't underflow).
+In the output below, a few things pop out. The (considered correct) DP algorithm agrees with the "Newer Theano code", to precision, 4/10 times, is considerably close in 2 other cases, and is the closest of the implementations in the other 4 cases. Keras' current theano CTC algorithm never agrees, and is the furthest away. The old theano code falls somewhere in between.
+UPDATE: With the Tensorflow addition, it becomes clear that the Keras Theano implementation is wrong. TensorFlow appears to agree more with my older Theano code rather than my newer log-scale code. It also appears that my DP algorithm may be incorrect (which is a major bummer to past me).
+The Raw Results
+Item  [0 1 0]
+ Graves' DP Algorithm output (negative log):  13.0550199138
+ Keras (theano backend) output (negative log):  10.0515659144
+ Very old Theano code (negative log):   13.0483553778
+ Newer Theano code, done in log-space:   13.048353865
+ TensorFlow data (log scale, previously run):  13.0484
+Item  [0 1 0 1]
+ Graves' DP Algorithm output (negative log):  40.0587437019
+ Keras (theano backend) output (negative log):  35.4150082551
+ Very old Theano code (negative log):   40.0527477089
+ Newer Theano code, done in log-space:   40.0527448232
+ TensorFlow data (log scale, previously run):  40.0494
+Item  [0 1 0 1 0 1]
+ Graves' DP Algorithm output (negative log):  23.3845931494
+ Keras (theano backend) output (negative log):  18.6353031982
+ Very old Theano code (negative log):   21.6997022866
+ Newer Theano code, done in log-space:   21.6997006158
+ TensorFlow data (log scale, previously run):  21.6996
+Item  [1 0 1 0]
+ Graves' DP Algorithm output (negative log):  30.1091477905
+ Keras (theano backend) output (negative log):  19.6508202704
+ Very old Theano code (negative log):   22.6789089182
+ Newer Theano code, done in log-space:   22.6789069029
+ TensorFlow data (log scale, previously run):  22.6789
+Item  [0 1 0 1]
+ Graves' DP Algorithm output (negative log):  48.5027294892
+ Keras (theano backend) output (negative log):  34.090386626
+ Very old Theano code (negative log):   39.4661636869
+ Newer Theano code, done in log-space:   39.4661607462
+ TensorFlow data (log scale, previously run):  39.4575
+Item  [1 0 1 0 1 0]
+ Graves' DP Algorithm output (negative log):  27.6407711553
+ Keras (theano backend) output (negative log):  21.5949752793
+ Very old Theano code (negative log):   26.0706689792
+ Newer Theano code, done in log-space:   26.0706677852
+ TensorFlow data (log scale, previously run):  26.0663
+Item  [0 1 0 1 0 1]
+ Graves' DP Algorithm output (negative log):  21.1628364256
+ Keras (theano backend) output (negative log):  10.8599013801
+ Very old Theano code (negative log):   13.8610864284
+ Newer Theano code, done in log-space:   13.8610849881
+ TensorFlow data (log scale, previously run):  13.8611
+Item  [0 1 0 1]
+ Graves' DP Algorithm output (negative log):  43.857914566
+ Keras (theano backend) output (negative log):  24.0303263053
+ Very old Theano code (negative log):   30.3423977771
+ Newer Theano code, done in log-space:   30.3423955638
+ TensorFlow data (log scale, previously run):  30.3345
+Item  [1 0 1]
+ Graves' DP Algorithm output (negative log):  27.7687108345
+ Keras (theano backend) output (negative log):  23.8267339413
+ Very old Theano code (negative log):   27.7662118088
+ Newer Theano code, done in log-space:   27.7662103826
+ TensorFlow data (log scale, previously run):  27.7652
+Item  [1 0 1 0]
+ Graves' DP Algorithm output (negative log):  53.0654053801
+ Keras (theano backend) output (negative log):  24.1569056028
+ Very old Theano code (negative log):   28.5835740608
+ Newer Theano code, done in log-space:   28.5835719684
+ TensorFlow data (log scale, previously run):  28.5807
+The Takeaways and Questions
+The current Keras Theano CTC code is incorrect, as compared to the algorithm described in the original CTC papers here and here.
+The Theano implementations are missing something, or precision is becoming an issue already with this little sample.
+The older theano seems to be more accurate than the newer theano code; however the newer theano code is in log scale. If we agree that the Theano backend is wrong, we may not have a good enough implementation to drop in.
+My questions are:
+Can someone run this GIST with the TensorFlow backend, and post the results?
+Is there or has any made any other CTC implementations to compare against?
+Can anyone run the OCR example with Theano and get convergence and decent results?
+Am I missing something?
+Edit: I bit the bullet and installed/ran the TensorFlow backend CTC. Post updated.
+Edit 2: Updated "New Theano" code; better matches both the older theano and the TensorFlow data.
+3

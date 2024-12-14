@@ -1,0 +1,41 @@
+sanjeevmk commented on 10 May 2016 •
+edited
+I've a data set 4 examples each of 50 inputs ,each input of dimension 3 (that is, data.shape=(4,50,3) )
+I've implemented a siamese network exactly as given in this example:
+https://github.com/fchollet/keras/blob/master/examples/mnist_siamese_graph.py
+To draw correspondence, the way the above example has N pairs of inputs, I have 4 examples of 50 inputs.
+First difference is that instead of a pair of input features, I have 50 input features each of 3 dimensions.
+Each of these 50 inputs (of each example) go through a shared network exactly as in the example above, and the final output of the shared network is of 6 dimensions (that is, the last layer of the shared network has 6 neurons).
+So after these 50 inputs pass through the shared network, I'm expecting 50 6-dimensional vectors as output of the shared network.
+After the shared layers, I want to add a Lambda layer that operates on these 50 vectors. In the example linked above, the final Lambda layer takes as input 2 vectors and computes the euclidean distance. Instead, I want to take in these 50 vectors (6-D) and sum them along the columns. For example, if the inputs to the final layer are [1,1,1,1,1,1] and [2,2,2,2,2,2], I want the output to be [3,3,3,3,3,3].
+With that in mind, I wrote the following:
+    def summation(vectors):
+        return K.sum(vectors,axis=1)
+
+    def final_output_shape(self,shapes):
+        return shapes[0]
+
+    def create_base_network():
+        seq = Sequential()
+        seq.add( Dense(6,input_shape=(3,),activation='relu') )
+        return seq
+
+    inputs = [Input(shape=(3,)) for i in range(50)]
+    base_network = create_base_network(input_dim)
+    processed_inputs = [base_network(i) for i in inputs]
+    label_output = Lambda(summation,output_shape=(6,) )(processed_inputs)
+    model = Model(input=inputs,output=label_output)
+    model.compile(loss='mse',optimizer='RMSprop')
+This compiles fine. For the last layer, if I do K.sum(vectors), then it works fine, but that gives me a single scalar output after the final Lambda layer (which I don't want). But if I do K.sum(vectors,axis=1), the compilation works , but when I call fit, I get a dimension mismatch error at the last layer .
+Printing len(vectors) in the summation function prints 50, that means I am getting 50 tensor variables as input to the Lambda layer, as expected, but I'm unable to sum along axis 1 for some reason..
+What am I doing wrong? Am I making some wrong assumptions here.
+The specific error I'm getting is like this:
+ValueError: Input dimension mis-match. (input[0].shape[0] = 50, input[1].shape[0] = 4)
+Apply node that caused the error: Elemwise{Sub}[(0, 0)](Sum{axis=[1], acc_dtype=float64}.0, lambda_1_target)
+Toposort index: 429
+Inputs types: [TensorType(float32, matrix), TensorType(float32, matrix)]
+Inputs shapes: [(50, 6), (4, 6)]
+Inputs strides: [(24, 4), (24, 4)]
+Inputs values: ['not shown', 'not shown']
+Outputs clients: [[InplaceDimShuffle{0,x,1}(Elemwise{Sub}[(0, 0)].0), Elemwise{Sqr}[(0, 0)](Elemwise{Sub}[%280, 0%29].0)]]
+In the above message I don't know why those input shapes [(50,6),(4,6)] are there.. Note that the '4' here is the number of examples (The '4' in input[1].shape[0]=4 is the same)

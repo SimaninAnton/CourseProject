@@ -1,0 +1,95 @@
+hpello commented on 2 Nov 2017
+Hi,
+I encountered a problem which I think is similar to #2567.
+I could easily reproduce it with my client (Alamofire on iOS), although it took me some time to reproduce it with curl.
+When my client tries to access https://my.api.com through mitmproxy, I want requests to be transferred to my server running on http://localhost:8080.
+To do so, I have the following script:
+from mitmproxy import http
+
+def request(flow: http.HTTPFlow) -> None:
+    if flow.request.pretty_host == "my.api.com":
+        original_host = flow.request.pretty_host
+        original_scheme = flow.request.scheme
+
+        flow.request.scheme = "http"
+        flow.request.host = "localhost"
+        flow.request.port = 8080
+
+        flow.request.headers["Host"] = original_host
+        flow.request.headers["X-Forwarded-Proto"] = original_scheme
+
+    if flow.request.pretty_host == "localhost":
+        print("bad!")
+Now, what I started to observe, is that for successive requests (made on the same socket), the first request was correctly transferred to http://localhost:8080, but when my script is called during the second one, its scheme, host and port are oddly https://localhost:8080, and I eventually see in the logs the following error:
+ << Cannot establish TLS with localhost:8080 (sni: localhost): TlsException("SSL handshake error: Error([('SSL routines', 'ssl3_get_record', 'wrong version number')],)",)
+By digging a bit more, I found out that in protocol/http.py, on line 305 f.request.host = self.__initial_server_conn.address.host, __initial_server_conn was set to localhost:8080 for the second request, which I imagine is wrong.
+Now, I can only reproduce the problem when _client_tls and establish_server_tls_now is set to False in tls.py. I thought about setting this manually after having a look at the logs:
+verbose logs excerpt (happens with my client). Error !
+192.168.0.162:63994: clientconnect
+192.168.0.162:63994: Set new server address: ('my.api.com', 443)
+192.168.0.162:63994: Establish TLS with client
+192.168.0.162:63994: request
+192.168.0.162:63994: Set new server address: localhost:8080
+192.168.0.162:63994: serverconnect
+192.168.0.162:63994: response
+192.168.0.162:63994: GET http://localhost:8080/path
+192.168.0.162:63994: request
+192.168.0.162:63994: serverdisconnect
+192.168.0.162:63994: Set new server address: localhost:8080
+192.168.0.162:63994: serverconnect
+192.168.0.162:63994: Establish TLS with server
+192.168.0.162:63994: GET https://localhost:8080/path
+ << Cannot establish TLS with localhost:8080 (sni: localhost): TlsException("SSL handshake error: Error([('SSL routines', 'ssl3_get_record', 'wrong version number')],)",)
+192.168.0.162:63994: serverdisconnect
+192.168.0.162:63994: clientdisconnect
+verbose logs excerpt (happens when I use curl). No Error
+127.0.0.1:56369: clientconnect
+127.0.0.1:56369: Set new server address: ('my.api.com', 443)
+127.0.0.1:56369: serverconnect
+127.0.0.1:56369: Establish TLS with server
+127.0.0.1:56369: ALPN selected by server: http/1.1
+127.0.0.1:56369: Establish TLS with client
+127.0.0.1:56369: ALPN for client: b'http/1.1'
+127.0.0.1:56369: request
+127.0.0.1:56369: serverdisconnect
+127.0.0.1:56369: Set new server address: localhost:8080
+127.0.0.1:56369: serverconnect
+127.0.0.1:56369: response
+127.0.0.1:56369: GET http://localhost:8080/path
+127.0.0.1:56369: request
+127.0.0.1:56369: response
+127.0.0.1:56369: GET http://localhost:8080/path
+127.0.0.1:56369: serverdisconnect
+127.0.0.1:56369: clientdisconnect
+Steps to reproduce the problem:
+Set establish_server_tls_now to False in tls.py, e.g.:
+        # ...
+        # if self._client_tls and establish_server_tls_now:
+        if False:
+            self._establish_tls_with_client_and_server()
+        # ...
+run a dummy server on localhost:8080
+run mitmdump with the script (e.g. replacing my.api.com with google.com)
+mitmdump -v -p 9999 --no-http2 -s ./redirect_host.py
+make 2 requests on the same connection with curl
+curl --cacert ~/.mitmproxy/mitmproxy-ca.pem --proxy http://localhost:9999 https://google.com https://google.com
+observe error on second request
+404 page not found # <- first request, this is expected
+<html>
+            <head>
+                <title>502 Bad Gateway</title>
+            </head>
+            <body>
+            <h1>502 Bad Gateway</h1>
+            <p>TlsProtocolException(&#x27;Cannot establish TLS with localhost:8080 (sni: localhost): TlsException(&quot;SSL handshake error: Error([(\&#x27;SSL routines\&#x27;, \&#x27;ssl3_get_record\&#x27;, \&#x27;wrong version number\&#x27;)],)&quot;,)&#x27;,)</p>
+            </body>
+        </html>
+Do you have any idea where this can come from?
+Let me know if you need more info!
+System information
+$ mitmdump --version
+Mitmproxy version: 2.0.2 (release version)
+Python version: 3.6.3
+Platform: Darwin-17.0.0-x86_64-i386-64bit
+SSL version: OpenSSL 1.1.0f  25 May 2017
+Mac version: 10.13 ('', '', '') x86_64

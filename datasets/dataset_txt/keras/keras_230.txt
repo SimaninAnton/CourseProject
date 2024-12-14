@@ -1,0 +1,205 @@
+def-roth commented on 14 May 2019 •
+edited
+Please make sure that this is a Bug or a Feature Request and provide all applicable information asked by the template.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+System information
+Have I written custom code (as opposed to using example directory): no
+Windows 10
+TensorFlow backend (yes / no): yes
+TensorFlow version: 1.13.1 / 1.12.0
+Keras version: 2.2.4
+Python version: 3.6.8
+CUDA/cuDNN version: no
+GPU model and memory: -
+Describe the current behavior
+When trying to train a convolutional 3d model on batch data the following tensorflow error shows up:
+F .\tensorflow/core/util/mkl_util.h:607] Check failed: dims == sizes.size() (5 vs. 4)
+Describe the expected behavior
+Generator model should train on batch. It works for the critic, but not generator.
+It worked for Conv2D for both models, but doesn't for Conv3D.
+Code to reproduce the issue
+    gan = WGAN_3d()
+    gan.train(epochs=500, batch_size=32)
+from keras.layers.merge import _Merge
+from keras.layers import Input, Dense, Reshape, Flatten, Dropout
+from keras.layers import BatchNormalization, Activation, ZeroPadding3D
+from keras.layers.advanced_activations import LeakyReLU
+from keras.layers.convolutional import UpSampling3D, Conv3D
+from keras.models import Sequential, Model
+from keras.optimizers import RMSprop
+from functools import partial
+
+import keras.backend as K
+
+import sys
+import time
+import numpy as np
+
+
+class RandomWeightedAverage(_Merge):
+    def _merge_function(self, inputs):
+        alpha = K.random_uniform((28, 1, 1, 1))
+        return (alpha * inputs[0]) + ((1 - alpha) * inputs[1])
+
+class WGAN_3D():
+    def __init__(self):
+        self.x_axis = 28
+        self.y_axis = 28
+        self.z_axis = 28
+        self.channels = 1
+        self.shape = (self.x_axis, self.y_axis, self.z_axis, self.channels)
+        self.latent_dim = 100
+
+        self.n_critic = 5
+        optimizer = RMSprop(lr=0.00005)
+
+        self.generator = self.build_generator()
+        self.critic = self.build_critic()
+
+        # Stop generator during training of critic
+        self.generator.trainable = False
+
+        given_data = Input(shape=self.shape)
+
+        noise_input = Input(shape=(self.latent_dim,))
+
+        fake_body = self.generator(noise_input)
+
+        fake = self.critic(fake_body)
+        validity = self.critic(given_data)
+
+        interpolation = RandomWeightedAverage()([given_data, fake_body])
+        validity_interpolated = self.critic(interpolation)
+
+        partial_gp_loss = partial(self.gradient_penalty_loss, averaged_samples=interpolation)
+        partial_gp_loss.__name__ = 'gradient_penalty'
+
+        data_in = [given_data, noise_input]
+        data_out = [validity, fake, validity_interpolated]
+        self.critic_model = Model(inputs=data_in, outputs=data_out)
+        loss_param = [self.wasserstein_loss, self.wasserstein_loss, partial_gp_loss]
+        self.critic_model.compile(loss=loss_param, optimizer=optimizer, loss_weights=[1, 1, 10])
+
+        self.critic.trainable = False
+        self.generator.trainable = True
+
+        z_gen = Input(shape=(100,))
+        generated_bodies = self.generator(z_gen)
+        validity = self.critic(generated_bodies)
+        self.generator_model = Model(z_gen, validity)
+        self.generator_model.compile(loss=self.wasserstein_loss, optimizer=optimizer)
+
+    def gradient_penalty_loss(self, y_true, y_pred, averaged_samples):
+        gradients = K.gradients(y_pred, averaged_samples)[0]
+        gradients_sqr = K.square(gradients)
+        gradients_sqr_sum = K.sum(gradients_sqr, axis=np.arange(1, len(gradients_sqr.shape)))
+        gradient_l2_norm = K.sqrt(gradients_sqr_sum)
+        gradient_penalty = K.square(1 - gradient_l2_norm)
+        return K.mean(gradient_penalty)
+
+    def wasserstein_loss(self, y_true, y_pred):
+        return K.mean(y_true * y_pred)
+
+    def build_generator(self):
+
+        generator = Sequential()
+
+        generator.add(Dense(128*7*7*7, activation="relu", input_dim=self.latent_dim))
+        generator.add(Reshape((7, 7, 7, 128)))
+        generator.add(UpSampling3D())
+        generator.add(Conv3D(128, kernel_size=4, padding="same"))
+        generator.add(BatchNormalization(momentum=0.8))
+        generator.add(LeakyReLU(alpha=0.2))
+        generator.add(UpSampling3D())
+        generator.add(Conv3D(64, kernel_size=4, padding="same"))
+        generator.add(BatchNormalization(momentum=0.8))
+        generator.add(LeakyReLU(alpha=0.2))
+        generator.add(Conv3D(self.channels, kernel_size=4, padding="same"))
+        generator.add(Activation("tanh"))
+
+        generator.summary()
+        noise = Input(shape=(self.latent_dim,))
+        generator = generator(noise)
+        return Model(noise, generator)
+
+    def build_critic(self):
+
+        critic = Sequential()
+
+        critic.add(Conv3D(1, kernel_size=3, strides=2, input_shape=self.shape, padding="same"))
+        critic.add(LeakyReLU(alpha=0.2))
+        critic.add(Dropout(0.25))
+        critic.add(Conv3D(2, kernel_size=3, strides=2, padding="same"))
+        critic.add(ZeroPadding3D(padding=((0,1),(0,1),(0,1))))
+        critic.add(BatchNormalization(momentum=0.8))
+        critic.add(LeakyReLU(alpha=0.2))
+        critic.add(Dropout(0.25))
+        critic.add(Conv3D(2, kernel_size=3, strides=2, padding="same"))
+        critic.add(BatchNormalization(momentum=0.8))
+        critic.add(LeakyReLU(alpha=0.2))
+        critic.add(Dropout(0.25))
+        critic.add(Conv3D(2, kernel_size=3, strides=1, padding="same"))
+        critic.add(BatchNormalization(momentum=0.8))
+        critic.add(LeakyReLU(alpha=0.2))
+        critic.add(Dropout(0.25))
+        critic.add(Flatten())
+        critic.add(Dense(1))
+
+        critic.summary()
+        item = Input(shape=self.shape)
+        validity = critic(item)
+        return Model(item, validity)
+
+    def train(self, epochs, batch_size, sample_interval=50):
+        X_train = ellipses_3d(100, 28, 28, 28)
+        X_train = np.expand_dims(X_train, axis=4)
+
+        valid = -np.ones((batch_size, 1))
+        fake = np.ones((batch_size, 1))
+        dummy = np.zeros((batch_size, 1))
+
+        for epoch in range(epochs):
+            for _ in range(self.n_critic):
+                rand = np.random.randint(0, X_train.shape[0], batch_size)
+                vol = X_train[rand]
+                noise = np.random.normal(0, 1, (batch_size, self.latent_dim))
+
+                d_loss = self.critic_model.train_on_batch([vol, noise], [valid, fake, dummy])
+
+            g_loss = self.generator_model.train_on_batch(noise, valid)
+            print("%d [D loss: %f] [G loss: %f]" % (epoch, d_loss[0], g_loss))
+
+
+def random_3d_ellipsoid(size_x, size_y, size_z):
+    a = np.random.normal(3, 2.5)
+    b = np.random.normal(3, 2.5)
+    c = np.random.normal(3, 2.5)
+
+    x = np.linspace(-5, 5, size_x)
+    y = np.linspace(-5, 5, size_y)
+    z = np.linspace(-5, 5, size_z)
+    xgrid, ygrid, zgrid = np.meshgrid(x, y, z)
+    ellipse = (xgrid / a)**2 + (ygrid / b)**2 + (zgrid / c)**2
+
+    ellipse_array = np.zeros((size_x, size_y, size_z))
+    ellipse_array[ellipse < 1] = 1
+    return ellipse_array
+
+
+def ellipses_3d(n, x, y, z):
+    arr = []
+    for i in range(int(n)):
+        arr.append(random_3d_ellipsoid(x, y, z))
+    return np.asarray(arr)
+ 
+Other info / logs
+WARNING:tensorflow:From C:\Anaconda3\lib\site-packages\tensorflow\python\ops\math_ops.py:3066: to_int32 (from tensorflow.python.ops.math_ops) is deprecated and will be removed in a future version.
+Instructions for updating:
+Use tf.cast instead.
+C:\Anaconda3\lib\site-packages\keras\engine\training.py:490: UserWarning: Discrepancy between trainable weights and collected trainable weights, did you set model.trainable without calling model.compile after ?
+'Discrepancy between trainable weights and collected trainable'
+2019-05-13 22:49:13.000254: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX AVX2
+2019-05-13 22:49:13.001538: I tensorflow/core/common_runtime/process_util.cc:71] Creating new thread pool with default inter op setting: 4. Tune using inter_op_parallelism_threads for best performance.
+2019-05-13 22:51:19.833601: F .\tensorflow/core/util/mkl_util.h:607] Check failed: dims == sizes.size() (5 vs. 4)
+2019-05-13
+Process finished with exit code -1073740791 (0xC0000409)

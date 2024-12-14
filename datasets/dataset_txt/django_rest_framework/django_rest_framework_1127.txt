@@ -1,0 +1,52 @@
+educolo commented on 26 Jul 2016
+I have problems with nested serializers, the idea is to read with nested serializer and write with a primaryKeyRelated, but I have a nested write alert with my example:
+Raise error
+class WorkerSerializer(serializers.ModelSerializer):
+    roles = data_serializers.RoleSerializer(many=True, read_only=True)
+    roles_ids = serializers.PrimaryKeyRelatedField(
+        allow_empty=False, many=True, queryset=data_models.Role.objects.all(),
+        write_only=True, source="roles"
+    )
+This works
+class WorkerSerializer(serializers.ModelSerializer):
+    roles_data = data_serializers.RoleSerializer(many=True, read_only=True, source="roles")
+    roles = serializers.PrimaryKeyRelatedField(
+        allow_empty=False, many=True, queryset=data_models.Role.objects.all(),
+        write_only=True
+    )
+This doesn't look a big problem, but for me it's huge to change a big api implementation, this behavior repeats a lot and I believe the solution it's quite simple.
+I find in raise_errors_on_nested_writes function this validation:
+    assert not any(
+        isinstance(field, BaseSerializer) and
+        (key in validated_data) and
+        isinstance(validated_data[key], (list, dict))
+        for key, field in serializer.fields.items()
+    ), (
+        'The `.{method_name}()` method does not support writable nested '
+        'fields by default.\nWrite an explicit `.{method_name}()` method for '
+        'serializer `{module}.{class_name}`, or set `read_only=True` on '
+        'nested serializer fields.'.format(
+            method_name=method_name,
+            module=serializer.__class__.__module__,
+            class_name=serializer.__class__.__name__
+        )
+    )
+Adding a read_only check fix my problem
+    assert not any(
+        not field.read_only and
+        isinstance(field, BaseSerializer) and
+        (key in validated_data) and
+        isinstance(validated_data[key], (list, dict))
+        for key, field in serializer.fields.items()
+    ), (
+        'The `.{method_name}()` method does not support writable nested '
+        'fields by default.\nWrite an explicit `.{method_name}()` method for '
+        'serializer `{module}.{class_name}`, or set `read_only=True` on '
+        'nested serializer fields.'.format(
+            method_name=method_name,
+            module=serializer.__class__.__module__,
+            class_name=serializer.__class__.__name__
+        )
+    )
+My first issue on github, so I hope it's ok.
+Thanks

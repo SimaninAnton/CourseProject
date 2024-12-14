@@ -1,0 +1,143 @@
+Neltherion commented on 14 Oct 2016 •
+edited
+@fchollet @EderSantana
+Hi... Before anything I wanted to thank you for the hard work you've been putting into Keras... It's really become a splendid creation... Thanks!
+I have a Model => Input : Gray Image : (1, 224, 224) || Output : RGB Image: (3, 224, 224)
+and I want to predict pixel colors by giving it Grayscale images and getting RGB ones.
+I tried to make a network in Keras which mostly resembles this one (which has been made in Tensorflow).
+Here's the Model code :
+first_input = Input(batch_shape=(None, 1, 224, 224))
+
+conv0_1_3 = Convolution2D(3, 3, 3, activation='relu', name='conv0_1_3', border_mode='same')(first_input)
+
+conv1_1_64 = Convolution2D(64, 3, 3, activation='relu', name='conv1_1', border_mode='same')(conv0_1_3)
+conv1_2_64 = Convolution2D(64, 3, 3, activation='relu', name='conv1_2', border_mode='same')(conv1_1_64)
+conv1_2_64 = MaxPooling2D((2, 2))(conv1_2_64)
+
+conv2_1_128 = Convolution2D(128, 3, 3, activation='relu', name='conv2_1', border_mode='same')(conv1_2_64)
+conv2_2_128 = Convolution2D(128, 3, 3, activation='relu', name='conv2_2', border_mode='same')(conv2_1_128)
+conv2_2_128 = MaxPooling2D((2, 2))(conv2_2_128)
+
+conv3_1_256 = Convolution2D(256, 3, 3, activation='relu', name='conv3_1', border_mode='same')(conv2_2_128)
+conv3_2_256 = Convolution2D(256, 3, 3, activation='relu', name='conv3_2', border_mode='same')(conv3_1_256)
+conv3_3_256 = Convolution2D(256, 3, 3, activation='relu', name='conv3_3', border_mode='same')(conv3_2_256)
+conv3_3_256 = MaxPooling2D((2, 2))(conv3_3_256)
+
+conv4_1_512 = Convolution2D(512, 3, 3, activation='relu', name='conv4_1', border_mode='same')(conv3_3_256)
+conv4_2_512 = Convolution2D(512, 3, 3, activation='relu', name='conv4_2', border_mode='same')(conv4_1_512)
+conv4_3_512 = Convolution2D(512, 3, 3, activation='relu', name='conv4_3', border_mode='same')(conv4_2_512)
+conv4_3_512 = MaxPooling2D((2, 2))(conv4_3_512)
+
+residual1 = BatchNormalization(axis=1, name='batch1')(conv4_3_512)
+residual1 = Convolution2D(256, 3, 3, activation='relu', name='residual1', border_mode='same')(residual1)
+residual1 = UpSampling2D(name='upsample1')(residual1)
+
+conv3_3_256_batch_norm = BatchNormalization(axis=1, name='batch2')(conv3_3_256)
+merge1 = merge((conv3_3_256_batch_norm, residual1), mode='concat', name='merge1', concat_axis=0)
+residual2 = Convolution2D(128, 3, 3, activation='relu', name='residual2', border_mode='same')(merge1)
+residual2 = UpSampling2D(name='upsample2')(residual2)
+
+conv2_2_128_batch_norm = BatchNormalization(axis=1, name='batch3')(conv2_2_128)
+merge2 = merge((conv2_2_128_batch_norm, residual2), mode='concat', name='merge2', concat_axis=0)
+residual3 = Convolution2D(64, 3, 3, activation='relu', name='residual3', border_mode='same')(merge2)
+residual3 = UpSampling2D(name='upsample3')(residual3)
+
+conv1_2_64_batch_norm = BatchNormalization(axis=1, name='batch4')(conv1_2_64)
+merge3 = merge((conv1_2_64_batch_norm, residual3), mode='concat', name='merge3', concat_axis=0)
+residual4 = Convolution2D(3, 3, 3, activation='relu', name='residual4', border_mode='same')(merge3)
+residual4 = UpSampling2D(name='upsample4')(residual4)
+
+conv0_1_3_batch_norm = BatchNormalization(axis=1, name='batch5')(conv0_1_3)
+merge4 = merge((conv0_1_3_batch_norm, residual4), mode='concat', name='merge4', concat_axis=0)
+residual5 = Convolution2D(3, 1, 1, activation='relu', name='residual5', border_mode='same')(merge4)
+
+model = Model(input=first_input, output=residual5)
+and here's the Model Summary:
+Layer (type)                     Output Shape          Param #     Connected to                     
+====================================================================================================
+input_1 (InputLayer)             (None, 1, 224, 224)   0                                            
+____________________________________________________________________________________________________
+conv0_1_3 (Convolution2D)        (None, 3, 224, 224)   30          input_1[0][0]                    
+____________________________________________________________________________________________________
+conv1_1 (Convolution2D)          (None, 64, 224, 224)  1792        conv0_1_3[0][0]                  
+____________________________________________________________________________________________________
+conv1_2 (Convolution2D)          (None, 64, 224, 224)  36928       conv1_1[0][0]                    
+____________________________________________________________________________________________________
+maxpooling2d_1 (MaxPooling2D)    (None, 64, 112, 112)  0           conv1_2[0][0]                    
+____________________________________________________________________________________________________
+conv2_1 (Convolution2D)          (None, 128, 112, 112) 73856       maxpooling2d_1[0][0]             
+____________________________________________________________________________________________________
+conv2_2 (Convolution2D)          (None, 128, 112, 112) 147584      conv2_1[0][0]                    
+____________________________________________________________________________________________________
+maxpooling2d_2 (MaxPooling2D)    (None, 128, 56, 56)   0           conv2_2[0][0]                    
+____________________________________________________________________________________________________
+conv3_1 (Convolution2D)          (None, 256, 56, 56)   295168      maxpooling2d_2[0][0]             
+____________________________________________________________________________________________________
+conv3_2 (Convolution2D)          (None, 256, 56, 56)   590080      conv3_1[0][0]                    
+____________________________________________________________________________________________________
+conv3_3 (Convolution2D)          (None, 256, 56, 56)   590080      conv3_2[0][0]                    
+____________________________________________________________________________________________________
+maxpooling2d_3 (MaxPooling2D)    (None, 256, 28, 28)   0           conv3_3[0][0]                    
+____________________________________________________________________________________________________
+conv4_1 (Convolution2D)          (None, 512, 28, 28)   1180160     maxpooling2d_3[0][0]             
+____________________________________________________________________________________________________
+conv4_2 (Convolution2D)          (None, 512, 28, 28)   2359808     conv4_1[0][0]                    
+____________________________________________________________________________________________________
+conv4_3 (Convolution2D)          (None, 512, 28, 28)   2359808     conv4_2[0][0]                    
+____________________________________________________________________________________________________
+maxpooling2d_4 (MaxPooling2D)    (None, 512, 14, 14)   0           conv4_3[0][0]                    
+____________________________________________________________________________________________________
+batch1 (BatchNormalization)      (None, 512, 14, 14)   1024        maxpooling2d_4[0][0]             
+____________________________________________________________________________________________________
+residual1 (Convolution2D)        (None, 256, 14, 14)   1179904     batch1[0][0]                     
+____________________________________________________________________________________________________
+batch2 (BatchNormalization)      (None, 256, 28, 28)   512         maxpooling2d_3[0][0]             
+____________________________________________________________________________________________________
+upsample1 (UpSampling2D)         (None, 256, 28, 28)   0           residual1[0][0]                  
+____________________________________________________________________________________________________
+merge1 (Merge)                   (None, 256, 28, 28)   0           batch2[0][0]                     
+                                                                   upsample1[0][0]                  
+____________________________________________________________________________________________________
+residual2 (Convolution2D)        (None, 128, 28, 28)   295040      merge1[0][0]                     
+____________________________________________________________________________________________________
+batch3 (BatchNormalization)      (None, 128, 56, 56)   256         maxpooling2d_2[0][0]             
+____________________________________________________________________________________________________
+upsample2 (UpSampling2D)         (None, 128, 56, 56)   0           residual2[0][0]                  
+____________________________________________________________________________________________________
+merge2 (Merge)                   (None, 128, 56, 56)   0           batch3[0][0]                     
+                                                                   upsample2[0][0]                  
+____________________________________________________________________________________________________
+residual3 (Convolution2D)        (None, 64, 56, 56)    73792       merge2[0][0]                     
+____________________________________________________________________________________________________
+batch4 (BatchNormalization)      (None, 64, 112, 112)  128         maxpooling2d_1[0][0]             
+____________________________________________________________________________________________________
+upsample3 (UpSampling2D)         (None, 64, 112, 112)  0           residual3[0][0]                  
+____________________________________________________________________________________________________
+merge3 (Merge)                   (None, 64, 112, 112)  0           batch4[0][0]                     
+                                                                   upsample3[0][0]                  
+____________________________________________________________________________________________________
+residual4 (Convolution2D)        (None, 3, 112, 112)   1731        merge3[0][0]                     
+____________________________________________________________________________________________________
+batch5 (BatchNormalization)      (None, 3, 224, 224)   6           conv0_1_3[0][0]                  
+____________________________________________________________________________________________________
+upsample4 (UpSampling2D)         (None, 3, 224, 224)   0           residual4[0][0]                  
+____________________________________________________________________________________________________
+merge4 (Merge)                   (None, 3, 224, 224)   0           batch5[0][0]                     
+                                                                   upsample4[0][0]                  
+____________________________________________________________________________________________________
+residual5 (Convolution2D)        (None, 3, 224, 224)   12          merge4[0][0]                     
+====================================================================================================
+Total params: 9187699
+I don't know what I'm doing wrong since the summary fits exactly with what I have in mind but no matter what, I keep getting this error :
+ValueError: GpuElemwise. Input dimension mis-match. Input 2 (indices start at 0) has shape[0] == 1, but the output's size on that axis is 5.
+Apply node that caused the error: GpuElemwise{Composite{((i0 * (i1 + Abs(i1))) - i2)},no_inplace}(CudaNdarrayConstant{[[[[ 0.5]]]]}, GpuElemwise{Add}[(0, 0)].0, GpuFromHost.0)
+Toposort index: 916
+Inputs types: [CudaNdarrayType(float32, (True, True, True, True)), CudaNdarrayType(float32, 4D), CudaNdarrayType(float32, 4D)]
+Inputs shapes: [(1, 1, 1, 1), (5, 3, 224, 224), (1, 3, 224, 224)]
+Inputs strides: [(0, 0, 0, 0), (150528, 50176, 224, 1), (0, 50176, 224, 1)]
+Inputs values: [CudaNdarray([[[[ 0.5]]]]), 'not shown', 'not shown']
+Inputs type_num: ['', '', '']
+I've included a Graph of the Model with this question too:
+Debugging this is a nightmare... most of the other errors are pretty easy to understand and fix but these errors are really hard to understand... and unfortunately this isn't the first time I've had these errors with Keras.
+Please! what is wrong with this model?! am I doing something completely wrong or perhaps this model shouldn't be designed this way?
+Thanks so much...

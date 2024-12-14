@@ -1,0 +1,426 @@
+Member
+cortesi commented on 3 May 2017
+I'm seeing quite frequent intermittent CI failures, with the following exception sequence. The proximal error here is in the addonmanager, but it seems there's an underlying connection-related failure. Full example here.
+test/mitmproxy/proxy/test_server.py::TestUpstreamProxySSL::test_ignore Exception in thread ProxyThread (:::42523):
+Traceback (most recent call last):
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/master.py", line 80, in run
+    self.tick(0.1)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/master.py", line 88, in tick
+    self.addons.trigger("tick")
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/test/taddons.py", line 22, in trigger
+    super().trigger(event, *args, **kwargs)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/addonmanager.py", line 245, in trigger
+    with safecall():
+  File "/opt/python/3.6.1/lib/python3.6/contextlib.py", line 82, in __enter__
+    return next(self.gen)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/addonmanager.py", line 56, in safecall
+    stdout_replacement = StreamLog(ctx.log.warn)
+AttributeError: 'NoneType' object has no attribute 'warn'
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File "/opt/python/3.6.1/lib/python3.6/threading.py", line 916, in _bootstrap_inner
+    self.run()
+  File "/home/travis/build/mitmproxy/mitmproxy/test/mitmproxy/tservers.py", line 105, in run
+    self.tmaster.run()
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/master.py", line 82, in run
+    self.shutdown()
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/master.py", line 106, in shutdown
+    self.addons.trigger("done")
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/test/taddons.py", line 22, in trigger
+    super().trigger(event, *args, **kwargs)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/addonmanager.py", line 245, in trigger
+    with safecall():
+  File "/opt/python/3.6.1/lib/python3.6/contextlib.py", line 82, in __enter__
+    return next(self.gen)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/addonmanager.py", line 56, in safecall
+    stdout_replacement = StreamLog(ctx.log.warn)
+AttributeError: 'NoneType' object has no attribute 'warn'
+Exception in thread ProxyThread (:::36481):
+Traceback (most recent call last):
+  File "/opt/python/3.6.1/lib/python3.6/threading.py", line 916, in _bootstrap_inner
+    self.run()
+  File "/home/travis/build/mitmproxy/mitmproxy/test/mitmproxy/tservers.py", line 105, in run
+    self.tmaster.run()
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/master.py", line 80, in run
+    self.tick(0.1)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/master.py", line 88, in tick
+    self.addons.trigger("tick")
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/test/taddons.py", line 22, in trigger
+    super().trigger(event, *args, **kwargs)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/addonmanager.py", line 245, in trigger
+    with safecall():
+  File "/opt/python/3.6.1/lib/python3.6/contextlib.py", line 82, in __enter__
+    return next(self.gen)
+  File "/home/travis/build/mitmproxy/mitmproxy/mitmproxy/addonmanager.py", line 56, in safecall
+    stdout_replacement = StreamLog(ctx.log.warn)
+AttributeError: 'NoneType' object has no attribute 'warn'
+FAILED
+test/mitmproxy/proxy/test_server.py::TestUpstreamProxySSL::test_tcp FAILED
+test/mitmproxy/proxy/test_server.py::TestUpstreamProxySSL::test_simple FAILED
+test/mitmproxy/proxy/test_server.py::TestUpstreamProxySSL::test_change_upstream_proxy_connect FAILED 
+=================================== FAILURES ===================================
+_______________________ TestUpstreamProxySSL.test_ignore _______________________
+rfile = <mitmproxy.net.tcp.Reader object at 0x7f1da1e1cb70>
+    def _read_response_line(rfile):
+        try:
+>           line = _get_first_line(rfile)
+mitmproxy/net/http/http1/read.py:288: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rfile = <mitmproxy.net.tcp.Reader object at 0x7f1da1e1cb70>
+    def _get_first_line(rfile):
+        try:
+            line = rfile.readline()
+            if line == b"\r\n" or line == b"\n":
+                # Possible leftover from previous message
+                line = rfile.readline()
+        except (exceptions.TcpDisconnect, exceptions.TlsException):
+            raise exceptions.HttpReadDisconnect("Remote disconnected")
+        if not line:
+>           raise exceptions.HttpReadDisconnect("Remote disconnected")
+E           mitmproxy.exceptions.HttpReadDisconnect: Remote disconnected
+mitmproxy/net/http/http1/read.py:233: HttpReadDisconnect
+During handling of the above exception, another exception occurred:
+self = <test.mitmproxy.proxy.test_server.TestUpstreamProxySSL object at 0x7f1da1f272e8>
+    def test_ignore(self):
+        n = self.pathod("304")
+        self._ignore_on()
+        i = self.pathod("305")
+        i2 = self.pathod("306")
+        self._ignore_off()
+    
+        self.master.event_queue.join()
+    
+        assert n.status_code == 304
+        assert i.status_code == 305
+        assert i2.status_code == 306
+        assert any(f.response.status_code == 304 for f in self.master.state.flows)
+        assert not any(f.response.status_code == 305 for f in self.master.state.flows)
+        assert not any(f.response.status_code == 306 for f in self.master.state.flows)
+    
+        # Test that we get the original SSL cert
+        if self.ssl:
+            i_cert = certs.SSLCert(i.sslinfo.certchain[0])
+            i2_cert = certs.SSLCert(i2.sslinfo.certchain[0])
+            n_cert = certs.SSLCert(n.sslinfo.certchain[0])
+    
+            assert i_cert == i2_cert
+            assert i_cert != n_cert
+    
+        # Test Non-HTTP traffic
+        spec = "200:i0,@100:d0"  # this results in just 100 random bytes
+        # mitmproxy responds with bad gateway
+>       assert self.pathod(spec).status_code == 502
+test/mitmproxy/proxy/test_server.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/mitmproxy/tservers.py:214: in pathod
+    return p.request(q)
+pathod/pathoc.py:495: in request
+    return self.http(r)
+pathod/pathoc.py:457: in http
+    resp = self.protocol.read_response(self.rfile, dummy_req)
+mitmproxy/net/http/http1/read.py:65: in read_response
+    response = read_response_head(rfile)
+mitmproxy/net/http/http1/read.py:92: in read_response_head
+    http_version, status_code, message = _read_response_line(rfile)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rfile = <mitmproxy.net.tcp.Reader object at 0x7f1da1e1cb70>
+    def _read_response_line(rfile):
+        try:
+            line = _get_first_line(rfile)
+        except exceptions.HttpReadDisconnect:
+            # We want to provide a better error message.
+>           raise exceptions.HttpReadDisconnect("Server disconnected")
+E           mitmproxy.exceptions.HttpReadDisconnect: Server disconnected
+mitmproxy/net/http/http1/read.py:291: HttpReadDisconnect
+________________________ TestUpstreamProxySSL.test_tcp _________________________
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da1ecafd0>
+    def connect(self):
+        try:
+>           connection = self.create_connection()
+mitmproxy/net/tcp.py:693: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da1ecafd0>
+timeout = None
+    def create_connection(self, timeout=None):
+        # Based on the official socket.create_connection implementation of Python 3.6.
+        # https://github.com/python/cpython/blob/3cc5817cfaf5663645f4ee447eaed603d2ad290a/Lib/socket.py
+    
+        err = None
+        for res in socket.getaddrinfo(self.address[0], self.address[1], 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = self.makesocket(af, socktype, proto)
+                if timeout:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                if self.spoof_source_address:
+                    try:
+                        if not sock.getsockopt(socket.SOL_IP, socket.IP_TRANSPARENT):
+                            sock.setsockopt(socket.SOL_IP, socket.IP_TRANSPARENT, 1)
+                    except Exception as e:
+                        # socket.IP_TRANSPARENT might not be available on every OS and Python version
+                        raise exceptions.TcpException(
+                            "Failed to spoof the source address: " + e.strerror
+                        )
+                sock.connect(sa)
+                return sock
+    
+            except socket.error as _:
+                err = _
+                if sock is not None:
+                    sock.close()
+    
+        if err is not None:
+>           raise err
+mitmproxy/net/tcp.py:687: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da1ecafd0>
+timeout = None
+    def create_connection(self, timeout=None):
+        # Based on the official socket.create_connection implementation of Python 3.6.
+        # https://github.com/python/cpython/blob/3cc5817cfaf5663645f4ee447eaed603d2ad290a/Lib/socket.py
+    
+        err = None
+        for res in socket.getaddrinfo(self.address[0], self.address[1], 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = self.makesocket(af, socktype, proto)
+                if timeout:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                if self.spoof_source_address:
+                    try:
+                        if not sock.getsockopt(socket.SOL_IP, socket.IP_TRANSPARENT):
+                            sock.setsockopt(socket.SOL_IP, socket.IP_TRANSPARENT, 1)
+                    except Exception as e:
+                        # socket.IP_TRANSPARENT might not be available on every OS and Python version
+                        raise exceptions.TcpException(
+                            "Failed to spoof the source address: " + e.strerror
+                        )
+>               sock.connect(sa)
+E               ConnectionRefusedError: [Errno 111] Connection refused
+mitmproxy/net/tcp.py:678: ConnectionRefusedError
+During handling of the above exception, another exception occurred:
+self = <test.mitmproxy.proxy.test_server.TestUpstreamProxySSL object at 0x7f1da3290940>
+    def test_tcp(self):
+>       n = self.pathod("304")
+test/mitmproxy/proxy/test_server.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/mitmproxy/tservers.py:213: in pathod
+    with p.connect():
+test/mitmproxy/tservers.py:183: in connect
+    return pathod.pathoc.Pathoc.connect(self, self.lazy_connect)
+pathod/pathoc.py:312: in connect
+    with tcp.TCPClient.connect(self) as closer:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da1ecafd0>
+    def connect(self):
+        try:
+            connection = self.create_connection()
+        except (socket.error, IOError) as err:
+            raise exceptions.TcpException(
+                'Error connecting to "%s": %s' %
+>               (self.address[0], err)
+            )
+E           mitmproxy.exceptions.TcpException: Error connecting to "localhost": [Errno 111] Connection refused
+mitmproxy/net/tcp.py:697: TcpException
+_______________________ TestUpstreamProxySSL.test_simple _______________________
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da31abbe0>
+    def connect(self):
+        try:
+>           connection = self.create_connection()
+mitmproxy/net/tcp.py:693: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da31abbe0>
+timeout = None
+    def create_connection(self, timeout=None):
+        # Based on the official socket.create_connection implementation of Python 3.6.
+        # https://github.com/python/cpython/blob/3cc5817cfaf5663645f4ee447eaed603d2ad290a/Lib/socket.py
+    
+        err = None
+        for res in socket.getaddrinfo(self.address[0], self.address[1], 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = self.makesocket(af, socktype, proto)
+                if timeout:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                if self.spoof_source_address:
+                    try:
+                        if not sock.getsockopt(socket.SOL_IP, socket.IP_TRANSPARENT):
+                            sock.setsockopt(socket.SOL_IP, socket.IP_TRANSPARENT, 1)
+                    except Exception as e:
+                        # socket.IP_TRANSPARENT might not be available on every OS and Python version
+                        raise exceptions.TcpException(
+                            "Failed to spoof the source address: " + e.strerror
+                        )
+                sock.connect(sa)
+                return sock
+    
+            except socket.error as _:
+                err = _
+                if sock is not None:
+                    sock.close()
+    
+        if err is not None:
+>           raise err
+mitmproxy/net/tcp.py:687: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da31abbe0>
+timeout = None
+    def create_connection(self, timeout=None):
+        # Based on the official socket.create_connection implementation of Python 3.6.
+        # https://github.com/python/cpython/blob/3cc5817cfaf5663645f4ee447eaed603d2ad290a/Lib/socket.py
+    
+        err = None
+        for res in socket.getaddrinfo(self.address[0], self.address[1], 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = self.makesocket(af, socktype, proto)
+                if timeout:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                if self.spoof_source_address:
+                    try:
+                        if not sock.getsockopt(socket.SOL_IP, socket.IP_TRANSPARENT):
+                            sock.setsockopt(socket.SOL_IP, socket.IP_TRANSPARENT, 1)
+                    except Exception as e:
+                        # socket.IP_TRANSPARENT might not be available on every OS and Python version
+                        raise exceptions.TcpException(
+                            "Failed to spoof the source address: " + e.strerror
+                        )
+>               sock.connect(sa)
+E               ConnectionRefusedError: [Errno 111] Connection refused
+mitmproxy/net/tcp.py:678: ConnectionRefusedError
+During handling of the above exception, another exception occurred:
+self = <test.mitmproxy.proxy.test_server.TestUpstreamProxySSL object at 0x7f1da31ab978>
+    def test_simple(self):
+        p = self.pathoc()
+>       with p.connect():
+test/mitmproxy/proxy/test_server.py:980: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/mitmproxy/tservers.py:183: in connect
+    return pathod.pathoc.Pathoc.connect(self, self.lazy_connect)
+pathod/pathoc.py:312: in connect
+    with tcp.TCPClient.connect(self) as closer:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da31abbe0>
+    def connect(self):
+        try:
+            connection = self.create_connection()
+        except (socket.error, IOError) as err:
+            raise exceptions.TcpException(
+                'Error connecting to "%s": %s' %
+>               (self.address[0], err)
+            )
+E           mitmproxy.exceptions.TcpException: Error connecting to "localhost": [Errno 111] Connection refused
+mitmproxy/net/tcp.py:697: TcpException
+___________ TestUpstreamProxySSL.test_change_upstream_proxy_connect ____________
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da30f19e8>
+    def connect(self):
+        try:
+>           connection = self.create_connection()
+mitmproxy/net/tcp.py:693: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da30f19e8>
+timeout = None
+    def create_connection(self, timeout=None):
+        # Based on the official socket.create_connection implementation of Python 3.6.
+        # https://github.com/python/cpython/blob/3cc5817cfaf5663645f4ee447eaed603d2ad290a/Lib/socket.py
+    
+        err = None
+        for res in socket.getaddrinfo(self.address[0], self.address[1], 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = self.makesocket(af, socktype, proto)
+                if timeout:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                if self.spoof_source_address:
+                    try:
+                        if not sock.getsockopt(socket.SOL_IP, socket.IP_TRANSPARENT):
+                            sock.setsockopt(socket.SOL_IP, socket.IP_TRANSPARENT, 1)
+                    except Exception as e:
+                        # socket.IP_TRANSPARENT might not be available on every OS and Python version
+                        raise exceptions.TcpException(
+                            "Failed to spoof the source address: " + e.strerror
+                        )
+                sock.connect(sa)
+                return sock
+    
+            except socket.error as _:
+                err = _
+                if sock is not None:
+                    sock.close()
+    
+        if err is not None:
+>           raise err
+mitmproxy/net/tcp.py:687: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da30f19e8>
+timeout = None
+    def create_connection(self, timeout=None):
+        # Based on the official socket.create_connection implementation of Python 3.6.
+        # https://github.com/python/cpython/blob/3cc5817cfaf5663645f4ee447eaed603d2ad290a/Lib/socket.py
+    
+        err = None
+        for res in socket.getaddrinfo(self.address[0], self.address[1], 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = self.makesocket(af, socktype, proto)
+                if timeout:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                if self.spoof_source_address:
+                    try:
+                        if not sock.getsockopt(socket.SOL_IP, socket.IP_TRANSPARENT):
+                            sock.setsockopt(socket.SOL_IP, socket.IP_TRANSPARENT, 1)
+                    except Exception as e:
+                        # socket.IP_TRANSPARENT might not be available on every OS and Python version
+                        raise exceptions.TcpException(
+                            "Failed to spoof the source address: " + e.strerror
+                        )
+>               sock.connect(sa)
+E               ConnectionRefusedError: [Errno 111] Connection refused
+mitmproxy/net/tcp.py:678: ConnectionRefusedError
+During handling of the above exception, another exception occurred:
+self = <test.mitmproxy.proxy.test_server.TestUpstreamProxySSL object at 0x7f1da30f1b70>
+    def test_change_upstream_proxy_connect(self):
+        # skip chain[0].
+        self.proxy.tmaster.addons.add(
+            UpstreamProxyChanger(
+                ("127.0.0.1", self.chain[1].port)
+            )
+        )
+        p = self.pathoc()
+>       with p.connect():
+test/mitmproxy/proxy/test_server.py:1005: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/mitmproxy/tservers.py:183: in connect
+    return pathod.pathoc.Pathoc.connect(self, self.lazy_connect)
+pathod/pathoc.py:312: in connect
+    with tcp.TCPClient.connect(self) as closer:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+self = <test.mitmproxy.tservers.LazyPathoc object at 0x7f1da30f19e8>
+    def connect(self):
+        try:
+            connection = self.create_connection()
+        except (socket.error, IOError) as err:
+            raise exceptions.TcpException(
+                'Error connecting to "%s": %s' %
+>               (self.address[0], err)
+            )
+E           mitmproxy.exceptions.TcpException: Error connecting to "localhost": [Errno 111] Connection refused
+mitmproxy/net/tcp.py:697: TcpException

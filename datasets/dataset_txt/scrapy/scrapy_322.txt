@@ -1,0 +1,54 @@
+jogspokoen commented on Aug 10, 2018
+I have 2 problems with my scraper:
+It get's a lot of 302s after a while, despite the fact I use 'COOKIES_ENABLED': False, and rotating proxy which should provide different IP for each request. I solved it by restarting scraper after several 302s
+I see that scraper successfully crawls much more than it process, and I can't do anything with it. In the example below I've got 121 200s responses, but only 27 was processed.
+class MySpider(Spider):
+    name = 'MySpider'
+    custom_settings = {
+        'DOWNLOAD_DELAY': 0,
+        'RETRY_TIMES': 1,
+        'LOG_LEVEL': 'DEBUG',
+        'CLOSESPIDER_ERRORCOUNT': 3,
+        'COOKIES_ENABLED': False,
+    }
+    # I need to manually control when spider to stop, otherwise it runs forever
+    handle_httpstatus_list = [301, 302]
+
+    def start_requests(self):
+        for row in self.df.itertuples():
+            yield Request(
+                url=row.link,
+                callback=self.parse,
+                priority=100
+            )
+
+    def close(self, reason):
+        self.logger.info('TOTAL ADDED: %s' % self.added)
+
+    def parse(self, r):
+        if r.status == 302:
+            # I need to manually control when spider to stop, otherwise it runs forever
+            raise CloseSpider("")
+        else:
+            # do parsing stuff
+            self.added += 1
+            self.logger.info('{} left'.format(len(self.df[self.df['status'] == 0])))
+Output
+2018-08-08 12:24:24 [scrapy.core.engine] DEBUG: Crawled (200) <GET https://mytarget.com/url1> (referer: None)
+2018-08-08 12:24:24 [scrapy.core.engine] DEBUG: Crawled (200) <GET https://mytarget.com/url2> (referer: None)
+2018-08-08 12:24:24 [MySpider] INFO: 52451 left
+2018-08-08 12:24:24 [scrapy.core.engine] DEBUG: Crawled (200) <GET https://mytarget.com/url3> (referer: None)
+2018-08-08 12:24:24 [scrapy.core.engine] DEBUG: Crawled (200) <GET https://mytarget.com/url4> (referer: None)
+2018-08-08 12:24:24 [MySpider] INFO: 52450 left
+2018-08-08 12:24:24 [scrapy.core.engine] DEBUG: Crawled (200) <GET https://mytarget.com/url4> (referer: None)
+
+
+2018-08-08 12:24:37 [MySpider] INFO: TOTAL ADDED: 27
+2018-08-08 12:24:37 [scrapy.statscollectors] INFO: Dumping Scrapy stats:
+{'downloader/exception_count': 1,
+...
+...
+ 'downloader/response_status_count/200': 121,
+ 'downloader/response_status_count/302': 4,
+It succesfully crawls much (3x or 4x times more than crawls).
+How can I force to process everything that was crawled? I can sacrifice the speed, but I don't want to waste what was succesfully crawled with 200, I want to process it!

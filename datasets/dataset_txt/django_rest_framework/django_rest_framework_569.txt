@@ -1,0 +1,42 @@
+sqwishy commented on 25 Nov 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Be on 3.2.5. Make a request against a serializer that has a many nested field that is not readonly. The field is a many-to-many, I'm not sure if that matters.
+$ http -v --json PATCH http://blah/
+PATCH / HTTP/1.1
+Accept: application/json
+Accept-Encoding: gzip, deflate
+Authorization: blah
+Connection: keep-alive
+Content-Length: 0
+Content-Type: application/json
+Host: blah
+User-Agent: HTTPie/0.9.4
+
+
+
+HTTP/1.0 200 OK
+Allow: GET, PUT, PATCH, DELETE, HEAD, OPTIONS
+Connection: close
+Content-Type: application/json
+Date: Fri, 24 Nov 2017 20:05:28 GMT
+Server: Werkzeug/0.12.2 Python/3.4.2
+...
+Expected behavior
+Nothing happens, the object is not modified.
+Actual behavior
+An empty patch request clears values on the model for nested serializer fields using many=True, required=False, read_only=False.
+While tracing I found that the nested serializer was passed a QueryDict. The serializer's get_value() method. Then, get_value() does this
+        if html.is_html_input(dictionary):
+            return html.parse_html_list(dictionary, prefix=self.field_name)
+Thing which parses the missing value into an empty list. It's not html input. I specified the content type. I boggles my mind that serialization and markup handling is happening a this level of the program.
+That's on Other things in this file throw an or empty at the end, like
+        if html.is_html_input(dictionary):
+            return html.parse_html_dict(dictionary, prefix=self.field_name) or empty
+which would probably work but seems stupid because it's not HTML input.

@@ -1,0 +1,23 @@
+jjnetcn commented on Apr 12, 2018 •
+edited
+requests.get() never timeouted when https proxy connect success but not response data.
+1: we create the server at port 4444 but not response any data.
+bash$ nc -l 4444
+2：and then call request.get with https proxy
+bash$ python3
+import requests
+requests.get("https://www.baidu.com", timeout=5, proxies={"http":"http://127.0.0.1:4444", "https":"http://127.0.0.1:4444"})
+this command never return in urllib3.
+it block in HTTPSConnectionPool::urlopen, because HTTPS will call
+HTTPSConnectionPool::_prepare_conn() to prepare_conn( note http proxy never do this),
+and send "CONNECT ... HTTP/1.0" and blocked in response.
+because of socket.create_connection's timeout is None means "never timeouted",
+backstrace to requests, it new HTTPSConnectionPool() object thought connection_from_url
+without timeout. so i patched requests/adapters.py and now work
+del conn = self.get_connection(request.url, proxies)
+add conn = self.get_connection(request.url, proxies, timeout)
+del def get_connection(self, url, proxies=None):
+add def get_connection(self, url, proxies=None, timeout=None):
+del proxy_manager = self.proxy_manager_for(proxy)
+add proxy_manager = self.proxy_manager_for(proxy,timeout)
+i am sorry i am not familiar markdown

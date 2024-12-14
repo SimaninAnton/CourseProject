@@ -1,0 +1,27 @@
+Contributor
+cancan101 commented on 1 Jul 2014
+I believe that data is a list here so if there is an exception, then this assignment will fail:
+    def resolve_context(self, data, request, response):
+        if response.exception:
+            data['status_code'] = response.status_code
+        return RequestContext(request, data)
+These dict reads use [ ] rather than get so will fail if renderer_context is null or empty when passed in even with the or:
+        renderer_context = renderer_context or {}
+        view = renderer_context['view']
+        request = renderer_context['request']
+        response = renderer_context['response']
+There is no documentation on how to write a template that works with this renderer. Specifically it is not clear what gets set in the context.
+I actually think that nothing gets set in the context and this render should be fixed as (at least for Listing):
+class TemplateHTMLRenderer2(TemplateHTMLRenderer):
+    def context_object_name(self, renderer_context):
+        renderer_context = renderer_context or {}
+        view = renderer_context['view']
+
+        if hasattr(view, 'get_context_object_name'):
+            return view.get_context_object_name()
+        elif hasattr(view, 'context_object_name'):
+            return view.context_object_name
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        data = {self.context_object_name(renderer_context): data}
+        return super(TemplateHTMLRenderer2, self).render(data, accepted_media_type, renderer_context)

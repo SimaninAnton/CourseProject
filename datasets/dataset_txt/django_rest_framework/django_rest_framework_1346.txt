@@ -1,0 +1,42 @@
+snoepkast commented on 5 Jan 2016
+With default validation it is possible for an API user to receive up to 4 errors from the same field like so:
+Request 1: validate_empty_values fails and returns an error.
+Request 2: to_interal_value fails and returns an error.
+Request 3:run_validators fails and returns an error.
+Request 4: validate fails and returns an error.
+As you can imagine that is kind of frustrating. So we tried to display all errors at once by adding the errors to a dict and returning that after all validation. This works, however therein lies the next problem: when a value requires some kind of formatting the internal value is ignored, since you can either raise a validation error or return the values. Our implementation:
+class ValidateEverythingSimultaneouslyMixin(object):
+    def run_validation(self, data=empty):
+        """
+        We patch this function because we want to see all the errors at once.
+        """
+        (is_empty_value, data) = self.validate_empty_values(data)
+        if is_empty_value:
+            return data
+
+        errors = OrderedDict()
+
+        try:
+            data = self.to_internal_value(data)
+        except ValidationError as exc:
+            errors.update(exc.detail)
+
+        try:
+            self.run_validators(data)
+        except (ValidationError, DjangoValidationError) as exc:
+            errors.update(get_validation_error_detail(exc))
+
+        try:
+            data = self.validate(data)
+            assert data is not None, '.validate() should return the validated data'
+        except (ValidationError, DjangoValidationError) as exc:
+            errors.update(get_validation_error_detail(exc))
+
+        if errors:
+            raise ValidationError(errors)
+
+        return data
+So for example you have 2 fields: a floatfield, which returns a float, and some other field. In the validate function you expect a float and do some extra validation on it. But you don't receive a float because the other field had a validation error.
+I would argue the current design is not how it should be. The function name (to_internal_value) would not lead me to believe it also does validation instead of just trying to return a proper internal value ready for validation and makes it hard to do multiple validations since every step would need to format the value again. It would be much more logical if the function would be seperated in the validation part and the to internal value part, which would also be more compliant with the single responsibility principle. Or am I missing something?
+Also wouldn't it be logical to show all errors at once by default?
+1

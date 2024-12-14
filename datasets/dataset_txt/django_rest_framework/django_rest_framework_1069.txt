@@ -1,0 +1,62 @@
+Contributor
+TakesxiSximada commented on 4 Sep 2016 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+When run the django.core.urlresolvers.resolve ( '/') to the @api_view decorated function, ResolverMatch.func_name has been set a invalid dotted name.
+This is example code.
+proj/urls.py::
+from django.conf.urls import url
+
+from . import views
+
+
+urlpatterns = [
+    url(r'^', views.test_view),
+]
+proj/views.py::
+import rest_framework.decorators
+import rest_framework.response
+
+
+@rest_framework.decorators.api_view()
+def test_view(request):
+    return rest_framework.response.Response()
+
+
+def not_view_func():
+    pass
+When I run the django.core.urlresolvers.resolve('/'), ResolverMatch.func_name has been set a invalid dotted name.
+>>> import proj.views
+>>> import django.core.urlresolvers
+>>> resolve_match = django.core.urlresolvers.resolve('/')
+>>> resolve_match.view_name
+'rest_framework.decorators.test_view'
+The module is set to the dotted name that to module defined it.
+>>> proj.views.not_view_func.__module__
+'proj.views'
+But @api_view decorated view function's module has been set rest_framework.decorators.
+>>> proj.views.test_view.__module__
+'rest_framework.decorators'
+Because @api_view decorated view function is WrappedAPIView,
+and WrappedAPIView generated in the rest_framework.decorators.
+>>> proj.views.test_view
+<function WrappedAPIView at 0x110732e18>
+https://github.com/tomchristie/django-rest-framework/blob/07efbdb45e5c7ef70249e985b3c1ef1cead455ba/rest_framework/decorators.py#L27-L31
+ResolveMatch.view_name has been using it, so set invalid dotted name to ResolveMatch.view_name.
+This issue has occrred because of the WrappedAPIView.name has been overwritten and WrappedAPIView.module has not been overwritten.
+https://github.com/tomchristie/django-rest-framework/blob/07efbdb45e5c7ef70249e985b3c1ef1cead455ba/rest_framework/decorators.py#L57
+The following results are obtained if overwriting module.
+>>> import proj.views
+>>> import django.core.urlresolvers
+>>> resolve_match = django.core.urlresolvers.resolve('/')
+>>> resolve_match.view_name
+'proj.views.test_view'
+>>> resolve_match
+ResolverMatch(func=proj.views.test_view, args=(), kwargs={}, url_name=None, app_names=[], namespaces=[])

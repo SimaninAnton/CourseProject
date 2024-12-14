@@ -1,0 +1,50 @@
+robcharlwood commented on 22 Nov 2012
+Hi Tom,
+PrimaryKeyRelatedField.from_native method blows up with a ValueError when passed an empty value or a string as data. This is due to django db machinery assuming an integer has been passed and tries to cast to an int in get_prep_value without a try and catch. I have isolated it to the following:
+fields.py Line 476 (Based on master 22/11/2012 at 15:15)
+Should this method not validate the data variable in the same manner that the IntegerField does to ensure that django's db machinery is passed a valid integer to lookup against?
+If this is the case then let me know and I shall write a patch with tests to a forked branch and raise a pull request.
+Cheers,
+Rob
+PS. Here is a chunk of my traceback for your reference.
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/views.py" in dispatch
+  363.             response = self.handle_exception(exc)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/views.py" in dispatch
+  360.             response = handler(request, *args, **kwargs)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/generics.py" in post
+  116.         return self.create(request, *args, **kwargs)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/mixins.py" in create
+  19.         if serializer.is_valid():
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/serializers.py" in is_valid
+  297.         return not self.errors
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/serializers.py" in errors
+  291.             obj = self.from_native(self.init_data)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/serializers.py" in from_native
+  263.             attrs = self.restore_fields(data)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/serializers.py" in restore_fields
+  199.                 field.field_from_native(data, field_name, reverted_data)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/fields.py" in field_from_native
+  331.         into[(self.source or field_name)] = self.from_native(value)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.2-py2.7.egg/rest_framework/fields.py" in from_native
+  401.             return self.queryset.get(pk=data)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/query.py" in get
+  358.         clone = self.filter(*args, **kwargs)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/query.py" in filter
+  624.         return self._filter_or_exclude(False, *args, **kwargs)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/query.py" in _filter_or_exclude
+  642.             clone.query.add_q(Q(*args, **kwargs))
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/sql/query.py" in add_q
+  1,250.                             can_reuse=used_aliases, force_having=force_having)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/sql/query.py" in add_filter
+  1,185.                 connector)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/sql/where.py" in add
+  69.             value = obj.prepare(lookup_type, value)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/sql/where.py" in prepare
+  320.             return self.field.get_prep_lookup(lookup_type, value)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/fields/__init__.py" in get_prep_lookup
+  310.             return self.get_prep_value(value)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/db/models/fields/__init__.py" in get_prep_value
+  537.         return int(value)
+
+Exception Type: ValueError at /xx/xxx/xxxx/
+Exception Value: invalid literal for int() with base 10: 'foo'

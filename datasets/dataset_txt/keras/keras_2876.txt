@@ -1,0 +1,91 @@
+silentsnooc commented on 24 Mar 2017 •
+edited
+I am trying to play around with custom merge functions. I am trying to merge two layers such that the output is e.g. the cosine of the two input layers:
+def _cosine_similarity(x):
+    import tensorflow as tf
+    a = x[0]
+    b = x[1]
+    norm_a = tf.sqrt(tf.reduce_sum(tf.square(a), 1, keep_dims=True))
+    norm_b = tf.sqrt(tf.reduce_sum(tf.square(b), 1, keep_dims=True))
+    dot = tf.matmul(a, tf.transpose(b))
+    norm = tf.mul(norm_a, norm_b)
+    cosine = tf.divide(dot, norm)
+    return cosine
+However, there appears to be a problem with the shapes.. dot after tf.matmul(a, tf.transpose(b)) has a shape of (?, ?) - could that be the problem here?
+The two input tensors should have the dimensions (?, 64). This is the network:
+in_a = Input(shape=(nb_dimensions,), name='in_a')
+reduced_a = Dense(nb_reduced, activation='relu')(in_a)
+
+in_b = Input(shape=(nb_dimensions,), name='in_b')
+reduced_b = Dense(nb_reduced, activation='relu')(in_b)
+
+cos_similarity = merge(inputs=[reduced_a, reduced_b], output_shape=(1,), 
+                       mode=_cosine_similarity)
+
+output = Dense(1, activation='linear', trainable=False)(cos_similarity)
+In case you want to see everything in debug mode:
+Any idea what I can do to fix this?
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:975] Creating TensorFlow device (/gpu:0) -> (device: 0, name: GeForce GTX 1070, pci bus id: 0000:01:00.0)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1021, in _do_call
+    return fn(*args)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1003, in _run_fn
+    status, run_metadata)
+  File "/usr/lib/python3.5/contextlib.py", line 66, in __exit__
+    next(self.gen)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/errors_impl.py", line 469, in raise_exception_on_not_ok_status
+    pywrap_tensorflow.TF_GetCode(status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Matrix size-incompatible: In[0]: [25,25], In[1]: [1,1]
+  [[Node: MatMul_3 = MatMul[T=DT_FLOAT, transpose_a=false, transpose_b=false, _device="/job:localhost/replica:0/task:0/gpu:0"](Divide/truediv, dense_3_W/read)]]
+  [[Node: mul_1/_39 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_410_mul_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/media/Data/workspaces/git/master-thesis/python/thesis/absa/slot1/constrained/cosine_encoder.py", line 121, in <module>
+    loss = ae.model.train_on_batch(x, y_batch)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 1320, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/usr/local/lib/python3.5/dist-packages/keras/backend/tensorflow_backend.py", line 1943, in __call__
+    feed_dict=feed_dict)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 766, in run
+    run_metadata_ptr)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 964, in _run
+    feed_dict_string, options, run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1014, in _do_run
+    target_list, options, run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1034, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Matrix size-incompatible: In[0]: [25,25], In[1]: [1,1]
+  [[Node: MatMul_3 = MatMul[T=DT_FLOAT, transpose_a=false, transpose_b=false, _device="/job:localhost/replica:0/task:0/gpu:0"](Divide/truediv, dense_3_W/read)]]
+  [[Node: mul_1/_39 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_410_mul_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]
+
+Caused by op 'MatMul_3', defined at:
+  File "/media/Data/workspaces/git/master-thesis/python/thesis/absa/slot1/constrained/cosine_encoder.py", line 83, in <module>
+    ae = CosineEncoder(nb_dimensions=len(vocabulary), nb_reduced=64)
+  File "/media/Data/workspaces/git/master-thesis/python/thesis/absa/slot1/constrained/cosine_encoder.py", line 57, in __init__
+    output = Dense(1, activation='linear', trainable=False)(cos_similarity)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 572, in __call__
+    self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 635, in add_inbound_node
+    Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 166, in create_node
+    output_tensors = to_list(outbound_layer.call(input_tensors[0], mask=input_masks[0]))
+  File "/usr/local/lib/python3.5/dist-packages/keras/layers/core.py", line 814, in call
+    output = K.dot(x, self.W)
+  File "/usr/local/lib/python3.5/dist-packages/keras/backend/tensorflow_backend.py", line 827, in dot
+    out = tf.matmul(x, y)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/math_ops.py", line 1729, in matmul
+    a, b, transpose_a=transpose_a, transpose_b=transpose_b, name=name)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/gen_math_ops.py", line 1442, in _mat_mul
+    transpose_b=transpose_b, name=name)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/op_def_library.py", line 759, in apply_op
+    op_def=op_def)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py", line 2240, in create_op
+    original_op=self._default_original_op, op_def=op_def)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py", line 1128, in __init__
+    self._traceback = _extract_stack()
+
+InvalidArgumentError (see above for traceback): Matrix size-incompatible: In[0]: [25,25], In[1]: [1,1]
+  [[Node: MatMul_3 = MatMul[T=DT_FLOAT, transpose_a=false, transpose_b=false, _device="/job:localhost/replica:0/task:0/gpu:0"](Divide/truediv, dense_3_W/read)]]
+  [[Node: mul_1/_39 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/cpu:0", send_device="/job:localhost/replica:0/task:0/gpu:0", send_device_incarnation=1, tensor_name="edge_410_mul_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/cpu:0"]()]]

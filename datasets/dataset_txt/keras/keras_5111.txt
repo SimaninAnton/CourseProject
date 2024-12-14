@@ -1,0 +1,38 @@
+hongkunyoo commented on 24 May 2016
+I admit this way for solving unsupported masking issue is quite unnatural, violating Keras's concept and incomplete though, I think it could some how work.
+class SetZero(Callback):
+
+    def __init__(self, set_zero_f, output_shape):
+        super(SetZero, self).__init__()
+        self.set_zero_f = set_zero_f
+        self.output_shape = output_shape
+
+    def on_batch_begin(self, batch, logs={}):
+        self.set_zero_f(numpy.zeros(self.output_shape))
+
+
+class MaskEmbedding(Embedding):
+
+    def build(self, input_shape):
+        super(MaskEmbedding, self).build(input_shape)
+
+        zero_tensor = T.vector()
+        # Explicitly, Set all column value to 0 of word embedding index 0 (W[0, :] = 0)
+        set_zero_f = theano.function([zero_tensor], updates=[(self.W, T.set_subtensor(self.W[0, :], zero_tensor))],
+                                   allow_input_downcast=True)
+        self.set_zero_callback = SetZero(set_zero_f, self.output_dim)
+
+
+# simple Neural Network
+model = Sequential()
+mask_embedding = MaskEmbedding(VOCAB_SIZE, EMBED_DIM, input_length=SEQ_LEN)
+model.add(mask_embedding)
+model.add(Dense(NUM_OF_CLASS))
+model.add(Activation('softmax'))
+
+model.compile(...)
+
+# pass the set-zero-callback to model to be called on every batch begin.
+model.fit(x_train, y_train, callbacks=[mask_embedding.set_zero_callback])
+The idea is simple, just call the function that sets all the values to 0 in word embedding index 0 on every batch begins. then wouldn't it have an effect of masking?
+What do you think about it, is it gibberish?

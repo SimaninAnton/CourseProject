@@ -1,0 +1,55 @@
+naveenjafer commented on 1 Jan •
+edited
+Feature description
+Noun Phrase Matcher as a part of the Doc object.
+Could the feature be a custom component or spaCy plugin?
+Source code change?
+I had come across a previous enhancement request for Verb phrase matcher request in SpaCy. While tinkering with the existing noun phrase matcher, I had come across a few sources that show how noun phrase matching is generally done(http://www.nltk.org/book_1ed/ch07.html#ref-chunkex-grammar). While the implementation in NLTK and few other resources I found is a fairly simple grammar rule such as DT?JJ*NN. I could see that the implementation in spacy was different. In fact the simple example of "Autonomous cars shift insurance liability toward manufacturers" gives three noun phrases according to the spacy implementation -
+Autonomous cars(ADJ NOUN)
+insurance liability(NOUN NOUN)
+manufacturers(NOUN)
+If we go by the grammar rule as defined in NLTK, the "insurance liability" NP will not be captured. Therefore, I took the liberty to modify the regex to DT?JJ*{NN PROPN PRON}* (I am not sure if this is incorrect). When I wrote down the implementation for this in spaCy, it consistently performs ~30 percent faster than the existing implementation for noun phrase matcher and passes all the test cases as a part of the "test_parser.py".
+Is the regex based method less reliable than the subtree based method used in spaCy? Additionally, both of these happen to be rule based noun phrase matcher, does someone have any idea about how one would go about implementing a phrase matcher that can be trained on data? The only piece of I came across was "textblob.np_extractors.ConllExtractor, which uses the CoNLL 2000 corpus to train a tagger."
+The code I had put down is
+def noun_chunks_2(obj):
+    doc = obj.doc  # Ensure works on both Doc and Span.
+    np_label = doc.vocab.strings.add("NP")
+    lastValid = -1
+    for i, word in enumerate(obj):
+        start = 0
+        end = 0
+        validNP = False
+        if i > lastValid:
+            if word.pos == DET:
+                start = i
+                cur = i
+                while cur+1 < len(obj) and obj[cur+1].pos == ADJ:
+                    cur = cur + 1
+                while cur+1 < len(obj) and obj[cur+1].pos in (NOUN,PROPN,PRON):
+                    cur = cur + 1
+                    end = cur
+                    validNP = True
+                if validNP:
+                    lastValid = end
+                    yield start,end+1,np_label
+            elif word.pos == ADJ:
+                validNP = False
+                start = i
+                cur = i
+                while cur+1 < len(obj) and obj[cur+1].pos == ADJ:
+                    cur = cur + 1
+                while cur+1 < len(obj) and obj[cur+1].pos in (NOUN,PROPN,PRON):
+                    cur = cur + 1
+                    end = cur
+                    validNP = True
+                if validNP:
+                    lastValid = end
+                    yield start,end+1,np_label
+            elif word.pos in (NOUN,PROPN,PRON):
+                start = i
+                cur = i
+                end = start
+                while cur+1 < len(obj) and obj[cur+1].pos == NOUN:
+                    cur = cur + 1
+                    end = cur
+                yield start,end+1,np_label

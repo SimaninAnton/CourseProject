@@ -1,0 +1,37 @@
+commonorgarden commented on 12 Jun 2013
+Found this while trying to prevent users from POSTing lists of objects to one of my resources.
+For example, I am trying to stop the user posting data like this:
+[{"name": "MNO",},{"name": "PQR",}]
+My view code looks like this - note I am setting many=False:
+class MyObjectList(APIView):
+
+    def post(self, request, format=None):
+        serializer_context = {'request': request}
+        serializer = PageSerializer(data=request.DATA,
+                                    context=serializer_context,
+                                    many=False)
+        if serializer.is_valid():
+            ...
+In BaseSerializer.py we have the following functions:
+def from_native(self, data, files):
+    """
+    Deserialize primitives -> objects.
+    """
+    self._errors = {}
+    if data is not None or files is not None:
+        attrs = self.restore_fields(data, files)
+        attrs = self.perform_validation(attrs)
+        ...
+
+def restore_fields(self, data, files):
+    """
+    Core of deserialization, together with `restore_object`.
+    Converts a dictionary of data into a dictionary of deserialized fields.
+    """
+    reverted_data = {}
+
+    if data is not None and not isinstance(data, dict):
+        self._errors['non_field_errors'] = ['Invalid data']
+        return None
+    ...
+from_native calls restore_fields, which returns None because the data is a list, not a dict. However, from_native does not check whether attrs is None and still calls perform_validation. The field validation section of this function does not check for general errors before calling the individual validate_<fieldname>() methods.

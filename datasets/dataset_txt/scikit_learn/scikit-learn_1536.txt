@@ -1,0 +1,76 @@
+vinayakumarr commented on Feb 25, 2018
+The Code is given below. This works and calculates the accuracy
+from __future__ import print_function
+import pandas as pd
+import numpy as np
+np.random.seed(1337)
+from keras.preprocessing import sequence
+from keras.utils import np_utils
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Activation, Embedding
+from keras.layers import LSTM, SimpleRNN, GRU
+from keras.utils.np_utils import to_categorical
+from sklearn.metrics import (precision_score, recall_score,f1_score, accuracy_score,mean_squared_error,mean_absolute_error)
+from sklearn import metrics
+from sklearn.preprocessing import Normalizer
+import h5py
+from keras import callbacks
+from keras.callbacks import CSVLogger
+import itertools
+from nltk.util import ngrams
+import mmh3
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+
+trainlabels = pd.read_csv('data/f.csv', header=None)
+trainlabel = trainlabels.iloc[:,0:1]
+
+train = pd.read_csv('data/s.csv', header=None)
+
+
+X = train.values.tolist()
+X = list(itertools.chain(*X))
+
+def eng_hash(data, vdim=2000):
+    final = []
+    for url in data:
+        v = [0] * vdim
+        new = list(ngrams(url, 3))
+        for i in new:
+            new_ = ''.join(i)
+            idx = mmh3.hash(new_) % vdim
+            v[idx] += 1
+        final.append([np.array(v)])
+    return final
+
+
+X1 = np.array(eng_hash(X))
+
+y_train1 = np.array(trainlabel)
+y_train= to_categorical(y_train1)
+
+
+x2 = np.reshape(X1,(X1.shape[0], X1.shape[2]))
+
+
+X_train = x2
+
+ 
+# hidden layers
+def create_model():
+    print("inside here")
+    model = Sequential()
+    model.add(Dense(10,input_dim=2000, activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam',metrics=['accuracy'])
+    return model
+
+
+# fix random seed for reproducibility
+seed = 7
+np.random.seed(seed)
+
+estimator = KerasClassifier(build_fn=create_model, epochs=200, batch_size=5, verbose=0)
+kfold = KFold(n_splits=10, shuffle=True, random_state=seed)
+results = cross_val_score(estimator, X_train, y_train, cv=kfold)
+print("Baseline: %.2f%% (%.2f%%)" % (results.mean()*100, results.std()*100))

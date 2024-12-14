@@ -1,0 +1,182 @@
+moon412 commented on 8 Feb 2018 •
+edited
+Hi all,
+I understand KerasClassifier can be used to wrap a Keras model and input to grid_search/cross_val_score in scikit-learn. But I can't find a way to work this out for a multi-label problem. In this problem, the label for a sample is a binary list [1,0,1,1,0...].
+Notice that y has to be in (n_sample, n_label) form for a multi-label problem. For a multi class problem, I am able to convert one-hot encoded y into 1D array of class values. But not for multi-label. When I train a Keras model and compute the f1_micro score for this multi-label problem, I got the following error.
+x.shape
+(10004, 170)
+y.shape
+(10004, 15)
+from keras.layers import Dense, Activation, Dropout
+from keras.optimizers import Adam
+from keras.models import Sequential
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+
+def create_dnn():
+    model = Sequential([Dense(2048, input_shape=(170,)), Activation('relu'), Dropout(0.75),
+                        Dense(1024), Activation('relu'), Dropout(0.75),
+                        Dense(2048), Activation('relu'),
+                        Dense(15), Activation('sigmoid')])
+    
+    model.compile(optimizer=Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+    
+    return model
+
+dnn_model = KerasClassifier(build_fn=create_dnn, batch_size=256, epochs=1, verbose=1)
+cross_val_score(dnn_model, x, y, cv=2, scoring='f1_micro')
+Epoch 1/1
+5002/5002 [==============================] - 5s - loss: 0.2030 - acc: 0.9277     
+4864/5002 [============================>.] - ETA: 0s
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-62-33f9d3b67676> in <module>()
+----> 1 cross_val_score(dnn_model, X=x, y=y, cv=2, scoring='f1_micro')
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/model_selection/_validation.py in cross_val_score(estimator, X, y, groups, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch)
+    319                                 n_jobs=n_jobs, verbose=verbose,
+    320                                 fit_params=fit_params,
+--> 321                                 pre_dispatch=pre_dispatch)
+    322     return cv_results['test_score']
+    323 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/model_selection/_validation.py in cross_validate(estimator, X, y, groups, scoring, cv, n_jobs, verbose, fit_params, pre_dispatch, return_train_score)
+    193             fit_params, return_train_score=return_train_score,
+    194             return_times=True)
+--> 195         for train, test in cv.split(X, y, groups))
+    196 
+    197     if return_train_score:
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in __call__(self, iterable)
+    777             # was dispatched. In particular this covers the edge
+    778             # case of Parallel used with an exhausted iterator.
+--> 779             while self.dispatch_one_batch(iterator):
+    780                 self._iterating = True
+    781             else:
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in dispatch_one_batch(self, iterator)
+    623                 return False
+    624             else:
+--> 625                 self._dispatch(tasks)
+    626                 return True
+    627 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in _dispatch(self, batch)
+    586         dispatch_timestamp = time.time()
+    587         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+--> 588         job = self._backend.apply_async(batch, callback=cb)
+    589         self._jobs.append(job)
+    590 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/_parallel_backends.py in apply_async(self, func, callback)
+    109     def apply_async(self, func, callback=None):
+    110         """Schedule a func to be run"""
+--> 111         result = ImmediateResult(func)
+    112         if callback:
+    113             callback(result)
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/_parallel_backends.py in __init__(self, batch)
+    330         # Don't delay the application, to avoid keeping the input
+    331         # arguments in memory
+--> 332         self.results = batch()
+    333 
+    334     def get(self):
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in __call__(self)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py in <listcomp>(.0)
+    129 
+    130     def __call__(self):
+--> 131         return [func(*args, **kwargs) for func, args, kwargs in self.items]
+    132 
+    133     def __len__(self):
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/model_selection/_validation.py in _fit_and_score(estimator, X, y, scorer, train, test, verbose, parameters, fit_params, return_train_score, return_parameters, return_n_test_samples, return_times, error_score)
+    465         fit_time = time.time() - start_time
+    466         # _score will return dict if is_multimetric is True
+--> 467         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
+    468         score_time = time.time() - start_time - fit_time
+    469         if return_train_score:
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/model_selection/_validation.py in _score(estimator, X_test, y_test, scorer, is_multimetric)
+    500     """
+    501     if is_multimetric:
+--> 502         return _multimetric_score(estimator, X_test, y_test, scorer)
+    503     else:
+    504         if y_test is None:
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/model_selection/_validation.py in _multimetric_score(estimator, X_test, y_test, scorers)
+    530             score = scorer(estimator, X_test)
+    531         else:
+--> 532             score = scorer(estimator, X_test, y_test)
+    533 
+    534         if hasattr(score, 'item'):
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/metrics/scorer.py in __call__(self, estimator, X, y_true, sample_weight)
+    106         else:
+    107             return self._sign * self._score_func(y_true, y_pred,
+--> 108                                                  **self._kwargs)
+    109 
+    110 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/metrics/classification.py in f1_score(y_true, y_pred, labels, pos_label, average, sample_weight)
+    712     return fbeta_score(y_true, y_pred, 1, labels=labels,
+    713                        pos_label=pos_label, average=average,
+--> 714                        sample_weight=sample_weight)
+    715 
+    716 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/metrics/classification.py in fbeta_score(y_true, y_pred, beta, labels, pos_label, average, sample_weight)
+    826                                                  average=average,
+    827                                                  warn_for=('f-score',),
+--> 828                                                  sample_weight=sample_weight)
+    829     return f
+    830 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/metrics/classification.py in precision_recall_fscore_support(y_true, y_pred, beta, labels, pos_label, average, warn_for, sample_weight)
+   1023         raise ValueError("beta should be >0 in the F-beta score")
+   1024 
+-> 1025     y_type, y_true, y_pred = _check_targets(y_true, y_pred)
+   1026     present_labels = unique_labels(y_true, y_pred)
+   1027 
+
+~/anaconda3/lib/python3.6/site-packages/sklearn/metrics/classification.py in _check_targets(y_true, y_pred)
+     79     if len(y_type) > 1:
+     80         raise ValueError("Classification metrics can't handle a mix of {0} "
+---> 81                          "and {1} targets".format(type_true, type_pred))
+     82 
+     83     # We can't have more than one value on y_type => The set is no more needed
+
+ValueError: Classification metrics can't handle a mix of multilabel-indicator and multiclass targets
+I understand that this is because y is in the form of (n_sample, n_labels). But the predicted y from dnn_model.predict() is internally converted to 1D array using a predict_classes() function.
+dnn_model.model.predict(x).shape
+(10004, 15)
+In contrast,
+dnn_model.predict(x).shape
+(10004, )
+But interestingly, if I don't use custom scoring, then the error is gone.
+cross_val_score(dnn_model, X=x, y=y, cv=2)
+Epoch 1/1
+5002/5002 [==============================] - 6s - loss: 0.2296 - acc: 0.9110     
+5002/5002 [==============================] - 2s     
+Epoch 1/1
+5002/5002 [==============================] - 6s - loss: 0.2104 - acc: 0.9221     
+4864/5002 [============================>.] - ETA: 0s
+Out[63]:
+array([0.94524857, 0.93333329])
+And when I use DecisionTreeClassiifer(), it works well.
+cross_val_score(DecisionTreeClassifier(max_depth=3), 
+                X=x, y=y, scoring='f1_micro', cv=2)
+array([0.63451777, 0.59030837])
+And DecisionTree's output is in the shape of (10004, 15).
+dt = DecisionTreeClassifier(max_depth=3)
+dt.fit(x, y)
+dt.predict(x).shape
+(10004, 15)
+So I think there should be a way to do grid search/cross_val_score with a custom scoring with KerasCLassifier for a multilabel problem. Please advise. Thanks!

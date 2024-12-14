@@ -1,0 +1,46 @@
+LegerG commented on 21 Dec 2017 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Write signals method like this
+@receiver(post_save, sender=Topic)
+def create_topic_event(sender, instance, created, raw, using, update_fields, **kwargs):
+    if created:
+        # POST - CREATE
+        # do something
+        pass
+    else:
+        # PUT - UPDATE
+        # do something else
+        # currently impossible to knows what are the fields which have been updated (update_fields), with drf serializers
+        pass
+Expected behavior
+Know which fields have been updated in updated_fields arguments
+Actual behavior
+Currently the update method of serializer is :
+...
+def update(self, instance, validated_data):
+        serializers.raise_errors_on_nested_writes('update', self, validated_data)
+        info = utils.model_meta.get_field_info(instance)
+
+        # Simply set each attribute on the instance, and then save it.
+        # Note that unlike `.create()` we don't need to treat many-to-many
+        # relationships as being a special case. During updates we already
+        # have an instance pk for the relationships to be associated with.
+        for attr, value in validated_data.items():
+            if attr in info.relations and info.relations[attr].to_many:
+                field = getattr(instance, attr)
+                field.set(value)
+            else:
+                setattr(instance, attr, value)
+        instance.save()
+
+        return instance
+...
+And the goal if the line instance.save() is change by instance.save(update_fields=validated_data.keys()) it is possible to see the updated fields in signals.

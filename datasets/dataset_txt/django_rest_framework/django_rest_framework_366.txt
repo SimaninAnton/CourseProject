@@ -1,0 +1,109 @@
+MatsumotoHiroko commented on 13 Jul 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I want to conduct bulk update for model.
+I know "PUT" action can be called by specific data. So we must set new action for the one.
+Blow is my constraction of bulk update.
+But, it couldn't work.
+Because "validated_data" was empty even though I couldn't use the parameter of read only.
+I think my sorce code is increct especially creating serializer for ListSerializer.
+Posted my sorce below.
+Please let me know if you have a correct way.
+Thanks.
+views.py
+from django.shortcuts import render
+from django.conf import settings
+from django.http.response import HttpResponse
+from django_filters import rest_framework as filters 
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework import generics
+from rest_framework.response import Response
+from api.models import Posts
+from api.serializer import  PostsSerializer
+import logging
+logger = logging.getLogger('development')
+
+class PostsFilter(filters.FilterSet):
+    class Meta:
+        model = Posts
+        fields = ['name'] 
+
+class PostsViewSet(viewsets.ModelViewSet):
+    queryset = Posts.objects.all()
+    serializer_class = PostsSerializer
+    filter_class = PostsFilter
+    ordering_fields = ('created_at')
+
+    @action(methods=['patch'], detail=False)
+    def multi_update(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(instance=queryset, data=request.data, many=True)
+        valid = serializer.is_valid(raise_exception=True)
+        logger.error(serializer.validated_data) # print []
+        self.perform_update(serializer)
+        return Response(serializer.data)
+urls.py
+from django.conf.urls import include, url
+from rest_framework import routers
+from api.views import PostsViewSet
+
+router = routers.DefaultRouter()
+router.register(r'posts', PostsViewSet)
+urlpatterns = [
+    url(r'api/', include(router.urls)),
+]
+models.py
+from django.db import models
+class Posts(models.Model):
+    name = models.CharField(max_length=10, blank=True, null=True)
+    created_at = models.DateTimeField(blank=True, null=True)
+    class Meta:
+        db_table = 'posts'
+serializer.py
+from rest_framework import serializers
+from api.models import Posts
+
+class PostsListSerializer(serializers.ListSerializer):
+    def update(self, instance, validated_data):
+        # Maps for id->instance and id->data item.
+        post_mapping = {post.id: post for post in instance}
+        data_mapping = {item['id']: item for item in validated_data}
+        logger.error(post_mapping)
+        logger.error(data_mapping)   
+        # Perform creations and updates.
+        ret = []
+        for post_id, data in data_mapping.items():
+            post = post_mapping.get(post_id, None)
+            if post is None:
+                ret.append(self.child.create(data))
+            else:
+                ret.append(self.child.update(post, data))
+
+        # Perform deletions.
+        for post_id, post in post_mapping.items():
+            if post_id not in data_mapping:
+                break # TODO
+                # post.delete()
+        
+        return ret
+
+class PostsSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField()
+
+    class Meta:
+        model = Posts
+        exclude = ()
+        list_serializer_class = PostsListSerializer
+Expected behavior
+When I call validated_data, it will include some datas.
+logger.error(serializer.validated_data) # some model object or datas
+Actual behavior
+When I call validated_data, it returned empty.
+logger.error(serializer.validated_data) # []

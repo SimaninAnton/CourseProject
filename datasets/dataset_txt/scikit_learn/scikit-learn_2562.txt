@@ -1,0 +1,50 @@
+gilesc commented on Nov 24, 2016 •
+edited by lesteve
+Description
+sklearn.decomposition.PCA seems to be leaking memory. It does not seem to be related to the svd_solver as different svd_solvers produce the same result. I do know that np.linalg.svd does not leak (for me).
+Steps/Code to Reproduce
+import os
+
+import psutil
+import numpy as np
+import sklearn.decomposition
+
+def memory_usage():
+    return psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
+
+def pca(X):
+    model = sklearn.decomposition.PCA(n_components=5)
+    pc = model.fit_transform(X)
+    del model
+    return pc
+
+if __name__ == "__main__":
+    X = np.random.random((1000,10000))
+    for i in range(100):
+        pc = pca(X)
+        del pc
+        print(i, int(memory_usage()), "MB")
+Expected Results
+(no increase in memory usage per iteration)
+Actual Results
+0 144 MB
+1 146 MB
+2 147 MB
+3 148 MB
+4 149 MB
+5 151 MB
+6 152 MB
+7 153 MB
+8 154 MB
+9 155 MB
+10 157 MB
+....
+Even though the memory usage increase in this example seems to be small, it seems to be proportional to the size of the input matrix and/or the number of times PCA is created/called. In a larger program where I discovered this problem, it leaked about 100MB per iteration. Obviously calling del doesn't help.
+If you change the n_components to 50, this example leaks 6-10 MB per iteration instead of 1 MB. It does not matter if you use the same model object or create a new one each time.
+Versions
+Linux-4.8.7-1-ARCH-x86_64-with-arch
+Python 3.5.2 (default, Nov 7 2016, 11:31:36)
+[GCC 6.2.1 20160830]
+NumPy 1.11.2
+SciPy 0.18.1
+Scikit-Learn 0.18.1

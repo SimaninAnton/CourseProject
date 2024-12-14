@@ -1,0 +1,31 @@
+Contributor
+ajdavis commented on 8 Dec 2012
+Hi Ben, I know that adding sys.exc_info() as IOStream.error was my idea, but in my experience I was wrong to recommend it. The following example prints, "closed, error: integer division or modulo by zero":
+from datetime import timedelta
+from tornado import gen, ioloop, iostream
+import socket
+
+loop = ioloop.IOLoop.instance()
+
+@gen.engine
+def f():
+    sock = socket.socket()
+    stream = iostream.IOStream(sock)
+    yield gen.Task(stream.connect, ('tornadoweb.org', 80))
+
+    try: 1 / 0
+    except ZeroDivisionError: pass
+
+    def closed():
+        print 'closed, error:', stream.error
+
+    stream.set_close_callback(closed)
+    stream.close()
+    loop.add_timeout(timedelta(seconds=1), loop.stop)
+
+f()
+loop.start()
+I believe IOStream.error is correct if and only if IOStream.close() is called from within an exception handler.
+I'm not sure the best next step, I propose either:
+Add an arg store_error=False to close(), which if True tells the stream to assign self.error from sys.exc_info(). Call close(store_error=True) within exception handlers, and just close() elsewhere.
+Remove IOStream.error, turns out it wasn't a good idea

@@ -1,0 +1,41 @@
+Contributor
+dehnert commented on 28 Sep 2016
+I discovered that my cert wasn't getting renewed on schedule, and certbot has the following in the log file:
+2016-09-27 16:11:22,569:WARNING:certbot.renewal:Attempting to renew cert from /etc/letsencrypt/renewal/[domain].conf produced an unexpected error: urn:acme:error:rateLimited :: There were too many requests of a given type :: Error creating new cert :: Too many certificates already issued for exact set of domains: [domains]. Skipping.
+2016-09-27 16:11:22,585:DEBUG:certbot.renewal:Traceback was:
+Traceback (most recent call last):
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/renewal.py", line 346, in renew_all_lineages
+    main.obtain_cert(lineage_config, plugins, renewal_candidate)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/main.py", line 555, in obtain_cert
+    _, action = _auth_from_domains(le_client, config, domains, lineage)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/main.py", line 91, in _auth_from_domains
+    renewal.renew_cert(config, domains, le_client, lineage)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/renewal.py", line 237, in renew_cert
+    new_certr, new_chain, new_key, _ = le_client.obtain_certificate(domains)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/client.py", line 258, in obtain_certificate
+    return (self.obtain_certificate_from_csr(domains, csr, authzr=authzr)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/client.py", line 228, in obtain_certificate_from_csr
+    authzr)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/acme/client.py", line 319, in request_issuance
+    headers={'Accept': content_type})
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/acme/client.py", line 656, in post
+    return self._check_response(response, content_type=content_type)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/acme/client.py", line 572, in _check_response
+    raise messages.Error.from_json(jobj)
+Error: urn:acme:error:rateLimited :: There were too many requests of a given type :: Error creating new cert :: Too many certificates already issued for exact set of domains: [domains]
+2016-09-27 16:11:22,605:INFO:certbot.renewal:Cert not yet due for renewal
+2016-09-27 16:11:22,607:DEBUG:certbot.main:Exiting abnormally:
+Traceback (most recent call last):
+  File "/root/.local/share/letsencrypt/bin/letsencrypt", line 11, in <module>
+    sys.exit(main())
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/main.py", line 744, in main
+    return config.func(config, plugins)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/main.py", line 584, in renew
+    renewal.renew_all_lineages(config)
+  File "/root/.local/share/letsencrypt/local/lib/python2.7/site-packages/certbot/renewal.py", line 363, in renew_all_lineages
+    len(renew_failures), len(parse_failures)))
+Error: 1 renew failure(s), 0 parse failure(s)
+
+(END)
+The directory doesn't exist because I originally used the wrong name (see also #3551) -- I updated the paths that I noticed were wrong, but missed this one. certbot seems to have requested the cert first, and only then tried to write it to disk. That falied, and certbot quit. Unfortunately, because I'm running it twice a day (as recommended), I've hit the renewal frequency rate limit, so now I can't easily renew it, even though I've moved the missing directory.
+It would be nice if certbot checked for the existence of the directories it needs before contacting the CA, and errored out sooner, so that rate-limiting wouldn't be impacted.

@@ -1,0 +1,63 @@
+gorgitko commented on 18 Nov 2016 •
+edited
+First I want to show what I actually want to train. SMILES is a linear notation of chemical structure. One molecule can have many different SMILES, but there is an algorithm to generate one unique SMILES (called canonical SMILES) amongst all possible ones. So I want to train a recurrent NN (GRU) which will be able to convert SMILES to its canonical form. I am just curious what RNN can do and it probably won't work
+For example, Cc1cc(ccc1C(=O)c2ccccc2Cl)N3N=CC(=O)NC3=O would be converted to Cc1cc(-n2ncc(=O)[nH]c2=O)ccc1C(=O)c1ccccc1Cl
+Input SMILES are encoded in one-hot matrix, i.e. rows represents charcodes of individual characters and columns represents ASCII charcodes. The example is shown in this docstring. SMILES shorter than 150 characters are padded with zeros (using keras.preprocessing.sequence.pad_sequences()). Output should be a vector of ASCII charcodes where 0 means padding. I set it's length to 150 since this is the maximum length of input SMILES.
+I'm using the batch generator to generate batches of size 128 where each sample has shape (150, 73) (73 is a number of possible charcodes in SMILES). Overall it's a 3D tensor with shape (nb_samples=128, timesteps=150, input_dim=73).
+This is my code:
+import numpy as np
+from subprocess import call
+from time import sleep
+
+from keras.layers import Dense, GRU, Activation, Embedding, Reshape, Input, LSTM
+from keras.models import Sequential
+
+
+def batch_generator(X, y, batch_size):
+    n_splits = len(X) // (batch_size - 1)
+    X = np.array_split(X, n_splits)
+    y = np.array_split(y, n_splits)
+    for i in range(len(X)):
+        X_batch = []
+        y_batch = []
+        for ii in range(len(X[i])):
+            X_batch.append(X[i][ii].toarray())
+            y_batch.append(y[i][ii])
+        yield (np.array(X_batch), np.array(y_batch))
+
+
+batch_size = 128
+epochs = 100
+input_file = "data/smiles_100k_150-length_y-charcodes-{}.npy"
+model_file = "models/canonical-smiles_100k.hd5"
+
+X_train = np.load(input_file.format("X_train"))
+X_test = np.load(input_file.format("X_test"))
+y_train = np.load(input_file.format("y_train"))
+y_test = np.load(input_file.format("y_test"))
+
+print("X_train shape:", X_train.shape)
+print("X_test shape:", X_test.shape)
+print("y_train shape:", y_train.shape)
+print("y_test shape:", y_test.shape)
+
+model = Sequential([
+    GRU(150, input_shape=X_train[0].shape, consume_less="cpu", return_sequences=False),
+    Activation("linear")
+    ])
+
+model.compile(loss="binary_crossentropy",
+              optimizer="adam")
+
+model.fit_generator(batch_generator(X_train, y_train, batch_size),
+                    len(X_train),
+                    epochs,
+                    validation_data=batch_generator(X_test, y_test, batch_size),
+                    nb_val_samples=len(y_train),
+                    nb_worker=4,
+                    pickle_safe=True)
+
+model.save(model_file)
+So here are my questions, but feel free to comment or give advice about everything other:
+Which loss function to use? Is it even possible to use any of Keras's loss functions for this problem? I think it should be treated as a binary classification, i.e. y_true = y_predicted -> 1; 0 otherwise. But currently it shows a negative loss practically immediately after start of training.
+Is it even possible what I am trying to do, i.e. 2D input -> 1D output? Or I am thinking about this problem wrong? Should I use more or different layers? Theoretically I can have 2D output from GRU which represents the one-hot matrix of canonical SMILES. But it needs 150*73=10950 outputs from GRU which will be reshaped to one-hot matrix with shape (150, 73). And that's not possible on my computer...

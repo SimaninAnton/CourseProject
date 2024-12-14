@@ -1,0 +1,27 @@
+ghost commented on May 23, 2016
+Basically, what's happened is that my spider is unable to download the files because the file_urls provided are actually redirected to the final download link. However, because of the following code, the redirect download middleware is effectively disabled, which makes the download fail.
+def _check_media_to_download(self, result, request, info):
+        if result is not None:
+            return result
+        if self.download_func:
+            # this ugly code was left only to support tests. TODO: remove
+            dfd = mustbe_deferred(self.download_func, request, info.spider)
+            dfd.addCallbacks(
+                callback=self.media_downloaded, callbackArgs=(request, info),
+                errback=self.media_failed, errbackArgs=(request, info))
+        else:
+            request.meta['handle_httpstatus_all'] = True
+            dfd = self.crawler.engine.download(request, info.spider)
+            dfd.addCallbacks(
+                callback=self.media_downloaded, callbackArgs=(request, info),
+                errback=self.media_failed, errbackArgs=(request, info))
+        return dfd
+And here is the check in the redirect middleware that disables it:
+if (request.meta.get('dont_redirect', False) or
+                response.status in getattr(spider, 'handle_httpstatus_list', []) or
+                response.status in request.meta.get('handle_httpstatus_list', []) or
+                request.meta.get('handle_httpstatus_all', False)):
+            return response
+My question is: What is the point of enabling the handling of httpstatus_all, when it effectively disables all of the checks?
+👍 4
+😕 8

@@ -1,0 +1,67 @@
+bigbob556677 commented on 30 Oct 2018 •
+edited
+The Backstory
+In Django I have the models
+class Company(models.Model):
+    name = models.TextField(null=False,unique=True)
+    date_added = models.DateTimeField(auto_now_add=True)
+
+class Address(models.Model):
+    street = models.TextField()
+
+class Person(models.Model ): 
+    firstname = models.TextField()
+    address = models.ForeignKey(Address,null= True,on_delete=models.SET_NULL)
+    company = models.ForeignKey(Company,null=True,on_delete=models.SET_NULL)
+Where each person has an address and a company.(both non required fields)
+In DRF I have the serializers.
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = '__all__'
+
+class CompanySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Company
+        fields = "__all__"
+
+class PersonSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Person
+        fields = ('id', 'firstname',  'address','company')
+
+    def to_representation(self, instance):
+        response = super().to_representation(instance)
+        response['address'] = AddressSerializer(instance.address).data
+        response['company'] = CompanySerializer(instance.company).data
+        return response
+and the ViewSets
+class PersonViewSet(viewsets.ModelViewSet,UpdateModelMixin):
+    queryset = Person.objects.all()
+    serializer_class = PersonSerializer
+    filter_backends = (OrderingFilter,DjangoFilterBackend,SearchFilter)
+    filter_fields = ('id','company','firstname','middlename','lastname',)
+    search_fields = ('firstname','middlename','lastname',)
+
+class CompanyViewSet(viewsets.ModelViewSet,UpdateModelMixin):
+    queryset = Company.objects.all()
+    serializer_class = CompanySerializer
+    filter_backends = (OrderingFilter,DjangoFilterBackend,SearchFilter)
+    filter_fields = ('id','name',)
+    search_fields = ('name',)
+
+class AddressViewSet(viewsets.ModelViewSet,UpdateModelMixin):
+    queryset = Address.objects.all()
+    serializer_class = AddressSerializer
+    filter_backends = [DjangoFilterBackend]
+    filter_fields = ['id','street']
+The Issue
+When posting the data {"firstname":"foo"} to this serializer, it returns a 400 error code saying. {"company": ["This field is required."]}.
+The odd thing is, the address field is set up the seemingly exact same way as the company field but does not throw this error.
+In order to make this work, you must post {"firstname":"foo","company":null} to the serializer, which seems a little silly considering that the address field works just fine.
+Does anybody have any idea what would be causing this issue and how to prevent this from happening?
+(Posted At
+https://stackoverflow.com/questions/53067449/django-rest-framework-saying-non-required-field-is-required )
+(Possibly related to #6254 (comment))

@@ -1,0 +1,78 @@
+Contributor
+Krystofee commented on 19 Jun 2019 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Having model Ticket
+class Ticket(models.Model):
+    tags = models.ManyToManyField(to='Tag', ...)
+    changed_by_signal = models.CharField(...)
+    # ... other fields ...
+then some custom signal which is listening to Ticket.tags changes
+@receiver(m2m_changed, sender=Ticket.tags.through)
+def process_tags_changed(sender, ticket, tag_set, **kwargs):
+    ticket.changed_by_signal = 'Some value'
+    ticket.save()
+and TicketModelSerializer
+class TicketModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ticket
+        fields = ('tags', 'changed_by_signal')
+then when you save serializer with new tags and changed_by_signal left unchanged (e. g. None), you would expect the value of changed_by_signal to be 'Some value' as the signal sets, but the value is None. Why? Because ModelSerializer.update method does not update fields in correct way.
+class ModelSerializer(Serializer):
+    ...
+
+    def update(self, instance, validated_data):
+        raise_errors_on_nested_writes('update', self, validated_data)
+        info = model_meta.get_field_info(instance)
+
+        # Simply set each attribute on the instance, and then save it.
+        # Note that unlike `.create()` we don't need to treat many-to-many
+        # relationships as being a special case. During updates we already
+        # have an instance pk for the relationships to be associated with.
+        for attr, value in validated_data.items():  # <- 1.
+            if attr in info.relations and info.relations[attr].to_many:
+                field = getattr(instance, attr)
+                field.set(value)
+            else:
+                setattr(instance, attr, value)
+        instance.save()
+
+        return instance
+ModelSerializer updates the data from validated_data dict which is not sorted in any way. So when tags gets updated before changed_by_signal, then the value which is set by signal gets overriden.
+Proposed solution
+I suppose changing the ModelSerializer method to
+save non m2m fields (does not trigger any signals and does not change the instance as a side effect)
+save m2m fields (can trigger side signals and change instance by side effects)
+class ModelSerializer(Serializer):
+    ...
+
+    def update(self, instance, validated_data):
+        raise_errors_on_nested_writes('update', self, validated_data)
+        info = model_meta.get_field_info(instance)
+
+        # Simply set each attribute on the instance, and then save it.
+        # Note that unlike `.create()` we don't need to treat many-to-many
+        # relationships as being a special case. During updates we already
+        # have an instance pk for the relationships to be associated with.
+        m2m_fields = []
+        for attr, value in validated_data.items():
+            if attr not in info.relations or not info.relations[attr].to_many:
+                setattr(instance, attr, value)
+            else:
+                m2m_fields.append((attr, value))
+
+        for attr, value in m2m_fields:
+            field = getattr(instance, attr)
+            field.set(value)
+
+        instance.save()
+
+        return instance
+Which stores m2m fields in a list that is processed after every other field has been changed. This is my temporary override for the TicketModelSerializer. I would consider making a pull request with changes that fix this issue.

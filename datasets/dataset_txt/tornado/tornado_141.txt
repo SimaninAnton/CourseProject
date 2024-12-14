@@ -1,0 +1,32 @@
+MartinAltmayer commented on 27 Aug 2018
+Since the upgrade to Tornado 5.1 our Twitter OAuth login does not work anymore. The reason seems to be that OAuthMixin._on_request_token expects a future, but TwitterMixin.authenticate_redirect passes it as callback to http.fetch, which will call it with the fetched response instead of a future (line 799 in auth.py), raising
+Exception: Could not get request token: 'HTTPResponse' object has no attribute 'result'
+Code example:
+import tornado
+import tornado.web
+import tornado.auth
+
+
+class TwitterLoginHandler(
+    tornado.web.RequestHandler,
+    tornado.auth.TwitterMixin
+):
+    async def get(self):
+        if self.get_argument("oauth_token", None):
+            user = await self.get_authenticated_user()
+        else:
+            await self.authenticate_redirect()
+                
+
+def make_app():
+    return tornado.web.Application(
+        [(r"/", TwitterLoginHandler)],
+        twitter_consumer_key='12341234',
+        twitter_consumer_secret='secret'
+    )
+
+
+if __name__ == "__main__":
+    app = make_app()
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()

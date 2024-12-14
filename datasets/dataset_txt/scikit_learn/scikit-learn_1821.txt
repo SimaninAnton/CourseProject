@@ -1,0 +1,77 @@
+iaroslav-ai commented on Oct 18, 2017
+Description
+Using Pipeline in Pipeline in GridSearchCV fails sometimes at random. Use a snippet of code below to reproduce (fails ~50% of the time).
+Steps/Code to Reproduce
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import Lasso
+from sklearn.dummy import DummyRegressor
+from sklearn.pipeline import Pipeline
+
+X, y = load_diabetes(True)
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.75)
+
+gscv = GridSearchCV(
+    estimator=Pipeline([ # pipeline in a pipeline
+        ('a', Pipeline([
+            ('b', DummyRegressor())
+        ]))
+    ]),
+    param_grid={
+        'a__b__alpha':[0.1, 0.001],
+        'a__b':[Lasso()],
+    }
+)
+
+gscv.fit(X_train, y_train)
+print(gscv.score(X_test, y_test))
+Expected Results
+The code should work without exceptions.
+Actual Results
+Sometimes I get an error of the form
+...
+File "/home/iaroslav/.local/lib/python3.5/site-packages/sklearn/pipeline.py", line 144, in set_params
+    self._set_params('steps', **kwargs)
+  File "/home/iaroslav/.local/lib/python3.5/site-packages/sklearn/utils/metaestimators.py", line 49, in _set_params
+    super(_BaseComposition, self).set_params(**params)
+  File "/home/iaroslav/.local/lib/python3.5/site-packages/sklearn/base.py", line 276, in set_params
+    sub_object.set_params(**{sub_name: value})
+  File "/home/iaroslav/.local/lib/python3.5/site-packages/sklearn/base.py", line 283, in set_params
+    (key, self.__class__.__name__))
+ValueError: Invalid parameter alpha for estimator DummyRegressor. Check the list of available parameters with `estimator.get_params().keys()`.
+Reason for the issue
+It appears that order in which parameters are set is random. Because of this, sometimes the values of a__b__alpha is set before the step a__b is set as such. See the code below.
+Further code to reproduce
+This raises same exception:
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import Lasso
+from sklearn.dummy import DummyRegressor
+from sklearn.pipeline import Pipeline
+
+X, y = load_diabetes(True)
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.75)
+
+model = Pipeline([ # pipeline in a pipeline
+    ('a', Pipeline([
+        ('b', DummyRegressor())
+    ]))
+])
+
+model.set_params(**{
+    'a__b':Lasso(),
+    'a__b__alpha':[0.01],
+})
+
+model.fit(X_train, y_train)
+Versions
+Linux-4.10.0-37-generic-x86_64-with-Ubuntu-16.04-xenial
+Python 3.5.2 (default, Aug 18 2017, 17:48:00)
+[GCC 5.4.0 20160609]
+NumPy 1.13.3
+SciPy 0.19.1
+Scikit-Learn 0.19.0
+Possible solution?
+Maybe it would help to set parameters in order from shortest parameter name string to longest one. But maybe also looking more into Pipeline is necessary.
+Should one not use Pipeline in Pipeline? But could the issue translate also to some complex estimators, eg Pipeline in FeatureUnion in Pipeline?
+P.S. Thanks for the awesome library.

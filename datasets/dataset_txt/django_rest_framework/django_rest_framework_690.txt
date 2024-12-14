@@ -1,0 +1,36 @@
+Collaborator
+carltongibson commented on 17 Aug 2017 •
+edited
+A recurring issue is the need to slightly customise the Schema Generation. The default behaviour is correct in the main; what we’re missing is the ability to customise the behaviour for specific views.
+For full control it is possible to write schemas by hand, but we want to be able to keep the automatic generation, in the main, whilst tweaking the aspects that are not correct (for our project).
+Some proposals involve adopting a specific markdown syntax in order to encode (ever) more complex data structures in docstrings. We would then parse these, using Sphinx or pyparsing or a custom parser.
+This is not the way to go. (External dependencies, fragility, and so on.) Better is to use Core Schema to clearly/precisely/etc specify the details we require.
+The current implementation is Top Down — the generator inspects each view in turn to create the schema. Its limitation is that it does not (easily) allow customisation on a per-view/serialiser/etc basis.
+In order to avoid adding more API to the APIView class, we will move the bulk of the generator’s introspection logic to a descriptor class that will be attached to the view. It will be accessed from the view and perform the necessary schema generation:
+view.schema.get_schema()
+(Or such)
+The descriptor class will expose the required hooks to allow per-view customisation of the schema generation.
+For example, it is not currently possible to provide a description for a non-model path parameter on a URL. An implementation of (the equivalent to the current) get_path_fields adding this would go something like:
+fields = super().get_path_fields(...)
+extra_field = coreapi.Field(...)
+fields.append(extra_field)
+return fields
+i.e. We take the default implementation and make the (small) changes we want.
+Users would be free to take whatever steps were needed to keep this DRY in their own projects.
+The top-level schema generator will be maintained. It’s responsibilities will be reduced to accepting the patterns to be processed and gathering the resulting schema document.
+Tasks
+Migrate introspection logic from SchemaGenerator to descriptor class for APIView.
+Make sure it still works.
+Document interface and usage.
+Related Issues
+#4685: Difficulty customising docs in Non-Model contexts
+#5311: field_to_schema needs to handle ListField types
+#5165: is_list_view error with RetrieveAPIView subclass
+(There are others.)
+Related PRs
+#5271: Moves is_custom_action & is_list_view into SchemaGenerator
+#5290: Adds special-case to should_include_endpoint
+#5290: Adds get_title introspection.
+#5224: Customises get_path_fields to set Swagger-friendly default value
+#5335: Adds per-field customisation.
+2

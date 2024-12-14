@@ -1,0 +1,91 @@
+Contributor
+jsoref commented on 30 Jun 2017
+fwiw, my problem sounds vaguely like #3981/#4169
+My operating system is (include version):
+RHEL 6.8 (Santiago)
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+certbot-auto + scl python2.7
+I ran this command and it produced this output:
+[root@host ~]# grep certbot /etc/crontab
+13 7 * * * root /root/bin/certbot-renew
+13 21 * * * root /root/bin/certbot-renew
+[root@host ~]# cat /root/bin/certbot-renew
+#!/bin/sh
+scl enable python27 /root/bin/scl-certbot-renew
+[root@host ~]# cat /root/bin/scl-certbot-renew
+#!/bin/sh
+/root/bin/certbot-auto -q renew --post-hook /root/bin/certbot-renew-hook
+[root@host ~]# # skipping /root/bin/certbot-renew-hook because renewal failed
+Email from cron:
+Attempting to renew cert from /etc/letsencrypt/renewal/example.com.conf produced an unexpected error: Failed authorization procedure.
+www.example.com (tls-sni-01): urn:acme:error:unauthorized :: The client lacks sufficient authorization :: Incorrect validation certificate for tls-sni-01 challenge.
+Requested e192c20a3d78d302e523a517caf48855.69d7884ecd711750a8091d9e524f2585.acme.invalid from 208.113.89.231:443.
+Received 2 certificate(s), first certificate had names "example.com, www.example.com", example.com (tls-sni-01): urn:acme:error:unauthorized :: The client lacks sufficient authorization :: Incorrect validation certificate for tls-sni-01 challenge.
+Requested c43a29f39433ddee78278a2f36b84ace.ccb5e54f48c0b19e1769817aeba6453b.acme.invalid from 208.113.89.231:443.
+Received 2 certificate(s), first certificate had names "example.com, www.example.com".
+Skipping.
+
+All renewal attempts failed. The following certs could not be renewed:
+  /etc/letsencrypt/live/example.com/fullchain.pem (failure)
+1 renew failure(s), 0 parse failure(s)
+Certbot's behavior differed from what I expected because:
+[root@host ~]# scl enable python27 bash
+[root@host ~]# /root/bin/certbot-auto
+... prompted for renewal and successfully renewed
+Here is a Certbot log showing the issue (if available):
+Logs are stored in /var/log/letsencrypt by default. Feel free to redact domains, e-mail and IP addresses as you see fit.
+(I can provide this later if necessary)
+Here is the relevant nginx server block or Apache virtualhost for the domain I am configuring:
+conf/httpd.conf:<IfModule mod_ssl.c>
+conf/httpd.conf:NameVirtualHost *:443
+conf/httpd.conf:</IfModule>
+conf.d/000-ssl.conf:LoadModule ssl_module modules/mod_ssl.so
+conf.d/000-ssl.conf:Listen 443
+conf.d/000-ssl.conf:SSLPassPhraseDialog  builtin
+conf.d/000-ssl.conf:SSLSessionCache         shmcb:/var/cache/mod_ssl/scache(512000)
+conf.d/000-ssl.conf:SSLSessionCacheTimeout  300
+conf.d/000-ssl.conf:SSLMutex default
+conf.d/000-ssl.conf:SSLRandomSeed startup file:/dev/urandom  256
+conf.d/000-ssl.conf:SSLRandomSeed connect builtin
+conf.d/000-ssl.conf:SSLCryptoDevice builtin
+conf.d/000.conf:<VirtualHost *:80>
+conf.d/000.conf:ServerName example.com
+conf.d/000.conf:ServerAlias www.example.com
+conf.d/000.conf:ProxyPass / ajp://localhost:8009/ connectiontimeout=60 timeout=600 retry=0
+conf.d/000.conf:</VirtualHost>
+conf.d/000-le-ssl.conf:<IfModule mod_ssl.c>
+conf.d/000-le-ssl.conf:<VirtualHost *:443>
+conf.d/000-le-ssl.conf:ServerName example.com
+conf.d/000-le-ssl.conf:ServerAlias www.example.com
+conf.d/000-le-ssl.conf:SSLCertificateFile /etc/letsencrypt/live/example.com/cert.pem
+conf.d/000-le-ssl.conf:SSLCertificateKeyFile /etc/letsencrypt/live/example.com/privkey.pem
+conf.d/000-le-ssl.conf:Include /etc/letsencrypt/options-ssl-apache.conf
+conf.d/000-le-ssl.conf:ProxyPass / ajp://localhost:8009/ connectiontimeout=60 timeout=600 retry=0
+conf.d/000-le-ssl.conf:SSLCertificateChainFile /etc/letsencrypt/live/example.com/chain.pem
+conf.d/000-le-ssl.conf:</VirtualHost>
+conf.d/000-le-ssl.conf:</IfModule>
+conf.d/ssl.conf:<VirtualHost _default_:443>
+conf.d/ssl.conf:ErrorLog logs/ssl_error_log
+conf.d/ssl.conf:TransferLog logs/ssl_access_log
+conf.d/ssl.conf:LogLevel warn
+conf.d/ssl.conf:SSLEngine on
+conf.d/ssl.conf:SSLProtocol all -SSLv2
+conf.d/ssl.conf:SSLCipherSuite DEFAULT:!EXP:!SSLv2:!DES:!IDEA:!SEED:+3DES
+conf.d/ssl.conf:SSLCertificateFile /etc/pki/tls/certs/localhost.crt
+conf.d/ssl.conf:SSLCertificateKeyFile /etc/pki/tls/private/localhost.key
+conf.d/ssl.conf:<Files ~ "\.(cgi|shtml|phtml|php3?)$">
+conf.d/ssl.conf:    SSLOptions +StdEnvVars
+conf.d/ssl.conf:</Files>
+conf.d/ssl.conf:<Directory "/var/www/cgi-bin">
+conf.d/ssl.conf:    SSLOptions +StdEnvVars
+conf.d/ssl.conf:</Directory>
+conf.d/ssl.conf:SetEnvIf User-Agent ".*MSIE.*" \
+conf.d/ssl.conf:         nokeepalive ssl-unclean-shutdown \
+conf.d/ssl.conf:         downgrade-1.0 force-response-1.0
+conf.d/ssl.conf:CustomLog logs/ssl_request_log \
+conf.d/ssl.conf:          "%t %h %{SSL_PROTOCOL}x %{SSL_CIPHER}x \"%r\" %b"
+conf.d/ssl.conf:</VirtualHost>
+conf.d/welcome.conf:<LocationMatch "^/+$">
+conf.d/welcome.conf:    Options -Indexes
+conf.d/welcome.conf:    ErrorDocument 403 /error/noindex.html
+conf.d/welcome.conf:</LocationMatch>

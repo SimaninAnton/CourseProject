@@ -1,0 +1,28 @@
+xiaoxionglin commented on Aug 1, 2018 •
+edited by glemaitre
+Description
+There seems to be a bug in the eigen solver part of LDA.
+Steps/Code to Reproduce
+When you use LDA with eigen solver. The decision function is implemented as
+scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
+
+evals, evecs = linalg.eigh(Sb, Sw)
+        self.coef_ = np.dot(self.means_, evecs).dot(evecs.T)
+        self.intercept_ = (-0.5 * np.diag(np.dot(self.means_, self.coef_.T)) +
+                           np.log(self.priors_))
+where self.means_ is the mean for each class.
+self.coef_ implemented here is essentially the same as self.means_.
+https://github.com/scikit-learn/scikit-learn/blob/f0ab589f/sklearn/linear_model/base.py#L278
+https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/discriminant_analysis.py
+Actual Results
+This means the decision function becomes
+scores= X @ means_ -0.5 * np.diag(means_ @ means_.T) + np.log(priors_)
+Expected Results
+while the true decision function should be
+scores= X @ linalg.inv(Sw) @ means_ -0.5 * np.diag(means_ @ linalg.inv(Sw) @ means_.T) + np.log(priors_)
+These could all be caused by the wrong line in eigen solver:
+self.coef_ = np.dot(self.means_, evecs).dot(evecs.T)
+where as in lsqr solver it is:
+self.coef_ = linalg.lstsq(self.covariance_, self.means_.T)[0].T
+Sw means Covariance within group, the same as self.covariance_
+Versions

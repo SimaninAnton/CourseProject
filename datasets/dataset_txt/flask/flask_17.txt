@@ -1,0 +1,98 @@
+Contributor
+alexwlchan commented on 17 Dec 2019
+This is a minimised version of an issue I ran into on a larger project. This is possibly working-as-designed, but it seemed odd, so I figured I'd report it here just in case.
+Consider the following app:
+from flask import Flask, request
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def index():
+    return """
+    <html>
+      <form action="/explode" method="post">
+        <input name="text">
+        <button type="submit">BOOM!</button>
+      </form>
+    </html>
+    """
+
+
+@app.route("/explode", methods=["POST"])
+def explode():
+    assert 0
+
+
+app.run(debug=True)
+You run this app, the user is presented with a single text field. They enter some text, click "submit", and the AssertionError causes a server error to be thrown. You're dropped into the Werkzeug console.
+I open the interactive debugging console, type request.data, and a stack trace immediately pours all over the screen:
+[console ready]
+>>> request.data
+Traceback (most recent call last):
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 939, in read
+    read = self._read(to_read)
+
+During handling of the above exception, another exception occurred:
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/formparser.py", line 131, in wrapper
+    return f(self, stream, *args, **kwargs)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/formparser.py", line 264, in _parse_urlencoded
+    form = url_decode_stream(stream, self.charset, errors=self.errors, cls=self.cls)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/urls.py", line 893, in url_decode_stream
+    return cls(decoder)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/datastructures.py", line 420, in __init__
+    for key, value in mapping or ():
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/urls.py", line 897, in _url_decode_impl
+    for pair in pair_iter:
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 801, in make_chunk_iter
+    first_item = next(_iter, "")
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 681, in _make_chunk_iter
+    item = _read(buffer_size)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 941, in read
+    return self.on_disconnect()
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 911, in on_disconnect
+    raise ClientDisconnected()
+
+During handling of the above exception, another exception occurred:
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 939, in read
+    read = self._read(to_read)
+
+During handling of the above exception, another exception occurred:
+  File "<debugger>", line 1, in <module>
+    request.data
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/local.py", line 348, in __getattr__
+    return getattr(self._get_current_object(), name)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/utils.py", line 90, in __get__
+    value = self.func(obj)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wrappers/base_request.py", line 425, in data
+    return self.get_data(parse_form_data=True)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wrappers/base_request.py", line 455, in get_data
+    self._load_form_data()
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/flask/wrappers.py", line 88, in _load_form_data
+    RequestBase._load_form_data(self)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wrappers/base_request.py", line 318, in _load_form_data
+    self._get_stream_for_parsing(), mimetype, content_length, options
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/formparser.py", line 232, in parse
+    return parse_func(self, stream, mimetype, content_length, options)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/formparser.py", line 135, in wrapper
+    exhaust()
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 925, in exhaust
+    self.read(chunk)
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 941, in read
+    return self.on_disconnect()
+  File "/Users/alexwlchan/.virtualenvs/tempenv-388f210986880/lib/python3.7/site-packages/werkzeug/wsgi.py", line 911, in on_disconnect
+    raise ClientDisconnected()
+werkzeug.exceptions.ClientDisconnected: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.
+
+>>> 
+If we modify the explode() method to print the value of request.data before throwing, like so:
+@app.route("/explode", methods=["POST"])
+def explode():
+    print(request.data)
+    assert 0
+then looking up request.data in the console works correctly. (In this case, it prints b''.)
+Same request, different server code – which makes me think “the browser (or proxy) sent a request that this server could not understand” wasn’t actually the underlying issue, because it could parse the (empty) request body just fine before it had thrown.
+Environment
+Python version: 3.7.5
+Flask version: 1.1.1
+Werkzeug version: 0.16.0

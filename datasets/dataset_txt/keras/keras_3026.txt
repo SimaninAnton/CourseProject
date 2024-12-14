@@ -1,0 +1,52 @@
+sbaurdlp commented on 10 Mar 2017
+Hello everybody,
+I'm currently trying to implement a VAE with several layers of stochastic variables. As the KL divergence is not tractable, I'm trying to approximate it with Monte Carlo method. As it didn't work at all, I tried to compute it with only one layer, and it doesn't work : I can verify it by comparing the Monte Carlo estimation with the analytical value (see for example Tutorial on VAE)
+So i defined two functions, one computing the analytical value and the other one a Monte Carlo estimate.
+The base code is the tutorial from Keras, the lines 22 to 49 being modified
+n_sample = 500
+# utils
+def log_stdnormal(x):
+    """log density d'une loi normale centree"""
+    c = - 0.5 * math.log(2*math.pi)
+    result = c - K.square(x) / 2
+    return result
+
+
+def log_normal2(x, mean, log_var):
+    """log density d'une loi normale de moyenne mean et de variance exp(log_var)"""
+    c = - 0.5 * math.log(2*math.pi)
+    result = c - log_var/2 - K.square(x - mean) / (2 * K.exp(log_var) + 1e-8)
+    return result
+# input
+vae_input = Input(shape=(original_dim,nchar), batch_shape=(batch_size,original_dim,nchar))
+
+z_mean_0, z_log_var_0 = encoder(vae_input)
+eps0 = Lambda(sample_eps, name='sample_eps0')([z_mean_0, z_log_var_0])
+print(eps0)
+z0 = Lambda(sample_z, name='sample_z0')([z_mean_0, z_log_var_0, eps0])
+
+x_decoded_mean = generator(z0)
+
+def kl_cost(args):
+    z_mean, z_log_var = args
+    return - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var))
+kl_ = Lambda(kl_cost)([z_mean_0, z_log_var_0])
+kl_model = Model(vae_input, kl_)
+
+def monte_carlo_kl_div(args):
+    mean, log_var = args
+    for k in range(n_sample):
+        epsilon = K.random_normal(shape=(batch_size, latent_dim), mean=0.,
+                              std=epsilon_std)
+        z = mean + K.exp(log_var / 2) * epsilon
+        try:
+            loss += K.sum(log_normal2(z, mean, log_var) - log_stdnormal(z) , -1)
+        except NameError:
+            loss = K.sum(log_normal2(z, mean, log_var) - log_stdnormal(z) , -1)
+    return loss / n_sample
+
+carlo = Lambda(monte_carlo_kl_div)([z_mean_0, z_log_var_0])
+carlo_model = Model(vae_input, carlo)
+
+vae = Model(vae_input, x_decoded_mean)
+When evaluating carlo_model on a test sample, I get negative values. Why ? It should be approximately the same as the output of kl_model

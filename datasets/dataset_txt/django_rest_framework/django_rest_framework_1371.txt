@@ -1,0 +1,33 @@
+Contributor
+edmorley commented on 17 Dec 2015
+#2539 added the ability to set a custom message for permissions classes, by adding a message property.
+I'm attempting to use this with a global permission, similar to the IP blacklisting one in the docs:
+http://www.django-rest-framework.org/api-guide/permissions/?q=request.META#examples
+...however the custom message I set isn't used.
+I have:
+from rest_framework import permissions
+
+class UserAgentBlacklist(permissions.BasePermission):
+    message = 'Please set a custom user agent when using scripts with our API.'
+
+    def has_permission(self, request, view):
+        user_agent = request.META['HTTP_USER_AGENT']
+        for agent in ['libcurl', 'Python-urllib', 'python-requests']:
+            if user_agent.startswith(agent):
+                return False
+        return True
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': (
+        'foo.bar.permissions.UserAgentBlacklist',
+    ),
+...
+This successfully blocks the request, however the response from the API is:
+{"detail": "Authentication credentials were not provided."}
+Rather than:
+{"detail": "Please set a custom user agent when using scripts with our API."}
+This is because the custom message is only used in the PermissionDenied case, and not the NotAuthenticated case:
+https://github.com/tomchristie/django-rest-framework/blob/3.3.1/rest_framework/views.py#L165-L167
+Would you be open to allowing the same message to be used for both cases? Or else having another property to set a separate custom message for the PermissionDenied case?
+I understand that for permissions classes that are actually checking whether a user has permissions, it may be useful to differentiate between "not logged in" and "user doesn't have permissions", however for generic blacklist permissions that use IP or user agent etc, they still need to be able to set a custom message.
+Many thanks! :-)
+(Using Python 2.7.11, Django 1.8.7, django-rest-framework 3.3.1)

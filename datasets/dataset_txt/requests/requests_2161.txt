@@ -1,0 +1,90 @@
+dabono commented on Mar 27, 2013
+Hi,
+I just started using requests recently - it's a big improvement over the urllib2 library! But I'm having some difficulty with uploading files and I hope somebody can help me figure it out.
+I'm trying to use a REST API where I need to upload a binary file to the server. The API uses https and Kerberos authentication (I'm also using the requests_kerberos package).
+With curl, I can do this:
+curl --negotiate -u : -H "X-Codesigner-security-token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" --upload-file <pathname> https://myservice.acme.com/api/v1/requests/24449/unsigned
+Which results in this:
+=> Send header, 282 bytes (0x11a)
+0000: PUT /api/v1/requests/24449/unsigned HTTP/1.1
+002e: User-Agent: curl/7.21.6 (i386-pc-win32) libcurl/7.21.6 OpenSSL/0
+006e: .9.8r zlib/1.2.5
+0080: Host: myservice.acme.com
+009d: Accept: */*
+00aa: X-Codesigner-security-token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+00e9: Content-Length: 4560799
+0102: Expect: 100-continue
+0118: 
+<= Recv header, 23 bytes (0x17)
+0000: HTTP/1.1 100 Continue
+=> Send data, 16384 bytes (0x4000)
+…
+=> Send data, 16384 bytes (0x4000)
+…
+With requests, I've tried using both streaming upload and chunked upload, but haven't been able to make them work. I'm using the latest master (commit c63472e).
+Code snippet using chunked transfer:
+def filegen(fo):
+    yield fo.read(CHUNK_SIZE)
+
+def main():
+    session = requests.Session()
+    session.auth = HTTPKerberosAuth()
+
+    upload_headers = {'X-Codesigner-security-token': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+
+    with open(pathname, 'rb') as infile:
+        response = session.put(upload_url, headers=upload_headers, data=filegen(infile))
+This results in:
+Request headers: {
+'Accept-Encoding': 'gzip, deflate, compress', 
+'X-Codesigner-security-token': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 
+'Accept': '*/*', 
+'User-Agent': 'python-requests/1.1.0 CPython/2.7.1 Windows/7', 
+'Transfer-Encoding': 'chunked', 
+'Authorization': 'Negotiate <blah>'
+}
+
+Response headers: {
+'status': '500', 
+'content-length': '441', 
+'content-encoding': 'gzip', 
+'x-powered-by': 'Phusion Passenger (mod_rails/mod_rack) 3.0.11', 
+'vary': 'Accept-Encoding,User-Agent', 
+'connection': 'close', 
+'server': 'Server', 
+'x-runtime': '0.564621', 
+'date': 'Tue, 26 Mar 2013 18:29:44 GMT',
+'content-type': 'text/html', 
+'www-authenticate': 'Negotiate <blah>'
+}
+Using the streaming upload:
+with open(pathname, 'rb') as infile:
+    response = session.put(upload_url, headers=upload_headers, data=infile)
+Results in:
+Request headers:{
+'X-Codesigner-security-token': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 
+'Content-Length': u'20319', 
+'Accept-Encoding': 'gzip, deflate, compress', 
+'Accept': '*/*', 
+'User-Agent': 'python-requests/1.1.0 CPython/2.7.1 Windows/7'
+}
+
+2013-03-26 12:16:04,440 DEBUG "PUT /api/v1/requests/24539/unsigned HTTP/1.1" 401 401
+
+Traceback (most recent call last):
+  ...
+  File "C:\Python27\lib\site-packages\requests-1.1.0-py2.7.egg\requests\sessions.py", line 376, in put
+    return self.request('PUT', url, data=data, **kwargs)
+  File "C:\Python27\lib\site-packages\requests-1.1.0-py2.7.egg\requests\sessions.py", line 321, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Python27\lib\site-packages\requests-1.1.0-py2.7.egg\requests\sessions.py", line 426, in send
+    r = dispatch_hook('response', hooks, r, **kwargs)
+  File "C:\Python27\lib\site-packages\requests-1.1.0-py2.7.egg\requests\hooks.py", line 41, in dispatch_hook
+    _hook_data = hook(hook_data, **kwargs)
+  File "build\bdist.win32\egg\requests_kerberos\kerberos_.py", line 236, in handle_response
+  File "build\bdist.win32\egg\requests_kerberos\kerberos_.py", line 158, in handle_401
+  File "build\bdist.win32\egg\requests_kerberos\kerberos_.py", line 147, in authenticate_user
+  File "C:\Python27\lib\site-packages\requests-1.1.0-py2.7.egg\requests\adapters.py", line 246, in send
+    raise ConnectionError(e)
+requests.exceptions.ConnectionError:
+ HTTPSConnectionPool(host='myservice.acme.com', port=443): Max retries exceeded with url: /api/v1/requests/24539/unsigned (Caused by <class 'socket.error'>: [Errno 10054] An existing connection was forcibly closed by the remote host)

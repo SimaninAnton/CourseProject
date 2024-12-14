@@ -1,0 +1,74 @@
+fluffy-critter commented on 18 May 2018 •
+edited
+Expected Behavior
+When Flask isn't running from the command line, it should not try to initialize Click, or should not fail to start due to locale mismatches.
+Actual Behavior
+I am running a Flask app on Dreamhost shared hosting using their Passenger-WSGI wrapper. As their wrapper is not configured to work with Pipenv, I use the following passenger_wsgi.py (based on Dreamhost's instructions) to shunt my interpreter over to my pipenv's Python 3.6 and then import my app object from main.py:
+import sys
+import os
+import subprocess
+
+INTERP = subprocess.check_output(
+    ['pipenv', 'run', 'which', 'python3']).strip().decode('utf-8')
+if sys.executable != INTERP:
+    os.execl(INTERP, INTERP, *sys.argv)
+
+sys.path.append(os.getcwd())
+from main import app as application
+This was working fine before Flask added the Click dependency; however, after upgrading, I got the following error at startup:
+Traceback (most recent call last):
+File "/home/plaidfluff/opt/python-3.6.5/bin/pipenv", line 11, in <module>
+sys.exit(cli())
+File "/home/plaidfluff/opt/python-3.6.5/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 722, in __call__
+return self.main(*args, **kwargs)
+File "/home/plaidfluff/opt/python-3.6.5/lib/python3.6/site-packages/pipenv/vendor/cl ck/core.py", line 676, in main
+_verify_python3_env()
+File "/home/plaidfluff/opt/python-3.6.5/lib/python3.6/site-packages/pipenv/vendor/click/_unicodefun.py", line 118, in _verify_python3_env
+'for mitigation steps.' + extra)
+RuntimeError: Click will abort further execution because Python 3 was configured to use ASCII as encoding for the environment. Consult http://click.pocoo.org/python3/for mitigation steps.
+
+This system supports the C.UTF-8 locale which is recommended.
+You might be able to resolve your issue by exporting the
+following environment variables:
+
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
+Traceback (most recent call last):
+File "/home/plaidfluff/opt/python-3.6.5/bin/pipenv", line 11, in <module>
+sys.exit(cli())
+File "/home/plaidfluff/opt/python-3.6.5/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 722, in __call__
+return self.main(*args, **kwargs)
+File "/home/plaidfluff/opt/python-3.6.5/lib/python3.6/site-packages/pipenv/vendor/click/core.py", line 676, in main
+_verify_python3_env()
+File "/home/plaidfluff/opt/python-3.6.5/lib/python3.6/site-packages/pipenv/vendor/click/_unicodefun.py", line 118, in _verify_python3_env
+'for mitigation steps.' + extra)
+RuntimeError: Click will abort further execution because Python 3 was configured to use ASCII as encoding for the environment. Consult http://click.pocoo.org/python3/for mitigation steps.
+
+This system supports the C.UTF-8 locale which is recommended.
+You might be able to resolve your issue by exporting the
+following environment variables:
+
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+Traceback (most recent call last):
+File "/dh/passenger/helper-scripts/wsgi-loader.py", line 320, in <module>
+app_module = load_app()
+File "/dh/passenger/helper-scripts/wsgi-loader.py", line 61, in load_app
+return imp.load_source('passenger_wsgi', startup_file)
+File "passenger_wsgi.py", line 33, in <module>
+['pipenv', 'run', 'which', 'python3']).strip().decode('utf-8')
+File "/usr/lib/python2.7/subprocess.py", line 573, in check_output
+raise CalledProcessError(retcode, cmd, output=output)
+subprocess.CalledProcessError: Command '['pipenv', 'run', 'which', 'python3']' returned non-zero exit status 1
+Unfortunately, I don't have any control over the LC_ALL or LANG environment variables at startup, and simply overriding them via os.execle() or os.putenv() had no effect. However, I did find that adding these two lines to the beginning of my passenger_wsgi.py file worked to override this check:
+os.environ['LANG'] = 'C.UTF-8'
+os.environ['LC_ALL'] = 'C.UTF-8'
+This is inelegant, but since I am not actually using Click (at least not directly) this felt like an okay compromise, although I am concerned it may have other encoding-related side-effects on other parts of my application.
+In any case, it doesn't seem like Click should even be getting imported in a context where I have a Python script that instantiates a Flask app directly rather than through its command-line processor. Any mechanism that would prevent this RuntimeError from taking down my entire website would be greatly appreciated.
+Thanks!
+Environment
+Python version: 3.6.5
+Flask version: 1.0.2
+Werkzeug version: 0.14.1
+1

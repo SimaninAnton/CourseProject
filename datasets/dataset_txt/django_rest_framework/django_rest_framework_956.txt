@@ -1,0 +1,37 @@
+smizell commented on 1 Dec 2016 •
+edited
+User Details
+I'm building a hypermedia API that tries to expose a state machine by way of hyperlinks and forms. I'm using Siren for the hypermedia type and providing it by way of a custom renderer. I'm also using the browsable API to make the API accessible in the web. For Siren, I'm defining the actions as DRF serializers.
+Problem
+In my design, as I expose the state machine, there may be several forms for a given response. Additionally, these forms usually point to different URLs. Right now, the browsable API only shows forms that pertain to HTTP methods on response you're viewing, so this is not possible.
+For example, say I was to build a task list application. Once a task was created, I may provide a form for marking the task as complete. This form may use POST on a completely separate URL from the one used to view the actual task. Once marked complete, I may provide two new forms on the task, one for archiving and one for marking as incomplete again, each of which may also have their own URLs.
+Proposed Solution
+There are two things needed to make this work.
+First, the base.html template needs to be updated with a block for the form section. This would allow me to override the forms that are provided by the browsable API's context and display my own forms. This is as simple as adding a {% block form %}. For now, I have copied the entire base.html to my applications template directory and added this block myself.
+Second, I need a way to pass extra context from my API view to the renderer. This is currently only possible by passing extra properties into the Response and then providing a custom renderer to unpack them, attach them to the renderer instance, and then add them to the context.
+# Snippet from my view
+if self.request.accepted_renderer.format == 'api':
+    context = {'data': data, 'extra_context': extra_context}
+    return Response(context, status=200)
+
+# Custom renderer
+# Note, this code breaks the OPTIONS request, but I don't have those fixes
+# here for the sake of brevity.
+class CustomBrowsableAPIRenderer(renderers.BrowsableAPIRenderer):
+    def get_context(self, data, accepted_media_type, renderer_context):
+        context = super(CustomBrowsableAPIRenderer, self).get_context(
+            data, accepted_media_type, renderer_context)
+        # Add to actual context
+        context['extra_context'] = self.extra_context
+        return context
+
+    def render(self, context, accepted_media_type=None, renderer_context=None):
+        # Attach to instance
+        self.extra_context = context['extra_context']
+        data = context['data']
+        return super(CustomBrowsableAPIRenderer, self).render(
+            data, accepted_media_type, renderer_context)
+I would like something like Response(data, extra_context={'foo': 'bar'}), though this may be overloading the Response class with too much. However, the response does take a template_name, so it does at least have some renderer-specific arguments.
+Notes
+I'd love to provide a pull request for any or all of this. If you decide to accept any of this, let me know and I'll work on a PR. I'm also happy to implement it in a way that seems best. As I've proposed, I'm asking for an extra_context, but I would love to do it how you see best.
+Edit: last note, this solution is aimed to be general purpose. The extra_context may be used for things other than forms, and the form block would just be a way to extend that forms area.

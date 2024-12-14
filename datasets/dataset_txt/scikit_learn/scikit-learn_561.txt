@@ -1,0 +1,132 @@
+jmq19950824 commented on Apr 26, 2019 •
+edited
+I was trying to use RandomizedSearchCV to find the optimal hyper-parameters for RNN in the Keras package. And a problem make me confused: actually I may know the reason but I haven't figure out the answer.
+The reason may be the following: the RandomizedSearchCV method need a two demension input but in the RNN it is actually three-demension. So it needs to bridge such gap to solve this problem.
+I will give a reproductive codes, which both including a successful example (a RNN runs on given hyper-parameters) and my failed example (a RNN needing Random Search for the optimal hyper-parameters)
+Here is my codes (you can run it successfully without ang changes):
+#load come basic package
+import pandas as pd
+import numpy as np
+
+#Deep learning models
+from keras.models import Sequential
+from keras import layers
+from keras import optimizers
+from keras import regularizers
+from keras.optimizers import RMSprop
+from keras.wrappers.scikit_learn import KerasClassifier
+
+#searching the optimal hyper-parameter
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import StratifiedKFold
+
+#reproductive data
+#training set - 2 dimension: 1000 samples and 10 features
+X_train=np.random.random(size=(1000,10))
+y_train=np.random.randint(0,2,(1000,1))
+
+
+#test set - 2 dimension: 500 samples and 10 features
+X_test=np.random.random(size=(500,10))
+y_test=np.random.randint(0,2,(500,1))
+
+#this package is for some fatal errors when we use custom parameters in Random Search method
+from sklearn.externals.joblib import parallel_backend
+
+#reshape the data
+#suppose that d is the timesteps which mean we use the previous d samples to forecast the current y
+d=5
+test_set=500
+
+X_deep_matrix=np.append(X_train,X_test,axis=0)
+#transform the matrix data to tensor data
+X_deep_tensor=np.empty((X_deep_matrix.shape[0]-d+1,d,X_deep_matrix.shape[1]))
+
+for i in range(d-1,X_deep_matrix.shape[0]):
+    X_deep_tensor[i-d+1]=X_deep_matrix[i-d+1:i+1,:]
+
+del X_deep_matrix
+#generate training and test sets for deep learning algorithm    
+X_train_deep=X_deep_tensor[:X_deep_tensor.shape[0]-test_set]
+X_test_deep=X_deep_tensor[X_deep_tensor.shape[0]-test_set:]
+
+del X_deep_tensor
+
+y_train_deep=y_train[d-1:len(y_train)]
+
+# =============================================================================
+# a successful example
+# =============================================================================
+layers_num=3
+units=16
+learning_rate=0.1
+decay=0.0001
+dropout=0.1
+batch_size=128
+epochs=20
+
+model=Sequential()
+for i in range(layers_num):
+    if i==1:
+        model.add(layers.SimpleRNN(units,dropout=dropout,recurrent_dropout=dropout,return_sequences=True,
+                                   input_shape=(X_train_deep.shape[1],X_train_deep.shape[2])))
+    elif i<layers_num-1:
+        model.add(layers.SimpleRNN(units,dropout=dropout,recurrent_dropout=dropout,return_sequences=True))
+    else:
+        model.add(layers.SimpleRNN(units,dropout=dropout,recurrent_dropout=dropout,return_sequences=False))
+model.add(layers.Dense(1,activation='sigmoid'))
+
+optimizer=optimizers.RMSprop(lr=learning_rate,decay=decay)
+model.compile(optimizer=optimizer,loss='binary_crossentropy',metrics=['acc'])
+model.fit(X_train_deep,y_train_deep,epochs=epochs,batch_size=batch_size)
+
+# =============================================================================
+# a failed Random Search example
+# when I use Random Search to find the best hyper-parameters ,it seems failed
+# =============================================================================
+def deep_learning_create(layers_num,units,learning_rate,decay,dropout):
+    model=Sequential()
+    #bulid the layers
+    for i in range(layers_num):
+        if i==1:
+            model.add(layers.SimpleRNN(units,dropout=dropout,recurrent_dropout=dropout,return_sequences=True,
+                                       input_shape=(X_train_deep.shape[1],X_train_deep.shape[2])))
+        elif i<layers_num-1:
+            model.add(layers.SimpleRNN(units,dropout=dropout,recurrent_dropout=dropout,return_sequences=True))
+        else:
+            model.add(layers.SimpleRNN(units,dropout=dropout,recurrent_dropout=dropout,return_sequences=False))
+    model.add(layers.Dense(1,activation='sigmoid'))
+    
+    optimizer=optimizers.RMSprop(lr=learning_rate,decay=decay)
+    model.compile(optimizer=optimizer,loss='binary_crossentropy',metrics=['acc'])
+
+    return model
+
+# fix random seed for reproducibility
+np.random.seed(123)
+
+model=KerasClassifier(build_fn=deep_learning_create,verbose=1)
+#Random Search for optimal hyper-paramters
+params_grid_DeepLearning={'layers_num':[3,5,7],
+                          'units':[16,32,64],
+                          'learning_rate':[0.05,0.1,0.15],
+                          'decay':[1e-6,1e-4,1e-2],
+                          'dropout':[0.1,0.3,0.5],
+                          'batch_size':[32,64,128],
+                          'epochs':[20,40,80]}
+
+#5-folds
+skf=StratifiedKFold(n_splits=5,shuffle=False,random_state=123)
+cv_indices=skf.split(X_train,y_train)
+
+model=RandomizedSearchCV(model,params_grid_DeepLearning,scoring='accuracy',
+                         n_jobs=-1,cv=cv_indices,refit=True,n_iter=20,random_state=123)
+
+with parallel_backend('threading'):
+    model.fit(X_train_deep,y_train_deep)
+version (under WIN10 environment):
+Keras 2.2.4
+scikit-learn 0.20.3
+spyder 3.3.4
+spyder-kernels 0.4.4
+👍 1

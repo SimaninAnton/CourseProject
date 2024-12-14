@@ -1,0 +1,41 @@
+RaffEdwardBAH commented on 7 Jun 2016
+Please make sure that the boxes below are checked before you submit your issue. Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+I'm trying to create a stateful LSTM that has a prediction at each step. However, the loss returned on each call to train_on_batch is NaN.
+Code:
+num_layers = 3
+n_epoch = 1
+batchsize = 5
+bprop_len = 100
+grad_clip = 1.0
+lstm_layer_size = 96
+embed_size = 16
+main_input = Input(batch_shape=(batchsize, bprop_len), dtype='int32', name='main_input')
+emb = Embedding(257, embed_size, input_length=bprop_len, dropout=0.2, W_regularizer=l2(1e-5), mask_zero=True)(main_input)
+
+#hidden states from each LSTM
+hs = []
+
+#first layer from embedding only
+hs.append(LSTM(lstm_layer_size, dropout_W=0.5, dropout_U=0.5, W_regularizer=l2(1e-5), 
+               U_regularizer=l2(1e-5), return_sequences=True, stateful=True)(emb))
+for l in range(1, num_layers):
+    l_in = hs[-1]
+    hs.append(LSTM(lstm_layer_size, dropout_W=0.5, dropout_U=0.5, W_regularizer=l2(1e-5), 
+               U_regularizer=l2(1e-5), return_sequences=True, stateful=True)(l_in))
+
+loss_out = TimeDistributed(Dense(2, activation='softmax', name='loss_out'))( hs[-1])
+
+model = Model(input=[main_input], output=[loss_out])
+optimizer = Adam(lr=0.001, clipnorm=grad_clip)
+model.compile(optimizer, loss='categorical_crossentropy')
+
+batch_shape = (batchsize, bprop_len)
+
+X_batch = np.zeros(batch_shape, dtype=np.int32)
+Y_batch = np.zeros((batchsize, bprop_len, 2), dtype=np.float32)
+step_loss = model.train_on_batch(X_batch, Y_batch) #value is NaN

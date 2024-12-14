@@ -1,0 +1,47 @@
+hozn commented on 21 May 2015
+I'm 100% sure this is a code bug, but since I had to wade through some DRF code to figure out what was going on here, I figure it might at least be a documentation issue. (Or maybe I missed the docs reference, in which case I apologize!)
+Basically, I'm overriding the get_serializer_context() method of the view to setup a context for the serializer and then referencing self.context in my serializer's constructor. This worked perfectly until I added the OrderingFilter to the filter backends for the view w/o specifying any ordering_fields meta parameter, at which point I got a KeyError due to the the OrderingFilter having instantiated my serializer class without setting up the context.
+Here is a slightly simplified example of what I'm trying to do:
+class BookSerializer(serializers.ModelSerializer):
+
+    total_books = serializers.IntegerField()
+    total_cost = serializers.DecimalField(max_digits=14, decimal_places=5)
+
+    def __init__(self, *args, **kwargs):
+        super(BookSerializer, self).__init__(*args, **kwargs)
+
+        # Assumes the view took care of creating context using our get_serializer_context() method.
+        summarize_fields = self.context['summarize']  
+        fields_to_exclude = set([f for f in self.Meta.fields if f not in summary_fields])
+        fields_to_exclude -= set(self.Meta.summary_fields)
+
+        for field in fields_to_exclude:
+            if field in self.fields:
+                self.fields.pop(field)
+
+    class Meta:
+        model = Book
+        summary_fields = ('total_books', 'total_cost')
+        fields = ('id', 'title', 'publisher', 'author', 'price') + summary_fields
+
+class BookSummaryList(generics.ListAPIView):
+    model = Book
+    serializer_class = BookSerializer
+    filter_backends = (DjangoFilterBackend, OrderingFilter)
+    filter_class = BookFilter
+
+    def get_serializer_context(self):
+        context = super(BookSummaryList, self).get_serializer_context()
+        context.update({'summarize': self.get_summary_fields()}) # This lets us remove fields dynamically in the serializer, without having to re-inspect the request object there.
+        return context
+
+    def get_summary_fields(self):
+        # This is a much simplified version of this method from my real-world example.
+        return self.request.GET.getlist('summarize', ['publisher'])
+
+    def get_queryset(self):
+        object_list = Book.objects.values(*self.get_summary_fields()) \
+            .annotate(total_books=Count('pk')) \
+            .annotate(total_cost=Sum('price'))
+        return object_list
+There might be a better/more-recommended way to accomplish what I'm trying to do here (remove fields based on the request). And again, I don't know if there is any guarantee that context value will be initialized in my constructor, but seemed worth creating a ticket.

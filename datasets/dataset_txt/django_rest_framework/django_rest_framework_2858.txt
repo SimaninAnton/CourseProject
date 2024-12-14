@@ -1,0 +1,17 @@
+Contributor
+sheppard commented on 3 May 2013
+I've been using DRF in wq.db to build full featured mobile-friendly websites (as I like to say, the website is it's own mobile app is it's own REST api). To accomplish this, I've made it so that arbitrary application URLs can either be rendered via JSON + Mustache templates on the client (wq.app), or directly on the server using TemplateHTMLRenderer.
+In testing one of my websites, I realized that the page was not being interpreted as utf-8 by the browser, even though DEFAULT_CHARSET was set appropriately in Django settings. I thought this might be related to my use of custom Pystache templates instead of the Django built-in templates, but after a bit of exploration I found that what's happening is that Response.rendered_content is overwriting the Content-Type of the response while rendering it (which of course makes sense for nearly all common DRF use cases).
+So, the current DRF flow for TemplateHTMLRenderer is something like this:
+Client requests "text/html", which content negotiation matches to TemplateHTMLRenderer
+Underlying Django HttpResponse initially sets Content-Type to "text/html; charset=utf-8"
+When the response is rendered, DRF Response overwrites Content-Type with "text/html" since that's what the negotiation settled on.
+I think what I need in this case is for the charset to be set to utf-8 regardless of whether the client actually requests it to be. I know I could just use a <meta http-equiv> in my templates but I think this should be addressed at the HTTP header level instead.
+I initially tried subclassing TemplateHTMLRenderer with media_type="text/html; charset=utf-8" but then it didn't match content negotiation. My current solution is to modify the return value of perform_content_negotiation() by subclassing View:
+https://github.com/wq/wq.db/blob/master/rest/views.py
+def perform_content_negotiation(self, request, force=False):
+    renderer, media_type = super(View, self).perform_content_negotiation(request, force)
+    if media_type.startswith('text'):
+        media_type += "; charset=%s" % (settings.DEFAULT_CHARSET)
+    return renderer, media_type
+This was easy enough but it seems like perhaps the negotiator class would be the more correct place to append a charset. Also I'm not sure if anything else breaks by changing the content-type like this (though it's working fine for me). I'd be interested in trying a PR if I could have a hint where to start...

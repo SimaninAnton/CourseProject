@@ -1,0 +1,87 @@
+Contributor
+anx-ckreuzberger commented on 9 Apr 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Assuming you have the following model:
+class Checklist(models.Model):
+    title = models.CharField(max_length=128)
+    ticket = models.ForeignKey('Ticket', related_name='checklist_items')
+
+class Ticket(models.Model):
+    title = models.CharField(max_length=128)
+and the following serializers:
+class ChecklistSerializer(serializers.ModelSerializer):
+     # you know what to put here...
+
+class TicketSerializer(serializers.ModelSerializer):
+    checklist_items = ChecklistSerializer(required=False, many=True)
+    class Meta:
+         model = Ticket
+         fields = ('id', 'title', 'checklist_items',)
+
+    def create(self, validated_data):
+        # handles creating a new ticket with checklist items (sub-serializer)
+
+    def update(self, instance, validated_data):
+        checklist_items = None
+
+        # get checklist_items from validated data (if it is available)
+        if 'checklist_items' in validated_data:
+            checklist_items = validated_data.pop('checklist_items')
+            # handle insert/update/delete on checklist_items
+
+        # finally, save the instance
+        instance = super(TicketSerializer, self).update(instance, validated_data)
+        
+        return instance 
+I'll skip the ModelViewSets, as they don't show anything special here. Just know that there is a TicketViewSet which is routed to /api/tickets/.
+When making a PATCH request to /api/tickets/1/ with a multi-part form on tickets, which does not include checklist_items.
+Expected behavior
+checklist_items is not in validated_data
+Actual behavior
+checklist_items is in validated_data
+This issue is kind of related to #4056 (old issue) and #5807 (ListField). However, I believe that the issue is not related to the serializer, but to html.parse_html_list.
+Analysis
+To start with, I looked at how ListField.get_value is implemented:
+django-rest-framework/rest_framework/fields.py
+Lines 1606 to 1618 in 0178d30
+ def get_value(self, dictionary): 
+     if self.field_name not in dictionary: 
+         if getattr(self.root, 'partial', False): 
+             return empty 
+     # We override the default field access in order to support 
+     # lists in HTML forms. 
+     if html.is_html_input(dictionary): 
+         val = dictionary.getlist(self.field_name, []) 
+         if len(val) > 0: 
+             # Support QueryDict lists in HTML input. 
+             return val 
+         return html.parse_html_list(dictionary, prefix=self.field_name) 
+     return dictionary.get(self.field_name, empty) 
+While ListSerializer.get_value is implemented as follows:
+django-rest-framework/rest_framework/serializers.py
+Lines 603 to 611 in 0178d30
+     def get_value(self, dictionary): 
+         """ 
+         Given the input dictionary, return the field value. 
+         """ 
+         # We override the default field access in order to support 
+         # lists in HTML forms. 
+         if html.is_html_input(dictionary): 
+             return html.parse_html_list(dictionary, prefix=self.field_name) 
+         return dictionary.get(self.field_name, empty) 
+I guess a very simple fix for my issue (with PATCH requests) would be to to change ListSerializer.get_value to make the same check if getattr(self.root, 'partial', False) as ListField.get_value. Though I've looked at all the other Serializers, and none of them runs this check, so I guess this is not the correct way to tackle this issue. In addition, #5807 describes a similar issue with default values for ListField, so I guess I need to dig deeper here.
+I've looked at #5807 and the related Pull Request #5812 (tackles the issue for ListField). In that Pull Request a check is added within the if html.is_html_input(dictionary) clause. We might be able to use the same for ListSerializer, but it would not be DRY, and probably not tackle all cases.
+The issue seems to be within the return value of html.parse_html_list, which is used in the case of ListField and ListSerializer.
+For instance, at the moment:
+html.parse_html_list(QueryDict({'title': ["foo"]}), prefix="checklist_items")
+returns an empty list [].
+This empty list is interpreted by all the serializers as "User has submitted an empty list for checklist_items", rather than "User has not submitted the field checklist_items).
+I'll try to create some failing tests for my issue. In the meantime, it would be nice if we find consesus on where we fix this issue (in html.parse_html_list or within the serializers).

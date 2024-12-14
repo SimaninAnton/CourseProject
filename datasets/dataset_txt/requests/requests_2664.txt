@@ -1,0 +1,56 @@
+Contributor
+idan commented on Nov 17, 2011
+Teh broken
+Consider the following code, mostly lifted from the docs:
+def pizza_auth(r, username):
+    """Attaches HTTP Pizza Authentication to the given Request object."""
+    r.headers['X-Pizza'] = username
+    return r
+
+import requests
+r = requests.get('http://www.google.com', auth=(pizza_auth, 'foo'))
+print r.request.headers['X-Pizza']
+It appears that basic auth is hardwired for cases where two params are passed (source).
+Either I'm not getting something, or auth doesn't work as documented / the way I expect.
+A proposal
+Why not make all auth handlers callable objects? For example:
+class AuthBase(object):
+    """Base class that all auth implementations derive from"""
+
+    def __call__(self, r):
+        raise NotImplementedError('Auth hooks must be callable.')
+
+
+class HTTPBasic(AuthBase):
+    def __init__(self, username, password):
+        self.username = str(username)
+        self.password = str(password)
+
+    def __call__(self, r):
+        auth_s = b64encode('%s:%s' % (self.username, self.password))
+        r.headers['Authorization'] = ('Basic %s' % auth_s)
+        return r
+
+
+# Inline usage
+r = requests.get('http://foo.com', auth=HTTPBasic('idan', 'secret'))
+
+# Also in recyclable form!
+idan_auth = HTTPBasic('idan', 'secret')
+r1 = requests.get('http://foo.com', auth=idan_auth)
+r2 = requests.get('http://bar.com', auth=idan_auth)
+Such an approach has a few benefits:
+Doesn't make the trivial use-case's syntax any worse (if anything, it seems more explicit/clearer to me)
+Makes reuse much simpler if you're not starting a session.
+Facilitates implementation of more complex forms of auth, like OAuth
+For the latter case, I could do something like:
+idan_oauth = OAuth(consumer_key, consumer_secret, access_token, access_token_secret)
+requests.get(twitter_api_url, auth=idan_oauth)
+
+# or even
+client = session(auth=idan_oauth)
+r1 = client.get(an_endpoint)
+r2 = client.get(another_endpoint)
+… which would keep the OAuth implementation details neatly encapsulated inside the OAuth class.
+This would also make adding OAuth (#65) relatively easier.
+Thoughts?

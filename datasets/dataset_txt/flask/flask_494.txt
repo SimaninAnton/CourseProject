@@ -1,0 +1,30 @@
+kuba-baku commented on 7 Dec 2017 •
+edited
+On Windows send_from_directory() fails because posix path from safe_join() and Windows path from current_app.root_path gets mixed up.
+I see problem in this line:
+flask/flask/helpers.py
+Line 691 in eb1c2fa
+ filename = os.path.join(current_app.root_path, filename) 
+
+E.g. running app from C:\PythonApps\FlaskApp:
+send_from_directory("instance/data", "file1.txt")
+filename = safe_join(directory, filename)
+# filename == "instance/data/file1.txt"
+if not os.path.isabs(filename):
+        filename = os.path.join(current_app.root_path, filename)
+        # here's the problem -> filename == "C:\\PythonApps\\FlaskApp\\instance/data/file1.txt"
+    try:
+        if not os.path.isfile(filename):
+            # here it fails
+            raise NotFound()
+Returning posix path from safe join is imo ok (see #2284) but joining with non posix path fails.
+I think solution can be using os.path.normpath after joining path parts:
+filename = os.path.normpath(os.path.join(current_app.root_path, filename))
+Same problem is with send_file():
+flask/flask/helpers.py
+Line 520 in d08d96a
+ filename = os.path.join(current_app.root_path, filename) 
+Environment
+Python version 3.5.4:
+Flask version 0.12.2:
+Werkzeug version 0.12.2:

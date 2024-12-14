@@ -1,0 +1,22 @@
+robertbetts commented on 21 Apr 2017 •
+edited
+From the release notes in 4.3.0: Dashes and underscores are now fully interchangeable in option names.
+Discovered issue using Tornado 4.4.1 in Python 2.7 on Mac OS and Linux.
+Internally all options with underscores are converted to dashes e.g. genoa_smtp_host is converted to genoa-smtp-host.
+looking at the following code one would expect this to raise an exception:
+options.define("genoa_smtp_host", 'localhost', help="SMTP server address")
+options.define("genoa_smtp_host", 'localhost', help="SMTP server address")
+However it does not, running the next two lines does raise an exception:
+options.define("genoa_smtp_host", 'localhost', help="SMTP server address")
+options.define("genoa-smtp-host", 'localhost', help="SMTP server address")
+Proposed solution:
+The first few lines in OptionParser.define() are:
+        if name in self._options:
+            raise Error("Option %r already defined in %s" %
+                        (name, self._options[name].file_name))
+I suggest the following:
+        normalized = self._normalize_name(name)
+        if normalized in self._options:
+            raise Error("Option %r already defined in %s" %
+                        (name, self._options[normalized].file_name))
+One consideration for the implementor of the solution to this issue, is the description of the error. It could be confusing to a developer/user of Tornado to see an error description as "Option 'genoa-smtp-host' already defined in my_module.py" when the option name they are using is genoa_smtp_host.

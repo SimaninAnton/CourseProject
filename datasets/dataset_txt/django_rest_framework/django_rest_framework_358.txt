@@ -1,0 +1,88 @@
+kbussell commented on 4 Aug 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Coming up with a test case to run as part of the test suite is tough because the decimal module needs to be monkey-patched with cdecimal early in the flow. I realize this isn't necessarily a common case, but the fix (coming soon in a pr) is straightforward.
+Steps to reproduce
+In [1]: import sys
+
+In [2]: import cdecimal
+
+In [3]: sys.modules['decimal'] = cdecimal
+
+In [4]: from django.conf import settings
+
+In [5]: settings.configure(
+   ...:         DEBUG_PROPAGATE_EXCEPTIONS=True,
+   ...:         DATABASES={
+   ...:             'default': {
+   ...:                 'ENGINE': 'django.db.backends.sqlite3',
+   ...:                 'NAME': ':memory:'
+   ...:             }
+   ...:         },
+   ...:         SITE_ID=1,
+   ...:         SECRET_KEY='not very secret in tests',
+   ...:         USE_I18N=True,
+   ...:         USE_L10N=True,
+   ...:         STATIC_URL='/static/',
+   ...:         ROOT_URLCONF='tests.urls',
+   ...:         TEMPLATES=[
+   ...:             {
+   ...:                 'BACKEND': 'django.template.backends.django.DjangoTemplates',
+   ...:                 'APP_DIRS': True,
+   ...:                 'OPTIONS': {
+   ...:                     "debug": True,  # We want template errors to raise
+   ...:                 }
+   ...:             },
+   ...:         ],
+   ...:         MIDDLEWARE=(
+   ...:             'django.middleware.common.CommonMiddleware',
+   ...:             'django.contrib.sessions.middleware.SessionMiddleware',
+   ...:             'django.contrib.auth.middleware.AuthenticationMiddleware',
+   ...:             'django.contrib.messages.middleware.MessageMiddleware',
+   ...:         ),
+   ...:         INSTALLED_APPS=(
+   ...:             'django.contrib.admin',
+   ...:             'django.contrib.auth',
+   ...:             'django.contrib.contenttypes',
+   ...:             'django.contrib.sessions',
+   ...:             'django.contrib.sites',
+   ...:             'django.contrib.staticfiles',
+   ...:             'rest_framework',
+   ...:             'rest_framework.authtoken',
+   ...:             'tests.importable',
+   ...:             'tests',
+   ...:         ),
+   ...:         PASSWORD_HASHERS=(
+   ...:             'django.contrib.auth.hashers.MD5PasswordHasher',
+   ...:         ),
+   ...:     )
+
+In [6]: from rest_framework import serializers
+
+In [7]: f = serializers.DecimalField(max_digits=4, decimal_places=2)
+
+In [8]: f.quantize(cdecimal.Decimal('1.234'))
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-8-728ed1ea55db> in <module>()
+----> 1 f.quantize(cdecimal.Decimal('1.234'))
+
+/Users/keith/src/open/django-rest-framework/rest_framework/fields.py in quantize(self, value)
+   1141             decimal.Decimal('.1') ** self.decimal_places,
+   1142             rounding=self.rounding,
+-> 1143             context=context
+   1144         )
+   1145
+
+TypeError: an integer is required
+
+In [9]:
+Expected behavior
+I would expect that one does not need to specify the rounding parameter in the field declaration for it to work.
+Actual behavior
+Without specifying the rounding parameter explicitly, calls to DecimalField.quantize() will fail with a TypeError because the rounding parameter is expected to be an integer (and defaults to None in the code).

@@ -1,0 +1,47 @@
+wsxwd commented on 15 Apr 2017
+Hi everyone,
+This problem has been gnawing at me for days. I'm having trouble implementing a custom loss function in keras. I am trying to do semantic segmentation on grayscale images.
+Brief Context
+My fully-convolutional model is a U-Net. It outputs a tensor of predictions, which has a shape of (batch_size, height * width, num_classes). This is the code that produces this output:
+conv10 = Reshape((self.num_class, self.img_rows * self.img_cols))(conv10)
+conv10 = Permute((2, 1))(conv10)
+softmax = Activation('softmax')(conv10)
+I then compile the model with model.compile().
+self.model.compile(optimizer=Adam(lr=self.learning_rate),
+                   loss=self.pixelwise_crossentropy,
+                   metrics=['accuracy'])
+The Problem
+The function 'self.pixelwise_crossentropy' is the custom loss function that I'm struggling with. This is the (non-working) code that I have so far.
+def pixelwise_crossentropy(self, y_true, y_pred):
+    """
+    Pixel-wise cross-entropy loss for dense classification of an image.
+       
+    The loss of a misclassified `1` needs to be weighted
+    `WEIGHT` times more than a misclassified `0` (only 2 classes).
+   
+    Inputs
+    ----------------
+    y_true: Correct labels of 3D shape (batch_size, img_rows*img_cols, num_classes).
+   
+    y_pred: Predicted softmax probabilities of each class for each img_rows*img_cols pixel.
+            Same 3D shape as y_true.
+    """
+
+    # Copied and pasted from theano
+    y_pred = T.clip(y_pred, self.epsilon, 1.0 - self.epsilon)
+    y_pred /= y_pred.sum(axis=-1, keepdims=True)
+
+    # Get cross-entropy losses for each pixel.
+    pixel_losses = -tensor.sum(y_true * tensor.log(y_pred),
+                               axis=y_pred.ndim - 1)
+   
+    # Make a weight array to scale cross-entropy losses for every pixel in mini-batch.
+    weight_map = np.ones((self.img_rows * self.img_cols,), dtype=np.float32)
+   
+    # Cross-entropy loss of `1`s will be WEIGHT times greater than those of `0`s.
+    weight_map[y_true[:, :, 1]==1] = self.WEIGHT
+   
+    # Return elementwise multiplication of losses with weight map.
+    return pixel_losses * weight_map
+I would really appreciate any help or brief pointers about going in the right direction. I'm sure I'm using Theano tensors incorrectly, and mixing numpy with Theano in a weird way.
+Thanks!!!

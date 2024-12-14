@@ -1,0 +1,41 @@
+Contributor
+dieuwkehupkes commented on 23 Sep 2016 •
+edited
+I am training a recurrent network to do sequence to sequence prediction for variable length sequences. I pad both input and output sequences, and then use masking and sample_weight to exclude the padding_values from the training/evaluation. I observed a few things in this process that seem a bit odd or even wrong:
+when using evaluate to compute the loss and metrics, the loss correctly ignores the masked values, but the metric values are unaffected by the sample_weight parameter and return the wrong values
+even though masks are used, the bias is still added to the output layer, with as a result that the output for padded values is not 0
+when training a sequence to sequence model, the input should have a different dimensionality than the output, is this supposed to be like that?
+Now follows a little recurrent model with an embeddingslayer and a GRU that illustrates the problem, I used mask_zero = 0.0 for the embeddings layer instead of a masking layer, but changing this doesn't seem to make a difference (nor does adding a masking layer before the output):
+import numpy
+from keras.layers import Embedding, GRU, TimeDistributed, Dense, Input
+from keras.models import Model
+import keras.preprocessing.sequence
+
+numpy.random.seed(0)
+input_layer = Input(shape=(3,), dtype='int32', name='input')
+embeddings = Embedding(input_dim=20, output_dim=2, input_length=3, mask_zero=True, name='embeddings')(input_layer)
+recurrent = GRU(5, return_sequences=True, name='GRU')(embeddings)
+output_layer = TimeDistributed(Dense(1), name='output')(recurrent)
+model = Model(input=input_layer, output=output_layer)
+output_weights = model.layers[-1].get_weights()
+output_weights[1] = numpy.array([0.2])
+model.layers[-1].set_weights(output_weights)
+model.compile(loss='mse', metrics=['mse'], optimizer='adam', sample_weight_mode='temporal')
+(I set the bias of the output_layer to 0.2 to show the output_weights). I use the following input/output sequence:
+X = [[1, 2]] 
+X_padded = keras.preprocessing.sequence.pad_sequences(X, dtype='float32', maxlen=3) 
+Y = [[[1], [2]]] 
+Y_padded = keras.preprocessing.sequence.pad_sequences(Y, maxlen=3, dtype='float32') 
+(This illustrates problem 3, training/evaluating a network with Y=X returns a dimensionality error)
+When I run model.predict(X_padded), I get the following output (with numpy.random.seed(0) before generating the model):
+[[[ 0.2 ]
+[ 0.19946882]
+[ 0.19175649]]]
+Illustrating point 2. Why is the output_layer updated when the first input is masked? This does not seem desirable. Adding a Masking layer before the outputlayer does not solve this problem.
+Then, when I evaluate the model (model.evaluate(X_padded, Y_padded)), this returns the mse of the entire sequence (1.3168) including this first value, which I suppose is to be expected when it isn't masked, but not what I would want. To address this problem, I used the sample_weight parameter:
+sample_weight = numpy.array([[0, 1, 1]])
+model_evaluation = model.evaluate(X_padded, Y_padded, sample_weight=sample_weight)
+print model.metrics_names, model_evaluation
+The output I get is
+['loss', 'mean_squared_error'] [2.9329459667205811, 1.3168648481369019]
+Now, the loss value is computed seems to be the mse of the non-masked sequence normalised for the length of the sequence (which is also questionable I'd say, for mse the normalisation should maybe be the other way around). It leaves the metric unaltered: it just gives the mse over the entire sequence, including the values that should be ignored. Of course I could go around this by computing the metrics myself, but this behaviour does seem undesired. Shouldn't the sample_weight parameter been taken into account also for computing the metric?

@@ -1,0 +1,54 @@
+brooksjd commented on Apr 26, 2016
+There seems to be a bug with LogisticRegressionCV when using the liblinear solver. Namely, if I train an LR model on a set of data, that model has vastly different performance than a model trained on the same dataset, but with a different ordering of columns. I've demonstrated the issue in this code snippet:
+import numpy
+from sklearn.datasets import load_iris
+from sklearn.linear_model import LogisticRegressionCV
+
+def main():
+    # Load sample data
+    dataset = load_iris()
+    X = dataset.data
+    Y = dataset.target
+
+    # Make binary task
+    X = X[Y < 2, :]
+    Y = Y[Y < 2]
+
+    train_ix = numpy.ones_like(Y, dtype=bool)
+    train_ix[0::3] = False
+
+    train_X = X[train_ix, :]
+    train_Y = Y[train_ix]
+    test_X = X[train_ix == False, :]
+    test_Y = Y[train_ix == False]
+
+    model1 = LogisticRegressionCV(solver='liblinear').fit(train_X, train_Y)
+    test_pred = model1.predict(test_X)
+
+    print 'Accuracy of original:', float(sum(test_pred == test_Y)) / len(test_Y)
+
+    # Randomly permute columns
+    rand_ind = numpy.random.permutation(X.shape[1])
+    rand_train = train_X[:, rand_ind]
+    rand_test = test_X[:, rand_ind]
+
+    model2 = LogisticRegressionCV(solver='liblinear').fit(rand_train, train_Y)
+    rand_pred = model2.predict(rand_test)
+
+    print 'Accuracy of permuted set:', float(sum(rand_pred == test_Y)) / len(test_Y)
+
+
+
+if __name__ == '__main__':
+    main()
+Notice that rand_train, and rand_test are exactly the same as train_X, and test_X, but just with a different ordering of the columns. This should have no or minimal effect on the training, but this is what I get:
+Accuracy of original: 1.0
+Accuracy of permuted set: 0.5
+I do not have this problem if I use the default solver for LogisticRegressionCV, or if I use LogisticRegression without the built-in cross validation and the default cost parameter, so it seems like it may be an issue with how the cross-validation folds are set up for the liblinear solver.
+Note that I've demonstrated the problem with a toy dataset in this case, but I found this issue on a different dataset with thousands of examples, so its not anything funny with having only a few examples.
+Versions
+Darwin-14.5.0-x86_64-i386-64bit
+('Python', '2.7.10 |Anaconda 2.3.0 (x86_64)| (default, Sep 15 2015, 14:29:08) \n[GCC 4.2.1 (Apple Inc. build 5577)]')
+('NumPy', '1.10.1')
+('SciPy', '0.16.0')
+('Scikit-Learn', '0.16.1')

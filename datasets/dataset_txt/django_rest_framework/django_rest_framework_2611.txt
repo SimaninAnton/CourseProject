@@ -1,0 +1,39 @@
+Contributor
+kaygorodov commented on 5 Feb 2014
+Hello all,
+I don't know it is a bug or a documentation omission.
+We can notice in the documentation:
+"Note that using a paginate_by value of None will turn off pagination for the view."
+But if we use in settings PAGINAGE_BY and PAGINGATE_BY_PARAM, for example:
+'PAGINATE_BY': 25,
+'PAGINATE_BY_PARAM': 'limit'
+and if we have the following view:
+class MyList(generics.ListAPIView):
+    # turn off pagination
+    paginate_by = None
+    queryset = MyEntity.objects.all()
+    serializer_class = MySerializer
+due to this code:
+(from generics.py):
+def get_paginate_by(self, queryset=None):
+    ....
+    if self.paginate_by_param:
+        try:
+            return strict_positive_int(
+                self.request.QUERY_PARAMS[self.paginate_by_param],
+                cutoff=self.max_paginate_by
+            )
+        except (KeyError, ValueError):
+            pass
+    return self.paginate_by
+If we make request to this view with param limit (it's specified as PAGINATE_BY_PARAM), the pagination would work.
+GET /myentity/ pagination doesn't work. (GOOD)
+GET /myentity/?limit=10 pagination works (BAD. Even though we set paginate_by=None in the view pagination works)
+In order to achieve turning off pagination for all requests, we also have to set paginate_by_param = None:
+class MyList(generics.ListAPIView):
+    # turn off pagination
+    paginate_by = None
+    paginate_by_param = None  # added to turn off pagination for requests that contain paginate_by_param
+    queryset = MyEntity.objects.all()
+    serializer_class = MySerializer
+Or of course, we can achieve it by changing the code in generics.py

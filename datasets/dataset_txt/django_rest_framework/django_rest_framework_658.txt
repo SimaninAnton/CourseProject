@@ -1,0 +1,138 @@
+neighlyd commented on 9 Sep 2017
+When attempting to serialize a Many to Many field with through models, an error is thrown that the final model object does not have the appropriate attribute.
+Steps to reproduce
+# models.py
+class Person(models.Model):
+
+    name = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.name
+
+
+class Case(models.Model):
+
+    summary = models.TextField()
+    litigant_count = models.ManyToManyField(Person, through='Litigant')
+
+    def __str__(self):
+        return 'Case %s' % (self.id)
+
+class Litigant(models.Model):
+
+    person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='person_to_case')
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name='case_to_person')
+    role = models.TextField()
+# serializers.py
+class PersonSerializer(ModelSerializer):
+
+    class Meta:
+        model = Person
+        fields = ('name')
+
+
+class LitigantSerializer(ModelSerializer):
+
+    class Meta:
+        model = Litigant
+        fields = ('person', 'case', 'role')
+
+
+class CaseSerializer(ModelSerializer):
+
+    queryset = Litigant.objects.all()
+    litigant_count = LitigantSerializer(queryset, many=True, read_only=True)
+
+    class Meta:
+        model = Case
+        fields = ('summary', 'litigant_count')
+# views.py
+
+class PersonViewSet(ModelViewSet):
+    queryset = Person.objects.all()
+    serializer_class = PersonSerializer
+
+
+class LitigantViewSet(ModelViewSet):
+    queryset = Litigant.objects.all()
+    serializer_class = LitigantSerializer
+
+
+class CaseViewSet(ModelViewSet):
+    queryset = Case.objects.all()
+    serializer_class = CaseSerializer
+Expected behavior
+I expected a nested serializer like that shown in the documents under Nested Relationships, as modified by the Many to Many with Through Model section indicates.
+After searching extensively on the web (Stackoverflow, Reddit, github, and the Google Group), all answers appear to indicate that including many=True should cause the serializers to work (see, for example, this thread). Another thread indicated that the fields in the intermediate model needed to be set explicitly to ReadOnlyField, as though read_only=True was not adequate on its own. Neither of these resolves the issue (though the latter does display the API, it simply truncates the through model entirely from the serialization).
+Actual behavior
+When accessing the Cases API, it responds with the following error:
+'Person' object has no attribute 'person'
+The stack trace is as follows:
+Traceback:
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/django/core/handlers/exception.py" in inner
+  41.             response = get_response(request)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/django/core/handlers/base.py" in _get_response
+  187.                 response = self.process_exception_by_middleware(e, request)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/django/core/handlers/base.py" in _get_response
+  185.                 response = wrapped_callback(request, *callback_args, **callback_kwargs)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/django/views/decorators/csrf.py" in wrapped_view
+  58.         return view_func(*args, **kwargs)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/viewsets.py" in view
+  90.             return self.dispatch(request, *args, **kwargs)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/views.py" in dispatch
+  489.             response = self.handle_exception(exc)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/views.py" in handle_exception
+  449.             self.raise_uncaught_exception(exc)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/views.py" in dispatch
+  486.             response = handler(request, *args, **kwargs)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/mixins.py" in list
+  48.         return Response(serializer.data)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in data
+  739.         ret = super(ListSerializer, self).data
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in data
+  263.                 self._data = self.to_representation(self.instance)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in to_representation
+  657.             self.child.to_representation(item) for item in iterable
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in <listcomp>
+  657.             self.child.to_representation(item) for item in iterable
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in to_representation
+  501.                 ret[field.field_name] = field.to_representation(attribute)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in to_representation
+  657.             self.child.to_representation(item) for item in iterable
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in <listcomp>
+  657.             self.child.to_representation(item) for item in iterable
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/serializers.py" in to_representation
+  488.                 attribute = field.get_attribute(instance)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/relations.py" in get_attribute
+  179.         return get_attribute(instance, self.source_attrs)
+
+File "/home/vagrant/.virtualenvs/testsite/lib/python3.4/site-packages/rest_framework/fields.py" in get_attribute
+  103.                 instance = getattr(instance, attr)
+
+Exception Type: AttributeError at /api/cases/
+Exception Value: 'Person' object has no attribute 'person'
+Checklist
+[√] I have verified that that issue exists against the master branch of Django REST framework.
+[√] I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+[√] This is not a usage question. (Those should be directed to the discussion group instead.)
+[√] This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+[√] I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)

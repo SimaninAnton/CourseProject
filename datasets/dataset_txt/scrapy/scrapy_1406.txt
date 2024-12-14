@@ -1,0 +1,34 @@
+realmhamdy commented on May 25, 2014
+I have a couple of spiders here that reproduce this issue. I'll use the smaller one
+Here's spider.py. What's interesting is the last 4 lines:
+class JobSpider(Spider):
+    start_urls = ["http://www.egyptitjobs.com"]
+    name = "jobspider"
+
+    def parse(self, response):
+        sel = Selector(response)
+        site_logo_url = sel.xpath("//a[@id='logo']/img/@src").extract()[0]
+        if site_logo_url.startswith('/'):
+            site_logo_url = JobSpider.start_urls[0] + site_logo_url
+        #yield SiteLogo(image_urls = [site_logo_url])
+        job_links = sel.xpath("//a[contains(@class, 'jbj_title') and contains(@class, 'jobcriteria')]")
+        job_target_urls = job_links.xpath("@href").extract()
+        job_titles = job_links.xpath("text()").extract()
+        for (job_title, job_target) in zip(job_titles, job_target_urls):
+            if job_target.startswith("/"):
+                job_target = JobSpider.start_urls[0] + job_target
+            item_loader = MyItemLoader(EgyitjobsItem(), response=response, context="dacontext")
+            item_loader.add_value("job_title", job_title)
+            item_loader.add_value("job_url", job_target)
+            yield item_loader.load_item()
+and now itemloaders.py:
+def contextLogger(scraped, loaderContext):
+  logfile.write("loaderContext: %s" % loaderContext)
+  return scraped
+
+class MyItemLoader(ItemLoader):
+  job_title_in = MapCompose(contextLogger)
+Using this simple MyItemLoader causes exceptions.TypeError: contextLogger() takes exactly 2 arguments (1 given).
+Scrapy 0.22.2, Python 2.7.6
+Here's the whole spider project:
+https://www.dropbox.com/s/ase4s9wu84npshn/crawler.zip

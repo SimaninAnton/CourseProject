@@ -1,0 +1,18 @@
+jorisroovers commented on 6 Nov 2015
+The APIRequestFactory class is basically a wrapper for Django's RequestFactory, proxying post/get/put/... calls to Django's RequestFactory.generic(). As a result, the mock request objects that are returned by APIRequestFactory get/post/put/... methods are of the type django.core.handlers.wsgi.WSGIRequest. When passed to a django-rest-framework view, these requests get converted to rest_framework.request.Request objects. While this probably suffices for many use cases, this does cause issues when trying to test code that handles requests directly without going through a django-rest-framework view.
+In particular, if the code that is being tested tries to access special data members or methods that are specific to rest_framework.request.Request such as the data member, that code will raise an exception,
+For example:
+  def test_foo(self):
+
+        def myfunc(request):
+            # This will raise an exception since the request is of type 
+            # django.core.handlers.wsgi.WSGIRequest
+            # and not of type rest_framework.request.Request
+            # -> AttributeError: 'WSGIRequest' object has no attribute 'data'
+            print request.data
+
+        from rest_framework.test import APIRequestFactory
+        factory = APIRequestFactory()
+        request = factory.post("/foo", {'key': "val"})
+        myfunc(request)
+1

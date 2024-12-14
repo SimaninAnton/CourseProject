@@ -1,0 +1,26 @@
+smoser commented on Oct 18, 2013
+We originally hit this under ubuntu bug http://pad.lv/1240652 .
+Running 'go-requests' (see below) like this:
+$ url="http://cloud-images.ubuntu.com/releases/precise/release/ubuntu-12.04-server-cloudimg-amd64-disk1.img"
+$ http_proxy=http://localhost:3128/ python go-requests.py $url out.img
+results in a hang and eventually a timeout. The code is doing a open, then close, then open again of the same url, which seems to trigger the bug. Clearly that is a silly thing to do, but should not result in a hang.
+I'm not certain if this is really a bug in urllib3 or in requests use of it.
+#!/usr/bin/python
+BUFLEN = 1024 * 10
+
+import requests, sys
+if len(sys.argv) > 3:
+   BUFLEN = int(sys.argv[3])
+
+cq = requests.get(sys.argv[1], stream=True)
+cq.raw.read(1024)
+cq.close()
+
+req = requests.get(sys.argv[1], stream=True)
+with open(sys.argv[2], "wb") as wfp:
+   while True:
+      buf = req.raw.read(BUFLEN)
+      wfp.write(buf)
+      if len(buf) != BUFLEN:
+          break
+req.close()

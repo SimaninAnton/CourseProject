@@ -1,0 +1,75 @@
+adrianodennanni commented on 14 Nov 2018 •
+edited
+Hello!
+I want to introduce a concept that I came up in this week. Suppose I want to create a multi-task image classifier that can tell which pet an image has:
+0: bird
+1: cat
+2: dog
+And it also can tell the color of the pet:
+0: black
+1: yellow
+2: brown
+3: orange
+4: white
+For each image in the input, the output would be a tensor like this [1 3] (in this case, a image with an orange cat ). It is a multi-task classifier because it is able to answer two different questions in the same model.
+Altough it is very easy to do something like this on Keras, I tought it could be easier. Today, I am not able to do this with the DirectoryIterator/flow_from_directory, because I have 2 class categories in this (pet and color).
+So I came up with something called FilenamesIterator. Instead of having a directory with sub-directories representing each class, like how DirectroryIterator works:
+dataset/
+|-- bird/
+|   |-- pet1.jpg
+|   |-- ...
+|   `-- pet99.jpg
+|-- cat/
+|   |-- pet101.jpg
+|   |-- ...
+|   `-- pet199.jpg
+|-- dog/
+|   |-- pet201.jpg
+|   |-- ...
+|   `-- pet299.jpg
+FilenamesIterator would have its file structure organized in this way:
+dataset/
+|-- a8d3__orange_cat.jpg
+|-- 62f9__yellow_bird.jpg
+|-- e1ad__black_dog.jpg
+|-- ...
+|-- 5ca8__white_cat.jpg
+In this case, all the labels of one image would be in the filename itself.
+And how would we extract the label name from the filename? The user could pass a Regex rule that matches all the labels in a the filename. In this case, the regex _([a-zA-Z]+) would match our desired words (color and pet).
+To allow multi-task, we would also need to pass the dimensions of our output. In this simple case, it would simply be [2].
+Let's build another example with snippets, for a 4-digit handwritten digits classifier!
+The files would be structured as this:
+digits_dataset/
+|-- timestamp-156823112_4_5_9_1.png
+|-- timestamp-156823781_4_9_9_9.png
+|-- timestamp-156824280_1_0_5_0.png
+|-- ...
+|-- timestamp-156829173_1_8_7_5.png
+The first step would be calling a ImageDataGenerator, for augmentation:
+generator = keras.preprocessing.image.ImageDataGenerator(
+    rotation_range=40,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    rescale=1./255,
+    shear_range=0.2
+)
+Then, we would call out our FilenamesIterator:
+train_batches = FilenamesIterator(
+    batch_size=16,
+    directory='digits_dataset',
+    image_data_generator=generator,
+    labels_regex='_(\d)',
+    y_shape=[4],
+    target_size=[40, 200],
+    shuffle=True
+)
+Our model could be anything yelding a [4] sized output.
+We would fit it normally:
+model.fit_generator(train_batches,
+                    epochs=30,
+                    steps_per_epoch=len(train_batches),
+                    )
+And this would be enough to train our multi-task model.
+I am already working on this, since it is necessary for me at the moment. But I would like to create a PR in this repo, so this code could help others.
+Is this too specific to be merged into Keras? Can I make a PR out of this?
+1

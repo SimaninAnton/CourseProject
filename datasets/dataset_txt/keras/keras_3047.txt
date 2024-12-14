@@ -1,0 +1,48 @@
+guyeng0 commented on 8 Mar 2017
+I'm trying to run a tensorflow tf.nn.max_pool_with_argmax in order to use in an unpooling layer. I used a Lambda layer to run the tensorflow function. But it seems that even though I'm calling the Lambda layer only once, the function runs twice and outputs two argmax layers. Not sure if I'm doing something incorrectly or whether this is a bug. Also, I'm not an expert in python so probably the code could be written better. The inputs used come from google's notMNist 28x28 dataset.
+import numpy as np
+import tensorflow as tf
+import os
+from keras.layers import Convolution2D, Dense, Flatten, Input, Lambda
+from keras.models import Model
+from keras.optimizers import SGD
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import gen_nn_ops
+@ops.RegisterGradient("MaxPoolWithArgmax")
+def _MaxPoolWithArgmaxGrad(op, grad, some_other_arg):
+return gen_nn_ops._max_pool_grad(op.inputs[0],
+op.outputs[0],
+grad,
+op.get_attr("ksize"),
+op.get_attr("strides"),
+padding=op.get_attr("padding"),
+data_format='NHWC')
+def keras_max_pool_with_argmax(input):
+global argmaxlayers
+(maxpoolout, maxpoolargmax) = tf.nn.max_pool_with_argmax(input, [1, 2, 2, 1], strides = [1, 2, 2, 1], padding = "SAME")
+print ("adding")
+argmaxlayers.append(maxpoolargmax)
+return maxpoolout
+argmaxlayers = []
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+inputs = Input(batch_shape=(100,28,28,1))
+conv1 = Convolution2D(4, 3, 3, init='he_normal', activation = 'relu', border_mode='same', bias=True)(inputs)
+maxpoolout1 = Lambda(keras_max_pool_with_argmax)(conv1)
+flat = Flatten()(maxpoolout1)
+predictions = Dense(10, init='he_normal', bias = True, activation = 'softmax', name='predictions')(flat)
+model = Model(input=inputs, output=predictions)
+sgd = SGD(lr=0.03, decay=0.0, momentum=0.0)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+model.fit(train_dataset[0:100000], train_labels[0:100000], batch_size=100, nb_epoch=1, callbacks=[],
+validation_data=(valid_dataset, valid_labels))
+print (argmaxlayers)
+In the output I see
+adding
+adding
+Train on 100000 samples, validate on 10000 samples
+Epoch 1/1
+100000/100000 [==============================] - 2s - loss: 0.7490 - val_loss: 0.6428
+[<tf.Tensor 'MaxPoolWithArgmax:1' shape=(100, 14, 14, 4) dtype=int64>, <tf.Tensor 'MaxPoolWithArgmax_1:1' shape=(100, 14, 14, 4) dtype=int64>]
+So "adding" is outputted twice indicating the function keras_max_pool_with_argmax was called twice, and additionally I have two separate tensors that were created instead of just one.
+Thanks,
+Guy

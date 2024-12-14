@@ -1,0 +1,54 @@
+mbargiel commented on 28 Jan 2013
+Between 2.1.11 and 2.1.16, it seems a bug has been introduced with regard to how related fields are treated. Even though a model's ForeignKey field is configured with null=True and blank=True, the ModelSerializer's corresponding PrimaryKeyRelatedField instance does not have required=False. Here's some simple repro code.
+### models.py
+from django.db import models
+
+class RelatedModel(models.Model):
+    pass
+
+class SourceModel(models.Model):
+    related_model = models.ForeignKey(RelatedModel, null=True, blank=True)
+
+### serializers.py
+from rest_framework import serializers
+from . import models
+
+class ImplicitRelatedFieldSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = models.SourceModel
+
+class ExplicitRelatedFieldSerializer(serializers.ModelSerializer):
+    related_model = serializers.PrimaryKeyRelatedField(required=False)
+
+    class Meta:
+        model = models.SourceModel
+
+### test.py
+from drf_related_required_bug.app import models, serializers
+
+def test():
+    model = models.SourceModel()
+    implicit_serializer = serializers.ImplicitRelatedFieldSerializer(instance=model, data={})
+    explicit_serializer = serializers.ExplicitRelatedFieldSerializer(instance=model, data={})
+
+    print "Required implicitly set to False:"
+    if implicit_serializer.is_valid():
+        print implicit_serializer.data
+    else:
+        print implicit_serializer.errors
+
+    print "-" * 30
+    print "Required explicitly set to False:"
+    if explicit_serializer.is_valid():
+        print explicit_serializer.data
+    else:
+        print explicit_serializer.errors
+
+### interpreter
+>>> from tests import test
+>>> test()
+Required implicitly set to False:
+{'related_model': [u'This field is required.']}
+------------------------------
+Required explicitly set to False:
+{'related_model': None, 'id': None}

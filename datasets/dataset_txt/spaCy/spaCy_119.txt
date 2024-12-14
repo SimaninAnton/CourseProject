@@ -1,0 +1,48 @@
+vitaly-d commented on 25 Nov 2019 •
+edited
+How to reproduce the behaviour
+spacy debug or spacy train with large JSON-formatted training data file (>2^31 bytes) fails with OverflowError: value too large to convert to int
+Training pipeline: ['ner']
+Starting with blank model 'en'
+Loading vector from model 'en_vectors_web_lg'
+Counting training words (limit=0)
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.7/lib/python3.7/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.7/lib/python3.7/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/Users/vitaly/Code/Wiley/transformation-poc/.env/lib/python3.7/site-packages/spacy/__main__.py", line 33, in <module>
+    plac.call(commands[command], sys.argv[1:])
+  File "/Users/vitaly/Code/Wiley/transformation-poc/.env/lib/python3.7/site-packages/plac_core.py", line 328, in call
+    cmd, result = parser.consume(arglist)
+  File "/Users/vitaly/Code/Wiley/transformation-poc/.env/lib/python3.7/site-packages/plac_core.py", line 207, in consume
+    return cmd, self.func(*(args + varargs + extraopts), **kwargs)
+  File "/Users/vitaly/Code/Wiley/transformation-poc/.env/lib/python3.7/site-packages/spacy/cli/train.py", line 230, in train
+    corpus = GoldCorpus(train_path, dev_path, limit=n_examples)
+  File "gold.pyx", line 224, in spacy.gold.GoldCorpus.__init__
+  File "gold.pyx", line 235, in spacy.gold.GoldCorpus.write_msgpack
+  File "gold.pyx", line 280, in read_tuples
+  File "gold.pyx", line 545, in read_json_file
+  File "gold.pyx", line 592, in _json_iterate
+OverflowError: value too large to convert to int
+Most likely, the problem is very minor as with the current implementation the training file size is enough for most use cases. In my case the enormous size is the result of an attempt to implement the named entities augmentation :)
+The fix is trivial:
+(.env) vitaly@iMac spaCy % git diff
+diff --git a/spacy/gold.pyx b/spacy/gold.pyx
+index 5aecc2584..138de13f1 100644
+--- a/spacy/gold.pyx
++++ b/spacy/gold.pyx
+@@ -562,7 +562,7 @@ def _json_iterate(loc):
+     cdef int curly_depth = 0
+     cdef int inside_string = 0
+     cdef int escape = 0
+-    cdef int start = -1
++    cdef size_t start = -1
+     cdef char c
+     cdef char quote = ord('"')
+     cdef char backslash = ord("\\")
+Your Environment
+Info about spaCy
+spaCy version: 2.2.3
+Platform: Darwin-19.0.0-x86_64-i386-64bit
+Python version: 3.7.3

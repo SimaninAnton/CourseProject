@@ -1,0 +1,46 @@
+kmwenja commented on 23 Apr 2019
+OS: Ubuntu 16.04.3 LTS
+Certbot: 0.33.1 (installed via certbot-auto)
+Note: domains used below have been obscured with example.com
+Running the renew command let to the following errors:
+Processing /etc/letsencrypt/renewal/example.com.conf
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Renewal configuration file /etc/letsencrypt/renewal/example.com.conf (cert: example.com) produced an unexpected error: 'Namespace' object has no attribute 'standalone_supported_challenges'. Skipping.
+Running it in verbose mode provided the following:
+Processing /etc/letsencrypt/renewal/example.com.conf
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Renewal configuration file /etc/letsencrypt/renewal/example.com.conf (cert: example.com) produced an unexpected error: 'Namespace' object has no attribute 'standalone_supported_challenges'. Skipping.
+Traceback was:
+Traceback (most recent call last):
+  File "/opt/eff.org/certbot/venv/local/lib/python2.7/site-packages/certbot/renewal.py", line 417, in handle_renewal_request
+    renewal_candidate = _reconstitute(lineage_config, renewal_file)
+  File "/opt/eff.org/certbot/venv/local/lib/python2.7/site-packages/certbot/renewal.py", line 84, in _reconstitute
+    _restore_plugin_configs(config, renewalparams)
+  File "/opt/eff.org/certbot/venv/local/lib/python2.7/site-packages/certbot/renewal.py", line 152, in _restore_plugin_configs
+    if config_item.startswith(plugin_prefix + "_") and not cli.set_by_cli(config_item):
+  File "/opt/eff.org/certbot/venv/local/lib/python2.7/site-packages/certbot/cli.py", line 222, in set_by_cli
+    if not isinstance(getattr(detector, var), _Default):
+AttributeError: 'Namespace' object has no attribute 'standalone_supported_challenges'
+I figured the issue would be with the renewal config file and turns out:
+# renew_before_expiry = 30 days
+cert = /etc/letsencrypt/live/example.com/cert.pem
+privkey = /etc/letsencrypt/live/example.com/privkey.pem
+chain = /etc/letsencrypt/live/example.com/chain.pem
+fullchain = /etc/letsencrypt/live/example.com/fullchain.pem
+version = 0.33.1
+archive_dir = /etc/letsencrypt/archive/example.com
+
+# Options and defaults used in the renewal process
+[renewalparams]
+authenticator = standalone
+account = <obscured>
+server = https://acme-v01.api.letsencrypt.org/directory
+standalone_supported_challenges = "tls-sni-01,http-01"  # this guy
+post_hook = service nginx start
+pre_hook = service nginx stop
+pref_challs = http-01,
+Broad internet search didn't provide any useful results so I decided to check the repo directly which led me to this commit: 821bec6
+Since the commit completely removes the "standalone_supported_challenges" config entry, I edited the config files manually to remove it and renewal now succeeds.
+This is more of a warning considering I've fixed the issue on my side but it may affect others so I thought I'd raise an issue about it. I figure it's related to the migration from using the tls challenge to the http challenge.
+This old issue may be related: #2927
+2

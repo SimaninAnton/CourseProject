@@ -1,0 +1,72 @@
+christofferqa commented on 29 Mar 2016
+Steps to reproduce the problem:
+Record the server responses of some website: mitmdump -w rec.out --anticache
+Replay the server responses with the --kill flag and a script that delays one or more responses without blocking: mitmdump -s script.py -S rec.out --kill --no-pop
+script.py:
+import re
+import time
+
+from mitmproxy.script import concurrent
+
+delayUrl=".*/some_url.js"
+
+@concurrent
+def request(context, flow):
+  if re.match(delayUrl, flow.request.url):
+    print('delay request: %s%s' % (flow.request.host, flow.request.path))
+    time.sleep(5)
+  print('start request: %s%s' % (flow.request.host, flow.request.path))
+
+def response(context, flow):
+  if flow.error:
+    print('Error: ' + str(flow.error))
+What is the expected behavior?
+The server responses are replayed, the responses matched by the delayUrl pattern are delayed by 5s, and responses not found in the recording are killed.
+What went wrong?
+The script crashes:
+Error: Connection killed
+Traceback (most recent call last):
+  File "/home/christofferqa/mitmproxy/venv/bin/mitmdump", line 9, in <module>
+    load_entry_point('mitmproxy', 'console_scripts', 'mitmdump')()
+  File "/home/christofferqa/mitmproxy/mitmproxy/main.py", line 102, in mitmdump
+    master.run()
+  File "/home/christofferqa/mitmproxy/mitmproxy/dump.py", line 354, in run
+    return flow.FlowMaster.run(self)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 128, in run
+    self.tick(self.masterq, 0.1)
+  File "/home/christofferqa/mitmproxy/mitmproxy/flow.py", line 828, in tick
+    return super(FlowMaster, self).tick(q, timeout)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 113, in tick
+    self.handle(*msg)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 135, in handle
+    m(obj)
+  File "/home/christofferqa/mitmproxy/mitmproxy/dump.py", line 337, in handle_response
+    self._process_flow(f)
+  File "/home/christofferqa/mitmproxy/mitmproxy/dump.py", line 321, in _process_flow
+    self.state.delete_flow(f)
+  File "/home/christofferqa/mitmproxy/mitmproxy/flow.py", line 584, in delete_flow
+    self.flows._remove(f)
+  File "/home/christofferqa/mitmproxy/mitmproxy/flow.py", line 496, in _remove
+    self._list.remove(f)
+ValueError: list.remove(x): x not in list
+Traceback (most recent call last):
+  File "/home/christofferqa/mitmproxy/mitmproxy/proxy/server.py", line 121, in handle
+    root_layer()
+TypeError: 'NoneType' object is not callable
+
+mitmproxy has crashed!
+Please lodge a bug report at: https://github.com/mitmproxy/mitmproxy
+----------------------------------------
+Error in processing of request from 127.0.0.1:41084
+Traceback (most recent call last):
+  File "/home/christofferqa/mitmproxy/netlib/tcp.py", line 854, in connection_thread
+    self.handle_client_connection(connection, client_address)
+  File "/home/christofferqa/mitmproxy/mitmproxy/proxy/server.py", line 64, in handle_client_connection
+    h.handle()
+  File "/home/christofferqa/mitmproxy/mitmproxy/proxy/server.py", line 152, in handle
+    self.channel.tell("clientdisconnect", root_layer)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 68, in tell
+    m.reply = DummyReply()
+AttributeError: 'NoneType' object has no attribute 'reply'
+Mitmproxy Version: master (0.17)
+Operating System: Ubuntu 14.04 LTS

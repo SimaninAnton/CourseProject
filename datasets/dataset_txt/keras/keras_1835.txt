@@ -1,0 +1,51 @@
+clemej commented on 31 Jul 2017 •
+edited
+I'm experiencing a stack trace when I have both the TerminateNaN() callback and the CSVLogger collback enabled. Then the NaN callback hits, it appears from the stack trace below that the CSVLogger plugin tries to log the 'val_loss' metric which may no longer exists(?)
+Or perhaps its it never gets logged for this epoch, since TerminateNaN was already processed?
+Maybe it has to do with the ordering in which the callbacks registered and fired?
+I suspect if training stops on a batch within an epoch, the CSVLogger may need an extra check to make sure that a loss/val_loss was calculated for this epoch before trying to log it.
+Relevant code (I'll try to create a self contained example once I figure out how to artificially trigger a NaN):
+        nan = TerminateOnNaN()
+        csv = CSVLogger('%s/%s-hist.csv' % (outdir,expname))
+        mc = ModelCheckpoint(filepath='%s/%s-{epoch:04d}-{val_loss:.5f}.model' % (outdir,expname), period=10)
+        hist = model.fit(Xt, Yt, verbose=2, batch_size=batch_size, 
+                        epochs=epochs, validation_data=(Xv,Yv), shuffle='batch', 
+                        callbacks=[mc, csv, nan])
+And the relevant stack trace:
+Epoch 192/512                                                                                                                                                                                
+187s - loss: 0.1196 - val_loss: 0.1197                                                                                                                                                       
+Epoch 193/512                                                                                                                                                                                
+Batch 25: Invalid loss, terminating training                                                                                                                                                 
+ERROR - parity_narrow_search - Failed after 9:55:55!                                                                                                                                         
+Traceback (most recent call last):                                                                                                                                                           
+  File "run_experiment.py", line 26, in <module>                                
+    r = ex.run(config_updates=cfgovr)                                                                   
+  File "/home/john/.local/lib/python3.5/site-packages/sacred/experiment.py", line 187, in run
+    run()                                                                                                     
+  File "/home/john/.local/lib/python3.5/site-packages/sacred/run.py", line 223, in __call__
+    self.result = self.main_function(*args)                                                                    
+  File "/home/john/.local/lib/python3.5/site-packages/sacred/config/captured_function.py", line 47, in captured_function
+    result = wrapped(*args, **kwargs)                                                                  
+  File "/home/john/umbc/git/parity-narrow-search/parity_exp.py", line 106, in main
+    callbacks=[mc, csv, nan])                                                                       
+  File "/home/john/.local/lib/python3.5/site-packages/keras/models.py", line 863, in fit
+    initial_epoch=initial_epoch)                                 
+  File "/home/john/.local/lib/python3.5/site-packages/keras/engine/training.py", line 1430, in fit
+    initial_epoch=initial_epoch)                                 
+  File "/home/john/.local/lib/python3.5/site-packages/keras/engine/training.py", line 1099, in _fit_loop
+    callbacks.on_epoch_end(epoch, epoch_logs)                    
+  File "/home/john/.local/lib/python3.5/site-packages/keras/callbacks.py", line 77, in on_epoch_end                     
+    callback.on_epoch_end(epoch, logs)                           
+  File "/home/john/.local/lib/python3.5/site-packages/keras/callbacks.py", line 969, in on_epoch_end
+    row_dict.update((key, handle_value(logs[key])) for key in self.keys)                                                                                                                    
+  File "/home/john/.local/lib/python3.5/site-packages/keras/callbacks.py", line 969, in <genexpr>
+    row_dict.update((key, handle_value(logs[key])) for key in self.keys)
+KeyError: 'val_loss'
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

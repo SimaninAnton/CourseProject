@@ -1,0 +1,37 @@
+Member
+kmike commented on Apr 6, 2015
+Currently to pass data between callbacks users need to use request.meta. Example from docs (simplified):
+def parse_page1(self, response):
+    item = MyItem(main_url=response.url)
+    request = scrapy.Request("http://www.example.com/some_page.html",
+                             callback=self.parse_page2)
+    request.meta['item'] = item
+    return request
+
+def parse_page2(self, response):
+    item = response.meta['item']
+    item['other_url'] = response.url
+    return item
+While it works fine, there are some issues:
+it seems understanding request.meta is a common struggle for beginners;
+we're mixing parameters for Scrapy components with user data.
+What about providing an alternative way?
+def parse_page1(self, response):
+    item = MyItem(main_url=response.url)
+    return scrapy.Request("http://www.example.com/some_page.html",
+                             callback=self.parse_page2,
+                             kwargs={'item': item})
+
+def parse_page2(self, response, item):
+    item['other_url'] = response.url
+    return item
+Advantages:
+If you're writing some extraction code without Scrapy (e.g. requests+lxml), then likely parsing functions have arguments. So this change makes code more natural/straightforward.
+Optional arguments or arguments with default values are easier to handle - just provide a default value using Python syntax.
+User state is separated from Scrapy internals better.
+Less code.
+One can see which data callback needs just by looking at callback definition.
+This way it is easier to add extra data to meta without a risk of breaking Scrapy extensions. There should be fewer bugs with missing meta.copy().
+In case of missing argument callback will fail earlier.
+The implementation could add __kwargs field to request.meta and pass **meta.get('__kwargs', {}) to the callback. Alternatively, we could put keyword arguments in another dict similar to meta. It will allow to separate them better. Also, rules for passing kwargs may be different from rules for passing meta (e.g. maybe meta should be preserved/copied in some cases, but not kwargs, I'm not sure).
+👍 15

@@ -1,0 +1,25 @@
+martin592 commented on 4 Jul 2017
+I am trying to implemente a Memory-augmented neural network, in which the memory and the read/write/usage weight vectors are updated according to a combination of their previous values. These weigths are different from the classic weight matrices between layers that are automatically updated with the fit() function! My problem is the following: how can I correctly initialize these weights as keras tensors and use them in the model? I explain it better with the following simplified example.
+My API model is something like:
+      input = Input(shape=(5,6))
+      controller = LSTM(20, activation='tanh',stateful=False, return_sequences=True)(input)
+      write_key = Dense(4,activation='tanh')(controller)
+      read_key = Dense(4,activation='tanh')(controller)
+      w_w = add([w_u, w_r])                            #<---- UPDATE OF WRITE WEIGHTS
+      to_write = dot([w_w, write_key])
+      M = add([M,to_write])                                       #<---- UPDATE OF MEMORY
+      cos_sim = dot([M,read_key])
+      w_r = Lambda(lambda x: softmax(x,axis=1))(cos_sim) #<---- UPDATE OF READ WEIGHTS
+      w_u = add([w_u,w_r,w_w])                         #<---- UPDATE OF USAGE WEIGHTS
+      retrieved_memory = dot([w_r,M])
+      controller_output = concatenate([controller,retrieved_memory])
+      final_output = Dense(6,activation='sigmoid')(controller_output)
+You` can see that, in order to compute w_w^t, I have to have first defined w_r^{t-1} and w_u^{t-1}. So, at the beginning I have to provide a valid initialization for these vectors. What is the best way to do it? The initialization commands I would like to use are:
+       M = K.variable(numpy.zeros((10,4)))       # MEMORY
+       w_r = K.variable(numpy.zeros((1,10)))     # READ WEIGHTS
+       w_u = K.variable(numpy.zeros((1,10)))     # USAGE WEIGHTS
+But, analogously to what said in #2486(entron), these commands do not return a keras tensor with all the needed meta-data and so this returns the following error:
+'NoneType' object has no attribute 'inbound_nodes'
+I also thought to use the old M, w_r and w_u as further inputs at each iteration and analogously get in output the same variables to complete the loop. But this means that I have to use the fit() function to train online the model having just the target as final output (Model 1), and employ the predict() function on the model with all the secondary outputs (Model 2) to get the variables to use at the next iteration. I have also to pass the weigth matrices from Model 1 to Model 2 using get_weights() and set_weights(). As you can see, it becomes a little bit messy and too slow.
+Do you have any suggestions for this problem?
+P.S. Please, do not focus too much on the API model above because it is a simplified (almost meaningless) version of the complete one where I skipped several key steps.

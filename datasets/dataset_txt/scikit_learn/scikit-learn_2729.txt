@@ -1,0 +1,29 @@
+Member
+rth commented on Sep 28, 2016 •
+edited
+Description
+I find the current output of the HashingVectorizer quite counter-intuitive, mostly due to the mechanism used to handle hash collisions in the FeatureHasher (the current implementation is conceptually close to the second example here). Without hash collisions, if two words have the same hash, the corresponding count value would be just of 2 (i.e. there was a collision). With this mechanism a random sign is added to the feature count (+1 or -1), so that when a collision occurs the result can be -2, 0 or +2.
+the +2, or -2 is essentially what would have happened without this mechanism, and is equivalent to say that the two words that produce the collision are identical (from the point of view of this algorithm), which is expected.
+the case of 0 (50% chance) is considered a successful hash collision resolution, and is equivalent of saying that neither of those 2 words were present in the text document to begin with. I fail to see how this is better than the case above.
+The second case also is the reason for issue #3637 and #2665, which I tried to address in PR #7502 by adding a eliminate_zeros() call (as suggested in parent issues), but I'm not convinced this is the right thing to do anymore (i.e. why would we remove any mention that some words were in the corpus just because they happen to have the same hash).
+I understand that the current implementation is based on Weinberger et al 2009 paper which is implemented in Vowpal Wabbit. However, is there any other studies that demonstrate that this hashing collision resolution is necessary and consistently gives better results?
+Example
+from sklearn.feature_extraction.text import CountVectorizer, HashingVectorizer
+text = ['This is the first document.']
+CountVectorizer().fit_transform(text).data
+# => `array([1, 1, 1, 1, 1], dtype=int64)`, as expected 
+
+HashingVectorizer(norm=None).fit_transform(text).data
+# => `array([ 1.,  1., -1., -1., -1.])`  #  additional random sign added to the extracted elements.  
+
+HashingVectorizer(norm=None, n_features=10).fit_transform(text).data
+# => array([ 0., -1.,  1., -1.])`  # one collision of +1 and -1 features producing 0 
+Issues
+Negative feature counts in the output of HashingVectorizer do not make sense. It is not logical that roughly speaking hashing the keys of the CountVectorizer would also add a random sign on the counts.
+The documentation states
+If non_negative=True is passed to the constructor, the absolute value is taken. This undoes some of the collision handling [..]
+I don't think the latter part is correct. The collisions occur at the sum_duplicates call before the absolute value is taken, so this has no impact on collision handling IMO.
+Issues #3637 and #2665
+Proposed solution
+It would be more logical to make non_negative=True disable the hash collision resolution mechanism (i.e. make all the counts positive) in the HashingVectorizer which would address the issues 2. and 3 above. Making non_negative=True the default would address 1. (though it is not backward compatible).
+cc @jnothman @larsmans

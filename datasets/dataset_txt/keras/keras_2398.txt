@@ -1,0 +1,55 @@
+javiercorrea commented on 13 May 2017
+When using a model within another model and setting some layers with trainable=False change the way the model is serialized.
+Then, it is not possible to use load_weights.
+Here's an example which results in error:
+from keras.models import Model
+from keras.layers import Dense, Input, Add 
+
+def create_model(frozen=True):
+    x = Input(shape=(100,))
+    y = Dense(20)(x)
+    y = Dense(5, trainable=frozen)(y)
+    y = Dense(10)(y)
+    model1 = Model(x, y)
+
+    X = Input(shape=(100,))
+    Y = model1(X)
+    model2 = Model(X, Y)
+
+    return model2
+
+m1 = create_model(True)
+m1.save_weights('test.h5')
+
+m2 = create_model(False)
+m2.load_weights('test.h5')
+which results in this error:
+Traceback (most recent call last):
+  File "test.py", line 21, in <module>
+    m2.load_weights('test.h5')
+  File "/home/javier/.local/lib/python3.5/site-packages/keras/engine/topology.py", line 2538, in load_weights
+    load_weights_from_hdf5_group(f, self.layers)
+  File "/home/javier/.local/lib/python3.5/site-packages/keras/engine/topology.py", line 2970, in load_weights_from_hdf5_group
+    K.batch_set_value(weight_value_tuples)
+  File "/home/javier/.local/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 2148, in batch_set_value
+    assign_op = x.assign(assign_placeholder)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/ops/variables.py", line 512, in assign
+    return state_ops.assign(self._variable, value, use_locking=use_locking)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/ops/state_ops.py", line 271, in assign
+    validate_shape=validate_shape)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/ops/gen_state_ops.py", line 47, in assign
+    use_locking=use_locking, name=name)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/framework/op_def_library.py", line 768, in apply_op
+    op_def=op_def)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 2338, in create_op
+    set_shapes_for_outputs(ret)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 1719, in set_shapes_for_outputs
+    shapes = shape_func(op)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 1669, in call_with_requiring
+    return call_cpp_shape_fn(op, require_shape_fn=True)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/framework/common_shapes.py", line 610, in call_cpp_shape_fn
+    debug_python_shape_fn, require_shape_fn)
+  File "/home/javier/.local/lib/python3.5/site-packages/tensorflow/python/framework/common_shapes.py", line 676, in _call_cpp_shape_fn_impl
+    raise ValueError(err.message)
+ValueError: Dimension 0 in both shapes must be equal, but are 5 and 20 for 'Assign_2' (op: 'Assign') with input shapes: [5,10], [20,5].
+Even when using load_weights(..., by_name=True) the problem persist.

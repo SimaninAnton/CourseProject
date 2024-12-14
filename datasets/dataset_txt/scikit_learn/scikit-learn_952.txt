@@ -1,0 +1,58 @@
+Member
+rth commented on Nov 5, 2018 •
+edited
+There have been quite a few changes in fetch_openml since the 0.20.0 release. It would be helpful to check that our code to read cached responses from OpenML is backward compatible between 0.20.0 and master.
+For instance when loading MNIST for #12504 and switching between 0.20 and master I got,
+In [1]: from sklearn.datasets import fetch_openml
+In [2]: fetch_openml('mnist_784', version=1, return_X_y=True)                                                                                                
+---------------------------------------------------------------------------
+OSError                                   Traceback (most recent call last)
+<ipython-input-2-0c2a4453f0a2> in <module>
+----> 1 fetch_openml('mnist_784', version=1, return_X_y=True)
+
+~/src/scikit-learn/sklearn/datasets/openml.py in fetch_openml(name, version, data_id, data_home, target_column, cache, return_X_y)
+    490                 "specify a numeric data_id or a name, not "
+    491                 "both.".format(data_id, name))
+--> 492         data_info = _get_data_info_by_name(name, version, data_home)
+    493         data_id = data_info['did']
+    494     elif data_id is not None:
+
+~/src/scikit-learn/sklearn/datasets/openml.py in _get_data_info_by_name(name, version, data_home)
+    285     url = (_SEARCH_NAME + "/data_version/{}").format(name, version)
+    286     json_data = _get_json_content_from_openml_api(url, None, False,
+--> 287                                                   data_home)
+    288     if json_data is None:
+    289         # we can do this in 1 function call if OpenML does not require the
+
+~/src/scikit-learn/sklearn/datasets/openml.py in _get_json_content_from_openml_api(url, error_message, raise_if_error, data_home)
+    143         else:
+    144             return None
+--> 145     json_data = json.loads(response.read().decode("utf-8"))
+    146     response.close()
+    147     return json_data
+
+~/.miniconda3/envs/sklearn-dev/lib/python3.7/gzip.py in read(self, size)
+    274             import errno
+    275             raise OSError(errno.EBADF, "read() on write-only GzipFile object")
+--> 276         return self._buffer.read(size)
+    277 
+    278     def read1(self, size=-1):
+
+~/.miniconda3/envs/sklearn-dev/lib/python3.7/gzip.py in read(self, size)
+    461                 # jump to the next member, if there is one.
+    462                 self._init_read()
+--> 463                 if not self._read_gzip_header():
+    464                     self._size = self._pos
+    465                     return b""
+
+~/.miniconda3/envs/sklearn-dev/lib/python3.7/gzip.py in _read_gzip_header(self)
+    409 
+    410         if magic != b'\037\213':
+--> 411             raise OSError('Not a gzipped file (%r)' % magic)
+    412 
+    413         (method, flag,
+
+OSError: Not a gzipped file (b'{"')
+I'm not sure if this is due to the fact that the load had issues in 0.20.0 but in any case the general behaviour when some cached response cannot be loaded or parsed should be to raise a warning and re-download it anew (instead of failing), I think.
+In the above case, manually removing ~/scikit_learn_data fixed it, but users shouldn't have to do it.
+cc @janvanrijn

@@ -1,0 +1,57 @@
+TimSC commented on Oct 7, 2011
+I have a problem with the 32 bit build of the master branch. I raised this issue in the decision tree pull request, but it has not been fully addressed. I use the following test case:
+import pickle
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+
+np.seterr('raise','raise','raise','ignore','raise') #We are unforgiving! 
+
+features = np.array([[ 152.08097839,  140.40744019,  129.75102234,  
+159.90493774],
+  [ 142.50700378,  135.8193512,   117.82884979,  162.7578125 ],
+  [ 127.28772736,  140.40744019,  129.75102234,  159.90493774],
+  [ 132.37025452,  143.71923828,  138.35694885,  157.84558105],
+  [ 103.10237122,  143.71928406,  138.35696411,  157.84559631],
+  [ 127.71276855,  143.71923828,  138.35694885,  157.84558105],
+  [ 120.91514587,  140.40744019,  129.75102234,  159.90493774]])
+labels = np.array([ 1., 0.70209277,0.53896582,  0.,          0.90914464, 
+0.48026916,  0.49622521])
+
+dt = DecisionTreeRegressor()
+dt.fit(features,labels)
+dt.fit(-features,labels)
+The error message I receive is:
+  File "test.py", line 24, in <module>
+    dt.fit(-features,labels)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 284, in fit
+    sample_mask)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 203, in _build_tree
+    return recursive_partition(X, X_argsorted, y, sample_mask, 0)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 195, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 198, in recursive_partition
+    depth + 1)
+  File "/home/ts00051/data/dev/src/scikits-learn/sklearn/tree/tree.py", line 179, in recursive_partition
+    value = np.asanyarray(np.mean(current_y))
+  File "/usr/lib/pymodules/python2.7/numpy/core/fromnumeric.py", line 2341, in mean
+    return mean(axis, dtype, out)
+FloatingPointError: invalid value encountered in divide
+This is caused by an empty sample_mask, which is in turn caused by a threshold being rounded and making all the samples on one side of the split threshold. This doesn't seem to occur in 64 bit builds.
+Modifying the threshold check from < to <= amounts to moving the threshold but this doesn't solve the underlying problem.
+In my view, the problem is _find_best_split returns the threshold as a float, which can be numerically unstable. It should return the indices of the samples that are used to compute the threshold. We can then ensure at least one sample occurs on each side of the split. I will do a pull request shortly.

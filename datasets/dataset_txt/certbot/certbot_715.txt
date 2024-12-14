@@ -1,0 +1,48 @@
+Kramerican commented on 23 Feb 2018 •
+edited
+My operating system is (include version):
+Ubuntu Xenial 16.04
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+apt (certbot)
+Certbot's behavior differed from what I expected because:
+Re-running Certbot in order to expand certificates while using --installer apache or --installer nginx and using --redirect consistently blows up.
+It seems to me that this should really "just work" and I am baffled why it isn't. Seeing that so many other hosting companies are using LetsEncrypt - and I assumed leveraged Certbot - I'd think this would be a very common workflow which was rock-solid at this point.
+This leads me to think that A) either hosting companies in general are not using Certbot, or B) I am using Certbot wrong.
+To reproduce (Apache):
+Generate certs and use --installer apache on a clean Virtualhost where Servername (test.domain.com) is defined in the vhost config:
+certbot --webroot-path /var/www/html --authenticator webroot --installer apache --expand --non-interactive --agree-tos --email=my@mail.com --domains test.domain.com --redirect
+Now point another domain to the server, update the http vhost config and add it as a ServerAlias, and re-run Certbot with near-identical cmd line:
+certbot --webroot-path /var/www/html --authenticator webroot --installer apache --expand --non-interactive --agree-tos --email=my@mail.com --domains myrealdomain.com,test.domain.com --redirect
+Result
+Certbot will fail with errors relating to being unable to expand/update rewrite rules and state Unable to install the certificate
+This to me is exceedingly bizarre. Certbot made the rewrite rules in the first place, and being unable to modify these is a catastrophe.
+To reproduce (Nginx):
+Follow the exact same workflow as the above, of course defining the domains in the vhost config before runinng Certbot.
+Result
+Certbot will now fail authenticating the domain using webroot as it gets a 404 not found. Why? Because it has in the first run added this to the Nginx config:
+server {
+    if ($host = test.domain.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+        listen 80 default_server;
+        listen [::]:80 default_server;
+    return 404; # managed by Certbot
+}
+I can almost see in the crystal ball that you'll just say here: Stop using webroot auth you numbnut! Well ... I am a host, and I don't know beforehand whether users have proxied their domain through e.g. Cloudflare. In this scenario webroot is the only auth method that works. So if I want to script my way out of that ... Well.. That would entail me having to try and look up the domain and see if it points directly to the server IP or not.
+Yes, that would be a solution, but in my world Certbot made this vhost config, so it should really be able to deal with this? Maybe I'm being unreasonable here.
+Besides, I am almost certain (did not test this, this time around!) that Certbot would still fail due to perceived ambiguity regarding redirects.
+Shouldn't Certbot be able to handle ServerName/ServerAlias (Apache) and server_name (Nginx) ?
+It seems to me that in an ideal world I would never have to touch the server config. Certbot should be able to figure out that I am defining a new set of domains for this server (or expanding on the old set) and set vhost config appropriately and handle rewrites gracefully.
+I have of course tested this workflow where I haven't set ServerName/Alias - and then I of course get a failure as Certbot says that it really wants me to define my domains in my vhost config. So yeahh...
+All this assumes that this is something Certbot is designed to do. It seems to me it is not.
+Is the recommended workflow, in fact, when you want to expand certficiates, and use --installer and --redirect, is to:
+Execute Certbot rollback
+Do your vhost updates (updating domain names)
+Re-run Certbot
+This is the only approach I have gotten to consistently work and not blow up due to Certbot choking on its own rewrite config.
+There is a downside here however: If the user has done any customization in the meantime, the Certbot rollback will nuke all their changes.
+If this is something Certbot should be able to do, then:
+You should really test for this. It's not a complicated workflow.
+Maybe consider having Certbot handle domain name definitions in the vhost config files (yes, I know this is exceedingly complicated)
+At the very least document this properly and provide guidelines. There is no mention of how to properly modify domains/certs using --installer in the docs

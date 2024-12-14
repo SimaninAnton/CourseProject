@@ -1,0 +1,67 @@
+kongjiellx commented on 5 Dec 2016 •
+edited
+I write a new layer, after training, I can't load model from file.
+There is my layer:
+class Attention(Layer):
+    def __init__(self, output_dim, udim, init='glorot_uniform',input_dim=None, **kwargs):
+        self.init = initializations.get(init)
+        self.output_dim = output_dim
+        self.input_dim = input_dim
+        self.udim = udim
+        self.input_spec = [InputSpec(ndim=3)]
+
+        if self.input_dim:
+            kwargs['input_shape'] = (self.input_dim,)
+        super(Attention, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        assert len(input_shape) == 3
+        self.input_spec = [InputSpec(dtype=K.floatx(),
+                                    shape=(None, input_shape[1],input_shape[2]))]
+
+        self.W = self.init((input_shape[2], self.udim),name='{}_W'.format(self.name))
+        self.b = K.zeros((self.udim,),name='{}_b'.format(self.name))
+        self.u = K.zeros((self.udim,),name='{}_u'.format(self.name))
+        self.trainable_weights = [self.W, self.b, self.u]
+        self.built = True
+
+    def call(self, x, mask=None):
+        U = K.tanh(K.dot(x, self.W) + K.transpose(self.b))
+        weight = K.softmax(K.dot(U,self.u))
+        ret = K.batch_dot(weight,x,axes=(1,1))
+        return ret
+
+    def get_output_shape_for(self, input_shape):
+        assert input_shape and len(input_shape) == 3
+        return (input_shape[0], self.output_dim)
+
+    def get_config(self):
+         config = {'output_dim': self.output_dim,
+                   'init': self.init.__name__,
+                   'input_dim': self.input_dim,
+                   'u_dim':self.udim}
+         base_config = super(Attention, self).get_config()
+         return dict(list(base_config.items()) + list(config.items()))
+And I load the model with model = load_model(model_dir+'model.h5',custom_objects={"Attention": Attention})
+I get these error:
+Traceback (most recent call last):
+  File "/home/ykliu/PycharmProjects/attention/analysis.py", line 148, in <module>
+    test()
+  File "/home/ykliu/PycharmProjects/attention/analysis.py", line 23, in test
+    model = load_model(model_dir+'model.h5',custom_objects={"Attention": Attention})
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 140, in load_model
+    model = model_from_config(model_config, custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 189, in model_from_config
+    return layer_from_config(config, custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/dist-packages/keras/utils/layer_utils.py", line 34, in layer_from_config
+    return layer_class.from_config(config['config'])
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2395, in from_config
+    process_layer(layer_data)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2373, in process_layer
+    custom_objects=custom_objects)
+  File "/usr/local/lib/python2.7/dist-packages/keras/utils/layer_utils.py", line 34, in layer_from_config
+    return layer_class.from_config(config['config'])
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 899, in from_config
+    return cls(**config)
+TypeError: __init__() takes at least 3 arguments (3 given)
+I think maybe I make some mistakes in get_config(self):, but I can't find it.

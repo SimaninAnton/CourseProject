@@ -1,0 +1,48 @@
+cambridgemike commented on 29 Aug 2014
+I'm trying to understand if this is a bug or just a feature that's not supported.
+My setup is two serializers:
+class PageSerializer(ModelSerializer)
+    ...
+
+class BookSerializer(ModelSerializer)
+    ...
+    pages = PageSerializer(many=True)
+And my API has
+class BookAPIView(generics.RetrieveUpdateAPIView):
+    model = Book
+    serializer_class = BookSerializer
+Now, when I attempt to do a PUT {id: 12, name: 'great book', pages: [{id: 1, text:'abc'},...]}
+I get the error mentioned in the title. The full stack trace is below.
+Looking through the source (v 2.3.14), it seems that in fact we just try to save the array of pages
+def save_object(self, obj, **kwargs):
+    if getattr(obj, '_nested_forward_relations', None):
+        for field_name, sub_object in obj._nested_forward_relations.items():
+            if sub_object:
+                self.save_object(sub_object)
+            setattr(obj, field_name, sub_object)
+
+    obj.save(**kwargs)
+In our case, the list of pages is the sub_obj, with field_name being pages. save_object gets called with pages as the argument, it has no forward relationships, so [<page 1, text:abc>].save() is called!
+Ok, so either this is a bug, and I understand that nested serializers are being overhauled in 3.0, or it's simply not supported. In either case, would the best fix be for me to:
+Not pass the nested pages when I do a PUT (since I'm not actually trying to update those anyways..)
+Create a pre_save function which just sets _nested_forward_relation=None?
+Full stack trace:
+File "/Users/manderson/Envs/lib/python2.7/site-packages/django/views/generic/base.py", line 69, in view
+return self.dispatch(request, _args, *_kwargs)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/django/views/decorators/csrf.py", line 57, in wrapped_view
+return view_func(_args, *_kwargs)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/views.py", line 400, in dispatch
+response = self.handle_exception(exc)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/views.py", line 397, in dispatch
+response = handler(request, _args, *_kwargs)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/generics.py", line 483, in put
+return self.update(request, _args, *_kwargs)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/mixins.py", line 137, in update
+self.object = serializer.save(force_update=True)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/serializers.py", line 598, in save
+self.save_object(self.object, **kwargs)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/serializers.py", line 1009, in save_object
+self.save_object(sub_object)
+File "/Users/manderson/Envs/lib/python2.7/site-packages/rest_framework/serializers.py", line 1012, in save_object
+obj.save(**kwargs)
+AttributeError: 'RelationsList' object has no attribute 'save'

@@ -1,0 +1,70 @@
+hadikazemi commented on 6 Oct 2016 •
+edited
+I created a model with two branches (each a VGG16), but it generate the following error when I try to save it:
+h5py/_objects.pyx in h5py._objects.with_phil.wrapper (/tmp/pip-4rPeHA-build/h5py/_objects.c:2684)()
+h5py/_objects.pyx in h5py._objects.with_phil.wrapper (/tmp/pip-4rPeHA-build/h5py/_objects.c:2642)()
+h5py/h5g.pyx in h5py.h5g.create (/tmp/pip-4rPeHA-build/h5py/h5g.c:2756)()
+ValueError: Unable to create group (Name already exists)
+Here is my model:
+from keras.applications.vgg16 import VGG16
+
+input_1 = Input(shape=(3, 224, 224))
+base_model_1 = VGG16(input_tensor=input_1, weights='imagenet', include_top=False)
+x = base_model_1.output
+x = Flatten()(x)
+x = Dense(4096, activation='relu')(x)
+branch_1 = Dense(4096, activation='relu')(x)
+model_1 = Model(input=base_model_1.input, output=branch_1)
+
+input_2 = Input(shape=(3, 224, 224))
+base_model_2 = VGG16(input_tensor=input_2, weights='imagenet', include_top=False)
+x = base_model_2.output
+x = Flatten()(x)
+x = Dense(4096, activation='relu')(x)
+branch_2 = Dense(4096, activation='relu')(x)
+model_2 = Model(input=base_model_2.input, output=branch_2)
+
+model = Sequential()
+merged = Merge([model_1, model_2], mode='concat')
+model.add(merged)
+model.add(Dense(129, activation='softmax'))
+
+# compile the model
+sgd = SGD(lr=1e-4, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics = ['accuracy'])
+
+model.save('both.hdf5')
+As I am using keras.applications.vgg16, I cannot change the name of layers if that's the problem (having two VGG16 with same layer name).
+How can I fix the issue?
+Thank you,
+Update:
+I tried to solve the problem by adding the following code:
+...
+model_1 = Model(input=base_model_1.input, output=branch_1)
+for i in range(len(model_1.layers)):
+    model_1.layers[i].name = model_1.layers[i].name + '1'
+
+
+input_2 = Input(shape=(3, 224, 224))
+...
+and now it generates a new error:
+...
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in save_model(model, filepath, overwrite)
+50 f.attrs['model_config'] = json.dumps({
+51 'class_name': model.class.name,
+---> 52 'config': model.get_config()
+53 }, default=get_json_type).encode('utf8')
+54
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in get_config(self)
+955 for layer in self.layers[0].layers:
+956 layer_config = {'class_name': layer.class.name,
+--> 957 'config': layer.get_config()}
+958 layers.append(layer_config)
+959 merge_config = self.layers[0].get_config()
+/usr/local/lib/python2.7/dist-packages/keras/engine/topology.pyc in get_config(self)
+2317 node_index = self.input_layers_node_indices[i]
+2318 node_key = layer.name + '_ib-' + str(node_index)
+-> 2319 new_node_index = node_conversion_map[node_key]
+2320 tensor_index = self.input_layers_tensor_indices[i]
+2321 model_inputs.append([layer.name, new_node_index, tensor_index])
+KeyError: 'input_11_ib-0'

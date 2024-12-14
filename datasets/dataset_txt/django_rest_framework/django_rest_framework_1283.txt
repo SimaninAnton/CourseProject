@@ -1,0 +1,23 @@
+elnygren commented on 18 Feb 2016
+Note: this is a bit more on the architecture / design decision / question side rather than a small, current issue.
+To me a serializer seems like an entity that serializes data into another format. In the context of DRF it serializes incoming (parsed) data into model objects and vice versa. A serializer can fail with errors if the serialization is not possible/invalid - like DRF serializers indeed do with validators.
+However, what I don't get is why are DRF serializers concerned with create and update (they have methods for them by default). Shouldn't this be a job for the Controller, or Views as we call them in Django?
+Let's borrow the default create mixin from mixins.py to illustrate with a couple changes to the flow:
+def create(self, request, *args, **kwargs):
+    serializer = self.get_serializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # get data/objects/instances out of the serializer, its job is done
+    data = serializer.data
+
+    # handle creation
+    instance.save()
+
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+The serializer above does not need a .save() or .create() method. The controller code communicates clearly what it is doing: using a serializer to serialize incoming data and then persisting it. Also, the serializer isn't breaking the single responsibility principle as much as the current DRF serializer.
+Note that the above example could also even be:
+data = serializer.data
+MyModel.objects.create(**data)
+where the serializer is even less connected to the ORM and it's models (ofc, ModelSerializers are indeed very nice to have).
+So, instead of having a View/Controller that uses a Serializer to serialize before persisting/creating data, why do we have a View/Controller using a Serializer to serialize and to create ? Why is the serializer concerned with persisting data ?
+I realize this is not a change that even could happen with ease, but I'd like to hear some opinions and maybe learn more. And hear thoughts why this might happen in the future or why not.

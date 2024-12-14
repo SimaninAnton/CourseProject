@@ -1,0 +1,65 @@
+kuchenrolle commented on 25 Jan 2017 •
+edited
+I have a single-layer dense NN with a linear activation function that I train one data point at a time, with discrete inputs and outputs (so vectors of zeros and one, not a regression case or anything). I'm trying to come up with a loss function that results in weight updates that change the weights to a node in the output layer only with respect to the error in that node, but not wrt the error in the other nodes. In other words I want the weights to be the same as if I trained a separate binary network for each outcome. So the change in weight from input_x to output_y should be:
+In case the image doesn't work, this is the latex formula:
+w_{ij_{t+1}} = w_{ij_t} + a_i * lr *(Y_{j} - \sum_{i}^N a_i * w_{ij_{t}})
+I tried the summed squared error, but that doesn't show the desired behaviour. Here's the simplified code I'm using with the weights that I get, as well as the weights that I should be getting:
+import numpy as np
+import pandas as pd
+from keras.models import Sequential
+from keras.optimizers import SGD
+from keras.layers import Dense
+from keras import backend as K
+
+
+def summed_squared_error(y_true, y_pred):
+    return K.sum(K.square(y_pred - y_true))/2
+
+def run(cues, outcomes):
+    num_cues = cues.shape[1]
+    num_outcomes = outcomes.shape[1]
+    network = Sequential()
+    network.add(Dense(num_outcomes, input_dim = num_cues, init = "zero", activation = "linear", bias = False))
+    network.compile(loss = summed_squared_error, optimizer = SGD(lr = 0.01))
+    network.fit(cues, outcomes, nb_epoch = 1, batch_size = 1, shuffle = False)
+    return network
+
+# Cues    Outcomes    Frequency
+# tone    shock   1
+# yellow  food    1
+# tone_blue   shock   1
+first_cues = np.array([[0,1,0],[0,0,1],[1,1,0]])
+first_outcomes = np.array([[0,1],[1,0],[0,1]])
+
+# Cues    Outcomes    Frequency
+# tone    shock   1
+# yellow  food    1
+# tone_blue   drink   1
+second_cues = np.array([[0,1,0],[0,0,1],[1,1,0]])
+second_outcomes = np.array([[0,0,1],[0,1,0],[1,0,1]])
+
+
+first = run(first_cues, first_outcomes)
+
+# target
+# .       0.0099
+# .       0.0199
+# 0.0100  .
+
+# first.get_weights()
+# [[ 0.    ,  0.0099],
+# [ 0.    ,  0.0199],
+# [ 0.01  ,  0.    ]]
+
+second = run(second_cues, second_outcomes)
+
+# target
+# 0.0100      0.       -0.0001
+# 0.0100      0.       0.0099
+# 0.          0.0100   0.
+
+# second.get_weights()
+# [[ 0.01  ,  0.    ,  0.0099],
+# [ 0.01  ,  0.    ,  0.0199],
+# [ 0.    ,  0.01  ,  0.    ]],
+Please someone help. :|

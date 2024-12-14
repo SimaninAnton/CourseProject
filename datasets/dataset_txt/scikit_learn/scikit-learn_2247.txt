@@ -1,0 +1,20 @@
+Contributor
+clemkoa commented on Apr 20, 2017 •
+edited
+decomposition.NMF.fit_transform can sometimes generate a 'Math domain error'. Turns out it is because of line 95 in sklearn/decomposition/nmf.py:
+norm_X = np.dot(X.data, X.data)
+As said in this issue, numpy/numpy#4126, numpy.dot doesn't prevent integer overflow, and np.dot(X.data, X.data) can sometimes be negative due to overflow, even if X.data is a positive array.
+It would be better to replace the line by:
+norm_X = pow(np.linalg.norm(X.data), 2)
+I am ready to make a pull request to fix this issue.
+Code to test the np.dot overflow:
+>>> import numpy as np
+>>> x = np.array([2**62, 2**62 + 1])
+>>> x
+array([4611686018427387904, 4611686018427387905])
+>>> np.dot(x,x)
+-9223372036854775807
+>>> pow(np.linalg.norm(x),2)
+4.2535295865117317e+37
+The squared_norm function in https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/utils/extmath.py also uses np.dot.
+PS: this issue was referenced in #7190 but I thought it would be better to open a new issue to notify the admins. Sorry in advance if I should have answered on the "old" issue

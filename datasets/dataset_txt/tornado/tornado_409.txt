@@ -1,0 +1,30 @@
+Contributor
+pitrou commented on 30 Nov 2016
+I'm getting this weird situation while trying to debug some sporadic hang in one of our tests. An IOStream is busy reading but its fd is not registered with the IOLoop. Consequently, incoming data is not handled.
+This might be an issue on our side (though it looks unlikely at this point), but I'm posting the debugger session below in case this is a known oddity:
+(Pdb) pp s1
+<tornado.iostream.IOStream object at 0x7f0780708630>
+(Pdb) pp s1.closed()
+False
+(Pdb) p s1._read_bytes
+8
+(Pdb) p s1._read_future
+<tornado.concurrent.Future object at 0x7f0780662828>
+(Pdb) pp s1._state
+25
+(Pdb) pp s1._state == s1.io_loop.ERROR | s1.io_loop.READ
+True
+(Pdb) pp s1.fileno()
+<socket.socket fd=35, family=AddressFamily.AF_INET, type=SocketKind.SOCK_STREAM, proto=6, laddr=('127.0.0.1', 35300), raddr=('127.0.0.1', 60520)>
+(Pdb) pp s1.io_loop._running
+True
+(Pdb) pp s1.io_loop._closing
+False
+(Pdb) pp s1.io_loop._handlers[35]
+*** KeyError: 35
+(Pdb) pp s1.io_loop
+<tornado.platform.epoll.EPollIOLoop object at 0x7f078103f0f0>
+(Pdb) p list(s1.io_loop._handlers)
+[12, 14, 15, 22, 23, 24, 28, 29, 30, 36, 40, 41, 42, 43, 44, 45, 48, 50, 52, 54, 55, 58, 64, 65, 69, 70, 74, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
+(Pdb) p s1.io_loop._impl.modify(35, s1._state)
+*** FileNotFoundError: [Errno 2] No such file or directory

@@ -1,0 +1,83 @@
+Cabu commented on 16 Feb 2015
+When trying to change the flask.json_decoder to my own decoder, the unserialisation of cookies doesn't work anymore.
+# -- coding: utf-8
+
+from flask import Flask, flash, url_for, redirect, render_template_string
+from flask.json import JSONEncoder, JSONDecoder
+
+
+template = """
+<!DOCTYPE html>
+<html><head><title>Test JSON encoder/decoder</title></head><body>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for message in messages %}
+<p>Flash: {{ message }}</p>
+{% endfor %}{% endif %}{% endwith %}
+<p>Flash should be: ['Flash message', 'success']</p>
+<p><a href="{{ url_for('index') }}">Try again</a></p>
+</body></html>
+"""
+
+
+class CustomJSONEncoder(JSONEncoder):
+    """ Do nothing custom json encoder """
+    def default(self, obj):
+        return super(CustomJSONEncoder, self).defaults(obj)
+
+
+class CustomJSONDecoder(JSONDecoder):
+    """ Do nothing custom json decoder """
+    def __init__(self, *args, **kargs):
+        super(CustomJSONDecoder, self).__init__(object_hook=self.decode)
+
+    def decode(self, d):
+        return d
+
+
+app = Flask(__name__, static_url_path='')
+app.config['SECRET_KEY'] = 'secret-key'
+app.json_encoder = CustomJSONEncoder
+app.json_decoder = CustomJSONDecoder        # WorkingCustomJSONDecoder
+
+
+@app.route('/')
+def index():
+    flash('Flash message', 'success')
+    return redirect(url_for('display'))
+
+
+@app.route('/b')
+def display():
+    return render_template_string(template)
+
+
+if __name__ == '__main__':
+    app.run()
+For the cookies to work again I should copy part of TaggedJSONSerializer in my decoder...
+import uuid
+from base64 import b64decode
+from werkzeug.http import parse_date
+from markupsafe import Markup
+from flask._compat import iteritems
+
+
+class CustomJSONDecoder(JSONDecoder):
+    """ Do nothing custom json decoder """
+    def __init__(self, *args, **kargs):
+        super(CustomJSONDecoder, self).__init__(object_hook=self.decode)
+
+    def decode(self, d):
+        # Copy of the code from Flask.sessions.TaggedJSONSerializer(object).loads(self, value).object_hook(obj)
+        if len(d) == 1:
+            the_key, the_value = next(iteritems(d))
+            if the_key == ' t':
+                return tuple(the_value)
+            elif the_key == ' u':
+                return uuid.UUID(the_value)
+            elif the_key == ' b':
+                return b64decode(the_value)
+            elif the_key == ' m':
+                return Markup(the_value)
+            elif the_key == ' d':
+                return parse_date(the_value)
+        return d
+Could it be a but or most probably an error from my part?

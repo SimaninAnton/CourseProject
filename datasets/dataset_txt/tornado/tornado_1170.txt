@@ -1,0 +1,65 @@
+peterbe commented on 16 May 2011
+[E 110516 08:25:10 iostream:237] Uncaught exception, closing connection.
+    Traceback (most recent call last):
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/iostream.py", line 234, in wrapper
+        callback(*args)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/stack_context.py", line 156, in wrapped
+        callback(*args, **kwargs)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/httpserver.py", line 385, in _on_headers
+        self.request_callback(self._request)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/web.py", line 1226, in __call__
+        handler._execute(transforms, *args, **kwargs)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornadio/router.py", line 77, in _execute
+        handler._execute(transforms, *extra, **kwargs)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornadio/persistent.py", line 52, in _execute
+        **kwargs)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/websocket.py", line 101, in _execute
+        uri=self.request.uri)))
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/iostream.py", line 166, in write
+        assert isinstance(data, bytes_type)
+    AssertionError
+Easily solved this with this:
+diff --git a/tornado/iostream.py b/tornado/iostream.py
+index 38c1a2b..ffd5fa1 100644
+--- a/tornado/iostream.py
++++ b/tornado/iostream.py
+@@ -163,7 +163,7 @@ class IOStream(object):
+         previously buffered write data and an old write callback, that
+         callback is simply overwritten with this new callback.
+         """
+-        assert isinstance(data, bytes_type)
++        assert isinstance(data, (unicode, bytes_type)), type(data)
+         self._check_closed()
+         self._write_buffer.append(data)
+         self._add_io_state(self.io_loop.WRITE)
+Next is a problem with websocket.py parsing:
+[E 110516 08:28:55 iostream:237] Uncaught exception, closing connection.
+    Traceback (most recent call last):
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/iostream.py", line 234, in wrapper
+        callback(*args)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/stack_context.py", line 156, in wrapped
+        callback(*args, **kwargs)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/websocket.py", line 106, in _handle_challenge
+        challenge_response = self.ws_request.challenge_response(challenge)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/websocket.py", line 238, in challenge_response
+        part_1 = self._calculate_part(key_1)
+      File "/Users/peterbe/virtualenvs/tornado_gkc/lib/python2.6/site-packages/tornado/websocket.py", line 262, in _calculate_part
+        number, spaces = filter(str.isdigit, key), filter(str.isspace, key)
+    TypeError: descriptor 'isdigit' requires a 'str' object but received a 'unicode'
+I solved it like this:
+diff --git a/tornado/websocket.py b/tornado/websocket.py
+index 696a178..cefcbf5 100644
+--- a/tornado/websocket.py
++++ b/tornado/websocket.py
+@@ -259,7 +259,9 @@ class WebSocketRequest(object):
+         """Processes the key headers and calculates their key value.
+
+         Raises ValueError when feed invalid key."""
+-        number, spaces = filter(str.isdigit, key), filter(str.isspace, key)
++        type_ = isinstance(key, str) and str or unicode
++        number, spaces = filter(type_.isdigit, key), filter(type_.isspace, key)
++
+         try:
+             key_number = int(number) / len(spaces)
+         except (ValueError, ZeroDivisionError):
+I couldn't see any unit tests for websockets but perhaps that's a hint that I should contribute some.

@@ -1,0 +1,162 @@
+ghost commented on 8 Mar 2017
+After loading a Keras model, you might expect to be able to pass this model around to multiple threads to do inference. When trying this with the Python flask web server I ran into trouble.
+If I load the model on each thread all runs smoothly. Except loading the model takes 1sec or 2/3rds of my runtime. I'd like to move the model loading out of the hot-path into the startup code then share this model among threads. I've attached a gist (a little incomplete) which illuminates the problem.
+https://gist.github.com/sshack/f086aa4bd6932346895e280b8060ea6a
+Below is an example of the output I get. It seems Keras is calling the tensor flow backend to create a session in a non-threadsafe way?
+Using TensorFlow backend.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.1 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+Starting emotion detection service.
+Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
+Restarting with stat
+Using TensorFlow backend.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.1 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+Starting emotion detection service.
+Debugger is active!
+Debugger pin code: 195-322-222
+init.
+Model config: [{'class_name': 'Merge', 'config': {'layers': [{'class_name': 'Sequential', 'config': [{'class_name': 'LSTM', 'config': {'inner_activation': 'sigmoid', 'trainable': True, 'inner_init': 'uniform', 'output_dim': 10, 'unroll': False, 'consume_less': u'cpu', 'init': 'uniform', 'dropout_U': 0.0, 'input_dtype': u'float32', 'b_regularizer': None, 'input_length': None, 'dropout_W': 0.0, 'activation': 'tanh', 'stateful': False, 'batch_input_shape': (None, None, 29), 'U_regularizer': None, 'name': u'lstm_1', 'go_backwards': False, 'input_dim': 29, 'return_sequences': True, 'W_regularizer': None, 'forget_bias_init': 'one'}}]}, {'class_name': 'Sequential', 'config': [{'class_name': 'LSTM', 'config': {'inner_activation': 'sigmoid', 'trainable': True, 'inner_init': 'uniform', 'output_dim': 10, 'unroll': False, 'consume_less': u'cpu', 'init': 'uniform', 'dropout_U': 0.0, 'input_dtype': u'float32', 'b_regularizer': None, 'input_length': None, 'dropout_W': 0.0, 'activation': 'tanh', 'stateful': False, 'batch_input_shape': (None, None, 29), 'U_regularizer': None, 'name': u'lstm_2', 'go_backwards': True, 'input_dim': 29, 'return_sequences': True, 'W_regularizer': None, 'forget_bias_init': 'one'}}]}], 'name': u'merge_1', 'concat_axis': -1, 'arguments': {}, 'mode_type': 'raw', 'dot_axes': -1, 'output_mask_type': 'raw', 'output_shape_type': 'raw', 'output_mask': None, 'output_shape': None, 'mode': u'sum'}}, {'class_name': 'Dropout', 'config': {'p': 0.2, 'trainable': True, 'name': u'dropout_1'}}, {'class_name': 'Dense', 'config': {'W_constraint': None, 'b_constraint': None, 'name': u'dense_1', 'output_dim': 9, 'activity_regularizer': None, 'trainable': True, 'init': 'glorot_uniform', 'bias': True, 'input_dtype': u'float32', 'input_dim': 10, 'b_regularizer': None, 'W_regularizer': None, 'activation': 'linear', 'batch_input_shape': (None, 10)}}, {'class_name': 'Activation', 'config': {'activation': 'softmax', 'trainable': True, 'name': u'activation_1'}}]
+Load model data time: 0.6279296875
+Inference input data shape (1, 397, 29)
+127.0.0.1 - - [07/Mar/2017 16:17:09] "PUT / HTTP/1.1" 500 -
+Traceback (most recent call last):
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1994, in call
+return self.wsgi_app(environ, start_response)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1985, in wsgi_app
+response = self.handle_exception(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 271, in error_router
+return original_handler(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1540, in handle_exception
+reraise(exc_type, exc_value, tb)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 268, in error_router
+return self.handle_error(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1982, in wsgi_app
+response = self.full_dispatch_request()
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1614, in full_dispatch_request
+rv = self.handle_user_exception(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 271, in error_router
+return original_handler(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1517, in handle_user_exception
+reraise(exc_type, exc_value, tb)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 268, in error_router
+return self.handle_error(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1612, in full_dispatch_request
+rv = self.dispatch_request()
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1598, in dispatch_request
+return self.view_functionsrule.endpoint
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 477, in wrapper
+resp = resource(*args, **kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/views.py", line 84, in view
+return self.dispatch_request(*args, **kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 587, in dispatch_request
+resp = meth(*args, **kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/serving/service.py", line 49, in put
+(valance, arousal) = emotionInference.doEmotionInference(features, gmodel)
+File "/Users/sshack/IdeaProjects/emotiondetection/serving/emotionInference.py", line 84, in doEmotionInference
+preds = predmodel.predict([dataset, dataset], verbose=0)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/models.py", line 724, in predict
+return self.model.predict(x, batch_size=batch_size, verbose=verbose)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/engine/training.py", line 1269, in predict
+self._make_predict_function()
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/engine/training.py", line 798, in _make_predict_function
+**kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 1961, in function
+return Function(inputs, outputs, updates=updates)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 1919, in init
+with tf.control_dependencies(self.outputs):
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3651, in control_dependencies
+return get_default_graph().control_dependencies(control_inputs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3382, in control_dependencies
+c = self.as_graph_element(c)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2473, in as_graph_element
+return self._as_graph_element_locked(obj, allow_tensor, allow_operation)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2552, in _as_graph_element_locked
+raise ValueError("Tensor %s is not an element of this graph." % obj)
+ValueError: Tensor Tensor("div:0", shape=(?, ?, 9), dtype=float32) is not an element of this graph.
+^C⏎ (venv) % </IdeaProjects/emotiondetection/serving@Anubis
+(venv) % python service.py </IdeaProjects/emotiondetection/serving@Anubis
+Using TensorFlow backend.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.1 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+Starting emotion detection service.
+Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
+Restarting with stat
+Using TensorFlow backend.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.1 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+Starting emotion detection service.
+Debugger is active!
+Debugger pin code: 195-322-222
+init.
+Model config: [{'class_name': 'Merge', 'config': {'layers': [{'class_name': 'Sequential', 'config': [{'class_name': 'LSTM', 'config': {'inner_activation': 'sigmoid', 'trainable': True, 'inner_init': 'uniform', 'output_dim': 10, 'unroll': False, 'consume_less': u'cpu', 'init': 'uniform', 'dropout_U': 0.0, 'input_dtype': u'float32', 'b_regularizer': None, 'input_length': None, 'dropout_W': 0.0, 'activation': 'tanh', 'stateful': False, 'batch_input_shape': (None, None, 29), 'U_regularizer': None, 'name': u'lstm_1', 'go_backwards': False, 'input_dim': 29, 'return_sequences': True, 'W_regularizer': None, 'forget_bias_init': 'one'}}]}, {'class_name': 'Sequential', 'config': [{'class_name': 'LSTM', 'config': {'inner_activation': 'sigmoid', 'trainable': True, 'inner_init': 'uniform', 'output_dim': 10, 'unroll': False, 'consume_less': u'cpu', 'init': 'uniform', 'dropout_U': 0.0, 'input_dtype': u'float32', 'b_regularizer': None, 'input_length': None, 'dropout_W': 0.0, 'activation': 'tanh', 'stateful': False, 'batch_input_shape': (None, None, 29), 'U_regularizer': None, 'name': u'lstm_2', 'go_backwards': True, 'input_dim': 29, 'return_sequences': True, 'W_regularizer': None, 'forget_bias_init': 'one'}}]}], 'name': u'merge_1', 'concat_axis': -1, 'arguments': {}, 'mode_type': 'raw', 'dot_axes': -1, 'output_mask_type': 'raw', 'output_shape_type': 'raw', 'output_mask': None, 'output_shape': None, 'mode': u'sum'}}, {'class_name': 'Dropout', 'config': {'p': 0.2, 'trainable': True, 'name': u'dropout_1'}}, {'class_name': 'Dense', 'config': {'W_constraint': None, 'b_constraint': None, 'name': u'dense_1', 'output_dim': 9, 'activity_regularizer': None, 'trainable': True, 'init': 'glorot_uniform', 'bias': True, 'input_dtype': u'float32', 'input_dim': 10, 'b_regularizer': None, 'W_regularizer': None, 'activation': 'linear', 'batch_input_shape': (None, 10)}}, {'class_name': 'Activation', 'config': {'activation': 'softmax', 'trainable': True, 'name': u'activation_1'}}]
+Load model data time: 0.632080078125
+Inference input data shape (1, 397, 29)
+127.0.0.1 - - [07/Mar/2017 16:25:59] "PUT / HTTP/1.1" 500 -
+Traceback (most recent call last):
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1994, in call
+return self.wsgi_app(environ, start_response)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1985, in wsgi_app
+response = self.handle_exception(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 271, in error_router
+return original_handler(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1540, in handle_exception
+reraise(exc_type, exc_value, tb)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 268, in error_router
+return self.handle_error(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1982, in wsgi_app
+response = self.full_dispatch_request()
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1614, in full_dispatch_request
+rv = self.handle_user_exception(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 271, in error_router
+return original_handler(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1517, in handle_user_exception
+reraise(exc_type, exc_value, tb)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 268, in error_router
+return self.handle_error(e)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1612, in full_dispatch_request
+rv = self.dispatch_request()
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/app.py", line 1598, in dispatch_request
+return self.view_functionsrule.endpoint
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 477, in wrapper
+resp = resource(*args, **kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask/views.py", line 84, in view
+return self.dispatch_request(*args, **kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/flask_restful/init.py", line 587, in dispatch_request
+resp = meth(*args, **kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/serving/service.py", line 49, in put
+(valance, arousal) = emotionInference.doEmotionInference(features, gmodel)
+File "/Users/sshack/IdeaProjects/emotiondetection/serving/emotionInference.py", line 84, in doEmotionInference
+preds = predmodel.predict([dataset, dataset], verbose=0)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/models.py", line 724, in predict
+return self.model.predict(x, batch_size=batch_size, verbose=verbose)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/engine/training.py", line 1269, in predict
+self._make_predict_function()
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/engine/training.py", line 798, in _make_predict_function
+**kwargs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 1961, in function
+return Function(inputs, outputs, updates=updates)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 1919, in init
+with tf.control_dependencies(self.outputs):
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3651, in control_dependencies
+return get_default_graph().control_dependencies(control_inputs)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 3382, in control_dependencies
+c = self.as_graph_element(c)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2473, in as_graph_element
+return self._as_graph_element_locked(obj, allow_tensor, allow_operation)
+File "/Users/sshack/IdeaProjects/emotiondetection/venv/lib/python2.7/site-packages/tensorflow/python/framework/ops.py", line 2552, in _as_graph_element_locked
+raise ValueError("Tensor %s is not an element of this graph." % obj)
+ValueError: Tensor Tensor("div:0", shape=(?, ?, 9), dtype=float32) is not an element of this graph.
+1

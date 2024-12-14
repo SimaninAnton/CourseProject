@@ -1,0 +1,60 @@
+emicol commented on 16 Mar 2017 •
+edited
+I'm up-to-date with the master branch of Keras, and have the same kind of problem than here : https://github.com/fchollet/keras/issues/new
+When I save my model, equiped with a bidirectional layer, that appears :
+autoencoder.autoencoder.save("data/autoencoder.h5")
+File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 2425, in save
+save_model(self, filepath, overwrite)
+File "/usr/local/lib/python3.5/dist-packages/keras/models.py", line 109, in save_model
+topology.save_weights_to_hdf5_group(model_weights_group, model_layers)
+File "/usr/local/lib/python3.5/dist-packages/keras/engine/topology.py", line 2717, in save_weights_to_hdf5_group
+dtype=val.dtype)
+File "/usr/local/lib/python3.5/dist-packages/h5py/_hl/group.py", line 108, in create_dataset
+self[name] = dset
+File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/tmp/pip-at6d2npe-build/h5py/_objects.c:2684)
+File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/tmp/pip-at6d2npe-build/h5py/_objects.c:2642)
+File "/usr/local/lib/python3.5/dist-packages/h5py/_hl/group.py", line 277, in setitem
+h5o.link(obj.id, self.id, name, lcpl=lcpl, lapl=self._lapl)
+File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/tmp/pip-at6d2npe-build/h5py/_objects.c:2684)
+File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/tmp/pip-at6d2npe-build/h5py/_objects.c:2642)
+File "h5py/h5o.pyx", line 202, in h5py.h5o.link (/tmp/pip-at6d2npe-build/h5py/h5o.c:3731)
+RuntimeError: Unable to create link (Name already exists)
+It was functional before the update.
+A code like that won't produce a stored model:
+    from keras.layers import Input, Dense, LSTM, Embedding, Bidirectional
+    from keras.models import Model
+
+    batch_size = 256
+    max_features_1 = 256 
+    max_sequence_1 = 58 
+    max_sequence_2 = 40 
+
+    max_len = 58
+    # this is the size of our encoded representations    
+    encoding_dim = 40  #
+
+    input_word = Input(shape=(max_sequence_1,))
+    embed = Embedding(max_features_1, output_dim=48, input_length=max_sequence_1)(input_word)
+    be1 = Bidirectional(LSTM(20, return_sequences=True))(embed)  
+    be2 = Bidirectional(LSTM(20))(be1)  # 20 le nb de neurones -
+    encoded = Dense(encoding_dim, activation='relu')(be2)
+
+
+    # "decoded" is the "lossy" reconstruction of the input
+    decoded = Dense(len(get_dictionnaire("", False)), activation='sigmoid')(encoded)
+
+    # this model maps an input to its reconstruction
+    autoencoder = Model(inputs=input_word, outputs=decoded)
+
+    # this model maps an input to its encoded representation
+    encoder = Model(inputs=input_word, outputs=encoded)
+
+    # create a placeholder for an encoded (40-dimensional) input
+    encoded_input = Input(shape=(encoding_dim,))
+    # retrieve the last layer of the autoencoder model
+    decoder_layer = autoencoder.layers[-1]
+    # create the decoder model
+    decoder = Model(inputs=encoded_input, outputs=decoder_layer(encoded_input))
+
+    autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+    autoencoder.save("test.h5")

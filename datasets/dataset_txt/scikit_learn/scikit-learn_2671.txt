@@ -1,0 +1,17 @@
+Member
+ogrisel commented on Oct 12, 2016 •
+edited
+This is an informational roadmap issue.
+At the moment it is not safe to use OpenMP for low overhead thread based parallelism in our Cython code base because of a bad interaction between multiprocessing.Pool (worker processes are necessarily created by fork without exec under Python 2) and the openmp runtime library libgomp used in GCC. This can cause the program to silently freeze.
+A workaround for Python 3.4 and later is documented here: https://pythonhosted.org/joblib/parallel.html#bad-interaction-of-multiprocessing-and-third-party-libraries but it has some side effects and does not work for Python 2.7.
+To mitigate this issue we (@tomMoral and I) are currently experimenting with a promising new process pool management system: https://github.com/tomMoral/loky
+It uses low level multiprocessing primitives (queues based on pipes locked via semaphores for interprocess communication) and some code from the concurrent futures module. The API is compatible with Python 3's ProcessPoolExecutor class but:
+we also support Python 2.7 (by maintaining a backport of missing Python code and using ctypes to manage semaphores by calling into libpthread) without any compiled extension,
+the process are spawned (fork with exec) therefore we don't break the OpenMP runtime,
+contrary to multiprocessing.Pool and the default Python 3 ProcessPoolExecutor class we can robustly detect whenever a worker process or an internal management thread has terminated (e.g. segfault, user issued kill -9, Operating System Out of Memory killer, faulty pickling in the payload) and issue a specific exception and destroying the remaining workers deterministically instead of freezing silently,
+an existing pool instance can be resized (to add or remove worker processes) incrementally.
+Note that the robustification of ProcessPoolExecutor is planned to be contributed upstream (e.g. for Python 3.7).
+Once this work is complete (code cleanup, simplification, refactoring, documentation + more tests), we plan to make it the default backend for joblib (after benchmarking it) and then synchronize the embedded joblib in sklearn to benefit from this.
+At this point we will be able to use Cython prange and other OpenMP backed constructs safely in scikit-learn, for instance as suggested in #6641.
+👍 9
+🎉 3

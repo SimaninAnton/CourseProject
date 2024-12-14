@@ -1,0 +1,43 @@
+mehaase commented on Oct 1, 2017 •
+edited
+Description
+Importing sklearn changes the current warning filters, making it very difficult to debug warnings using standard Python syntax, e.g -W command flag.
+Steps/Code to Reproduce
+The module sklearn.cross_validation is deprecated, and importing it results in a warning.
+$ python3.6 -c 'import mypackage'
+/usr/local/lib/python3.6/dist-packages/sklearn/cross_validation.py:41: DeprecationWarning:
+This module was deprecated in version 0.18 in favor of the model_selection module into
+which all the refactored classes and functions are moved. Also note that the interface of
+the new CV iterators are different from that of this module. This module will be removed
+in 0.20.
+  "This module will be removed in 0.20.", DeprecationWarning)
+Okay, I'm surprised to see a DeprecationWarning — that's not supposed to happen in Python unless I ask to see it — but let me try to get a stack trace so I can see where it's coming from.
+$ python3.6 -W error::DeprecationWarning:: -c 'import mypackage'
+/usr/local/lib/python3.6/dist-packages/sklearn/cross_validation.py:41: DeprecationWarning:
+This module was deprecated in version 0.18 in favor of the model_selection module into
+which all the refactored classes and functions are moved. Also note that the interface of
+the new CV iterators are different from that of this module. This module will be removed
+in 0.20.
+  "This module will be removed in 0.20.", DeprecationWarning)
+Oh that's weird, the -W error::DeprecationWarning:: should raise the warning an exception, which would show me a full stack trace and tell me where sklearn.cross_validation is being imported from. Why does the configuration flag have no effect?
+I tried playing with the flags for a while, then eventually realized that it is not possible to change sklearn's warning filter, because it is hardcoded in the module!
+Expected Results
+At the very least, honor the user's warning filters and don't change the warning filter to something that the user didn't ask for.
+Ideally, don't configure warning filters at all. This behavior should be controlled by an application or an end user, not a library.
+If the warnings.filterwarnings(…) is removed completely, then the result would be expected Python behavior and I would be able to debug this very quickly:
+$ python3.6 -W error::DeprecationWarning:: -c 'import mypackage'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/local/lib/python3.6/dist-packages/mypackage/__init__.py", line 5, in <module>
+    from .classifiers import (
+  File "/usr/local/lib/python3.6/dist-packages/formasaurus/classifiers.py", line 8, in <module>
+    from mypackage import formtype_model, mypackage
+  File "/usr/local/lib/python3.6/dist-packages/mypackage/formtype_model.py", line 9, in <module>
+    from mypackage.annotation import get_annotation_folds
+  File "/usr/local/lib/python3.6/dist-packages/mypackage/annotation.py", line 5, in <module>
+    from sklearn.cross_validation import LabelKFold
+  File "/usr/local/lib/python3.6/dist-packages/sklearn/cross_validation.py", line 41, in <module>
+    "This module will be removed in 0.20.", DeprecationWarning)
+DeprecationWarning: This module was deprecated in version 0.18 in favor of the model_selection module into which all the refactored classes and functions are moved. Also note that the interface of the new CV iterators are different from that of this module. This module will be removed in 0.20.
+sklearn is not special enough to break with standard Python conventions.
+👍 1

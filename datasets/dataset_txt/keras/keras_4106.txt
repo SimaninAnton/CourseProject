@@ -1,0 +1,59 @@
+isaacgerg commented on 22 Oct 2016 •
+edited
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Here is a short script that you can cut-and-paste which demonstrates the error in short order.
+import keras
+import keras.applications
+import numpy as np
+
+input = keras.layers.Input(shape=(1, 400,400))
+
+x = keras.layers.ZeroPadding2D(padding=(56,56))(input)
+x = keras.layers.AveragePooling2D(pool_size=(2,2))(x)
+x = keras.layers.Flatten()(x)
+x = keras.layers.RepeatVector(3)(x)
+x = keras.layers.Reshape((3, 256, 256))(x)
+
+y = keras.layers.ZeroPadding2D(padding=(56,56))(input)
+y = keras.layers.AveragePooling2D(pool_size=(4,4))(y)
+y = keras.layers.Flatten()(y)
+y = keras.layers.RepeatVector(3)(y)
+y = keras.layers.Reshape((3, 128, 128))(y)        
+
+vgg1 = keras.applications.vgg16.VGG16(include_top=False)
+vgg1.trainable = False
+vgg2 = keras.applications.vgg16.VGG16(include_top=False)
+vgg2.trainable = False
+
+x = vgg1(x)
+y = vgg2(y)
+y  = keras.layers.UpSampling2D((2,2))(y)
+
+m = keras.layers.merge([x,y], mode='sum')
+m = keras.layers.Convolution2D(64,3,3, border_mode='same', activation='relu')(m)
+m = keras.layers.SpatialDropout2D(0.5)(m)        
+m = keras.layers.Flatten()(m)
+m = keras.layers.MaxoutDense(8)(m)
+m = keras.layers.Dropout(0.5)(m)
+m = keras.layers.MaxoutDense(4)(m)
+m = keras.layers.Dropout(0.5)(m)
+m = keras.layers.Dense(2, activation='softmax')(m)
+
+model = keras.models.Model(input, m)
+
+model.compile(loss='categorical_crossentropy', optimizer='adadelta',metrics=['accuracy'])   
+
+checkpointer = keras.callbacks.ModelCheckpoint(filepath='model_and_weights.h5', verbose=1, save_weights_only = False, save_best_only=True)  
+
+X = np.random.random((32,1,400,400))
+Y = np.zeros((32,2))
+model.fit(X, Y, callbacks=[checkpointer], verbose = 2, validation_split= 0.5, nb_epoch=1)
+model = None
+model = keras.models.load_model('model_and_weights.h5') # Error here.
+
+print('done')
+The error I get is: builtins.Exception: Optimizer weight shape (64, 3, 3, 3) not compatible with provided weight shape (64, 512, 3, 3)

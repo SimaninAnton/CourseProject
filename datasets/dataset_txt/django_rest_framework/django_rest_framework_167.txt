@@ -1,0 +1,27 @@
+Tommos0 commented on 16 Apr 2019 •
+edited
+Hi,
+I'm having some issues with the default DjangoObjectPermissions. The behaviour currently is not what I would expect. I can update the documentation to be more clear about the current implementation, or if you like I can create a pull request with my proposed fix.
+My issue is as follows. If one uses DjangoObjectPermissions, since it extends DjangoModelPermissions, it also checks the basic model permission (DjangoModelPermissions.has_permission). At least I think the documentation should be more clear about this, but actually I think there is a better implementation. I would expect this permission class to ONLY check for the object permissions. Current behaviour can then simply be recreated by using DjangoObjectPermissions & DjangoModelPermissions, but this change would also allow DjangoObjectPermissions | DjangoModelPermissions (which I think is a nice default). The simplest fix would be to just add
+    def has_permission(self, request, view):
+        return True
+to DjangoObjectPermissions.
+There is a second issue: because in some cases it raises exceptions (see
+django-rest-framework/rest_framework/permissions.py
+Lines 287 to 302 in db65282
+ if not user.has_perms(perms, obj): 
+     # If the user does not have permissions we need to determine if 
+     # they have read permissions to see 403, or not, and simply see 
+     # a 404 response. 
+        if request.method in SAFE_METHODS: 
+         # Read permissions already checked and failed, no need 
+         # to make another lookup. 
+         raise Http404 
+        read_perms = self.get_required_object_permissions('GET', model_cls) 
+     if not user.has_perms(read_perms, obj): 
+         raise Http404 
+        # Has read permissions. 
+     return False 
+), this actually breaks logically combining permission classes (the raise will ignore any other permission class giving positive permission).
+I realize this could be a breaking change for many users so perhaps we can create this new permission class with a different name? Let me know what you think, I could create a PR with a change or update the docs to at least explain the current situation.
+1

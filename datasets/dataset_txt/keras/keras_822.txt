@@ -1,0 +1,99 @@
+jimgros commented on 13 Aug 2018 •
+edited
+Hi all,
+I created a simple image classification model using Keras. I wanted to check how to minimize my cost on EC2, using CPU heavy instances, instead of GPU.
+I decided to play with the c5d instances and see their performance differences. I tried several types of instances:
+c5d.4xlarge
+c5d.9xlarge
+c5d.18xlarge
+Unfortunately, regardless of the type of instance, an epoch runs at about the same time across the different instances (close to 2 minutes per epoch and similar ms for each step)
+After some research, I added tf.ConfigProto with several variants:
+( X = different values for nr of CPUs that I tested)
+K.set_session(K.tf.Session(config=K.tf.ConfigProto( ... )
+device_count={"CPU": X}
+intra_op_parallelism_threads = X
+allow_soft_placement=True
+I used log_device_placement=True, therefore could see in the log in the terminal that no matter what, the CPU used was 0
+I also tried including the following , but it didn't help:
+os.environ['MKL_NUM_THREADS'] = 'X'  
+os.environ['GOTO_NUM_THREADS'] = 'X'  
+os.environ['OMP_NUM_THREADS'] = 'X'  
+os.environ['openmp'] = 'True'
+Environment:
+python 3.6
+Keras 2.2.0
+Tensorflow 1.9.0
+What am I missing? I expect the c5d instances to be quicker with size obviously...
+I've looked through other issues here and on the web, found these but status is unclear:
+https://github.com/keras-team/keras/issues/9964
+https://github.com/tensorflow/tensorflow/issues/4455
+https://github.com/keras-team/keras/issues/9710
+Thanks!
+Here's my code (I removed lines related to creating X and y, not relevant)
+import pandas as pd
+import os`
+import imageio
+import numpy as np
+from datetime import datetime
+import sys
+import argparse
+from sklearn.model_selection import train_test_split
+from keras.models import *
+from keras.callbacks import *
+from keras import optimizers
+from keras.layers import Input, Dense, BatchNormalization, Flatten, Conv2D
+from keras.layers import MaxPool2D, Dropout
+from keras.utils import layer_utils, to_categorical, plot_model
+from keras.utils.vis_utils import model_to_dot
+import keras.backend as K
+K.set_image_data_format('channels_last')
+from keras.utils import multi_gpu_model
+
+os.environ['MKL_NUM_THREADS'] = '32'
+os.environ['GOTO_NUM_THREADS'] = '32'
+os.environ['OMP_NUM_THREADS'] = '32'
+os.environ['openmp'] = 'True'
+
+def getModel(w,h,nrClasses = 2):
+    inp = Input(shape = (h,w,4))
+    x = BatchNormalization () (inp)
+    x = Conv2D(8,kernel_size = 8, activation= 'relu')(x)
+    x = Dropout(0.5)(x)
+    x = MaxPool2D(pool_size = 8)(x)
+    x = BatchNormalization () (x)
+    x = Flatten() (x)
+    x = Dropout(0.5)(x)
+    x = Dense(32,activation = 'relu')(x)
+    x = Dropout(0.7)(x)
+    x = Dense(nrClasses,activation = 'softmax')(x)
+    model = Model(inp,x)
+    return model
+
+
+K.set_session(K.tf.Session(config=K.tf.ConfigProto(device_count={"CPU": 32}, intra_op_parallelism_threads=32, log_device_placement=True, allow_soft_placement=True)))
+
+#Create the train and test data
+trainPct = 70
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1-trainPct/100), shuffle = True)
+
+#MODEL VARIABLES
+nrEpochs = 20
+batchSize = 32
+loss = "binary_crossentropy"
+metrics = ["accuracy"]
+validationPct = 30
+opt = "Adadelta"
+es = EarlyStopping(patience = 8)
+cp = ModelCheckpoint(modelFolder+modelName+".hdf5",save_best_only = True)
+csv_logger = CSVLogger(modelFolder+modelName+".log")
+rlop = ReduceLROnPlateau(patience = 5, factor = 0.3)
+tb = TensorBoard (log_dir= modelFolder + '/tb_logs')
+callback_list = [csv_logger,es,cp,rlop,tb]
+
+#Running the model
+model = getModel(w,h)
+model.summary()
+model.compile(optimizer=opt, loss = loss, metrics = metrics)
+model.fit(x = X_train, y = y_train,  epochs = nrEpochs, batch_size = batchSize, validation_split= validationPct/100, callbacks=callback_list)
+model.save(modelFolder + modelName + ".h5")
+preds = model.evaluate(x = X_test, y = y_test)

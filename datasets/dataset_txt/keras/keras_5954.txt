@@ -1,0 +1,77 @@
+napsternxg commented on 13 Feb 2016
+I was trying to use class_weights feature for fitting an LSTM model. I want to make sure that the predictions for the certain classes are weighted differently. However, the class weights are not implemented for y dimension greater than 3.
+https://github.com/fchollet/keras/blob/master/keras/models.py#L135
+Example code:
+from keras.models import Sequential
+from keras.layers.recurrent import LSTM
+from keras.layers.core import Dense
+
+
+t = Sequential()
+t.add(LSTM(3,input_dim = 1, return_sequences=True))
+t.compile(loss="categorical_crossentropy", optimizer="sgd")
+
+
+x = np.random.randn(10,10,1)
+y = np.zeros((10,10,3))
+for i in range(10):
+    for j in range(10):
+        y[i,j,int(10.*x[i,j] % 3)] = 1
+
+
+
+t.fit(x,y, verbose=1, nb_epoch=5) # WORKS
+
+t.fit(x,y, verbose=1, nb_epoch=5, class_weight={0: 0., 1: 10, 2: 5}) # GIVES ERROR
+The error is as follows:
+---------------------------------------------------------------------------
+Exception                                 Traceback (most recent call last)
+<ipython-input-49-f87d1f76ef72> in <module>()
+----> 1 t.fit(x,y, verbose=1, nb_epoch=5, class_weight={0: 0., 1: 10, 2: 5})
+
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in fit(self, X, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, show_accuracy, class_weight, sample_weight)
+    572 
+    573         sample_weight = standardize_weights(y, class_weight=class_weight,
+--> 574                                             sample_weight=sample_weight)
+    575         ins = X + [y, sample_weight]
+    576         metrics = ['loss', 'acc', 'val_loss', 'val_acc']
+
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in standardize_weights(y, sample_weight, class_weight)
+    107     elif isinstance(class_weight, dict):
+    108         if len(y.shape) > 2:
+--> 109             raise Exception('class_weight not supported for '
+    110                             '3+ dimensional targets.')
+    111         if y.shape[1] > 1:
+
+Exception: class_weight not supported for 3+ dimensional targets.
+Are there plans for including support for class_weights for higher dimensions in future releases?
+Suggestions
+# From: https://github.com/fchollet/keras/blob/master/keras/models.py#L133
+
+    elif isinstance(class_weight, dict):
+        if len(y.shape) > 2:
+            raise Exception('class_weight not supported for '
+                            '3+ dimensional targets.')
+        if y.shape[1] > 1:
+            y_classes = y.argmax(axis=1)
+        elif y.shape[1] == 1:
+            y_classes = np.reshape(y, y.shape[0])
+        else:
+            y_classes = y
+        weights = np.asarray([class_weight[cls] for cls in y_classes])
+        return weights
+    else:
+        if sample_weight_mode is None:
+            return np.ones((y.shape[0],))
+        else:
+            return np.ones((y.shape[0], y.shape[1]))
+I believe the call to y_classes = y.argmax(axis=1) should be y_classes = y.argmax(axis=-1)
+This will insure that we always select the last column for doing the argmax.
+Also, a better way to assign weights might be:
+cls_weights = np.ones(y.shape[-1])
+for k in range(cls_weights):
+    cls_weights[k] = class_weight.get(k)
+class_weights_per_sample = y*cls_weights
+
+#Will return vector of same length as y and can directly be used to multiply the loss for the data. 
+1

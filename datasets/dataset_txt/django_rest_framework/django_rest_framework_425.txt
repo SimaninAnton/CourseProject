@@ -1,0 +1,67 @@
+mkurnikov commented on 14 Apr 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Description
+Let's say we have models for User and UserProfile:
+from django.db import models
+
+
+class User(models.Model):
+    def get_first_name(self):
+        return self.profile.first_name
+
+
+class UserProfile(models.Model):
+    first_name = models.CharField()
+    user = models.OneToOneField(to=User, related_name='profile')
+I want to show first_name as a field of user in a serialized output, and reuse the same serializer for validation of incoming data.
+Callable
+First, let's use callable as source=:
+from rest_framework import serializers
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('first_name',)
+
+    first_name = serializers.CharField(source='get_first_name')
+
+# let's say we have user and userprofile with first_name = "Mike"
+
+data = UserSerializer().to_representation(user)
+# data = {"first_name": "Mike"}
+Deserialization:
+incoming_data = {"first_name": "Mike"}
+
+data = UserSerializer().run_validation(incoming_data)
+# data = {"get_first_name": "Mike"}
+Name of field on serializer class is ignored, instead a callable name is used.
+There's a test case which checks specifically this behaviour
+https://github.com/encode/django-rest-framework/blob/master/tests/test_fields.py#L175. Callable name shows up because codebase doesn't differentiate between callable and simple property on deserialization step.
+Nested property
+from rest_framework import serializers
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('first_name',)
+
+    first_name = serializers.CharField(source='profile.first_name')
+
+data = UserSerializer().to_representation(user)
+# data = {"first_name": "Mike"}
+Deserialization:
+incoming_data = {"first_name": "Mike"}
+
+data = UserSerializer().run_validation(incoming_data)
+# data = {"profile": {"first_name": "Mike"}}
+Serializer uses source= value to create nested key. This is done by
+https://github.com/encode/django-rest-framework/blob/master/rest_framework/serializers.py#L498
+This makes a little more sense, in case one wants to mirror db relationships inside data dictionary. Though, I am under impression that nested relationship in this case should be represented as UserProfileSerializer and so on.
+Conclusion
+What I think would be a better behaviour is to make source= attribute relevant only on serialization (instance -> data) step, and ignore it completely on deserialization(incoming_data -> validated_data) one. Obviously, special source="*" value has nothing to do with any of this and should preserve current behaviour.

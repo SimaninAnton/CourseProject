@@ -1,0 +1,32 @@
+Jamie-Landeg-Jones commented on 14 Jul 2014
+I've noticed a problem with filter operators, specifically '~bs':
+Using '~bs' or '~b' in a replace expression, if the remote content is compressed, the operator will fail to match, as the test is applied to the non-decoded result.
+I've supplied a quick and dirty solution for '~b' which works, but I've never programmed Python before, and done very little OO, so I know this patch isn't good enough to merge, but hopefully it helps show thr problem.
+Three immediate issues with this fix I can see:
+This is probably not the place for this code, as in its current form it needs to be duplicated in the '~b' section.
+When there's a '~b' or '~bs' match, the body is decompressed twice.
+If there are multiple '~bs' operators, then the document will be seperately decompressed for each one (and again for each one with a positive match) [ though, doesn't it already work that way where one url may match more than one operator causing duplicate decomprssions? ]
+Anyway, with file libmproxy/filt.py at the beginning, after the line:
+from .contrib import pyparsing as pp
+I added:
+from . import encoding
+Then, I replaced the FBodResponse block from:
+class FBodResponse(_Rex):
+    code = "bs"
+    help = "Response body"
+    def __call__(self, f):
+        if f.response and f.response.content and re.search(self.expr, f.response.content):
+            return True
+to:
+class FBodResponse(_Rex):
+    code = "bs"
+    help = "Response body"
+    def __call__(self, f):
+        if f.response and f.response.content:
+            self.f = f
+            ce = f.response.headers.get_first("content-encoding")
+            if ce in encoding.ENCODINGS:
+                self.ce = ce
+                self.f.response.decode()
+            if re.search(self.expr, f.response.content):
+                return True

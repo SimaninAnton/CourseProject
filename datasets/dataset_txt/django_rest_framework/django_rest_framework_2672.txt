@@ -1,0 +1,53 @@
+snbuback commented on 18 Nov 2013
+I have an API for a model Database. Database have an property (not a field) called plan and environment. I want this attribute for creation (I have a custom create method). When a put read_only=True browseable form works but create didn't receive plan/environment attribute, but when read_only=False, creation works but browseable API didn't work. I try to solve but I have no idea of who should be set context in field.
+class DatabaseSerializer(serializers.HyperlinkedModelSerializer):
+    plan = serializers.HyperlinkedRelatedField(
+        source='plan', read_only=False, view_name='plan-detail', queryset=Plan.objects)
+    environment = serializers.HyperlinkedRelatedField(
+        source='environment', read_only=False, view_name='environment-detail', queryset=Environment.objects)
+
+    class Meta:
+        model = models.Database
+        fields = ('url', 'id', 'name', 'plan', 'environment')
+
+
+class DatabaseAPI(viewsets.ModelViewSet):
+    """
+    Database API
+    """
+    serializer_class = DatabaseSerializer
+    queryset = models.Database.objects.all()
+
+
+    def create(self, request):
+        serializer = self.get_serializer(data=request.DATA, files=request.FILES)
+        data = serializer.restore_fields(request.DATA, request.FILES)
+
+        if serializer.is_valid():
+            self.pre_save(serializer.object)
+            self.object = models.Database.provision(data['name'], data['plan'], data['environment'])
+            data = serializer.to_native(self.object)
+            self.post_save(self.object, created=True)
+            headers = self.get_success_headers(serializer.data)
+            return Response(data, status=status.HTTP_201_CREATED,
+                            headers=headers)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+.
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-
+packages/django/template/base.py", line 779, in _resolve_lookup
+    current = current()
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/rest_framework/fields.py", line 157, in widget_html
+    return self.widget.render(self._name, self._value)
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/django/forms/widgets.py", line 555, in render
+    options = self.render_options(choices, [value])
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/django/forms/widgets.py", line 579, in render_options
+    for option_value, option_label in chain(self.choices, choices):
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/django/forms/models.py", line 920, in __iter__
+    yield self.choice(obj)
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/django/forms/models.py", line 926, in choice
+    return (self.field.prepare_value(obj), self.field.label_from_instance(obj))
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/rest_framework/relations.py", line 82, in prepare_value
+    return self.to_native(obj)
+  File "/Users/snbuback/.virtualenvs/dbaas/lib/python2.7/site-packages/rest_framework/relations.py", line 426, in to_native
+    request = self.context.get('request', None)

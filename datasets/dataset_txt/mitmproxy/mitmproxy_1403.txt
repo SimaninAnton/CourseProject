@@ -1,0 +1,18 @@
+ghost commented on 25 Jun 2015
+This problem was viewed in version 0.11.1, I think. I am currently not able to test it with the current version but the corresponding source code did not change in 0.12.1 thus I think it is still a problem.
+I am using mitmdump as transparent proxy. After changing the system mitmdump was running on, it crashes after some time with
+  File "/usr/local/lib/python2.7/dist-packages/libmproxy/protocol/http.py", line 813, in _refresh_cookie
+    i["expires"] = formatdate(d)
+  File "/usr/lib/python2.7/email/utils.py", line 161, in formatdate
+    now = time.gmtime(timeval)
+ValueError: timestamp out of range for platform time_t
+After some time I realised that the problem occurs after the change from 64 bit to 32 bit and disappeared after another change to 64 bit again.
+Looking at libmproxy/protocol/http.py:810 or in 0.12.1 at libmproxy/protocol/http.py:842
+            d = parsedate_tz(i["expires"])
+                if d:
+                    d = mktime_tz(d) + delta
+                    i["expires"] = formatdate(d)
+The documentation for email.utils.formatdate mentioned for the first parameter Optional timeval if given is a floating point time value as accepted by time.gmtime() and time.localtime(), otherwise the current time is used.
+Internally time.gmtime is used. The documentation for time mentioned The functions in this module do not handle dates and times before the epoch or far in the future. The cut-off point in the future is determined by the C library; for Unix, it is typically in 2038.
+Under 32 bit Ubuntu python crashes with time.gmtime(sys.maxint+1) but with time.gmtime(sys.maxint) you will get 2038-01-19 and some hours.
+Thus under 32 bit this code will only work with expiration dates previous to 2038-01-19. But unfortunately there are site setting cookies with expiration dates far in the future. Different advertiser set it 30 years in future thus in 2045. But I also see dates after year 2080.

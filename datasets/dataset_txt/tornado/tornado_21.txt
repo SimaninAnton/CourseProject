@@ -1,0 +1,42 @@
+hk298 commented on 11 Oct 2019 •
+edited
+I am running a rather simplistic Websocket server with SSL on a machine that sits behind an Amazon Network Load Balancer (NLB). This setup is beyond my control. The NLB does some health checks on the services it is supposed to be balancing and bombards my Websocket server with TCP SYN packets. Tornado replies with SYN/ACK and the NLB then closes the connection with FIN. This causes Tornado to spit out the following errors:
+ERROR:tornado.general:Uncaught exception, closing connection.
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/dist-packages/tornado/iostream.py", line 511, in _handle_events
+    self._handle_read()
+  File "/usr/lib/python2.7/dist-packages/tornado/iostream.py", line 1344, in _handle_read
+    self._do_ssl_handshake()
+  File "/usr/lib/python2.7/dist-packages/tornado/iostream.py", line 1264, in _do_ssl_handshake
+    self.socket.do_handshake()
+  File "/usr/lib/python2.7/ssl.py", line 840, in do_handshake
+    self._sslobj.do_handshake()
+error: [Errno 0] Error
+ERROR:tornado.application:Exception in callback None
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/dist-packages/tornado/ioloop.py", line 887, in start
+    handler_func(fd_obj, events)
+  File "/usr/lib/python2.7/dist-packages/tornado/stack_context.py", line 275, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/usr/lib/python2.7/dist-packages/tornado/iostream.py", line 511, in _handle_events
+    self._handle_read()
+  File "/usr/lib/python2.7/dist-packages/tornado/iostream.py", line 1344, in _handle_read
+    self._do_ssl_handshake()
+  File "/usr/lib/python2.7/dist-packages/tornado/iostream.py", line 1264, in _do_ssl_handshake
+    self.socket.do_handshake()
+  File "/usr/lib/python2.7/ssl.py", line 840, in do_handshake
+    self._sslobj.do_handshake()
+error: [Errno 0] Error
+It looks like that the handling of the socket.error in _do_ssl_handshake (iostream.py) could handle this case. The server is quiet when I add 0 as another possible error number in the following:
+        except socket.error as err:
+            # Some port scans (e.g. nmap in -sT mode) have been known
+            # to cause do_handshake to raise EBADF and ENOTCONN, so make
+            # those errors quiet as well.
+            # https://groups.google.com/forum/?fromgroups#!topic/python-tornado/ApucKJat1_0
+            if (self._is_connreset(err) or
+                    err.args[0] in (errno.EBADF, errno.ENOTCONN, 0)):
+                return self.close(exc_info=True)
+            raise
+This is probably not the correct way to deal with this situation, but it avoids the flood of errors messages that I received.
+You can reproduce the issue by simply connecting to the Websocket with telnet and closing the session immediately.
+I observed this in versions 4.4.3 on Debian 9 and 4.5.3 on Ubuntu 18.04. The messages above are from 4.4.3. Version 4.5.3 does the same thing, only the line numbers are different.

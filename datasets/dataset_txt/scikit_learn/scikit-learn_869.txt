@@ -1,0 +1,43 @@
+goraj commented on Dec 11, 2018 •
+edited
+Description
+effective_n_jobs in _parallel_backends.py reduces n_jobs to 1 when using dask processes.
+This is meant to mitigate nested Parallel calls but the check will lead to a reduction in threads when using dask processes as well.
+sklearn/ensemble/base.py:154: UserWarning: Loky-backed parallel loops cannot be called in a multiprocessing, setting n_jobs=1
+Steps/Code to Reproduce
+from sklearn.datasets import load_iris
+def do_process():
+    X, y = load_iris(return_X_y=True)
+    m = RandomForestRegressor(n_jobs=16)
+    m.fit(X, y)
+    m.predict(X)
+
+    return 42
+
+
+if __name__ == '__main__':
+    from dask.distributed import Client
+
+    client = Client(processes=True,
+                    ip='127.0.0.1',
+                    ncores=16,
+                    memory_limit='40GB')
+
+    n_process = 5
+    pool = []
+    for process in range(n_process):
+        pool.append(client.submit(do_process, pure=False,))
+
+    result = client.gather(pool)
+    print(f'result: {result}')
+Output
+site-packages/sklearn/ensemble/forest.py:246: FutureWarning: The default value of n_estimators will change from 10 in version 0.20 to 100 in 0.22.
+Versions
+Python deps:
+pip: 10.0.1
+setuptools: 40.4.3
+sklearn: 0.20.1
+numpy: 1.15.4
+scipy: 1.1.0
+Cython: 0.29.1
+pandas: 0.23.4

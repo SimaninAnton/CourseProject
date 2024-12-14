@@ -1,0 +1,42 @@
+Contributor
+Ian-Foote commented on 24 Nov 2014
+While converting an existing project to use DRF v3, I needed to customise the ListSerializer returned from many_init (I wanted to add some custom validation.). Unfortunately I had to copy the entire method in order to change the last line:
+class CustomSerializer(BaseSerializer):  # Or ModelSerializer
+    @classmethod
+    def many_init(cls, *args, **kwargs):
+        """
+        This method implements the creation of a `ListSerializer` parent
+        class when `many=True` is used. You can customize it if you need to
+        control which keyword arguments are passed to the parent, and
+        which are passed to the child.
+        """
+        child_serializer = cls(*args, **kwargs)
+        list_kwargs = {'child': child_serializer}
+        list_kwargs.update(dict([
+            (key, value) for key, value in kwargs.items()
+            if key in LIST_SERIALIZER_KWARGS
+        ]))
+        return CustomListSerializer(*args, **list_kwargs)
+I suspect customising just the ListSerializer will be sufficiently common to justify adding an attribute list_serializer_class that can be overriden instead:
+class BaseSerializer(Field):
+    list_serializer_class = ListSerializer
+
+    @classmethod
+    def many_init(cls, *args, **kwargs):
+        """
+        This method implements the creation of a `ListSerializer` parent
+        class when `many=True` is used. You can customize it if you need to
+        control which keyword arguments are passed to the parent, and
+        which are passed to the child.
+        """
+        child_serializer = cls(*args, **kwargs)
+        list_kwargs = {'child': child_serializer}
+        list_kwargs.update(dict([
+            (key, value) for key, value in kwargs.items()
+            if key in LIST_SERIALIZER_KWARGS
+        ]))
+        return cls.list_serializer_class(*args, **list_kwargs)
+Now I could write:
+class CustomSerializer(BaseSerializer):  # Or ModelSerializer
+    list_serializer_class = CustomListSerializer
+I am happy to implement this change if it is agreed to be a good idea.

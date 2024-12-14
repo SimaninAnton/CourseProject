@@ -1,0 +1,85 @@
+jcrist commented on Feb 20, 2017
+While working on implementing GridSearchCV in dask (code is here), I ran across an intermittent error in one of the copied tests (specifically sklearn.model_selection.tests.test_search.test_grid_search_no_score). Periodically the output of a fit will return incorrect results when fitting multiple LinearSVC in parallel using threads. Since the scikit-learn GridSearchCV parallelizes across processes, that might explain why this issue wasn't seen before.
+The following changes lead to no failure:
+Using only a single thread (no parallelism)
+Using multiple processes, each with a single thread
+Putting a lock around the fit method
+Switching out for a different estimator
+I haven't been able to reproduce the issue using just ThreadPool. However, the following example using dask will reproduce. Note that this doesn't always fail (~50% on my machine).
+from operator import getitem
+from sklearn.base import clone
+from sklearn.datasets import make_blobs
+from sklearn.metrics import get_scorer
+from sklearn.model_selection import StratifiedKFold
+from sklearn.svm import LinearSVC
+from sklearn.utils import safe_indexing
+from dask.threaded import get
+# Uncommenting this makes this run in one thread, which always passes
+# from dask import get
+
+
+X, y = make_blobs(random_state=0, centers=2)
+Cs = [.1, 1, 10]
+
+
+def fit(est, X, y):
+    # Each call to fit gets a unique est, so it's ok that this mutates here
+    return est.fit(X, y)
+
+
+def score(est, X, y, scorer):
+    return scorer(est, X, y)
+
+
+def cv_split(cv, X, y):
+    return list(cv.split(X, y))
+
+
+cv = StratifiedKFold()
+scorer = get_scorer('accuracy')
+est = LinearSVC(random_state=0)
+n_splits = cv.get_n_splits(X, y)
+
+dsk = {'cv': (cv_split, cv, X, y),
+       'X': X,
+       'y': y}
+keys = []
+
+for n in range(n_splits):
+    # Split out the train-test data
+    dsk[('splits', n)] = (getitem, 'cv', n)
+    dsk[('Xtrain', n)] = (safe_indexing, 'X', (getitem, ('splits', n), 0))
+    dsk[('Xtest', n)] = (safe_indexing, 'X', (getitem, ('splits', n), 1))
+    dsk[('ytrain', n)] = (safe_indexing, 'y', (getitem, ('splits', n), 0))
+    dsk[('ytest', n)] = (safe_indexing, 'y', (getitem, ('splits', n), 1))
+    # Fit and score for each C value
+    for m, C in enumerate(Cs):
+        est = clone(est).set_params(C=C)
+        # Fit the estimator for this split/param combo
+        dsk[('fit', m, n)] = (fit, est, ('Xtrain', n), ('ytrain', n))
+        # Score using the test data
+        dsk[('score-test', m, n)] = (score, ('fit', m, n), ('Xtest', n),
+                                     ('ytest', n), scorer)
+        # Score using the train data
+        dsk[('score-train', m, n)] = (score, ('fit', m, n), ('Xtrain', n),
+                                      ('ytrain', n), scorer)
+        # Store the score keys for computing later:
+        keys.extend([('score-test', m, n),
+                     ('score-train', m, n)])
+
+
+res1 = get(dsk, keys)
+res2 = get(dsk, keys)
+assert res1 == res2  # These should be equal
+Versions:
+In [1]: import sklearn, numpy, dask
+
+In [2]: sklearn.__version__
+Out[2]: '0.18.1'
+
+In [3]: numpy.__version__
+Out[3]: '1.11.3'
+
+In [4]: dask.__version__
+Out[4]: '0.13.0'
+A quick google of "Liblinear threadsafe?" didn't seem to turn anything up. I'm unsure how to debug this further.

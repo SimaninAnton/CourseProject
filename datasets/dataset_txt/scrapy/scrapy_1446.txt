@@ -1,0 +1,85 @@
+Contributor
+rmax commented on Feb 4, 2014
+This is from a spider which was written before the lxml selector was merged.
+In [1]: from scrapy.selector import Selector
+
+In [2]: Selector(text='')
+Out[2]: <Selector xpath=None data=u'<html></html>'>
+
+In [3]: sel = Selector(text='')
+
+In [4]: sel.xpath('//*[contains(@id,"StoreName")][text()!="\xc2\xa0" and text() !="\xc2\xa0\xc2\xa0"]/parent::*')
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-4-761f742aca4b> in <module>()
+----> 1 sel.xpath('//*[contains(@id,"StoreName")][text()!="\xc2\xa0" and text() !="\xc2\xa0\xc2\xa0"]/parent::*'
+      2 )
+
+/home/rolando/.virtualenvs/scrapy/lib/python2.7/site-packages/scrapy/selector/unified.pyc in xpath(self, query)
+     86 
+     87         try:
+---> 88             result = xpathev(query, namespaces=self.namespaces)
+     89         except etree.XPathError:
+     90             raise ValueError("Invalid XPath: %s" % query)
+
+/usr/lib/python2.7/dist-packages/lxml/etree.so in lxml.etree._Element.xpath (src/lxml/lxml.etree.c:46062)()
+
+/usr/lib/python2.7/dist-packages/lxml/etree.so in lxml.etree.XPathElementEvaluator.__call__ (src/lxml/lxml.etree.c:131314)()
+
+/usr/lib/python2.7/dist-packages/lxml/etree.so in lxml.etree._utf8 (src/lxml/lxml.etree.c:24233)()
+
+ValueError: All strings must be XML compatible: Unicode or ASCII, no NULL bytes or control characters
+The error comes from the non-breaking space character (a.k.a. nbsp). The curious thing is that the selector works with the unicode representation but not with the utf8 representation (as the said spider was using):
+In [2]: from scrapy.http import HtmlResponse
+
+In [4]: response = HtmlResponse('http://example.org', body='&nbsp;')
+
+In [6]: from scrapy.selector import Selector
+
+In [7]: sel = Selector(response)
+
+In [8]: sel.extract()
+Out[8]: u'<html><body><p>\xa0</p></body></html>'
+
+In [11]: sel.xpath(u'//*[text()="\xa0"]').extract()
+Out[11]: [u'<p>\xa0</p>']
+
+In [15]: u'\xa0'.encode('utf8')
+Out[15]: '\xc2\xa0'
+
+In [16]: sel.xpath('//*[text()="\xc2\xa0"]').extract()
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-16-af466045db16> in <module>()
+----> 1 sel.xpath('//*[text()="\xc2\xa0"]').extract()
+
+/usr/lib/pymodules/python2.7/scrapy/selector/unified.pyc in xpath(self, query)
+     86 
+     87         try:
+---> 88             result = xpathev(query, namespaces=self.namespaces)
+     89         except etree.XPathError:
+     90             raise ValueError("Invalid XPath: %s" % query)
+
+/usr/lib/python2.7/dist-packages/lxml/etree.so in lxml.etree._Element.xpath (src/lxml/lxml.etree.c:46062)()
+
+/usr/lib/python2.7/dist-packages/lxml/etree.so in lxml.etree.XPathElementEvaluator.__call__ (src/lxml/lxml.etree.c:131314)()
+
+/usr/lib/python2.7/dist-packages/lxml/etree.so in lxml.etree._utf8 (src/lxml/lxml.etree.c:24233)()
+
+ValueError: All strings must be XML compatible: Unicode or ASCII, no NULL bytes or control characters
+This even causes weird errors, below is an invalid xpath which normally would raise a ValueError: Invalid XPath: ...:
+In [11]: sel.xpath(u'//*[text()="\xa0"')
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-11-332157574520> in <module>()
+----> 1 sel.xpath(u'//*[text()="\xa0"')
+
+/home/rolando/.virtualenvs/scrapy/lib/python2.7/site-packages/scrapy/selector/unified.pyc in xpath(self, query)
+     88             result = xpathev(query, namespaces=self.namespaces)
+     89         except etree.XPathError:
+---> 90             raise ValueError("Invalid XPath: %s" % query)
+     91 
+     92         if type(result) is not list:
+
+<type 'str'>: (<type 'exceptions.UnicodeEncodeError'>, UnicodeEncodeError('ascii', u'Invalid XPath: //*[text()="\xa0"', 27, 28, 'ordinal not in range(128)'))
+Could be this considered a bug? It seems there is not a consistent handling of unicode/str strings.

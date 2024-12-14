@@ -1,0 +1,64 @@
+Contributor
+dougthor42 commented on 3 Jul 2018
+Are properties supported for configuration objects? It doesn't look like it.
+Being able to use @property on configuration objects could simplify some of the more complex configurations out there:
+# Without @property
+class BaseConfig(object)
+    NAME = "a"
+    HELLO = "Hello, " + NAME
+
+class ProdConfig(BaseConfig):
+    NAME = "b"
+    HELLO = "Hello, " + NAME           # repeated code! Makes me 😢
+
+# With @property
+class BaseConfig(object)
+    NAME = "a"
+
+    @property
+    def HELLO(self)
+        return "Hello, " + self.NAME
+
+class ProdConfig(BaseConfig):
+    NAME = "b"                         # Don't need to define HELLO again, yay!
+Expected Behavior
+It seems like it would be useful to be able to use properties when defining config variables using from_object:
+# my_config.py
+class BaseConfig(object):
+    NAME = "Terry Gilliam"
+
+    @property
+    def HELLO(self):
+        return "Hello, " + self.NAME
+
+class ProdConfig(BaseConfig):
+     NAME = "Monty Python"
+# example.py
+from flask import Flask
+app = Flask(__name__)
+app.config.from_object('my_config.ProdConfig')
+print(app.config['HELLO'])
+# "Hello, Monty Python"
+Actual Behavior
+Because the config class is not actually instantiated, the HELLO property is simply a <property object at 0x...> rather than Hello, Terry Gilliam or Hello, Monty Python.
+# example.py
+from flask import Flask
+app = Flask(__name__)
+app.config.from_object('my_config.ProdConfig')
+print(app.config['HELLO'])
+# <property object at 0x000001EC5404D458>
+Environment
+Python version: 3.5.2
+Flask version: 1.0.2
+Werkzeug version: 0.14.1
+Possible Resolution
+If configuration objects are called ProdConfig(), then the property resolves. I'm sure that there's a reason for not instantiating the config object, but I thought it would be worth a discussion. I'm sure it's security related.
+The fix might look like:
+# flask.config.Config.from_object
+...
+for key in dir(obj):
+    if key.isupper():
+        self[key] = getattr(obj, key)
+        # only instantiate the object if a property is detected
+        if isinstance(self[key], type(property())):
+            self[key] = getattr(obj(), key)

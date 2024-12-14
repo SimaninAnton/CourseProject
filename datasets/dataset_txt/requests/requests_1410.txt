@@ -1,0 +1,77 @@
+sawall commented on May 14, 2015
+= short version =
+When I am using a param and auth with requests.get(), requests appears to send a second request silently that's missing the param and then shows me the second response when i look at response.text.
+= long version, with example and dumps =
+I've been using requests to play a game. One level involved adding a param to a GET request in order to see hidden content on the webpage. This works fine with curl:
+curl --user natas22:chG9fbe1Tq2eWVMgjYYD1MsfIvN461kJ "http://natas22.natas.labs.overthewire.org/?revelio"
+Strangely, when I try something similar in requests I don't see the same response html text:
+auth = ('natas22', 'chG9fbe1Tq2eWVMgjYYD1MsfIvN461kJ')
+site = 'http://natas22.natas.labs.overthewire.org/?revelio'
+r=requests.get(site,auth=auth)
+r.text
+After scanning with tcpdump, it appears that requests is getting the correct response, but then it interacts with the server a second time for some reason. During that second interaction requests fails to send the URL param.
+Initial request:
+22:59:10.459925 IP (tos 0x0, ttl 64, id 27245, offset 0, flags [DF], proto TCP (6), length 331)
+    XXXXXX.58647 > melinda.labs.overthewire.org.http: Flags [P.], cksum 0x6cdb (correct), seq 1:280, ack 1, win 4117, options [nop,nop,TS val 377042043 ecr 980610639], length 279
+..{...|.......E..Kjm@.@......o.O.....P_.).3.......l......
+.y4{:r.OGET /?revelio HTTP/1.1
+Host: natas22.natas.labs.overthewire.org
+Connection: keep-alive
+Accept: */*
+Accept-Encoding: gzip, deflate
+Authorization: Basic bmF0YXMyMjpjaEc5ZmJlMVRxMmVXVk1nallZRDFNc2ZJdk40NjFrSg==
+User-Agent: python-requests/2.7.0 CPython/2.7.9 Darwin/14.3.0
+Initial successful response that I never see from the interpreter:
+22:59:10.579617 IP (tos 0x0, ttl 53, id 61399, offset 0, flags [DF], proto TCP (6), length 1500)
+    melinda.labs.overthewire.org.http > XXXXXX.58647: Flags [.], cksum 0xed92 (correct), seq 1:1449, ack 280, win 235, options [nop,nop,TS val 980610675 ecr 377042043], length 1448
+|.......{.....E.....@.5.T..O.....o.P..3..._.+............
+:r.s.y4{HTTP/1.1 302 Found
+Date: Thu, 14 May 2015 03:59:10 GMT
+Server: Apache/2.4.7 (Ubuntu)
+X-Powered-By: PHP/5.5.9-1ubuntu4.9
+Set-Cookie: PHPSESSID=p6ls9fd6jqaveoha3vc4kav7g0; path=/; HttpOnly
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+Pragma: no-cache
+Location: /
+Content-Length: 1049
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+Content-Type: text/html
+<html>
+
+[html page that I want]
+Unlike curl, after this requests immediately sends some traffic back for reasons that are unclear to me. Note the r.sGET / HTTP/1.1 line is missing the revelio param:
+22:59:10.579704 IP (tos 0x0, ttl 64, id 53914, offset 0, flags [DF], proto TCP (6), length 52)
+    XXXXXX.58647 > melinda.labs.overthewire.org.http: Flags [.], cksum 0x4bc7 (correct), seq 280, ack 1497, win 4071, options [nop,nop,TS val 377042162 ecr 980610675], length 0
+..{...|.......E..4..@.@.l....o.O.....P_.+.3.......K......
+.y4.:r.s
+22:59:10.584887 IP (tos 0x0, ttl 64, id 54853, offset 0, flags [DF], proto TCP (6), length 369)
+    XXXXXX.58647 > melinda.labs.overthewire.org.http: Flags [P.], cksum 0x2c85 (correct), seq 280:597, ack 1497, win 4096, options [nop,nop,TS val 377042167 ecr 980610675], length 317
+..{...|.......E..q.E@.@.g....o.O.....P_.+.3.......,......
+.y4.:r.sGET / HTTP/1.1
+Host: natas22.natas.labs.overthewire.org
+Accept-Encoding: gzip, deflate
+Accept: */*
+User-Agent: python-requests/2.7.0 CPython/2.7.9 Darwin/14.3.0
+Connection: keep-alive
+Cookie: PHPSESSID=p6ls9fd6jqaveoha3vc4kav7g0
+Authorization: Basic bmF0YXMyMjpjaEc5ZmJlMVRxMmVXVk1nallZRDFNc2ZJdk40NjFrSg==
+The server then responds with a gzipped version of the page, which is what ends up being what requests shows me when I type r.text:
+22:59:10.707316 IP (tos 0x0, ttl 53, id 61401, offset 0, flags [DF], proto TCP (6), length 843)
+    melinda.labs.overthewire.org.http > XXXXXX.58647: Flags [P.], cksum 0x8233 (correct), seq 1497:2288, ack 597, win 243, options [nop,nop,TS val 980610713 ecr 377042167], length 791
+|.......{.....E..K..@.5.Wr.O.....o.P..3..._.,>.....3.....
+:r...y4.HTTP/1.1 200 OK
+Date: Thu, 14 May 2015 03:59:10 GMT
+Server: Apache/2.4.7 (Ubuntu)
+X-Powered-By: PHP/5.5.9-1ubuntu4.9
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+Pragma: no-cache
+Vary: Accept-Encoding
+Content-Encoding: gzip
+Content-Length: 383
+Keep-Alive: timeout=5, max=99
+Connection: Keep-Alive
+Content-Type: text/html
+Why is requests making this second request and dropping the param on the floor?

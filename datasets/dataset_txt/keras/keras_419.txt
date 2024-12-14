@@ -1,0 +1,239 @@
+phmignot commented on 26 Jan 2019 •
+edited
+Building an autoencoder inside a Jupyter Notebook. I am having issues with TensorBoard each time I redefine layers of a model.
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+Check that your version of TensorFlow is up-to-date. The installation instructions can be found here.
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Here a recap of the code involved. I did not define any model before the one bellow in my notebook.
+Cell0: Imports
+%matplotlib inline
+import h5py
+import os
+from keras import backend as K
+from keras.layers import Input, Dense, Conv2D, Conv2DTranspose, Dropout, Activation, BatchNormalization, Reshape
+from keras.models import Model
+import tensorflow as tf
+from keras.callbacks import TensorBoard, Callback
+
+import matplotlib.pyplot as plt
+import numpy as np
+I am working with my own database (shape (1412, 128, 128, 3))
+Cell1
+def tbCallBack(foldername):
+    return TensorBoard(log_dir='./logs/'+foldername, histogram_freq=20, batch_size=1, 
+                                 write_graph=False, write_grads=True, write_images=False, 
+                                 update_freq='epoch')
+Cell2: Define model
+input_img = Input(shape=(128, 128, 3))
+n_conv_parameter = 4
+latent_dim = 4
+
+# Encoder
+conv1 = Conv2D(n_conv_parameter, kernel_size=3, strides=16, activation='relu', 
+               padding='same')(input_img)
+#Middle layer
+dense1 = Dense(latent_dim)(conv1)
+# Decode
+dense2 = Dense(n_conv_parameter)(dense1)
+decoded = Conv2DTranspose(3, kernel_size=3, strides=16, activation='sigmoid', 
+                          padding='same')(dense2)
+
+autoencoder = Model(input_img, decoded)
+autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+autoencoder.summary()
+Cell3: Training
+autoencoder.fit(database, database,
+                epochs=2,
+                batch_size=64,
+                shuffle=True,
+                validation_split=0.1,
+                callbacks=[tbCallBack('autoencoder')]
+                )
+How to reproduce:
+excute cells in this order:
+Cell 1 + Cell 2 + Cell3 + Cell2 + Cell3
+No issue, if I run my code once (Cell1 + Cell2 +Cell3). But if I run another time the Cell2 after Call3 (I redefine my model), I will be able to train and test the model, but it crashes if I use a CallBack for TensorBoard at the end of the first epoch.
+Error:
+Train on 1270 samples, validate on 142 samples
+Epoch 1/2
+1270/1270 [==============================] - 1s 690us/step - loss: 0.1500 - val_loss: 0.1473
+
+---------------------------------------------------------------------------
+InvalidArgumentError                      Traceback (most recent call last)
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in _do_call(self, fn, *args)
+   1334     try:
+-> 1335       return fn(*args)
+   1336     except errors.OpError as e:
+
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in _run_fn(feed_dict, fetch_list, target_list, options, run_metadata)
+   1319       return self._call_tf_sessionrun(
+-> 1320           options, feed_dict, fetch_list, target_list, run_metadata)
+   1321 
+
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in _call_tf_sessionrun(self, options, feed_dict, fetch_list, target_list, run_metadata)
+   1407         self._session, options, feed_dict, fetch_list, target_list,
+-> 1408         run_metadata)
+   1409 
+
+InvalidArgumentError: You must feed a value for placeholder tensor 'input_1' with dtype float and shape [?,128,128,3]
+  [[{{node input_1}}]]
+
+During handling of the above exception, another exception occurred:
+
+InvalidArgumentError                      Traceback (most recent call last)
+<ipython-input-12-8f41c0e29511> in <module>
+      4                 shuffle=True,
+      5                 validation_split=0.1,
+----> 6                 callbacks=[tbCallBack('autoencoder')]
+      7                 )
+
+~/.local/lib/python3.5/site-packages/keras/engine/training.py in fit(self, x, y, batch_size, epochs, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, initial_epoch, steps_per_epoch, validation_steps, **kwargs)
+   1037                                         initial_epoch=initial_epoch,
+   1038                                         steps_per_epoch=steps_per_epoch,
+-> 1039                                         validation_steps=validation_steps)
+   1040 
+   1041     def evaluate(self, x=None, y=None,
+
+~/.local/lib/python3.5/site-packages/keras/engine/training_arrays.py in fit_loop(model, f, ins, out_labels, batch_size, epochs, verbose, callbacks, val_f, val_ins, shuffle, callback_metrics, initial_epoch, steps_per_epoch, validation_steps)
+    215                         for l, o in zip(out_labels, val_outs):
+    216                             epoch_logs['val_' + l] = o
+--> 217         callbacks.on_epoch_end(epoch, epoch_logs)
+    218         if callback_model.stop_training:
+    219             break
+
+~/.local/lib/python3.5/site-packages/keras/callbacks.py in on_epoch_end(self, epoch, logs)
+     77         logs = logs or {}
+     78         for callback in self.callbacks:
+---> 79             callback.on_epoch_end(epoch, logs)
+     80 
+     81     def on_batch_begin(self, batch, logs=None):
+
+~/.local/lib/python3.5/site-packages/keras/callbacks.py in on_epoch_end(self, epoch, logs)
+    939                     assert len(batch_val) == len(tensors)
+    940                     feed_dict = dict(zip(tensors, batch_val))
+--> 941                     result = self.sess.run([self.merged], feed_dict=feed_dict)
+    942                     summary_str = result[0]
+    943                     self.writer.add_summary(summary_str, epoch)
+
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in run(self, fetches, feed_dict, options, run_metadata)
+    928     try:
+    929       result = self._run(None, fetches, feed_dict, options_ptr,
+--> 930                          run_metadata_ptr)
+    931       if run_metadata:
+    932         proto_data = tf_session.TF_GetBuffer(run_metadata_ptr)
+
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in _run(self, handle, fetches, feed_dict, options, run_metadata)
+   1151     if final_fetches or final_targets or (handle and feed_dict_tensor):
+   1152       results = self._do_run(handle, final_targets, final_fetches,
+-> 1153                              feed_dict_tensor, options, run_metadata)
+   1154     else:
+   1155       results = []
+
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in _do_run(self, handle, target_list, fetch_list, feed_dict, options, run_metadata)
+   1327     if handle is None:
+   1328       return self._do_call(_run_fn, feeds, fetches, targets, options,
+-> 1329                            run_metadata)
+   1330     else:
+   1331       return self._do_call(_prun_fn, handle, feeds, fetches)
+
+~/.local/lib/python3.5/site-packages/tensorflow/python/client/session.py in _do_call(self, fn, *args)
+   1347           pass
+   1348       message = error_interpolation.interpolate(message, self._graph)
+-> 1349       raise type(e)(node_def, op, message)
+   1350 
+   1351   def _extend_graph(self):
+
+InvalidArgumentError: You must feed a value for placeholder tensor 'input_1' with dtype float and shape [?,128,128,3]
+  [[node input_1 (defined at /home/phmignot/.local/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py:517) ]]
+
+Original stack trace for 'input_1':
+  File "/usr/lib/python3.5/runpy.py", line 184, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/usr/lib/python3.5/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel_launcher.py", line 16, in <module>
+    app.launch_new_instance()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/traitlets/config/application.py", line 658, in launch_instance
+    app.start()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/kernelapp.py", line 505, in start
+    self.io_loop.start()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/platform/asyncio.py", line 132, in start
+    self.asyncio_loop.run_forever()
+  File "/usr/lib/python3.5/asyncio/base_events.py", line 345, in run_forever
+    self._run_once()
+  File "/usr/lib/python3.5/asyncio/base_events.py", line 1312, in _run_once
+    handle._run()
+  File "/usr/lib/python3.5/asyncio/events.py", line 125, in _run
+    self._callback(*self._args)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/ioloop.py", line 758, in _run_callback
+    ret = callback()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/stack_context.py", line 300, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 1233, in inner
+    self.run()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 1147, in run
+    yielded = self.gen.send(value)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 370, in dispatch_queue
+    yield self.process_one()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 346, in wrapper
+    runner = Runner(result, future, yielded)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 1080, in __init__
+    self.run()
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 1147, in run
+    yielded = self.gen.send(value)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 357, in process_one
+    yield gen.maybe_future(dispatch(*args))
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 326, in wrapper
+    yielded = next(result)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 267, in dispatch_shell
+    yield gen.maybe_future(handler(stream, idents, msg))
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 326, in wrapper
+    yielded = next(result)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 534, in execute_request
+    user_expressions, allow_stdin,
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tornado/gen.py", line 326, in wrapper
+    yielded = next(result)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/ipkernel.py", line 294, in do_execute
+    res = shell.run_cell(code, store_history=store_history, silent=silent)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/ipykernel/zmqshell.py", line 536, in run_cell
+    return super(ZMQInteractiveShell, self).run_cell(*args, **kwargs)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 2819, in run_cell
+    raw_cell, store_history, silent, shell_futures)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 2845, in _run_cell
+    return runner(coro)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/IPython/core/async_helpers.py", line 67, in _pseudo_sync_runner
+    coro.send(None)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 3020, in run_cell_async
+    interactivity=interactivity, compiler=compiler, result=result)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 3185, in run_ast_nodes
+    if (yield from self.run_code(code, result)):
+  File "/home/phmignot/.local/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 3267, in run_code
+    exec(code_obj, self.user_global_ns, self.user_ns)
+  File "<ipython-input-7-25486d4234d9>", line 1, in <module>
+    input_img = Input(shape=(128, 128, 3))
+  File "/home/phmignot/.local/lib/python3.5/site-packages/keras/engine/input_layer.py", line 178, in Input
+    input_tensor=tensor)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/keras/legacy/interfaces.py", line 91, in wrapper
+    return func(*args, **kwargs)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/keras/engine/input_layer.py", line 87, in __init__
+    name=self.name)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/keras/backend/tensorflow_backend.py", line 517, in placeholder
+    x = tf.placeholder(dtype, shape=shape, name=name)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tensorflow/python/ops/array_ops.py", line 2078, in placeholder
+    return gen_array_ops.placeholder(dtype=dtype, shape=shape, name=name)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tensorflow/python/ops/gen_array_ops.py", line 5791, in placeholder
+    "Placeholder", dtype=dtype, shape=shape, name=name)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tensorflow/python/framework/op_def_library.py", line 788, in _apply_op_helper
+    op_def=op_def)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tensorflow/python/util/deprecation.py", line 501, in new_func
+    return func(*args, **kwargs)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 3300, in create_op
+    op_def=op_def)
+  File "/home/phmignot/.local/lib/python3.5/site-packages/tensorflow/python/framework/ops.py", line 1801, in __init__
+    self._traceback = tf_stack.extract_stack()
+Versions:
+Keras : 2.2.4
+Tensorflow : 1.12.0
+Jupyter : 1.0.0
+Python : 3.5.2

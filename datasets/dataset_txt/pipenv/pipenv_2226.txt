@@ -1,0 +1,18 @@
+tricoder42 commented on 8 Sep 2017
+This is tracking issue for some performance related problems I've found when trying pipenv. I'm willing to help to fix these problems, but @kennethreitz is working too fast and already added some features which helps me debugging (like verbose mode)
+Problem
+pipenv install takes incredible amount of time when running with slower internet connection (I have 50Mbps download/upload & 20ms average ping from pypi.python.org, 0% packet loss)
+Causes
+1. Converting requirements.txt to Pipfile
+Every call of project.add_package_to_pipfile(package_string) triggers recase_file of whole Pipfile, resulting in O(n^2) calls to pypi.org
+After that, another round of ensure_proper_casing is triggered unless PIPENV_SKIP_VALIDATION=0
+Removing both calls leading to recase_file makes converting almost instant
+2. Installing of all dependencies
+ensure_project calls ensure_pip_file which validates Pipfile unless PIPENV_SKIP_VALIDATION=0
+when installing all packages, do_init calls ensure_pip_file again
+3. Locking
+Right now, even locking is very slow. Tracking down the root cause.
+Possible solutions
+Cache - I know caching is bad, but what about to cache all requests to pypi.org for the duration of script?
+Recase only when there's a problem - Personally, I almost never edit Pipfile (a.k.a package.json) manually. I always do pipenv install package, so this would require one call to pypi.org to check proper casing. When reading existing Pipfile, we could assume that all packages have correct names and only recase when there's a problem (package couldn't be found).
+Thanks @kennethreitz for helping me yesterday to debug it!

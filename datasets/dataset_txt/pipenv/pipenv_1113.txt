@@ -1,0 +1,79 @@
+Contributor
+jfly commented on 2 May 2018 •
+edited
+When installing gevent using pipenv, greenlet is not being installed.
+$ python -m pipenv.help output
+Expected result
+I expect installing gevent to also result in greenlet being installed.
+Actual result
+Instead of having greenlet installed, I get a warning about "Ignoring greenlet: markers 'platform_python_implementation == "cpython"' don't match your environment".
+Steps to replicate
+➜  ~/tmp/pipenving echo '[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+gevent = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "2.7"
+
+[pipenv]
+allow_prereleases = true' > Pipfile
+➜  ~/tmp/pipenving pipenv install
+Creating a virtualenv for this project…
+Using /home/jeremy/.pyenv/versions/jfly-2.7.12/bin/python2.7 (2.7.12) to create virtualenv…
+⠋Running virtualenv with interpreter /home/jeremy/.pyenv/versions/jfly-2.7.12/bin/python2.7
+Using real prefix '/home/jeremy/.pyenv/versions/2.7.12'
+New python executable in /home/jeremy/.local/share/virtualenvs/pipenving-IYbJmdaL/bin/python2.7
+Also creating executable in /home/jeremy/.local/share/virtualenvs/pipenving-IYbJmdaL/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /home/jeremy/.local/share/virtualenvs/pipenving-IYbJmdaL
+Pipfile.lock not found, creating…
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+Updated Pipfile.lock (6d8673)!
+Installing dependencies from Pipfile.lock (6d8673)…
+Ignoring greenlet: markers 'platform_python_implementation == "cpython"' don't match your environment
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 2/2 — 00:00:00
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+➜  ~/tmp/pipenving pip freeze | grep gevent
+You are using pip version 9.0.1, however version 10.0.1 is available.
+You should consider upgrading via the 'pip install --upgrade pip' command.
+➜  ~/tmp/pipenving pipenv run pip freeze | grep greenlet
+➜  ~/tmp/pipenving pipenv run pip freeze | grep gevent
+gevent==1.3b1
+Note the warning above about platform_python_implementation == "cpython" not matching my environment. I looked into this a bit, and according to PEP508, platform_python_implementation corresponds to platform.python_implementation(), which is equal to "CPython" for me:
+➜  ~/tmp/pipenving pipenv run python -c "import platform; print platform.python_implementation()"
+CPython
+I verified that if I manually change the "markers": "platform_python_implementation == 'cpython'" line in my Pipfile.lock from "cpython" to "CPython", then pipenv install works happily:
+➜  ~/tmp/pipenving sed -i 's/cpython/CPython/' Pipfile.lock 
+➜  ~/tmp/pipenving pipenv install                           
+Installing dependencies from Pipfile.lock (6d8673)…
+  🐍   ▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉▉ 2/2 — 00:00:00
+To activate this project's virtualenv, run the following:
+ $ pipenv shell
+➜  ~/tmp/pipenving pipenv run pip freeze | grep greenlet
+greenlet==0.4.13
+However, this isn't a permanent solution for me, as subsequent runs of pipenv lock reset my Pipfile.lock to have a lowercase "cpython":
+➜  ~/tmp/pipenving pipenv lock
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+Updated Pipfile.lock (6d8673)!
+➜  ~/tmp/pipenving grep cpython Pipfile.lock 
+            "markers": "platform_python_implementation == 'cpython'",
+I confirmed that gevent 1.3b1 is correctly capitalizing "CPython" in its setup.py: https://github.com/gevent/gevent/blob/1.3b1/setup.py#L190, so I concluded that pipenv must be lowercasing this marker somewhere. I stepped through pipenv with a debugger to track down where the platform_python_implementation marker is getting lowercased, and I tracked it down to this line:
+pipenv/pipenv/patched/piptools/resolver.py
+Line 299 in a16b1d0
+ self.dependency_cache[ireq] = sorted(format_requirement(ireq) for ireq in dependencies) 
+which invokes format_requirement, which lowercases the entire requirement, including the markers:
+pipenv/pipenv/patched/piptools/utils.py
+Line 69 in a16b1d0
+ line = str(ireq.req).lower() 
+It looks like the format_requirement method was written with the intention of markers being specified as an optional second argument, so maybe the right fix is to change our invocation of format_requirement to actually split off the markers and pass them in separately?
+4

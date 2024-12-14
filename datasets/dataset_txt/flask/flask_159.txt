@@ -1,0 +1,179 @@
+CTSDOxF commented on 8 Apr 2019
+Expected Behavior
+My code SHOULD dump a json object into the file using json.dump()
+keep_alive.py
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def main():
+    return "Your bot is alive!"
+
+def run():
+    app.run(host="0.0.0.0", port=8080)
+
+def keep_alive():
+    server = Thread(target=run)
+    server.start()
+main.py
+import discord, os, random, base64, json
+
+"""from dotenv import DotEnv
+
+dotenv = DotEnv()"""
+
+import time
+
+
+
+
+TOKEN = os.getenv('token')
+ADMIN_ID = os.getenv('admin')
+
+CURRENCY_DATA = json.load(open("text.json", 'r'))
+
+yee = discord.Client()
+
+@yee.event
+async def on_ready():
+  await yee.send_message(yee.get_channel('558024841572253706'), "Ready")
+  await yee.change_presence(game=discord.Game(name="use b!help for help!"))
+  
+message_log = []
+
+@yee.event
+async def on_message(message):
+  if message.author == yee.user:
+    return
+  
+  if message.content.startswith('b!hello'):
+    msg = "Hello, {0.author.mention}".format(message)
+    await yee.send_message(message.channel, msg)
+    return
+  
+  if message.content.startswith('b!invite'):
+    msg = "{0.author.mention} Go to https://discordapp.com/oauth2/authorize?client_id=555115104769933383&scope=bot".format(message)
+    await yee.send_message(message.channel, msg)
+    return
+  
+  if message.content.startswith('b!help'):
+    msg = "{0.author.mention}\n```\nb!hello - say hello to the bot!\nb!invite - invite me to your server!\nb!help - You just used this command!".format(message)
+    msg += "\nb!luckynumber - gives you a lucky number!\nb!bal - look at how many testcoin you have\nb!shop - look at the various money genorators that you can/can't buy!\n"
+    msg += "b!buy <x> - use to buy generator with a purchase ID of x (remove the brackets)\n```"
+    await yee.send_message(message.channel, msg)
+    return
+  
+  if message.content.startswith('b!luckynumber'):
+    msg = "{0.author.mention} Your lucky number is ".format(message) + str(random.randint(0,9999))
+    await yee.send_message(message.channel, msg)
+    return
+
+  if message.content.startswith('b!bal'):
+    if str(message.author.id) not in CURRENCY_DATA["Users"]:
+      CURRENCY_DATA["Money"][str(message.author.id)] = 0.0001
+      CURRENCY_DATA["Updates"][str(message.author.id)] = time.time()
+      CURRENCY_DATA["Money Inventory"][str(message.author.id)] = [0,0,0]
+      CURRENCY_DATA["Users"].append(str(message.author.id))
+      CURRENCY_DATA["Inventory"][str(message.author.id)] = []
+    for i in range(len(CURRENCY_DATA["Money Generators"])):
+        CURRENCY_DATA["Money"][str(message.author.id)] += round(CURRENCY_DATA["Money Inventory"][str(message.author.id)][i] * CURRENCY_DATA["Money Generators"][i]["CPS"] * (time.time() - CURRENCY_DATA["Updates"][str(message.author.id)]), 5)
+    CURRENCY_DATA["Updates"][str(message.author.id)] = time.time()
+    CURRENCY_DATA["Money"][str(message.author.id)] = round(CURRENCY_DATA["Money"][str(message.author.id)], 5)
+    msg = "{0.author.mention}, You have {1} TestCoin.".format(message, CURRENCY_DATA["Money"][str(message.author.id)])
+    await yee.send_message(message.channel, msg)
+    json.dump(CURRENCY_DATA, open('text.json','w'))
+    return
+
+  if message.content.startswith('b!shop'):
+      if str(message.author.id) not in CURRENCY_DATA["Users"]:
+        CURRENCY_DATA["Money"][str(message.author.id)] = 0.0001
+        CURRENCY_DATA["Updates"][str(message.author.id)] = time.time()
+        CURRENCY_DATA["Money Inventory"][str(message.author.id)] = [0,0,0]
+        CURRENCY_DATA["Users"].append(str(message.author.id))
+        CURRENCY_DATA["Inventory"][str(message.author.id)] = []
+      for i in range(len(CURRENCY_DATA["Money Generators"])):
+        CURRENCY_DATA["Money"][str(message.author.id)] += round(CURRENCY_DATA["Money Inventory"][str(message.author.id)][i] * CURRENCY_DATA["Money Generators"][i]["CPS"] * (time.time() - CURRENCY_DATA["Updates"][str(message.author.id)]), 5)
+      CURRENCY_DATA["Updates"][str(message.author.id)] = time.time()
+      msg = "{0.author.mention}, You have {1} TestCoin.".format(message, CURRENCY_DATA["Money"][str(message.author.id)])
+      msg += '\n```\n'
+      for i in CURRENCY_DATA["Money Generators"]:
+          msg += i['name'] + ' $'
+          msg += str(i['increase_amount'] * (1 + CURRENCY_DATA["Money Inventory"][str(message.author.id)][i['id']]) * i['base_price']) + '\n'
+          msg += i['info'] + '\n'
+          msg += 'Purchase code: ' + str(i['id']) + '\n\n'
+      msg += '\n```'
+      await yee.send_message(message.channel, msg)
+      json.dump(CURRENCY_DATA, open('text.json', 'w'))
+      return
+  
+  if message.content.startswith('b!buy'):
+      for i in range(len(CURRENCY_DATA["Money Generators"])):
+        CURRENCY_DATA["Money"][str(message.author.id)] += round((1 + CURRENCY_DATA["Money Inventory"][str(message.author.id)][i]) * CURRENCY_DATA["Money Generators"][i]["CPS"] * (time.time() - CURRENCY_DATA["Updates"][str(message.author.id)]), 5)
+      CURRENCY_DATA["Updates"][str(message.author.id)] = time.time()
+      buy_id = message.content[5:]
+      try:
+          try:
+              adjusted_cost = CURRENCY_DATA["Money Generators"][int(buy_id)]["base_price"] * (CURRENCY_DATA["Money Generators"][int(buy_id)]['increase_amount'] * CURRENCY_DATA["Money Inventory"][str(message.author.id)][int(buy_id)])
+          except ValueError:
+              await yee.send_message(message.channel, "The value of the generator you are trying to buy could not be converted. blease try again using the purchase code of the generator you want to buy.")
+              return
+      except IndexError:
+          await yee.send_message(message.channel, "The purchase id is not valid")
+          return
+      if CURRENCY_DATA["Money"][str(message.author.id)] >= adjusted_cost:
+          CURRENCY_DATA["Money"][str(message.author.id)] -= adjusted_cost
+          CURRENCY_DATA["Money Inventory"][str(message.author.id)][int(buy_id)] += 1
+          await yee.send_message(message.channel, "Purchase successful.")
+          return
+      else:
+          await yee.send_message(message.channel, "Error, not enough funds")
+          return
+
+  if message.content.startswith('b!inventory'):
+    if str(message.author.id) not in CURRENCY_DATA["Users"]:
+      CURRENCY_DATA["Money"][str(message.author.id)] = 0.0001
+      CURRENCY_DATA["Updates"][str(message.author.id)] = time.time()
+      CURRENCY_DATA["Money Inventory"][str(message.author.id)] = [0,0,0]
+      CURRENCY_DATA["Users"].append(str(message.author.id))
+      CURRENCY_DATA["Inventory"][str(message.author.id)] = []
+    msg = "```\n"
+    for i in CURRENCY_DATA["Inventory"][str(message.author.id)]:
+      msg += CURRENCY_DATA["Items"][i["id"]]["Name"] + ' ' + str(i["quantity"]) + '\n'
+    msg += '```'
+    await yee.send_message(message.channel, msg)
+    json.dump(CURRENCY_DATA, open('text.json','w'))
+    return
+
+  if message.content.startswith('b@') and message.author.id == ADMIN_ID:
+    if message.content.startswith('b@dumpchannels'):
+      msg = '```\n'
+      channels = yee.get_all_channels()
+      a = 0
+      for i in channels:
+        msg += str(i.name).ljust(25,'-') + str(i.id).ljust(25,'-') + str(i.server) + '\n'
+        a += 1
+        if a > 19:
+          await yee.send_message(message.channel, msg+'```')
+          a = 0
+          msg = '```\n'
+      msg += '```'
+      print(msg)
+      await yee.send_message(message.channel, msg)
+      return
+  else:
+    if message.content.startswith('b@'):
+      await yee.send_message(message.channel, message.author.mention + ', you do not have access to this command!')
+
+yee.run(TOKEN)
+
+import keep_alive
+keep_alive.keep_alive() 
+Actual Behavior
+This code does not update the JSON file
+No errors
+Environment
+Python version: 3.6
+Flask version: 0.12
+Werkzeug version:N/A

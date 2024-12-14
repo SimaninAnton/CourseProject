@@ -1,0 +1,218 @@
+innat commented on 11 Jan 2019 •
+edited
+I was trying to implement CapsuleNet for classifying some of the Native digits.
+Here, I've used RGB images and converted to grayscale and resize to 32 X 32 and dataset has 10 classification output.
+X_train_all.shape: (1045, 32, 32, 1)
+
+y_train_all.shape: (1045, 10)
+Here what I implemented so far and ended up with some annoying error. But first, Following is the vanilla structure of CapsNet.
+CapsNet Model
+First, define the CapsNet model. Following is the main architecture of Capsule Network including PrimaryCaps and DigitCaps and so on.
+    def CapsNet(input_shape, n_class, routings):
+        """
+        A Capsule Network on MNIST.
+        :param input_shape: data shape, 3d, [width, height, channels]
+        :param n_class: number of classes
+        :param routings: number of routing iterations
+        :return: Two Keras Models, the first one used for training, and the second one for evaluation.
+                `eval_model` can also be used for training.
+        """
+        x = layers.Input(shape=input_shape)
+                                                                                                                                       
+        # Layer 1: Just a conventional Conv2D layer
+        conv1 = layers.Conv2D(filters=128, kernel_size=9, strides=1, padding='valid', activation='relu', name='conv1')(x)
+    
+        # Layer 2: Conv2D layer with `squash` activation, then reshape to [None, num_capsule, dim_capsule]
+        primarycaps = PrimaryCap(conv1, dim_capsule=8, n_channels=32, kernel_size=9, strides=2, padding='valid')
+    
+        # Layer 3: Capsule layer. Routing algorithm works here.
+        digitcaps = CapsuleLayer(num_capsule=n_class, dim_capsule=16, routings=routings,
+                                 name='digitcaps')(primarycaps)
+    
+        # Layer 4: This is an auxiliary layer to replace each capsule with its length. Just to match the true label's shape.
+        # If using tensorflow, this will not be necessary. :)
+        out_caps = Length(name='capsnet')(digitcaps)
+    
+        # Decoder network.
+        y = layers.Input(shape=(n_class,))
+        masked_by_y = Mask()([digitcaps, y])  # The true label is used to mask the output of capsule layer. For training
+        masked = Mask()(digitcaps)  # Mask using the capsule with maximal length. For prediction
+    
+        # Shared Decoder model in training and prediction
+        decoder = models.Sequential(name='decoder')
+        decoder.add(layers.Dense(512, activation='relu', input_dim=16*n_class))
+        decoder.add(layers.Dense(1024, activation='relu'))
+        decoder.add(layers.Dense(np.prod(input_shape), activation='sigmoid'))
+        decoder.add(layers.Reshape(target_shape=input_shape, name='out_recon'))
+    
+        # Models for training and evaluation (prediction)
+        train_model = models.Model([x, y], [out_caps, decoder(masked_by_y)])
+        eval_model = models.Model(x, [out_caps, decoder(masked)])
+        
+        return train_model, eval_model
+Actual Training
+This simply returns train_model and eval_model. Now following is the actual training process I've implemented.
+    def train_caps(model, data, epoch_size_frac=1.0):
+        """
+        Training a CapsuleNet
+        :param model: the CapsuleNet model
+        :param data: a tuple containing training and testing data, like `((x_train, y_train), (x_test, y_test))`
+        :param args: arguments
+        :return: The trained model
+        """
+        # unpacking the data
+        (x_train, y_train), (x_val, y_val) = data
+    
+        # compile the model
+        model.compile(optimizer=Adam(lr=0.1),
+                      loss=[margin_loss, 'mse'],
+                      loss_weights=[1., 0.512],
+                      metrics={'capsnet': 'accuracy'})
+        
+        tbCallBack = keras.callbacks.TensorBoard(log_dir='CapsuleNet/CapGraph', histogram_freq=0, 
+                                              write_graph=True, write_images=True)
+    
+    
+        # --------------Begin: Training with data augmentation --------------
+        def train_generator(x, y, batch_size, shift_fraction=0.):
+            train_datagen = ImageDataGenerator(width_shift_range = shift_fraction,
+                                               height_shift_range = shift_fraction,
+                                              rotation_range=20,
+                                              rescale=1.0/255,
+                                              shear_range=0.1,
+                                              zoom_range=0.1,
+                                              horizontal_flip=False,
+                                              vertical_flip=False,
+                                              fill_mode='nearest')  # shift up to 2 pixel
+            
+            generator = train_datagen.flow(x, y, batch_size=batch_size)
+            
+            while 1:
+                x_batch, y_batch = generator.next()
+                yield ([x_batch, y_batch], [y_batch, x_batch])
+                 
+    
+        # Training with data augmentation. 
+        history = model.fit_generator(generator = train_generator(x_train, y_train, 64, 0.1),
+                            steps_per_epoch = int(y_train.shape[0] / 64),
+                            epochs = 15,
+                            validation_data = [[x_val, y_val], [y_val, x_val]],
+                            callbacks = [tbCallBack])
+        # -----End: Training with data augmentation ----------------#
+        
+    
+        return model
+K-Fold Cross Validation
+Now to train the model and fit data on it, I used K-Fold cross-validation approach. Let's say it's K-Fold = 5. Like the following code, we save 5 fold model and save the weight.
+    cvscores = []
+    
+    for train, val in kfold.split(X_train_all, y_train_all):
+        gc.collect()
+        K.clear_session()
+        print ('Fold: ', Fold)
+        
+        # define model
+        model, eval_model = CapsNet(input_shape=[32, 32, 1],
+                        n_class=10,
+                        routings=3)
+        model.summary()
+        
+        X_train = X_train_all[train]
+        X_val = X_train_all[val]
+        
+        X_train = X_train.astype('float32')
+        X_val = X_val.astype('float32')
+        print(X_train.shape)
+        
+        y_train = y_train_all[train]
+        y_val = y_train_all[val]
+        
+    
+    #   train -
+        train_caps(model = model, data = ((X_train, y_train), (X_val, y_val)),
+                   epoch_size_frac = 0.5)
+    
+        
+    #     # Save each fold model
+        model_name = 'cap_keras_aug_Fold_'+ str(Fold) + '.h5'
+        model.save(model_name)
+    
+        # evaluate the model
+        scores = model.evaluate(X_val, y_val, verbose = 0)
+        print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
+        cvscores.append(scores[1] * 100) 
+         
+        Fold = Fold + 1
+Problem Faced 1
+The problem occurred in the evaluation section. scores = model.evaluate(X_val, y_val, verbose = 0) and it showed:
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+<ipython-input-36-12f206477b39> in <module>()
+----> 1 scores = model.evaluate(X_val, Y_val, verbose = 0)
+      2 print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
+
+ValueError: Error when checking model input: the list of Numpy arrays that you are passing to your model is not the size the model expected. Expected to see 2 array(s), but instead got the following list of 1 arrays: [array([[[[218.],
+         [1.],
+         [0.],
+         ...,
+         [1.],
+         [1.],
+Is there any other way I can evaluate the model performance and measure the scores?
+Problem Faced 2
+In this approach, how to find the best model? I am thinking, we can load top (suppose) 3 weighted fold model and get the average score value or something like ensemble method over them. Below is something I've tried so far.
+    def ensemble(models, model_input):
+        
+        Models_output = [model(model_input) for model in models]
+        Avg = keras.layers.average(Models_output)
+        
+        modelEnsemble = Model(inputs = model_input, outputs = Avg, name = 'ensemble')
+        modelEnsemble.summary()
+        modelEnsemble.compile(Adam(lr = .0001), 
+                              loss = 'categorical_crossentropy', 
+                              metrics = ['accuracy'])
+        
+        return modelEnsemble
+And load the save weighted that we get K-Fold cross-validation method.
+    import keras
+    
+    model_1, eval_model_1 = CapsNet(input_shape=[32, 32, 1],
+                    n_class=10,
+                    routings=3)
+    
+    model_2, eval_model_2 = CapsNet(input_shape=[32, 32, 1],
+                    n_class=10,
+                    routings=3)
+    
+    models = []
+    
+    # Load weights 
+    model_1.load_weights('Fold_1.h5')
+    model_1.name = 'model_1'
+    models.append(model_1)
+    
+    model_2.load_weights('Fold_2.h5')
+    model_2.name = 'model_2'
+    models.append(model_2)
+    
+    model_input = Input(shape=models[0].input_shape[1:])
+    ensemble_model = ensemble(models, model_input)
+This throws an error following. I know, I'm missing something here but can't figure out how to manage this.
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+<ipython-input-37-8cec3f452a69> in <module>()
+      4 model_1, eval_model_1 = CapsNet(input_shape=[32, 32, 1],
+      5                 n_class=10,
+----> 6                 routings=3)
+      7 
+      8 model_2, eval_model_2 = CapsNet(input_shape=[32, 32, 1],
+
+<ipython-input-31-d96b4a5e15ad> in CapsNet(input_shape, n_class, routings)
+     44 
+     45     # Shared Decoder model in training and prediction
+---> 46     decoder = models.Sequential(name='decoder')
+     47     decoder.add(layers.Dense(512, activation='relu', input_dim=16*n_class))
+     48     decoder.add(layers.Dense(1024, activation='relu'))
+
+AttributeError: 'list' object has no attribute 'Sequential'
+If I make a short summary of my question or the problem I've faced is that - I can't evaluate model performance using model.evaluate(...,...) method. And further getting this Attribution error.
+Get no effective response in Stack still now. Any help or suggestion is highly appreciated. Thanks.

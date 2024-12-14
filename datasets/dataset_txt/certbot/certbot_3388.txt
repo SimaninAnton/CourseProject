@@ -1,0 +1,19 @@
+aetherknight commented on 11 Sep 2015
+I ran into a problem with sudo venv/bin/letsencrypt --authenticator apache auth or similar after the first time I run it (from the letsencrypt.log file):
+Traceback (most recent call last):
+  File "venv/bin/letsencrypt", line 9, in <module>
+    load_entry_point('letsencrypt==0.1', 'console_scripts', 'letsencrypt')()
+  File "/home/aetherkn/src/letsencrypt/venv/lib/python2.7/site-packages/letsencrypt/cli.py", line 736, in main
+    directory, constants.CONFIG_DIRS_MODE, os.geteuid())
+  File "/home/aetherkn/src/letsencrypt/venv/lib/python2.7/site-packages/letsencrypt/le_util.py", line 94, in make_or_verify_dir
+    "%s exists, this client can't access it" % directory)
+Error: /etc/letsencrypt exists, this client can't access it
+This surprised me because it successfully created both /etc/letsencrypt and /var/lib/letsencrypt after the first run. However, upon investigating, I noticed that the default file mask for creating the directories by make_or_verify_dir() was 0755:
+def make_or_verify_dir(directory, mode=0o755, uid=0):
+  ...
+And the directories were being created with 0700:
+$ ls -ld /etc/letsencrypt /var/lib/letsencrypt
+drwx------ 5 root root 4096 Sep  9 22:03 /etc/letsencrypt
+drwx------ 2 root root 4096 Sep  9 21:58 /var/lib/letsencrypt
+This caused check_permissions() to return false because the permissions were not exactly 0755. In my standard bash configuration I use a umask of 0077 in order to default to denying group and other users form having any permissions on newly created files, and sudo inherits my umask. However, make_or_verify_dir() and check_permissions() do not take this into account when checking to ensure that the main directories are properly configured.
+I would suggest modifying the permissions check to ensure that other users cannot modify the directories, instead of checking for an exact file mode number.

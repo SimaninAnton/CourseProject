@@ -1,0 +1,75 @@
+alono88 commented on 10 Apr 2018 •
+edited
+I'm working on a Triplet Auto-encoder and I created a custom loss function that takes into account the reconstruction of the input and the values of the latent representation of the network.
+The network converges well without the regularization term, but when I'm trying to run my network using the custom regularization implementation with a zero coefficient before the regularization term (Lambda = 0) in the loss function, I'm getting different results.
+As the Keras documentation offers little help when dealing with custom regularization, I suspect my I'm not using it correctly.
+The loss that I'm trying to use is:
+Since I need to compute the loss using the output of hidden layers in the network, I'm using a custom regularization layer and call add_loss().
+My code:
+# Encoder
+#-----------------------------------------------------------------------------
+encoder_input_layer = Input(shape = (image_size, image_size, 1))
+x = Conv2D(4, (3, 3), strides=1, activation='relu', padding='same')(encoder_input_layer)
+x = MaxPooling2D((3, 3), padding='same')(x)
+x = Conv2D(8, (3, 3), strides=1, activation='relu', padding='same')(x)
+x = MaxPooling2D((3, 3), padding='same')(x)
+x = Conv2D(16, (3, 3), strides=1, activation='relu', padding='same')(x)
+x = MaxPooling2D((3, 3), padding='same')(x)
+x = Flatten()(x)
+x = Dense(5*5*16, activation='relu')(x)
+encoded = Dense((encoding_dim), activation='relu')(x)
+#-----------------------------------------------------------------------------
+triplet_encoder = Model(encoder_input_layer, encoded)
+#-----------------------------------------------------------------------------
+
+# Decoder
+# -----------------------------------------------------------------------------
+decoder_input_layer = Input(shape = (encoding_dim,))
+x = Dense(5*5*16, activation='relu')(decoder_input_layer)
+x = Reshape((5, 5, 16))(x)
+x = UpSampling2D((3, 3))(x)
+x = Conv2DTranspose(8, (3, 3), strides=1, activation='relu', padding='same')(x)
+x = UpSampling2D((3, 3))(x)
+x = Conv2DTranspose(4, (3, 3), strides=1, activation='relu', padding='same')(x)
+x = UpSampling2D((3, 3))(x)
+decoded = Conv2DTranspose(1, (3, 3), activation='sigmoid', padding='same')(x)
+#-----------------------------------------------------------------------------
+triplet_decoder = Model(decoder_input_layer, decoded)
+#-----------------------------------------------------------------------------
+
+input_1 = Input(shape=(image_size, image_size, 1))
+input_2 = Input(shape=(image_size, image_size, 1))
+input_3 = Input(shape=(image_size, image_size, 1))
+
+encoded_1 = triplet_encoder(input_1)
+encoded_2 = triplet_encoder(input_2)
+encoded_3 = triplet_encoder(input_3)
+
+decoded_1 = triplet_decoder(encoded_1)
+decoded_2 = triplet_decoder(encoded_2)
+decoded_3 = triplet_decoder(encoded_3)
+The Encoder and decoder or the networks are sharing the weights and converges well on my data, while I'm not using the regularization term, which I defined as follows:
+class CustomRegularization(Layer):
+    def __init__(self, lamda, **kwargs):
+        super(CustomRegularization, self).__init__(**kwargs)
+        self.lamda = lamda
+
+    def latent_loss(self, z1, z2, z3, lamda):
+        loss = objectives.binary_crossentropy(z3, (z2 + z1) / 2)
+        loss = K.sum(loss)
+        return loss * lamda
+
+    def call(self, encoded, mask=None):
+        z1 = encoded[0]
+        z2 = encoded[1]
+        z3 = encoded[2]
+        loss = self.latent_loss(z1, z2, z3, self.lamda)
+        self.add_loss(loss, encoded)
+        return loss
+
+    def get_output_shape_for(self, input_shape):
+        return input_shape
+When I'm trying to fit the data with lamda = 0 (typo intended), I'm getting different results which implies it doesn't works as expected.
+cr = CustomRegularization(0)([encoded_1, encoded_2, encoded_3])
+triplet = Model([input_1, input_2, input_3], [decoded_1, decoded_2, decoded_3, cr])
+triplet.compile(optimizer='adam', loss=['binary_crossentropy', 'binary_crossentropy', 'binary_crossentropy', None])

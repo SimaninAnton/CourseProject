@@ -1,0 +1,75 @@
+elcolie commented on 27 Jan 2018 •
+edited
+Software
+Python3.6.4
+django==1.11.9
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+Yes. Here is my chekcout commit number
+requirements.txt
+-e git+git@github.com:encode/django-rest-framework.git@master#egg=052a20cd7b9a8410a147d4ef2ab5291ab0eb1d04
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+Yes. #4826
+And the thread ended without any solution up next.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+Docs is clear. http://www.django-rest-framework.org/api-guide/permissions/
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+No. Third party involve
+I have reduced the issue to the simplest possible case.
+Here is my simple endpoint and permission class
+@api_view(['POST'])
+@permission_classes((WebhookPermission,))
+def webhook(request):
+    """
+    Facebook will POST to here. They are combination of the payload
+    1. LIKE
+    2. SHARE
+    Each of them has List of dictionaries
+    :param request:
+    :return:
+    """
+    return Response("Good Call", status=status.HTTP_200_OK)
+It is different from source code denied_view_with_detail = DeniedViewWithDetail.as_view()
+Because I am using decorator not a class variable
+I also spot that in your test_decorators.py does only IsAuthenticated testcase
+    def test_permission_classes(self):
+
+        @api_view(['GET'])
+        @permission_classes([IsAuthenticated])
+        def view(request):
+            return Response({})
+
+        request = self.factory.get('/')
+        response = view(request)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+from rest_framework import permissions
+class WebhookPermission(permissions.BasePermission):
+    message = 'Allow Whitelist only'
+
+    def has_permission(self, request, view):
+        return False        
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Here is my testcase
+__________________________________________________________________ test_ip_permission_failed __________________________________________________________________
+
+facebook_whitelist = None
+
+    def test_ip_permission_failed(facebook_whitelist):
+        url = reverse('webhook')
+        client = APIClient(REMOTE_ADDR='203.15.20.2')
+        res = client.post(url)
+        msg = WebhookPermission.message
+        assert 401 == res.status_code
+>       assert msg == res.data
+E       assert 'Allow Whitelist only' == {'detail': 'Authentication credentials were not provided.'}
+E        +  where {'detail': 'Authentication credentials were not provided.'} = <Response status_code=401, "application/json">.data
+
+poinkbackend/apps/socials/tests.py:159: AssertionError
+Steps to reproduce
+Create customized permission class
+Let it always return False
+Shoot the endpoint and expect the message will be returned
+Expected behavior
+The response message must be the same as message
+Actual behavior
+'Authentication credentials were not provided.'

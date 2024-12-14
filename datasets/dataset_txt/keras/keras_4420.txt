@@ -1,0 +1,17 @@
+guy4261 commented on 8 Sep 2016
+Following my question on the users group
+https://groups.google.com/forum/#!topic/keras-users/6BdY_rPHO2g
+I am using OS X 0.11.6 (El Capitan), Python 2.7.10, Keras 1.0.8 and numpy 1.11.1, from a virtual environment, I am using model.fit_generator (nb_worker=16; pickle_safe=True) when I train my model and experienced a weird problem.
+I suspected that for some reason, the generator_threads are not terminating properly, which makes a lot of thread sockets remain alive. In time this creates too many open files (as sockets are considered file descriptors) and the system crashes.
+To test this, you can run model.fit_generator() in a loop and check the result of the shell command lsof | grep -i python | wc -l, which should start returning higher and higher values of open file descriptors.
+When I modified training.py so that
+generator_queue returns the generator_threads (return q, _stop, generator_threads)
+each function invoking generator_queue (aka fit_generator, evaluate_generator, predict_generator) is also terminating the generator threads:
+if pickle_safe:
+    data_gen_queue.close()
+    for p in generator_threads:
+        if p.is_alive():
+            p.terminate()
+I stopped getting this open file descriptors explosion and could run for many consecutive epochs.
+See the code below, where only generator_queue and fit_generator were modified:
+http://pastebin.com/sSQhAJpw

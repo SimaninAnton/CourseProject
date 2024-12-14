@@ -1,0 +1,30 @@
+ronanpaixao commented on May 17, 2017
+Sometimes it is useful and more efficient to have SSL certificate data on memory, like when grabbing certificates from the Windows Certificate Store or some other non-file source.
+As it is implemented now, requests neither grabs the certificates from the OS nor allows simple usage from a file-like object. Thus, the user is forced to store the certificates in a temporary file to allow usage, or the request fails when trying os.path.isdir (line 224 of adapters.py on requests version 2.12.4).
+The unfortunate consequence is also that the dev has to keep the file as long as sessions, which is awkward specially for sessions which only request data occasionally. Otherwise, one has to grab all certificates again for each request. Both options also have the problem of leaving temp files if the process is terminated abruptly.
+Example use case (on Windows 7, Python 3.6):
+import ssl
+import requests
+from io import StringIO  # For Python 3.x
+from tempfile import NamedTemporaryFile
+
+# A site for which we have the CA in Windows Certificate Store (case of intranet on AD)
+url = "https://some.secure.intranet.site"  
+requests.get(url)  # Raises SSLError
+
+# Grab certificates from Windows Certificate Store
+# delete=False is required for some reason
+tempcertfile = NamedTemporaryFile('w', encoding='utf8',delete=False)
+memcertfile = StringIO()
+context = ssl.create_default_context()
+der_certs = context.get_ca_certs(binary_form=True)
+pem_certs = [ssl.DER_cert_to_PEM_cert(der) for der in der_certs]
+for pem in pem_certs:
+    tempcertfile.write(pem + '\n')
+    memcertfile.write(pem + '\n')
+tempcertfile.seek(0)
+memcertfile.seek(0)
+
+requests.get(url, verify=tempcertfile.name)  # Works
+requests.get(url, verify=memcertfile)  # Errors with a TypeError on adapters.py line 224
+👍 1

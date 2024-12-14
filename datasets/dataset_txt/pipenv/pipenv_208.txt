@@ -1,0 +1,147 @@
+MUDASSARHASHMI commented on 4 Apr 2019
+Issue description
+Tried bunch of solutions with opened/closed issues but couldn't get this resolved.
+Following is my config.yml at CircleCI:
+version: 2 # use CircleCI 2.0
+jobs: # A basic unit of work in a run
+  build: # runs not using Workflows must have a `build` job as entry point
+    # directory where steps are run
+    working_directory: ~/testci
+    docker: # run the steps with Docker
+      # CircleCI Python images available at: https://hub.docker.com/r/circleci/python/
+      - image: circleci/python:3.6.4
+        environment: # environment variables for primary container
+          PIPENV_VENV_IN_PROJECT: true
+          DATABASE_URL: postgresql://root@localhost/testci?sslmode=disable
+      # CircleCI PostgreSQL images available at: https://hub.docker.com/r/circleci/postgres/
+      - image: circleci/postgres:9.6.2
+        environment: # environment variables for the Postgres container.
+          POSTGRES_USER: postgres
+          POSTGRES_DB: testci
+    steps: # steps that comprise the `build` job
+      - checkout # check out source code to working directory
+      - run: sudo chown -R circleci:circleci /usr/local/bin
+      - run: sudo chown -R circleci:circleci /usr/local/lib/python3.6/site-packages
+      - restore_cache:
+      # Read about caching dependencies: https://circleci.com/docs/2.0/caching/
+          key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+      - run:
+          command: |
+            pip install --upgrade pip pipenv &&  pip3 install --upgrade pip pipenv
+            pipenv install
+            pipenv shell
+      - save_cache: # cache Python dependencies using checksum of Pipfile as the cache-key
+          key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+          paths:
+            - ".venv"
+            - "/usr/local/bin"
+            - "/usr/local/lib/python3.6/site-packages"
+      - run:
+          command: |
+            pipenv run python manage.py test
+      - store_test_results: # Upload test results for display in Test Summary: https://circleci.com/docs/2.0/collect-test-data/
+          path: test-results
+      - store_artifacts: # Upload test summary for display in Artifacts: https://circleci.com/docs/2.0/artifacts/
+          path: test-results
+          destination: tr1
+###I get a failed test with following:
+#!/bin/bash -eo pipefail
+pip install --upgrade pip pipenv &&  pip3 install --upgrade pip pipenv
+pipenv install
+pipenv shell
+Collecting pip
+  Downloading https://files.pythonhosted.org/packages/d8/f3/413bab4ff08e1fc4828dfc59996d721917df8e8583ea85385d51125dceff/pip-19.0.3-py2.py3-none-any.whl (1.4MB)
+    100% |████████████████████████████████| 1.4MB 1.4MB/s 
+Collecting pipenv
+  Downloading https://files.pythonhosted.org/packages/13/b4/3ffa55f77161cff9a5220f162670f7c5eb00df52e00939e203f601b0f579/pipenv-2018.11.26-py3-none-any.whl (5.2MB)
+    100% |████████████████████████████████| 5.2MB 366kB/s 
+Collecting virtualenv-clone>=0.2.5 (from pipenv)
+  Downloading https://files.pythonhosted.org/packages/37/2b/e34e411da0b960b2245f86ea83cdc20be62150a0966004f54fd2e00e5909/virtualenv_clone-0.5.2-py2.py3-none-any.whl
+Collecting certifi (from pipenv)
+  Downloading https://files.pythonhosted.org/packages/60/75/f692a584e85b7eaba0e03827b3d51f45f571c2e793dd731e598828d380aa/certifi-2019.3.9-py2.py3-none-any.whl (158kB)
+    100% |████████████████████████████████| 163kB 10.0MB/s 
+Collecting setuptools>=36.2.1 (from pipenv)
+  Downloading https://files.pythonhosted.org/packages/44/56/75e64a8fbbe9e0bd30cfdd58ca1856bc0dc15a43e41504a58d8373f34213/setuptools-40.9.0-py2.py3-none-any.whl (575kB)
+    100% |████████████████████████████████| 583kB 3.3MB/s 
+Collecting virtualenv (from pipenv)
+  Downloading https://files.pythonhosted.org/packages/33/5d/314c760d4204f64e4a968275182b7751bd5c3249094757b39ba987dcfb5a/virtualenv-16.4.3-py2.py3-none-any.whl (2.0MB)
+    100% |████████████████████████████████| 2.0MB 992kB/s 
+Installing collected packages: pip, virtualenv-clone, certifi, setuptools, virtualenv, pipenv
+  Found existing installation: pip 9.0.3
+    Uninstalling pip-9.0.3:
+      Successfully uninstalled pip-9.0.3
+  Found existing installation: virtualenv-clone 0.3.0
+    Uninstalling virtualenv-clone-0.3.0:
+      Successfully uninstalled virtualenv-clone-0.3.0
+  Found existing installation: certifi 2018.1.18
+    Uninstalling certifi-2018.1.18:
+      Successfully uninstalled certifi-2018.1.18
+  Found existing installation: setuptools 39.0.1
+    Uninstalling setuptools-39.0.1:
+      Successfully uninstalled setuptools-39.0.1
+  Found existing installation: virtualenv 15.2.0
+    Uninstalling virtualenv-15.2.0:
+      Successfully uninstalled virtualenv-15.2.0
+  Found existing installation: pipenv 11.9.0
+    Uninstalling pipenv-11.9.0:
+      Successfully uninstalled pipenv-11.9.0
+Successfully installed certifi-2019.3.9 pip-19.0.3 pipenv-2018.11.26 setuptools-40.9.0 virtualenv-16.4.3 virtualenv-clone-0.5.2
+Requirement already up-to-date: pip in /usr/local/lib/python3.6/site-packages (19.0.3)
+Requirement already up-to-date: pipenv in /usr/local/lib/python3.6/site-packages (2018.11.26)
+Requirement already satisfied, skipping upgrade: certifi in /usr/local/lib/python3.6/site-packages (from pipenv) (2019.3.9)
+Requirement already satisfied, skipping upgrade: setuptools>=36.2.1 in /usr/local/lib/python3.6/site-packages (from pipenv) (40.9.0)
+Requirement already satisfied, skipping upgrade: virtualenv in /usr/local/lib/python3.6/site-packages (from pipenv) (16.4.3)
+Requirement already satisfied, skipping upgrade: virtualenv-clone>=0.2.5 in /usr/local/lib/python3.6/site-packages (from pipenv) (0.5.2)
+Creating a virtualenv for this project…
+Pipfile: /home/circleci/testci/Pipfile
+Using /usr/local/bin/python3.6 (3.6.4) to create virtualenv…
+Using base prefix '/usr/local'
+New python executable in /home/circleci/testci/.venv/bin/python3.6
+Also creating executable in /home/circleci/testci/.venv/bin/python
+Installing setuptools, pip, wheel...
+done.
+Running virtualenv with interpreter /usr/local/bin/python3.6
+
+Virtualenv location: /home/circleci/testci/.venv
+Pipfile.lock (bd1ede) out of date, updating to (85c883)…
+Locking [dev-packages] dependencies…
+Locking [packages] dependencies…
+
+FAIL
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/resolver.py", line 69, in resolve
+[pipenv.exceptions.ResolutionFailure]:       req_dir=requirements_dir
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 726, in resolve_deps
+[pipenv.exceptions.ResolutionFailure]:       req_dir=req_dir,
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 480, in actually_resolve_deps
+[pipenv.exceptions.ResolutionFailure]:       resolved_tree = resolver.resolve()
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 395, in resolve
+[pipenv.exceptions.ResolutionFailure]:       raise ResolutionFailure(message=str(e))
+[pipenv.exceptions.ResolutionFailure]:       pipenv.exceptions.ResolutionFailure: ERROR: ERROR: Could not find a version that matches pscycopg2
+[pipenv.exceptions.ResolutionFailure]:       No versions found
+[pipenv.exceptions.ResolutionFailure]: Warning: Your dependencies could not be resolved. You likely have a mismatch in your sub-dependencies.
+  First try clearing your dependency cache with $ pipenv lock --clear, then try the original command again.
+ Alternatively, you can use $ pipenv install --skip-lock to bypass this mechanism, then run $ pipenv graph to inspect the situation.
+  Hint: try $ pipenv lock --pre if it is a pre-release dependency.
+ERROR: ERROR: Could not find a version that matches pscycopg2
+No versions found
+Was https://pypi.org/simple reachable?
+[pipenv.exceptions.ResolutionFailure]:       req_dir=requirements_dir
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 726, in resolve_deps
+[pipenv.exceptions.ResolutionFailure]:       req_dir=req_dir,
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 480, in actually_resolve_deps
+[pipenv.exceptions.ResolutionFailure]:       resolved_tree = resolver.resolve()
+[pipenv.exceptions.ResolutionFailure]:   File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 395, in resolve
+[pipenv.exceptions.ResolutionFailure]:       raise ResolutionFailure(message=str(e))
+[pipenv.exceptions.ResolutionFailure]:       pipenv.exceptions.ResolutionFailure: ERROR: ERROR: Could not find a version that matches pscycopg2
+[pipenv.exceptions.ResolutionFailure]:       No versions found
+[pipenv.exceptions.ResolutionFailure]: Warning: Your dependencies could not be resolved. You likely have a mismatch in your sub-dependencies.
+  First try clearing your dependency cache with $ pipenv lock --clear, then try the original command again.
+ Alternatively, you can use $ pipenv install --skip-lock to bypass this mechanism, then run $ pipenv graph to inspect the situation.
+  Hint: try $ pipenv lock --pre if it is a pre-release dependency.
+ERROR: ERROR: Could not find a version that matches pscycopg2
+No versions found
+Was https://pypi.org/simple reachable?
+
+['Traceback (most recent call last):\n', '  File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 501, in create_spinner\n    yield sp\n', '  File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 649, in venv_resolve_deps\n    c = resolve(cmd, sp)\n', '  File "/usr/local/lib/python3.6/site-packages/pipenv/utils.py", line 539, in resolve\n    sys.exit(c.return_code)\n', 'SystemExit: 1\n']
+Exited with code 1
+Assistance requested.

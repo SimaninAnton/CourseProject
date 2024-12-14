@@ -1,0 +1,85 @@
+lhk commented on 2 Nov 2016 •
+edited
+I'm trying to implement a Convolutional - LSTM.
+It's a recurrent layer which accepts an image as input and uses a convolution to calculate the various gates in the LSTM.
+So I'm trying to subclass Recurrent and change the input dimension.
+In order to do that I read the documentation on writing a custom layer and followed the suggestion to read source code to understand what's happening under the hood.
+I read the code for recurrent.py and think that the structure is clear: You inherit from Recurrent but you don't overwrite call, instead you provide a custom step function and Recurrent will take care of applying the step to each entry in a sequence.
+As a starting point I took the code for the GRU and tried to adapt it to my needs.
+I want to combine a 2D convolution and a GRU (usually it's an LSTM, but that doesn't really matter - I decided to implement a C-GRU)
+The idea is to have a usual 2D convolution in the model which outputs 3 features. Those 3 features will be used as the r,z and h activations in the GRU. In the custom layer I only have to keep track of the state. My layer doesn't even have trainable weights, they are contained in the convolution.
+Notable changes to the original GRU code are:
+    def step(self, x, states):
+        # the previous state is a 2D vector
+        h_tm1 = states[0]  # previous memory
+       
+        z=self.inner_activation(x[:,0,:,:])
+        r=self.inner_activation(x[:,1,:,:])
+        hh=self.activation(x[:,2,:,:])
+
+        h = z * h_tm1 + (1 - z) * hh
+        return h, [h]
+As you can see, I'm simply reusing the features from the convolution. The multiplications should be performed element-wise. I'll debug this to make sure it has the intended behaviour.
+Since the state becomes 2D, I'm changing the initial_state, too:
+    def get_initial_states(self, x):
+        initial_state=K.zeros_like(x)   # (samples, timesteps, input_dim)
+                                        # input_dim = (3, x_dim, y_dim)
+        initial_state=K.sum(initial_state, axis=(1,2)) # (samples, x_dim, y_dim)
+        return initial_state
+The output_shape seems to be hardcoded for Recurrent networks. I'm overriding it:
+    def get_output_shape_for(self, input_shape):
+        #TODO: this is hardcoding for th layout
+        return (input_shape[0],1,input_shape[2],input_shape[3])
+Another thing that's hardcoded is the input_spec.
+In the constructor, after the call to super, I'm overriding it with my input dimension:
+class CGRU(Recurrent):
+    def __init__(self,
+                 init='glorot_uniform', inner_init='orthogonal',
+                 activation='tanh', inner_activation='hard_sigmoid', **kwargs):
+
+        self.init = initializations.get(init)
+        self.inner_init = initializations.get(inner_init)
+        self.activation = activations.get(activation)
+        self.inner_activation = activations.get(inner_activation)
+
+        #removing the regularizers and the dropout
+
+        super(CGRU, self).__init__(**kwargs)
+
+        # this seems necessary in order to accept 5 input dimensions
+        # (samples, timesteps, features, x, y)
+        self.input_spec=[InputSpec(ndim=5)]
+There are other small changes.
+You can find the whole code here: http://pastebin.com/60ztPis3
+When ran, this produces the following error message:
+theano.tensor.var.AsTensorError: ('Cannot convert [None] to TensorType', <class 'list'>)
+The whole error message on pastebin: http://pastebin.com/Cdmr20Yn
+I'm trying to debug the code. But that's rather hard, it goes deep into the Keras source code.
+One thing: The execution never reaches my custom step function. So apparently something in the configuration is going wrong. In the call function of Recurrent, input_shape is a tuple with the entries (None, 40,1,40,40)
+This is correct. My sequence has 40 elements. Each one is an image with 1 feature and 40x40 resolution. I'm using the "th" layout.
+Here is the call function of Recurrent.
+My code reaches the call to K.rnn, the setup looks fine to me. Input_spec seems correct.
+But during K.rnn it crashes. Without reaching my step function.
+    def call(self, x, mask=None):
+        # input shape: (nb_samples, time (padded with zeros), input_dim)
+        # note that the .build() method of subclasses MUST define
+        # self.input_spec with a complete input shape.
+        input_shape = self.input_spec[0].shape
+        if self.stateful:
+            initial_states = self.states
+        else:
+            initial_states = self.get_initial_states(x)
+        constants = self.get_constants(x)
+        preprocessed_input = self.preprocess_input(x)
+
+        last_output, outputs, states = K.rnn(self.step, preprocessed_input,
+                                             initial_states,
+                                             go_backwards=self.go_backwards,
+                                             mask=mask,
+                                             constants=constants,
+                                             unroll=self.unroll,
+                                             input_length=input_shape[1])
+At this point I'm lost.
+Could you help me ?
+Am I missing something, do I need to configure something else ?
+3

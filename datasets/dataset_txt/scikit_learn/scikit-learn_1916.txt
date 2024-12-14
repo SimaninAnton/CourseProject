@@ -1,0 +1,37 @@
+Contributor
+goncalo-rodrigues commented on Sep 8, 2017
+There seems to be an error in the calculation of kl_divergence in t_sne. (line 140)
+    X_embedded = params.reshape(n_samples, n_components)
+
+    # Q is a heavy-tailed distribution: Student's t-distribution
+    n = pdist(X_embedded, "sqeuclidean")
+    n += 1.
+    n /= degrees_of_freedom
+    n **= (degrees_of_freedom + 1.0) / -2.0
+    Q = np.maximum(n / (2.0 * np.sum(n)), MACHINE_EPSILON)
+
+    # Optimization trick below: np.dot(x, y) is faster than
+    # np.sum(x * y) because it calls BLAS
+
+    # Objective: C (Kullback-Leibler divergence of P and Q)
+    kl_divergence = 2.0 * np.dot(P, np.log(P / Q))
+The correct formula for t-student probability distribution function is, according to wikipedia:
+https://en.wikipedia.org/wiki/Student%27s_t-distribution
+(gamma((v+1)/2)/gamma(sqrt(v*pi)*gamma(v/2)) * (1+(t^2)/v)^(-(v+1)/2)
+= constant * (1+(t^2)/v)^(-(v+1)/2)
+where v = degrees of freedom and t-sne uses the pairwise distances as the variable t. We can ignore the constant because it doesn't depend on t and it will be normalized away. The code, however is computing (1/v + (t^2)/v)^(-(v+1)/2).
+    X_embedded = params.reshape(n_samples, n_components)
+
+    # Q is a heavy-tailed distribution: Student's t-distribution
+    n = pdist(X_embedded, "sqeuclidean")
+    n /= degrees_of_freedom
+    n += 1.
+    n **= (degrees_of_freedom + 1.0) / -2.0
+    Q = np.maximum(n / (2.0 * np.sum(n)), MACHINE_EPSILON)
+
+    # Optimization trick below: np.dot(x, y) is faster than
+    # np.sum(x * y) because it calls BLAS
+
+    # Objective: C (Kullback-Leibler divergence of P and Q)
+    kl_divergence = 2.0 * np.dot(P, np.log(P / Q))
+This would be the correct version (n+=1 after dividing by degrees of freedom)

@@ -1,0 +1,82 @@
+Contributor
+mikekestemont commented on 3 Feb 2016
+There has been a lot of discussion recently on shared nodes and 'siamese' architectures, with some great progress on weight sharing (cf. #928 ). It would be nice to add an example on how to implement a 'vanilla' siamese net, like seminally proposed by Chopra et al.. I wanted to do this, but implementing this architecture is surprisingly far from trivial. Assume that our model takes two inputs, transforms these through a set of shared layers, and finally outputs the distance/similarity for the representations obtained in both subnets. In any case, the distance function must probably be implemented as a custom function to allow enough flexibility and add e.g. the Euclidean distance as they do in the original paper. Sorry for the long question. The setup:
+from keras.models import Graph, Sequential
+from keras.layers.core import *
+
+in_dim = 1000
+hidden_dim = 100
+out_dim = 1
+I wanted to use a Graph (which originally felt quite natural, because we have multiple inputs). We leave the Euclidean distance for what it is and we use a dummy Layer() layer to produce a dot product.
+G = Graph()
+G.add_input(name='input_a', input_shape=(in_dim,))
+G.add_input(name='input_b', input_shape=(in_dim,))
+
+G.add_shared_node(Dense(hidden_dim),
+                  name='shared_dense',
+                  inputs=['input_a', 'input_b'],
+                  outputs=['input_a+', 'input_b+'],
+                  merge_mode=None,
+                  create_output=False)
+
+G.add_node(Layer(),
+            name = 'target', 
+            inputs = ['input_a+', 'input_b+'],
+            merge_mode = 'dot',
+            dot_axes = 1,
+            create_output = False)
+
+G.add_node(Activation('tanh'),
+                   input='target',
+                   name='bin',
+                   create_output=True)
+
+G.compile(optimizer='RMSprop',
+          loss={'bin':'mse'})
+This compiles, but doesn't give any flexibility as to the distance computation (e.g. Euclidean distance, or any other metric). The recently added LambdaMerge layer seems a great way to this, but it still unclear to me (from docs and code) whether the LambdaLayer is compatible with the Graph container. Using the example in LambdaMerge's docstring (root mse), I tried this:
+G = Graph()
+G.add_input(name='input_a', input_shape=(in_dim,))
+G.add_input(name='input_b', input_shape=(in_dim,))
+
+def rms(X):
+    s = X[0]**2
+    for i in range(1, len(X)):
+        s += X[i]**2
+    s /= len(X)
+    s = np.sqrt(s)
+    return s
+
+def output_shape(input_shapes):
+    return input_shapes[0]
+
+G.add_shared_node(Dense(hidden_dim),
+                  name='shared_dense',
+                  inputs=['input_a', 'input_b'],
+                  outputs=['input_a+', 'input_b+'],
+                  merge_mode=None,
+                  create_output=False)
+
+lambda_merge = LambdaMerge(['input_a+', 'input_b+'], rms, output_shape)
+
+G.add_node(lambda_merge, name='target')
+
+G.add_node(Activation('tanh'),
+                   input='target',
+                   name='bin',
+                   create_output=True)
+G.compile(optimizer='SGD',
+                       loss={'bin':'binary_crossentropy'})
+This gives an error, implying that I can't pass string names to LambdaMerge. Bottom line: how can I add a LambdaMerge layer on top of the outputs produced by the shared nodes in a Graph? Using a stack of Sequentials did not help either (even though I added a dummy layer to make sure that the shared layers aren't first in the network):
+input1 = Sequential()
+input2 = Sequential()
+input1.add(Activation('linear'))
+input2.add(Activation('linear'))
+add_shared_layer(Dense(100), inputs=[input1, input2])
+m = Sequential()
+lambda_merge = LambdaMerge([input1, input2], rms, output_shape)
+m.add(lambda_merge)
+m.add(Activation('tanh'))
+model.compile(loss='mse', optimizer='rmsprop')
+This gives:
+Exception: Layer is not connected. Did you forget to set "input_shape"?
+All feedback is welcome (I might be missing something obvious).

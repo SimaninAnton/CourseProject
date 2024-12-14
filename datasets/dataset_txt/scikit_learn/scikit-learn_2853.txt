@@ -1,0 +1,101 @@
+ivdorelian commented on Aug 10, 2016
+Description
+When using the distributed dask or ipyparallel backends for joblib, nothing is actually run on the worker nodes. I am using a linux HPC cluster, Python3.5, and the latest dask, distributed, joblib available from pip (also tried the latest joblib from git).
+I am using the development version 0.18.dev0 of scikit-learn.
+Steps/Code to Reproduce
+First, run dask-ssh, which creates a scheduler and worker nodes:
+                 Dask.distributed v1.11.3
+
+Worker nodes:
+  0: compute057
+  1: compute058
+  2: compute059
+  3: compute060
+  4: compute061
+  5: compute062
+  6: compute063
+  7: compute064
+  8: compute065
+  9: compute066
+  10: compute067
+  11: compute068
+
+scheduler node: compute057:8786
+Second, consider this code which does a rather long randomized search:
+import distributed.joblib
+from distributed import Executor
+from joblib import Parallel, parallel_backend
+from sklearn.grid_search import RandomizedSearchCV
+from sklearn.datasets import load_digits
+from sklearn.svm import SVC
+import numpy as np
+
+digits = load_digits()
+
+e = Executor('compute057:8786')
+print(e)
+
+param_space = {
+    'C': np.logspace(-6, 6, 300),
+    'gamma': np.logspace(-8, 8, 300),
+    'tol': np.logspace(-4, -1, 300),
+    'class_weight': [None, 'balanced'],
+}
+
+model = SVC(kernel='rbf')
+search = RandomizedSearchCV(model, param_space, cv=10, n_iter=1000, verbose=1, n_jobs=40)
+
+with parallel_backend('distributed', scheduler_host='compute057:8786'):
+        search.fit(digits.data, digits.target)
+Expected Results
+The search should scale almost linearly with the number of workers, as it does until n_jobs=20, 20 being the number of cores available to a single node. Information about the workers should be printed in the dask-ssh window.
+Actual Results
+This correctly prints the number of workers and cores when run:
+<Executor: scheduler="compute057:8786" processes=12 cores=240>
+However, in the console where dask-ssh was run, only a connection to the scheduler is shown:
+[ scheduler compute057:8786 ] : distributed.core - INFO - Connection from 10.111.0.1:40883 to Scheduler
+[ scheduler compute057:8786 ] : distributed.core - INFO - Connection from 10.111.0.1:40884 to Scheduler
+[ scheduler compute057:8786 ] : distributed.scheduler - INFO - Connection to Scheduler, 3cf9cad6-5e6e-11e6-bb03-98be944899da
+Information about the workers should be printed too if they were used, as is the case if we do the inc example here: http://distributed.readthedocs.io/en/latest/executor.html
+Which shows:
+[ worker compute064 ] : distributed.core - INFO - Connection from 10.111.0.60:49208 to Worker
+[ worker compute064 ] : distributed.core - INFO - Connection from 10.111.0.60:49223 to Worker
+[ worker compute064 ] : distributed.worker - INFO - Deleted 1 keys
+Which proves that inc is computed on a worker.
+These are some tests to prove that this scales up until n_jobs=20, but not above that. So nothing gets run on the workers, but on the node that python my_file.py is executed on:
+Fitting 10 folds for each of 10000 candidates, totalling 100000 fits
+[Parallel(n_jobs=20)]: Done  10 tasks      | elapsed:    0.7s
+[Parallel(n_jobs=20)]: Done 160 tasks      | elapsed:    4.8s
+[Parallel(n_jobs=20)]: Done 410 tasks      | elapsed:   12.6s
+[Parallel(n_jobs=20)]: Done 760 tasks      | elapsed:   23.7s
+[Parallel(n_jobs=20)]: Done 1210 tasks      | elapsed:   37.9s
+[Parallel(n_jobs=20)]: Done 1760 tasks      | elapsed:   55.0s
+[Parallel(n_jobs=20)]: Done 2410 tasks      | elapsed:  1.2min
+
+---
+
+Fitting 10 folds for each of 10000 candidates, totalling 100000 fits
+[Parallel(n_jobs=4)]: Done  42 tasks      | elapsed:    6.2s
+[Parallel(n_jobs=4)]: Done 192 tasks      | elapsed:   27.5s
+[Parallel(n_jobs=4)]: Done 442 tasks      | elapsed:  1.0min
+[Parallel(n_jobs=4)]: Done 792 tasks      | elapsed:  1.7min
+
+
+---
+
+Fitting 10 folds for each of 10000 candidates, totalling 100000 fits
+[Parallel(n_jobs=100)]: Done 250 tasks      | elapsed:    9.1s
+[Parallel(n_jobs=100)]: Done 600 tasks      | elapsed:   19.3s
+[Parallel(n_jobs=100)]: Done 1050 tasks      | elapsed:   34.0s
+[Parallel(n_jobs=100)]: Done 1600 tasks      | elapsed:   49.8s
+[Parallel(n_jobs=100)]: Done 2250 tasks      | elapsed:  1.2min
+Versions
+Linux-3.10.0-123.el7.x86_64-x86_64-with-redhat-7.2-Maipo
+Python 3.5.2 |Anaconda custom (64-bit)| (default, Jul 2 2016, 17:53:06)
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-1)]
+NumPy 1.11.1
+SciPy 0.17.0
+Scikit-Learn 0.18.dev0
+Note
+I am not sure if this would be better suited for the joblib git. Please advise if so.
+The same issue also happens with an ipyparallel distributed cluster.

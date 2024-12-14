@@ -1,0 +1,53 @@
+Alex3917 commented on 23 Mar 2017 •
+edited
+tl;dr: In line 25 and 271 of test.py, request._force_auth_user = user should probably be replaced with request._force_auth_user = copy.deepcopy(user). Otherwise if you make a second request to a view with the same user, bad things can happen.
+See the test code and comments below for an example of how this happens:
+class UserTestCase(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = user_views.User.as_view()
+
+    def test_modify_profile_with_invalid_gender(self):
+        user1 = UserFactory(email_address='example@example.com', password='hunter2')
+
+        # Try submitting an invalid gender
+        put_request_data = { 'gender': 'ABC' }
+
+        request = self.factory.put('/user', put_request_data)
+        force_authenticate(request, user=user1)
+        resp = self.view(request)
+
+        # At this point in the test code one would expect that user1
+        # wouldn't have any 'gender' property, since we never saved the
+        # user model in the 'put' method. However, the implementation of 
+        # force_authenticate uses the user object that's passed in directly
+        # instead of doing `user = copy.deepcopy(user).`
+
+        request2 = self.factory.get('/user')
+        force_authenticate(request2, user=user1)
+        resp2 = self.view(request2)
+
+        # And now the 'get' view returns { 'gender': 'ABC' } instead of 
+        # { 'gender': '' }, so subsequent tests fail. 
+
+
+# user_views.py
+class User(APIView):
+    def put(self, request):
+        gender = request.data['gender']
+
+        try:
+            # Let's assume gender is a choice field where this throws an error
+            request.user.gender = gender
+            request.user.full_clean()
+        except ValidationError as e:
+            return Response(data={}, status=422)
+
+        # This code never executes so the user model shouldn't get saved.
+        request.user.save()
+        return Response(data={}, status=200)
+
+
+    def get(self, request):
+        resp = {'gender': request.user.gender }
+        return Response(data=resp, status=200)

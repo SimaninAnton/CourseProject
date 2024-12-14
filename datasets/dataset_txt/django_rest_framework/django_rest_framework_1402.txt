@@ -1,0 +1,38 @@
+benrolsen commented on 2 Dec 2015
+So, I'm making a POST to an endpoint and including a JSON array as one of the values (custom handling for a nested serializer just like http://www.django-rest-framework.org/topics/3.0-announcement/#writable-nested-serialization). However, I can't get the data to my serializer's create() function because it's not making it past the validation. Tracing the error down, I discovered that the JSON array has a different string format than parse_html_list() in utils/html.py is expecting. I don't know if this is because I'm using jQuery's ajax() call or what, but here's what I'm seeing.
+On the client side, I can clearly see that my post data is a JSON object such as:
+{
+    partnumber: "100", 
+    parttype: "1", 
+    vendorpartnumberprices_set: [{vendor: "1", price: "0.5"}]
+}
+Dandy. Now when we get to to_internal_value() in serializers.py, I see the data from the request represented as a QueryDict like this:
+{
+    'partnumber': ['100']
+    'parttype': ['1']
+    'vendorpartnumberprices_set[0][vendor]': ['1']
+    'vendorpartnumberprices_set[0][price]': ['0.5']
+}
+Here's where I hit my problem. Eventually this data gets to parse_html_list() in utils/html.py, and even in the comments, the * List of dictionaries is expecting a slightly different format:
+    * List of dictionaries.
+
+    {
+        '[0]foo': 'abc',
+        '[0]bar': 'def',
+        '[1]foo': 'hij',
+        '[1]bar': 'klm',
+    }
+See the extra brackets in the QueryDict string? So instead of getting an output like this:
+    [
+        {'foo': 'abc', 'bar': 'def'},
+        {'foo': 'hij', 'bar': 'klm'}
+    ]
+I get this (from my example):
+    [
+        {'[vendor]': '1', '[price]': '0.5'},
+    ]
+Obviously this fails on the validation because the keys are wrong. The regex carried over the extra brackets. I was able to hack around this by modifying the regex in parse_html_list(), from
+regex = re.compile(r'^%s\[([0-9]+)\]\(.*)\$' % re.escape(prefix))
+to
+regex = re.compile(r'^%s\[([0-9]+)\]\[(.*)\]$' % re.escape(prefix))
+Unfortunately I don't know if I'm doing something wrong on the client side, or if this is a side-effect of using jQuery to send the JSON data, or if this is a bug with DRF. When you made the parse_html_list() function, did you have a case where the JSON object keys didn't get brackets put around them? Is this because I'm sending a single object with an array of objects inside it, rather than a simple array? If you have any insight into this, I'd greatly appreciate it.

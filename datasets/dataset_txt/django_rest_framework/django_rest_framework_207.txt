@@ -1,0 +1,91 @@
+GaramNick commented on 11 Mar 2019
+While writing a sub class of the UniqueTogetherValidator for nested serializers I witnessed unpredictable behavior in the qs_filter function of the validator.
+Steps to reproduce
+models.py
+from django.db import models
+
+class Child(models.Model):
+    name = models.CharField(max_length=8)
+
+class Relationship(models.Model):
+    child_to = models.ForeignKey(Child, related_name='to_relationships', on_delete=models.CASCADE)
+    child_from = models.ForeignKey(Child, related_name='from_relationships', on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ('child_to', 'child_from')
+serializers.py
+from rest_framework import serializers
+from .models import Child, Relationship
+
+class ChildSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField()
+
+    class Meta:
+        model = Child
+        fields = ('id',)
+
+class RelationShipSerializer(serializers.ModelSerializer):
+    child_to = ChildSerializer()
+    child_from = ChildSerializer()
+
+    class Meta:
+        model = Relationship
+        fields = '__all__'
+
+    def create(self, validated_data):
+        child_to_data = validated_data.pop('child_to')
+        child_from_data = validated_data.pop('child_from')
+        child_to = Child.objects.get(id=child_to_data['id'])
+        child_from = Child.objects.get(id=child_from_data['id'])
+
+        instance = self.Meta.model.objects.create(child_to=child_to, child_from=child_from)
+
+        return instance
+views.py
+from rest_framework.mixins import CreateModelMixin
+from rest_framework.viewsets import GenericViewSet
+
+class RelationShipViewSet(CreateModelMixin, GenericViewSet):
+    queryset = Relationship.objects.all()
+    serializer_class = RelationShipSerializer
+Invoke a create with body:
+{
+    "child_from": {
+        "id": 1
+    },
+    "child_to": {
+        "id": 2
+    }
+}
+Expected behavior
+A TypeError in qs_filter: int() argument must be a string, a bytes-like object or a number, not 'collections.OrderedDict'
+Actual behavior
+A queryset containing the following SQL query:
+SELECT "testmodule_relationship"."id", "testmodule_relationship"."child_from_id", "testmodule_relationship"."child_to_id"
+FROM "testmodule_relationship"
+WHERE ("testmodule_relationship"."child_from_id" = OrderedDict([('id', 1)])
+AND "testmodule_relationship"."child_to_id" = OrderedDict([('id', 2)]))
+And the following error:
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/rest_framework/validators.py", line 24, in qs_exists
+    return queryset.exists()
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/models/query.py", line 718, in exists
+    return self.query.has_results(using=self.db)
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/models/sql/query.py", line 516, in has_results
+    return compiler.has_results()
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/models/sql/compiler.py", line 1035, in has_results
+    return bool(self.execute_sql(SINGLE))
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/models/sql/compiler.py", line 1065, in execute_sql
+    cursor.execute(sql, params)
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/backends/utils.py", line 100, in execute
+    return super().execute(sql, params)
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/backends/utils.py", line 68, in execute
+    return self._execute_with_wrappers(sql, params, many=False, executor=self._execute)
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/backends/utils.py", line 77, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/backends/utils.py", line 85, in _execute
+    return self.cursor.execute(sql, params)
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/utils.py", line 89, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "/home/ubuntu/.local/share/virtualenvs/oper-q5yAdjw1/lib/python3.7/site-packages/django/db/backends/utils.py", line 85, in _execute
+    return self.cursor.execute(sql, params)
+django.db.utils.ProgrammingError: can't adapt type 'collections.OrderedDict'

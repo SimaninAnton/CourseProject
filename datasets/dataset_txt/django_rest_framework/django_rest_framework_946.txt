@@ -1,0 +1,90 @@
+murdav commented on 18 Dec 2016
+Hello,
+djangorestframework==3.5.3
+Models and serializers definition:
+class MapLayer1Model(models.Model):
+    field_for_map_layer_1 = models.TextField()
+
+class MapLayer2Model(models.Model):
+    field_for_map_layer_2 = models.TextField()
+
+
+class MapLayer1ModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MapLayer1Model
+        fields = '__all__'
+
+class MapLayer2ModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MapLayer2Model
+        fields = '__all__'
+class MapLayer(models.Model):
+    owner = models.ForeignKey(User)
+
+    content_type = models.ForeignKey(ContentType)
+    object_id = models.PositiveIntegerField()  # up to 2147483647
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    stack_order = models.PositiveSmallIntegerField(_('stack order'))
+    ***
+
+class Map(models.Model):
+    owner = models.ForeignKey(User)
+    title = models.TextField(_('title'), blank=True,)
+
+    # layers is a many to many relation it can point to MapLayer1Model 
+    # or MapLayer2Model or XXX)
+    layers = models.ManyToManyField(MapLayer, related_name='maps')
+    ***
+class GenericMapLayerSerializer(serializers.RelatedField):
+    """
+    """
+    class Meta:
+        fields = '__all__'
+
+    def to_representation(self, map_layer):
+        context = {'pk_map': map_layer.pk,
+                   'stack_order': map_layer.stack_order}
+        if isinstance(map_layer.content_object, (MapLayer1Model):
+            # http://www.django-rest-framework.org/api-guide/serializers/#including-extra-context
+            serializer = MapLayer1ModelSerializer(map_layer.content_object, context=context)
+        elif isinstance(map_layer.content_object, (MapLayer2Model):
+            serializer = MapLayer2ModelSerializer(map_layer.content_object, context=context)
+        else:
+            raise Exception('Unexpected type of layer object')
+
+        return serializer.data
+
+
+class MapSerializer(serializers.ModelSerializer):
+    map_params = JSONSerializerField()
+    layers = GenericMapLayerSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Map
+        fields = '__all__'
+But serializer.data doesn't contain the context as specified in http://www.django-rest-framework.org/api-guide/serializers/#including-extra-context
+Debugging serializer = MapLayer1ModelSerializer(map_layer.content_object, context=context) after the object-cache-check it enters in:
+# rest_framework/serializers.py
+class BaseSerializer(Field):
+    def __new__(cls, *args, **kwargs):
+         ****
+         return super(BaseSerializer, cls).__new__(cls, *args, **kwargs) <-- context is correctly stored in kwargs
+Second step is:
+# rest_framework/fields.py
+class Field(object):
+    def __new__(cls, *args, **kwargs):
+        """
+        When a field is instantiated, we store the arguments that were used,
+        so that we can present a helpful representation of the object.
+        """
+        ***
+        instance._kwargs = kwargs
+        return instance <-- context is correctly stored in instance._kwargs
+But now it reenters in BaseSerializer __init__ and reset the context
+class BaseSerializer(Field):
+    def __init__(self, instance=None, data=empty, **kwargs):
+        self._context = kwargs.pop('context', {}) <-- context is reset
+Is it a bug? From DRF doc (http://www.django-rest-framework.org/api-guide/serializers/#including-extra-context) it seems a possible workflow.
+Thanks for everything,
+D

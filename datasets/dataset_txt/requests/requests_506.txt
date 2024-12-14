@@ -1,0 +1,138 @@
+jshaw86 commented on Sep 16, 2017 •
+edited
+Summary.
+We are running TLS+SNI with fabio https://github.com/fabiolb/fabio and backed by a nodejs running an HTTPS server with self signed certs. We have the application working with curl. We can't get this working with requests. I tried the toolbelt as well as may other adapters I found on the internet. Fundamentally what we need to have happen is the client will connect to the proxy on the given physical IP and PORT. Then pass the logical host through so that the proxy can route the logical server name to the correct backend. Plz halp.
+Expected Result
+curl -v -X PUT --resolve "logical.server:10000:$IP" \
+        "https://logical.server:10000/some/uri" -d '{"value": "hello"}' \
+         -H "X-hmac: $(_hmac)" \
+         -H "Content-Type: application/json" \
+         -H "X-nonce: $(_nonce)"
+Actual Result
+With PyOpenSSL: (Caused by SSLError(SSLError("bad handshake: SysCallError(-1, 'Unexpected EOF')",),))
+Without PyOpenSSL: (Caused by SSLError(SSLEOFError(8, u'EOF occurred in violation of protocol (_ssl.c:661)'),))
+Reproduction Steps
+However I can't find a reasonable solution in requests to mimic this curl behavior.
+My first go was just following the toolbelt SNI example:
+s = requests.Session()
+s.mount("https://",  HostHeaderSSLAdapter())
+nonce = _nonce()
+data="foo"
+r = s.put("https://$IP:10000/some/uri", json={"value": "hello"}, headers={
+                                          "Host": "logical.server",
+                                          "X-hmac": _hmac(data, SECRET),
+                                          "Content-Type": "application/json",
+                                          "X-nonce": nonce}, verify=False)
+I tried other strategies around forcing TLS and spoofing with transparent proxies: jakubroztocil/httpie#422 (comment). None changed the behavior.
+System Information
+$ python --version
+Python 2.7.13
+$ openssl version
+OpenSSL 1.0.2l  25 May 2017
+$ OSX (also tried on linux 14.04)
+10.12.6
+Without pyOpenSSL
+$ pip freeze
+asn1crypto==0.22.0
+certifi==2017.7.27.1
+cffi==1.10.0
+chardet==3.0.4
+cryptography==2.0.3
+enum34==1.1.6
+idna==2.6
+ipaddress==1.0.18
+pycparser==2.18
+requests==2.18.4
+requests-toolbelt==0.8.0
+six==1.10.0
+urllib3==1.22
+With pyOpenSSL
+$ pip freeze
+asn1crypto==0.22.0
+certifi==2017.7.27.1
+cffi==1.10.0
+chardet==3.0.4
+cryptography==2.0.3
+enum34==1.1.6
+idna==2.6
+ipaddress==1.0.18
+pycparser==2.18
+pyOpenSSL==17.3.0
+requests==2.18.4
+requests-toolbelt==0.8.0
+six==1.10.0
+urllib3==1.22
+Openssl connecting to Fabio
+$ openssl s_client -connect $IP:$PORT -servername logical.server
+CONNECTED(00000003)
+depth=0 /C=US/ST=CA/L=San Francisco/O=PubNub/OU=Dev/CN=logical.server
+verify error:num=18:self signed certificate
+verify return:1
+depth=0 /C=US/ST=CA/L=San Francisco/O=PubNub/OU=Dev/CN=logical.server
+verify return:1
+---
+Certificate chain
+ 0 s:/C=US/ST=CA/L=San Francisco/O=PubNub/OU=Dev/CN=logical.server.name
+   i:/C=US/ST=CA/L=San Francisco/O=PubNub/OU=Dev/CN=logical.server.name
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIDozCCAougAwIBAgIJAM3s1shczk7eMA0GCSqGSIb3DQEBCwUAMGgxCzAJBgNV
+BAYTAlVTMQswCQYDVQQIDAJDQTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzEPMA0G
+A1UECgwGUHViTnViMQwwCgYDVQQLDANEZXYxFTATBgNVBAMMDHZhdWx0ci5sb2Nh
+bDAeFw0xNzA5MTQyMjMzMzJaFw00NTAxMzAyMjMzMzJaMGgxCzAJBgNVBAYTAlVT
+MQswCQYDVQQIDAJDQTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzEPMA0GA1UECgwG
+UHViTnViMQwwCgYDVQQLDANEZXYxFTATBgNVBAMMDHZhdWx0ci5sb2NhbDCCASIw
+DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKPtkscVVph69UEOYneVm9zh3Ru7
+DPXihS4+P6U2hHANTpX/FOxQIP+FC5ELG+xDG2caCXbb7oER9MFm+TkytzQqW4ur
+lbngnOl5t3QPHfsMB645SCYKmjREOMSwgIx4zi2brBf5GKAu5hOpP84FPSYd06a5
+LzIJBEybiFJVKH/j2Ig5ekgvw6F6pjDMIb035G1WMHl341rOyusfAAEiJeTW0c6b
+6MF4GJL8WS8tpwUVAGnFvcub6O/uxoniiW6vn53Xs04+zFgecYtklcqFZeUHKLxe
+EPFbTXTi0yWUcC4UC/E9iFGVgVzBZxWQf1Bj/R3o1b+irZiYSGnNeX5IQSsCAwEA
+AaNQME4wHQYDVR0OBBYEFFL6Npq18TvCkwc8tazezOERo5M9MB8GA1UdIwQYMBaA
+FFL6Npq18TvCkwc8tazezOERo5M9MAwGA1UdEwQFMAMBAf8wDQYJKoZIhvcNAQEL
+BQADggEBAHtzLceffM1AWh/XXqidtb3fkLovpk9XAADoPetb2ARJBYG/BUJwmmiA
+zEQ8IVxS5N3t+sdEC5RBKfqW05DDnW/0OY3eIHLUYqoyyvt6/WzJo08J6kKNLgIm
+ukmOfNfs7i2R0YRbfsmq8Mze9Lk3G23Q44wOzx89vGX2mCYkeUznR9m28e+23wLX
+aBYUix9XpWrj13R6pc1ljS2O9SqTWjsmi6zr/HhbdGd3QyVK+Q8g4DpJ2tWPzZR4
+q7VsxEzJubKXGQb6d20k5DT4ehjQBAbxT4BSrqhyBABox4M/R2sQ4iDColXemXEI
+YZl8zbJwpPZxV9mvstWY+NQDxCPe9yM=
+-----END CERTIFICATE-----
+subject=/C=US/ST=CA/L=San Francisco/O=PubNub/OU=Dev/CN=logical.server
+issuer=/C=US/ST=CA/L=San Francisco/O=PubNub/OU=Dev/CN=logical.server
+---
+No client certificate CA names sent
+---
+SSL handshake has read 1299 bytes and written 447 bytes
+---
+New, TLSv1/SSLv3, Cipher is AES256-SHA
+Server public key is 2048 bit
+Secure Renegotiation IS supported
+Compression: NONE
+Expansion: NONE
+SSL-Session:
+    Protocol  : TLSv1
+    Cipher    : AES256-SHA
+    Session-ID: DB0923D38B54871EE944C9A206A51B3C7C54BD5723EBB1DBF30D421AB742AD88
+    Session-ID-ctx:
+    Master-Key: D32CC66A48B71E577024A0947AC292CC32F374978F0156104D958A9AE24E9AA71B67AFCFD3D26F778139576E2CDF40EA
+    Key-Arg   : None
+    TLS session ticket lifetime hint: 300 (seconds)
+    TLS session ticket:
+    0000 - c3 64 25 44 9c 28 85 bc-a3 80 1c 79 96 e3 aa 45   .d%D.(.....y...E
+    0010 - 2d dd 07 6d 8e 39 43 95-4c 36 dc 58 d6 ea 9e 2e   -..m.9C.L6.X....
+    0020 - 60 10 f4 ba 83 84 e9 6a-29 25 d6 1e 5e 93 e7 15   `......j)%..^...
+    0030 - 95 74 03 e5 d1 37 99 8f-c6 2b 15 ab bc ee 99 e4   .t...7...+......
+    0040 - fd 89 a4 b4 57 d4 0a 0e-1e a6 86 22 ef 46 07 6a   ....W......".F.j
+    0050 - 80 31 97 a7 6b 31 1f 45-f2 4e f7 63 65 e8 a0 d8   .1..k1.E.N.ce...
+    0060 - 26 3e 5d d6 fa 97 87 3d-f2 dd 25 82 ff f7 d0 95   &>]....=..%.....
+    0070 - d0 c9 f1 30 00 ba 71 e4-b4 1d 14 27 e9 ce 83 76   ...0..q....'...v
+    0080 - c2 1e 25 84 1c ad 5c 0d-9f 03 ac a4 6b b8 4b 84   ..%...\.....k.K.
+    0090 - 1d 38 f8 47 a4 01 c8 a9-79 55 1e 52 e2 0d 1d 42   .8.G....yU.R...B
+    00a0 - ce 19 e2 ed d3 98 05 87-ba 6a de 45 e3 c7 01 c4   .........j.E....
+    00b0 - 54 58 98 b0 40 c3 57 d2-96 08 30 41 ca b6 82 94   TX..@.W...0A....
+    00c0 - 00 3e 1e 36 da 7f f3 44-7d f7 24 08 36 52 eb 69   .>.6...D}.$.6R.i
+
+    Start Time: 1505515260
+    Timeout   : 300 (sec)
+    Verify return code: 18 (self signed certificate)

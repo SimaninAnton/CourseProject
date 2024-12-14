@@ -1,0 +1,121 @@
+Contributor
+nik-sm commented on Dec 12, 2019
+Description
+LabelSpreading fails during predict when using a callable kernel that returns sparse matrix
+sklearn.semi_supervised.LabelSpreading allows user to provide a callable as a kernel function.
+However, if this callable returns a sparse matrix, then LabelSpreading.predict() will fail.
+The root cause is that np.dot(sparse, dense) behaves differently than sparse.dot(dense), and does not give the intended result.
+For example, you can try the following to see the issue with np.dot(sparse, dense):
+>>> from scipy.sparse import csr_matrix
+>>> a = csr_matrix([[1,0,0,0,0], [0,1,0,0,0],[0,0,1,0,0]])                                                                             
+>>> b = np.ones((5,8))                                                                                                                 
+>>> a.dot(b).shape                                                                                                                     
+(3, 8)
+>>> np.dot(a, b).shape                                                                                                                 
+(5, 8)
+>>> a.dot(b)                                                                                                                           
+array([[1., 1., 1., 1., 1., 1., 1., 1.],       
+       [1., 1., 1., 1., 1., 1., 1., 1.],
+       [1., 1., 1., 1., 1., 1., 1., 1.]])
+>>> np.dot(a, b)                                                                                                                       
+array([[<3x5 sparse matrix of type '<class 'numpy.float64'>'
+ with 3 stored elements in Compressed Sparse Row format>,
+        <3x5 sparse matrix of type '<class 'numpy.float64'>'
+...
+The fix is a one-liner: change np.dot(...) to A.dot(B) or to A @ B (whichever style is preferred) on the following line:
+https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/semi_supervised/_label_propagation.py#L198
+Steps/Code to Reproduce
+import numpy as np
+from sklearn import datasets
+from sklearn.semi_supervised import LabelSpreading
+from scipy.sparse import csr_matrix
+from sklearn.neighbors import NearestNeighbors
+from sklearn.metrics import classification_report, confusion_matrix
+
+# Our custom kernel is a sparse RBF kernel containing only the top K nearest neighbors
+def topk_rbf(X, Y=None, n_neighbors=10, gamma=1e-5):
+    nn = NearestNeighbors(n_neighbors=10, metric='euclidean', n_jobs=-1).fit(X)
+    W = -1 * nn.kneighbors_graph(Y, mode='distance').power(2) * gamma
+    np.exp(W.data, out=W.data)
+    assert isinstance(W, csr_matrix)
+    return W.T
+
+digits = datasets.load_digits()
+rng = np.random.RandomState(2)
+indices = np.arange(len(digits.data))
+rng.shuffle(indices)
+
+Xtrain = digits.data[indices[:1000]]
+Ytrain = digits.target[indices[:1000]]
+
+Xtest = digits.data[indices[1000:1100]]
+Ytest = digits.target[indices[1000:1100]]
+
+# The "transductive" learning phase happens during fit, but is not the concern here
+# Therefore, none of the labels were masked
+model = LabelSpreading(kernel=topk_rbf, n_jobs=-1).fit(Xtrain, Ytrain)
+
+# Here, we try the "inductive" learning phase
+predicted_labels = model.predict(Xtest)
+
+print(f"Confusion matrix: {confusion_matrix(y_true=Ytest, y_pred=predicted_labels, labels=model.classes_)}")
+print(f"Classification_report: {classification_report(y_true=Ytest, y_pred=predicted_labels)}")
+Expected Results
+Confusion matrix: [[ 8  0  0  0  0  0  0  0  0  0]
+ [ 0 16  0  0  0  0  0  0  0  0]
+ [ 0  0  7  0  0  0  0  0  0  0]
+ [ 0  0  0  8  0  0  0  0  0  0]
+ [ 0  0  0  0  6  0  0  0  0  0]
+ [ 0  0  0  0  0 11  0  0  0  0]
+ [ 0  0  0  0  0  0 12  0  0  0]
+ [ 0  0  0  0  0  0  0 11  0  0]
+ [ 0  0  0  0  0  0  0  0 10  0]
+ [ 0  0  0  0  0  0  0  0  0 11]]
+Classification_report:               precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00         8
+           1       1.00      1.00      1.00        16
+           2       1.00      1.00      1.00         7
+           3       1.00      1.00      1.00         8
+           4       1.00      1.00      1.00         6
+           5       1.00      1.00      1.00        11
+           6       1.00      1.00      1.00        12
+           7       1.00      1.00      1.00        11
+           8       1.00      1.00      1.00        10
+           9       1.00      1.00      1.00        11
+
+    accuracy                           1.00       100
+   macro avg       1.00      1.00      1.00       100
+weighted avg       1.00      1.00      1.00       100
+Actual Results
+...
+Traceback (most recent call last):
+  File "sklearn_bugreport_example.py", line 33, in <module>
+    predicted_labels = model.predict(Xtest)
+  File "/py37/lib/python3.7/site-packages/sklearn/semi_supervised/label_propagation.py", line 169, in predict
+    return self.classes_[np.argmax(probas, axis=1)].ravel()
+  File "<__array_function__ internals>", line 6, in argmax
+  File "/py37/lib/python3.7/site-packages/numpy/core/fromnumeric.py", line 1153, in argmax
+    return _wrapfunc(a, 'argmax', axis=axis, out=out)
+  File "/py37/lib/python3.7/site-packages/numpy/core/fromnumeric.py", line 61, in _wrapfunc
+    return bound(*args, **kwds)
+  File "/py37/lib/python3.7/site-packages/numpy/matrixlib/defmatrix.py", line 171, in __array_finalize__
+    if (isinstance(obj, matrix) and obj._getitem): return
+SystemError: <built-in function isinstance> returned a result with an error set
+Versions
+import sklearn; sklearn.show_versions()                                                                                            
+
+System:
+    python: 3.7.5rc1 (default, Oct  8 2019, 16:47:45)  [GCC 9.2.1 20191008]
+executable: /py37/bin/python3
+   machine: Linux-5.3.0-23-generic-x86_64-with-Ubuntu-19.10-eoan
+
+Python deps:
+       pip: 19.3.1
+setuptools: 41.6.0
+   sklearn: 0.21.3
+     numpy: 1.17.4
+     scipy: 1.3.2
+    Cython: None
+    pandas: 0.25.3
+Thanks!

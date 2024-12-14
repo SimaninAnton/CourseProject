@@ -1,0 +1,94 @@
+Contributor
+jseabold commented on Dec 4, 2013
+Before some recent changes, CountVectorizer raised a cryptic error when a given vocabulary that was not unique. Now, the code that led to this error is gone, and a non-unique vocabulary can slip in. Sometimes this is fine (I assume. My code works at least.). Sometimes I get a segfault. I've narrowed it down to a reproducible example (though not quite deterministic in the length of title below), but not for which I can generate data. I can send data offlist if someone is interested in replicating. This segfaults
+vectorizer = CountVectorizer(vocabulary=vocab)
+counts = vectorizer.fit_transform(titles)
+This works
+vectorizer = CountVectorizer(vocabulary=list(set(vocab)))
+counts = vectorizer.fit_transform(titles)
+This also works, and it's not clear what exactly is different in the (n + 1)th title that leads to the segfault.
+vectorizer = CountVectorizer(vocabulary=vocab)
+counts = vectorizer.fit_transform(titles[:150])
+The backtrace is (though oddly it seems to depend on the length of titles what I get)
+Program received signal SIGSEGV, Segmentation fault.
+0x00007fffe849cdd9 in csr_tocsc<int, long long> (n_row=n_row@entry=15493, 
+    n_col=n_col@entry=1856, Ap=Ap@entry=0x2db5ca0, Aj=Aj@entry=0x2d5c610, 
+    Ax=Ax@entry=0x2f569d0, Bp=Bp@entry=0x2e71030, Bi=Bi@entry=0x2ea3eb0, 
+    Bx=0x2eceb50) at scipy/sparse/sparsetools/csr.h:411
+411                 Bi[dest] = row;
+(gdb) backtrace
+#0  0x00007fffe849cdd9 in csr_tocsc<int, long long> (n_row=n_row@entry=15493, 
+    n_col=n_col@entry=1856, Ap=Ap@entry=0x2db5ca0, Aj=Aj@entry=0x2d5c610, 
+    Ax=Ax@entry=0x2f569d0, Bp=Bp@entry=0x2e71030, Bi=Bi@entry=0x2ea3eb0, 
+    Bx=0x2eceb50) at scipy/sparse/sparsetools/csr.h:411
+#1  0x00007fffe83edcef in _wrap_csr_tocsc__SWIG_8 (args=args@entry=0x2d01aa0)
+    at scipy/sparse/sparsetools/csr_wrap.cxx:11553
+#2  0x00007fffe844311b in _wrap_csr_tocsc (self=<optimised out>, 
+    args=0x2d01aa0) at scipy/sparse/sparsetools/csr_wrap.cxx:12841
+#3  0x00000000005313b5 in ext_do_call (nk=<optimised out>, na=<optimised out>, 
+    flags=<optimised out>, pp_stack=0x7fffffffd280, func=0x2b9b320)
+    at ../Python/ceval.c:4331
+#4  PyEval_EvalFrameEx (f=f@entry=0x284a440, throwflag=throwflag@entry=0)
+    at ../Python/ceval.c:2705
+#5  0x0000000000505b24 in PyEval_EvalCodeEx (co=0x2c823b0, 
+    globals=<optimised out>, locals=locals@entry=0x0, args=<optimised out>, 
+    argcount=argcount@entry=8, kws=<optimised out>, kwcount=kwcount@entry=0, 
+    defs=defs@entry=0x0, defcount=defcount@entry=0, closure=0x0)
+    at ../Python/ceval.c:3253
+#6  0x000000000052f3f2 in fast_function (nk=0, na=8, n=<optimised out>, 
+    pp_stack=0x7fffffffd4a0, func=0x2c86140) at ../Python/ceval.c:4117
+#7  call_function (oparg=<optimised out>, pp_stack=0x7fffffffd4a0)
+    at ../Python/ceval.c:4042
+#8  PyEval_EvalFrameEx (f=f@entry=0x28512b0, throwflag=throwflag@entry=0)
+    at ../Python/ceval.c:2666
+#9  0x0000000000505b24 in PyEval_EvalCodeEx (co=0x2b88f30, 
+    globals=<optimised out>, locals=locals@entry=0x0, args=<optimised out>, 
+    argcount=argcount@entry=1, kws=<optimised out>, kwcount=kwcount@entry=0, 
+    defs=defs@entry=0x0, defcount=defcount@entry=0, closure=0x0)
+    at ../Python/ceval.c:3253
+#10 0x000000000052f3f2 in fast_function (nk=0, na=1, n=<optimised out>, 
+    pp_stack=0x7fffffffd6c0, func=0x2caa8c0) at ../Python/ceval.c:4117
+#11 call_function (oparg=<optimised out>, pp_stack=0x7fffffffd6c0)
+    at ../Python/ceval.c:4042
+#12 PyEval_EvalFrameEx (f=f@entry=0x20d3af0, throwflag=throwflag@entry=0)
+    at ../Python/ceval.c:2666
+#13 0x0000000000505b24 in PyEval_EvalCodeEx (co=0x2d07230, 
+    globals=<optimised out>, locals=locals@entry=0x0, args=<optimised out>, 
+    argcount=argcount@entry=2, kws=<optimised out>, kwcount=kwcount@entry=0, 
+    defs=defs@entry=0x2d06e68, defcount=1, closure=0x0)
+    at ../Python/ceval.c:3253
+#14 0x000000000052e237 in fast_function (nk=0, na=2, n=<optimised out>, 
+    pp_stack=0x7fffffffd8e0, func=0x2d17c80) at ../Python/ceval.c:4117
+#15 call_function (oparg=<optimised out>, pp_stack=0x7fffffffd8e0)
+    at ../Python/ceval.c:4042
+#16 PyEval_EvalFrameEx (f=f@entry=0xa56bc0, throwflag=throwflag@entry=0)
+    at ../Python/ceval.c:2666
+#17 0x0000000000567cdc in PyEval_EvalCodeEx (closure=0x0, defcount=0, 
+    defs=0x0, kwcount=0, kws=0x0, argcount=0, args=0x0, locals=0x9410a0, 
+    globals=0x7ffff7f18c30, co=<optimised out>) at ../Python/ceval.c:3253
+#18 PyEval_EvalCode (co=co@entry=0x7ffff7f18c30, 
+    globals=globals@entry=0x97e690, locals=locals@entry=0x97e690)
+    at ../Python/ceval.c:667
+#19 0x0000000000451adb in run_mod.42568 (mod=<optimised out>, 
+    filename=<optimised out>, globals=0x97e690, locals=0x97e690, 
+---Type <return> to continue, or q <return> to quit---
+    flags=<optimised out>, arena=<optimised out>) at ../Python/pythonrun.c:1365
+#20 0x0000000000451e5b in PyRun_FileExFlags (fp=fp@entry=0xa56ba0, 
+    filename=filename@entry=0x7fffffffe058 "sklearn_seg.py", 
+    start=start@entry=257, globals=globals@entry=0x97e690, 
+    locals=locals@entry=0x97e690, closeit=closeit@entry=1, 
+    flags=flags@entry=0x7fffffffdab0) at ../Python/pythonrun.c:1351
+#21 0x0000000000452394 in PyRun_SimpleFileExFlags (fp=fp@entry=0xa56ba0, 
+    filename=<optimised out>, filename@entry=0x7fffffffe058 "sklearn_seg.py", 
+    closeit=closeit@entry=1, flags=flags@entry=0x7fffffffdab0)
+    at ../Python/pythonrun.c:943
+#22 0x0000000000452490 in PyRun_AnyFileExFlags (fp=fp@entry=0xa56ba0, 
+    filename=filename@entry=0x7fffffffe058 "sklearn_seg.py", 
+    closeit=closeit@entry=1, flags=flags@entry=0x7fffffffdab0)
+    at ../Python/pythonrun.c:747
+#23 0x0000000000453ead in Py_Main (argc=<optimised out>, argv=0x7fffffffdc68)
+    at ../Modules/main.c:640
+#24 0x00007ffff7816de5 in __libc_start_main (main=0x453f6b <main>, argc=2, 
+    ubp_av=0x7fffffffdc68, init=<optimised out>, fini=<optimised out>, 
+    rtld_fini=<optimised out>, stack_end=0x7fffffffdc58) at libc-start.c:260
+#25 0x00000000005786be in _start ()

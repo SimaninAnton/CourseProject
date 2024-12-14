@@ -1,0 +1,38 @@
+FrugoFruit90 commented on 1 Aug 2017
+I am trying to use tensorboard in order to see the distribution of gradients (preferably per layer in order to check if the gradients aren't vanishing).
+However, the code fails. Below please find a toy version of my code, which returns an error on master branch of keras and the latest pip release of tensorflow.
+System: Ubuntu 16.04 guest on Windows 10 host via VirtualBox
+import numpy as np
+import keras
+from keras.optimizers import SGD
+from keras.layers import Dense, Input, Embedding, Conv1D, Dropout, LSTM, MaxPooling1D
+from keras.models import Model
+
+X1 = np.random.rand(10000, 100)
+X2 = np.random.rand(10000, 10)
+y = np.random.randint(0, high=1, size=(10000, 4), dtype='l')
+loss = 'categorical_crossentropy'
+optimizer = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+embedding_vector_length = 32
+
+main_input = Input(shape=(100,), dtype='int32', name='x1')
+x = Embedding(output_dim=32, input_dim=5001, input_length=300)(main_input)
+lstm_out = LSTM(10)(x)
+auxiliary_output = Dense(4, name='aux_output', activation='sigmoid')(lstm_out)
+auxiliary_input = Input(shape=(10,), name='x2')
+x = keras.layers.concatenate([lstm_out, auxiliary_input])
+x = Dense(10, activation='relu')(x)
+x = Dropout(0.5)(x)
+main_output = Dense(4, name='main_output', activation='sigmoid')(x)
+
+model = Model(inputs=[main_input, auxiliary_input], outputs=[main_output, auxiliary_output])
+earlyStopping = keras.callbacks.EarlyStopping(monitor="val_main_output_loss", patience=1, verbose=1, mode="auto")
+model.compile(loss=loss, optimizer=optimizer, loss_weights=[0.5, 0.5], metrics=['accuracy', 'mae'])
+tensorBoard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1, write_graph=True,
+                                          write_grads=True, write_images=False, embeddings_freq=0,
+                                          embeddings_layer_names=None, embeddings_metadata=None)
+
+model.fit([X1, X2], [y, y], callbacks=[earlyStopping, tensorBoard],
+          epochs=2, batch_size=64, validation_split=0.2, shuffle=True)
+Note that the traceback is actually different than the one that I got with my "original" code (which used tensorflow 1.0.1 and production data). See #6313 for reference.
+Hope this helps.

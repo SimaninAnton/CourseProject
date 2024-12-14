@@ -1,0 +1,29 @@
+Member
+dangra commented on Sep 24, 2013
+The imminent addition of CSS selectors (#176) to Scrapy arises some questions about how inconvenient is the current Selectors API when it needs to support more than one query language.
+The current interface for selectors has the following requirements:
+Selector must accept a scrapy.http.Response as first constructor argument
+Selector must implement a method .select(query) that matches nodes and returns a flattened list of elements of the same Selector type.
+The list returned by .select() must implement Selector interface too (except for its constructor). i.e.: XPathSelectorList implements it for XPathSelectors.
+Selector must implement a method .extract() that serializes the matched nodes and returns a flattened list of unicode strings.
+A major drawback is that XPath and CSS selectors can't be nested, and auxiliary methods like .re() (regex parsing) has to be re-implemented for each query language.
+Also, DOM parsers for XML and HTML differs, that is why XPath selectors have two classes: HtmlXPathSelector and XmlXPathSelector. Merging CSS selectors (#176) in current shape will add two more classes to the mix: HtmlCSSSelector and XmlCSSSelector.
+Also, we used to support multiples backends for XPath Selectors (lxml and libxml2) but after migrating and using lxml backend as default since Scrapy 0.16, it is quite obvious that we are not going back to libxml2.
+This ticket propose simplifying public and internal Selectors API while keeping backward compatibility on the public API (ie. the XPathSelector's family)
+Proposal
+Expose a single public Selector class that:
+Accepts a response as first constructor argument
+Implements one method to select nodes per query language: .xpath() and .css()
+Deprecate .select() in favor of .xpath()
+Selection methods must return a list of Selector instances (as it does now).
+The list is a SelectorList instance that forwards calls to its elements (as it does now)
+Keeps the .extract() method that serializes matching nodes (as it does now)
+Implements methods to handle namespaces: .register_namespace(), .remove_namespaces()
+Keeps the .re() method to extract nodes and parse the output with regular expressions (as it does now)
+Public API changes are minimal, basically renaming .select() to .xpath() and unifying XML and HTML selectors into a single more powerful class.
+i.e.::
+>>> selector = Selector(response)
+>>> selector.css('#content span.title').xpath('a[contains(@href, "foo")]').extract()
+['<a href="http://coolsite.com/foo-link"/>', ...] 
+Internally, it will drop libxml2 backend and completely remove xpath backend selection by sticking to lxml.
+Selector class will switch between HTML and XML parsers based on response type (HtmlResponse vs XmlResponse) and also provide a way to force what parser to use.

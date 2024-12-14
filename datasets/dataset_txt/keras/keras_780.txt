@@ -1,0 +1,70 @@
+nadianaji commented on 8 Sep 2018
+Hi,
+I have an auto-encoder and as we know, it has two parts, encoder and decoder. the output of my encoder part is a 28X28 image and I want to add another 28X28 image to it and send 28X28X2 filter to decoder part during learning. I want to know, is it possible or not? if yes, how? please guide me completely due to I am a beginner. I attached my code here too. I do not know using this "merge_encoded_w=cv2.merge(encoded,w)" for adding w to encoder output is true or not?thanks
+from keras.models import Sequential
+from keras.layers import Input, Dense, Dropout, Activation,UpSampling2D,Conv2D, MaxPooling2D, GaussianNoise
+from keras.models import Model
+from keras.optimizers import SGD
+from keras.datasets import mnist
+from keras import regularizers
+from keras import backend as K
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+from time import time
+from keras.callbacks import TensorBoard
+# Embedding phase
+##encoder
+w=np.random.random((1, 28,28))
+
+input_img = Input(shape=(28, 28, 1))  # adapt this if using `channels_first` image data format
+
+x = Conv2D(8, (5, 5), activation='relu', padding='same')(input_img)
+#x = MaxPooling2D((2, 2), padding='same')(x)
+x = Conv2D(4, (3, 3), activation='relu', padding='same')(x)
+#x = MaxPooling2D((2, 2), padding='same')(x)
+x = Conv2D(2, (3, 3), activation='relu', padding='same')(x)
+encoded = Conv2D(1, (3, 3), activation='relu', padding='same')(x)
+merge_encoded_w=cv2.merge(encoded,w)
+#
+#decoder
+
+x = Conv2D(2, (5, 5), activation='relu', padding='same')(merge_encoded_w)
+#x = UpSampling2D((2, 2))(x)
+x = Conv2D(4, (3, 3), activation='relu', padding='same')(x)
+#x = UpSampling2D((2, 2))(x)
+x = Conv2D(8, (3, 3), activation='relu',padding='same')(x)
+#x = UpSampling2D((2, 2))(x)
+decoded = Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
+
+#Extraction phase
+decodedWithNois=GaussianNoise(0.5)(decoded)
+x = Conv2D(8, (5, 5), activation='relu', padding='same')(decodedWithNois)
+#x = MaxPooling2D((2, 2), padding='same')(x)
+x = Conv2D(4, (3, 3), activation='relu', padding='same')(x)
+#x = MaxPooling2D((2, 2), padding='same')(x)
+final_image_watermark = Conv2D(2, (3, 3), activation='relu', padding='same')(x)
+
+
+autoencoder = Model([input_img,w], [decoded,final_image_watermark(2)])
+encoder=Model(input_img,encoded)
+autoencoder.compile(optimizer='adadelta', loss=['mean_squared_error','mean_squared_error'],metrics=['accuracy'])
+(x_train, _), (x_test, _) = mnist.load_data()
+x_validation=x_train[1:10000,:,:]
+x_train=x_train[10001:60000,:,:]
+#
+x_train = x_train.astype('float32') / 255.
+x_test = x_test.astype('float32') / 255.
+x_validation = x_validation.astype('float32') / 255.
+x_train = np.reshape(x_train, (len(x_train), 28, 28, 1))  # adapt this if using `channels_first` image data format
+x_test = np.reshape(x_test, (len(x_test), 28, 28, 1))  # adapt this if using `channels_first` image data format
+x_validation = np.reshape(x_validation, (len(x_validation), 28, 28, 1))  # adapt this if using `channels_first` image data format
+autoencoder.fit(x_train, x_train,
+                epochs=5,
+                batch_size=128,
+                shuffle=True,
+                validation_data=(x_validation, x_validation),
+                callbacks=[TensorBoard(log_dir='/tmp/autoencoder')])
+
+decoded_imgs = autoencoder.predict(x_test)
+encoded_imgs=encoder.predict(x_test)

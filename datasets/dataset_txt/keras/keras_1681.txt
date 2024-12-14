@@ -1,0 +1,50 @@
+WilliamOu commented on 8 Sep 2017 •
+edited
+Hi guys,
+I am trying to implement an LRCN network. I found confusing results with my model. The metric results calculated during training steps seems to be wrong. Even with a learning rate of zero, the metric results before and after the training step are same, but the metric results during the training steps are different from just mentioned two. Did anyone struggle with his problem before?
+To present my question clearly, I make a short version of my code. You can run it to find differences between results.
+import numpy as np
+from keras import regularizers
+from keras.models import Sequential, Model
+from keras.layers.core import Dense, Dropout
+from keras.layers import Input
+from keras.initializers import glorot_normal
+from keras.layers.wrappers import TimeDistributed
+from keras.layers.recurrent import LSTM
+from keras.optimizers import SGD
+np.random.seed(618)
+
+
+def getmodel(TimeLen=None):
+    initializer = glorot_normal(seed=None)
+    visual_model = Sequential()
+    visual_model.add(Dense(64, activation='relu', input_shape=(224,), kernel_initializer=initializer))
+    main_input = Input(batch_shape=(1, TimeLen, 224), dtype='float32', name='main_input')
+    visualfeature = (TimeDistributed(visual_model, batch_input_shape=(1, TimeLen, 224), trainable=True,
+                                     name='Visual'))(main_input)
+    lstm_in = (TimeDistributed(Dropout(0.5), name='Visual-Dropout'))(visualfeature)
+
+    lstm_out = LSTM(units=128, stateful=False, return_sequences=True, name='RNN',
+                   kernel_regularizer=regularizers.l2(0.0005), recurrent_regularizer=regularizers.l2(0.0005),
+                   bias_regularizer=regularizers.l2(0.0005), activity_regularizer=regularizers.l2(0.0005),
+                   dropout=0.5, recurrent_dropout=0.5)(lstm_in)
+    lstm_out = (TimeDistributed(Dropout(0.5), name='RNN-Dropout'))(lstm_out)
+    xxx = (TimeDistributed(Dense(256, activation='relu', kernel_initializer=initializer), name='fc1'))(lstm_out)
+    xxx = (TimeDistributed(Dropout(0.5), name='fc1-Dropout'))(xxx)
+    lastout = (TimeDistributed(Dense(3, activation='softmax', kernel_initializer=initializer),
+                               name='fc-final'))(xxx)
+    model = Model(inputs=main_input, outputs=lastout)
+    return model
+data = np.random.rand(1, 30, 224)
+label = np.zeros((1, 30, 3))
+label[:, :, 0] = 1
+model = getmodel(None)
+optimizer = SGD(lr=0.0)
+model.compile(loss='categorical_crossentropy', metrics=['accuracy', 'categorical_crossentropy'],
+              optimizer=optimizer, sample_weight_mode="temporal")
+res = model.test_on_batch(data, label)
+print(res)
+res = model.train_on_batch(data, label)
+print(res)
+res = model.test_on_batch(data, label)
+print(res)

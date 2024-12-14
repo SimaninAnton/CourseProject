@@ -1,0 +1,73 @@
+a3kov commented on Mar 30, 2018 •
+edited
+IncompleteRead error from chunked responses are not retried with requests session and HTTPAdapter using Retry. If I use urllib3 directly, it's retried.
+Expected Result
+Similar to urllib3, it should be retried. IncompleteRead is a read error and Retry utility specifically states to support retrying of read errors.
+Actual Result
+It's not retried, raising ChunkedEncodingError instead
+Reproduction Steps
+import pytest
+import requests
+
+from requests.adapters import HTTPAdapter
+from requests.exceptions import ChunkedEncodingError
+from requests.packages.urllib3.util.retry import Retry
+from urllib3 import PoolManager
+from urllib3.exceptions import MaxRetryError
+
+# This is bad example because it also returns content length header but this is the easiest way I found to reproduce.
+URL = "https://httpbin.org/response-headers?Content-Type=text%2Fplain%3B+charset%3DUTF-8&Transfer-Encoding=chunked&Server=httpbin"
+
+
+@pytest.fixture
+def retries():
+    return Retry(total=2)
+
+
+def test_requests_session_retry(retries):
+    adapter = HTTPAdapter(max_retries=retries)
+    session = requests.Session()
+    session.mount('https://', adapter)
+    with pytest.raises(ChunkedEncodingError):
+        session.get(URL)
+
+
+def test_urllib3_retry(retries):
+    http = PoolManager(retries=retries)
+    with pytest.raises(MaxRetryError):
+        response = http.request('GET', URL)
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.1.4"
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.0"
+  },
+  "platform": {
+    "release": "3.13.0-133-generic",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "1010007f",
+    "version": "17.5.0"
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "1000106f"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": true
+}

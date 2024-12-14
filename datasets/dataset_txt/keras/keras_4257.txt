@@ -1,0 +1,28 @@
+Contributor
+titu1994 commented on 2 Oct 2016 •
+edited
+I am trying to implement the SRGAN model from the paper Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial Network. Since this uses both a GAN and VGG Perceptual losses, I am using modified ActivityRegularizers to incorporate the various losses. I am using the latest Theano and Keras, and the model is for Theano only (I'm using Windows, no Tensorflow yet)
+The full model architecture and the implementation of the loss are here : SRGAN regularizers gist
+A simplified view of the entire model is:
+In this model, I am passing a 96 x 96 blurred low resolution image (LR) as input to the SR-ResNet network, and 384 x 384 high resolution images (HR) as input 2 and 3 to the Discriminator and VGG networks, as well as the outputs of the SR-ResNet.
+The issue is that since original inputs to the SR-ResNet have a batch size of 8, Keras assumes that output batch size should also be 8. However, since we are merging the original high resolution images into both the discriminator and VGG networks, batch size becomes 16.
+The reason for adding the original HR input images as Input2 and Input3 is that the ContentVGGRegularizer needs to compare the gram matrix of the HR inputs to the gram matrix of the generated outputs (G(LR)) from the generative model. Also, to train the discriminator network, we require the original images (D(G(LR)).
+The error is fairly simple and understandable :
+Traceback (most recent call last):
+  File "D:/Users/Yue/PycharmProjects/Super Resolution using Generative Adversarial Networks/models.py", line 431, in <module>
+    srgan_network.pre_train_network(coco_path, nb_epochs=20)
+  File "D:/Users/Yue/PycharmProjects/Super Resolution using Generative Adversarial Networks/models.py", line 310, in pre_train_network
+    self._train_network(image_dir, nb_epochs=nb_epochs)
+  File "D:/Users/Yue/PycharmProjects/Super Resolution using Generative Adversarial Networks/models.py", line 365, in _train_network
+    batch_size=self.batch_size // 2,nb_epoch=1, verbose=0)
+  File "D:\Users\Yue\Anaconda3\lib\site-packages\keras-1.1.0-py3.4.egg\keras\engine\training.py", line 1034, in fit
+    batch_size=batch_size)
+  File "D:\Users\Yue\Anaconda3\lib\site-packages\keras-1.1.0-py3.4.egg\keras\engine\training.py", line 973, in _standardize_user_data
+    check_array_lengths(x, y, sample_weights)
+  File "D:\Users\Yue\Anaconda3\lib\site-packages\keras-1.1.0-py3.4.egg\keras\engine\training.py", line 177, in check_array_lengths
+    str(list(set_y)[0]) + ' target samples.')
+Exception: Input arrays should have the same number of samples as target arrays. Found 8 input samples and 16 target samples.
+My question is, is there any way to train this network without manually creating the train_function, getting updates, add regularizers and then use the train_function?
+Or is there some other way to train such networks without appending the original inputs? I have not yet found a way to mask a portion of the input batch, which could potentially solve this problem (by passing the blurred and HR images to the SR-ResNet input), however this poses another challenge - LR images are 96 x 96, HR images are 384, 384).
+Any solutions? I can only think of one right now, which is to duplicate most of the _make_train_function and _fit_loop code to bypass this check.
+2

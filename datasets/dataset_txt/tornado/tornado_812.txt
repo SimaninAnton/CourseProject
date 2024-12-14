@@ -1,0 +1,213 @@
+dongying commented on 16 Jun 2014
+Down below codes show a potential memory leak example.
+Tested in:
+OSX 10.9.3 Python 2.7.5 tornado 3.1
+OSX 10.9.3 Python 2.7.5 tornado 3.2.2
+RHEL 5 Python 2.7.5 tornado 3.1
+First copy the codes into a file named torleak.py and run it.
+python torleak.py
+Request using tornado.httpclient.AsyncHTTPClient and tornado.gen.coroutine .
+ab -n 100 http://127.0.0.1:8008/request/async
+This will not cause memory leak.
+But if you request using the buildin tornado.httpclient.HTTPClient or create a IOLoop to run_sync, even though you call io_loop.close() after fetch(), memory leak happens .
+ab -n 100 http://127.0.0.1:8008/request/
+Show the garbage of unreleased tornado objects.
+curl http://127.0.0.1:8008/garbage | grep tornado
+And you will see something like this:
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  3466  100  3466    0     0   110k      0 --:--:-- --:--:-- --:--:--  112k
+    101: <class 'tornado.platform.kqueue.KQueueIOLoop'>
+    101: <class 'tornado.platform.kqueue._KQueue'>
+    101: <class 'tornado.netutil.BlockingResolver'>
+    101: <class 'tornado.simple_httpclient.SimpleAsyncHTTPClient'>
+    101: <class 'tornado.platform.posix.Waker'>
+    8: <class 'tornado.options._Option'>
+    2: <class 'tornado.web.URLSpec'>
+    2: <class 'tornado.httputil.HTTPHeaders'>
+    1: <class 'tornado.ioloop._Timeout'>
+    1: <class 'tornado.httpserver.HTTPRequest'>
+    1: <class 'tornado.httpserver.HTTPConnection'>
+    1: <class 'tornado.httpserver.HTTPServer'>
+    1: <class 'tornado.iostream.IOStream'>
+    1: <class 'tornado.web._UIModuleNamespace'>
+    1: <class 'tornado.web.ChunkedTransferEncoding'>
+    1: <class 'tornado.web.Application'>
+    1: <class 'tornado.options.OptionParser'>
+    1: <class 'tornado.httputil._NormalizedHeaderCache'>
+    1: <class 'tornado.gen._NullYieldPoint'>
+    1: <class 'tornado.ioloop.PeriodicCallback'>
+    1: <class 'tornado.log.LogFormatter'>
+    1: <class 'tornado.concurrent.DummyExecutor'>
+    1: <class 'tornado.stack_context._State'>
+    1: <class 'tornado.util.ObjectDict'>
+Which shows a lot of unreleased SimpleAsyncHTTPClient and IOLoop objects in memory.
+Example codes:
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
+import functools
+import gc
+import inspect
+import random
+
+import tornado.gen
+import tornado.httpclient
+import tornado.ioloop
+import tornado.options
+import tornado.web
+
+
+def _incremental_updating_stats(stats, obj, depth=0, no_referrers=False, no_referents=False, sample_rate=None, class_name=None, inspector=None):
+    if inspector and not inspector(obj):
+        return None
+
+    obj_stats = stats.setdefault(
+        type(obj),
+        {'count': 0})
+    obj_stats['count'] += 1
+
+    if depth > 0:
+
+        if class_name:
+            if not hasattr(obj, '__class__') or not (obj.__class__.__name__ == class_name or obj.__class__.__name__.endswith("." + class_name)):
+                return obj_stats
+
+        if sample_rate and random.random() < 1 - sample_rate:
+            return obj_stats
+
+        if not no_referrers:
+            for r_obj in gc.get_referrers(obj):
+                _incremental_updating_stats(obj_stats.setdefault('referrers_stats', {}), r_obj, depth - 1, no_referrers, no_referents, sample_rate, inspector=inspector)
+
+        if not no_referents:
+            for r_obj in gc.get_referents(obj):
+                _incremental_updating_stats(obj_stats.setdefault('referents_stats', {}), r_obj, depth - 1, no_referrers, no_referents, sample_rate, inspector=inspector)
+
+    return obj_stats
+
+
+def _format_stats(stats, limit=None, depth=0):
+    stats_sorted = [(value['count'], key, value) for key, value in stats.iteritems()]
+    stats_sorted.sort(reverse=True)
+    if limit:
+        stats_sorted = stats_sorted[:limit]
+
+    strings = []
+    for count, key, value in stats_sorted:
+        strings.append("%s%r: %r" % (" " * 4 * (depth + 1), count, key))
+
+        if value.get('referrers_stats'):
+            strings.append(" " * 4 * (depth + 2) + "referrers:")
+            strings.append(_format_stats(value['referrers_stats'], limit, depth + 1))
+
+        if value.get('referents_stats'):
+            strings.append(" " * 4 * (depth + 2) + "referents:")
+            strings.append(_format_stats(value['referents_stats'], limit, depth + 1))
+
+    return "\n".join(strings)
+
+
+class GarbageHandler(tornado.web.RequestHandler):
+
+    def get(self):
+        depth = int(self.get_argument('depth', 0))
+        class_name = self.get_argument("class", "").strip()
+        no_referrers = self.get_argument("no_referrers", None)
+        no_referents = self.get_argument("no_referents", None)
+        sample_rate = float(self.get_argument("sample_rate", 1))
+        limit = int(self.get_argument("limit", 0)) or None
+        inspector = getattr(inspect, self.get_argument('inspector', ""), None)
+
+        info = ["depth: %r, class_name: %r, no_referrers: %r, no_referents: %r, sample_rate: %r, limit: %r, inspector: %r" % (depth, class_name, no_referrers, no_referents, sample_rate, limit, inspector)]
+        info.append("gc.isenabled(): %r" % (gc.isenabled(),))
+        info.append("gc.get_debug(): %r" % (gc.get_debug(),))
+        info.append("gc.get_threshold(): %r" % (gc.get_threshold(),))
+        info.append("gc.get_count(): %r" % (gc.get_count(),))
+
+        stats = {}
+        for obj in gc.get_objects():
+            _incremental_updating_stats(
+                stats,
+                obj,
+                depth,
+                no_referrers,
+                no_referents,
+                sample_rate=sample_rate,
+                class_name=class_name,
+                inspector=inspector)
+
+        info.append("gc.get_objects():\n%s" % _format_stats(stats, limit))
+        info.append("gc.garbage: %r" % (gc.garbage,))
+        gc.collect()
+
+        self.set_header("Content-Type", "text/plain")
+        self.write("\n\n".join(info))
+        self.finish()
+
+
+def synchronous(func):
+    @functools.wraps(func)
+    def _(*args, **kw):
+        io_loop = tornado.ioloop.IOLoop()
+        response = io_loop.run_sync(functools.partial(func, io_loop=io_loop, *args, **kw))
+        io_loop.close()
+        return response
+    return _
+
+
+def fake_request():
+    request = tornado.httpclient.HTTPRequest(
+        url="http://quan.sohu.com/api/test",
+        request_timeout=1)
+    http_client = tornado.httpclient.HTTPClient()
+    response = http_client.fetch(request)
+    return response.body
+
+
+@tornado.gen.coroutine
+def fake_request_async(io_loop=None):
+    request = tornado.httpclient.HTTPRequest(
+        url="http://quan.sohu.com/api/test",
+        request_timeout=1)
+    http_client = tornado.httpclient.AsyncHTTPClient(io_loop)
+    response = yield http_client.fetch(request)
+    if io_loop:
+        http_client.close()
+    raise tornado.gen.Return(response.body)
+
+fake_request_sync = synchronous(fake_request_async)
+
+
+class FakeRequestHandler(tornado.web.RequestHandler):
+
+    @tornado.gen.coroutine
+    def get(self, rtype):
+        if rtype == "async":
+            response = yield fake_request_async()
+        elif rtype == "sync":
+            response = fake_request_sync()
+        else:
+            response = fake_request()
+        self.write(response)
+
+
+def main():
+    tornado.options.define("port", default=8008, help="run on the given port", type=int)
+    tornado.options.define('debug', type=bool, default=True, help='run in debug mode with autoreload')
+    tornado.httpclient.AsyncHTTPClient.configure("tornado.simple_httpclient.SimpleAsyncHTTPClient", max_clients=3)
+    #tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+    tornado.options.parse_command_line()
+
+    application = tornado.web.Application(
+        [(r"/request/(async|sync|)", FakeRequestHandler),
+         (r"/garbage", GarbageHandler)],
+        debug=tornado.options.options.debug)
+    application.listen(tornado.options.options.port, "0.0.0.0", xheaders=True)
+
+    tornado.ioloop.IOLoop.instance().start()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,156 @@
+tony2990 commented on 28 Nov 2018 •
+edited
+Hello, my friends
+I coded a NER program with Keras (Win10 + Python2.7 + CNTK backend). The training corpus is 110K manually labeled text.
+[corpus sample]
+突 O
+破 O
+零 O
+售 O
+银 O
+行 O
+的 O
+增 O
+长 O
+瓶 O
+颈 O
+中 B-Company
+信 I-Company
+银 I-Company
+行 I-Company
+是 O
+中 B-Company
+信 I-Company
+集 I-Company
+团 I-Company
+旗 O
+下 O
+...
+When I tested a sentence
+突破零售银行的增长瓶颈中信银行是中信集团旗下最大的子公司,成立于1987年, 是中国改革开放中最早成立的新兴商业银行之一。
+I expected the output would be
+O O O O O O O O O O O O O B-Company I-Company I-Company I-Company
+O O O O O O O O O O O O O O O O O O O B-Company I-Company I-Company I-Company
+O O O O O O O O O O O O O O O O O O O <PAD> <PAD> <PAD> <PAD> <PAD>
+<PAD> <PAD> ... <PAD>
+However, I got the following result
+O O O O O O O O O O O O O B-Company I-Company I-Company I-Company
+O O O O O O O O O O O O O O O O O O O B-Company I-Company I-Company I-Company
+O O O O O O O O O O O O O O O O O O O O O O O O O O O O O ... O
+So the problems are
+the model wrongly tagged <PAD> as O on the ending tags
+if I set mask_zero=False in the following line:
+model.add(Embedding(num_words, embed_size, mask_zero=True))
+then I got the expected result:
+O O O O O O O O O O O O O B-Company I-Company I-Company I-Company
+O O O O O O O O O O O O O O O O O O O B-Company I-Company I-Company I-Company
+O O O O O O O O O O O O O O O O O O O <PAD> <PAD> <PAD> <PAD> <PAD>
+<PAD> <PAD> ... <PAD>
+When I tested in a linux machine with Tensorflow backend (Python 3.6), the problem remained.
+When I removed LSTM layer in the model, the problem remained.
+Any suggesting?
+Thanks!
+[source code]
+from keras.models import Sequential
+from keras.layers import TimeDistributed, Bidirectional, LSTM, Dense, Dropout, Embedding
+from keras.optimizers import Adam
+from keras.preprocessing import sequence
+from keras.utils import to_categorical
+from keras.models import load_model
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+import numpy as np
+sentence_max_length = 100
+input_dropout = 0.3
+output_dropout = 0.5
+batch_size = 32
+max_epochs = 100
+learning_rate = 0.001
+embed_size = 100
+num_lstm_units = 128
+def get_vocab(file_name):
+char2id = {'': 0, '': 1}
+id2char = {0: '', 1: ''}
+tag2id = {'': 0}
+id2tag = {0: ''}
+f = open(file_name)
+while 1:
+    line = f.readline()
+    if line == "": break
+    if line.strip() == "": continue
+    line = line.strip().decode("utf-8")
+    
+    c, t = line.split("\t")
+    
+    if not char2id.has_key(c):
+        char2id[c] = len(char2id)
+        id2char[len(id2char)] = c
+        
+    if not tag2id.has_key(t):
+        tag2id[t] = len(tag2id)
+        id2tag[len(id2tag)] = t
+        
+f.close()
+
+return char2id, id2char, tag2id, id2tag
+def get_dataset(file_name, char2id, tag2id):
+X = []
+Y = []
+x = []
+y = []
+f = open(file_name)
+while 1:
+    line = f.readline()
+    if line == "": break
+    if line.strip() == "":
+        if len(x) > 0:
+            X.append(x)
+            Y.append(y)
+        x = []
+        y = []
+        continue
+    line = line.strip().decode("utf-8")
+    c, t = line.split("\t")
+    x.append(char2id.get(c, 1))
+    y.append(tag2id.get(t))
+
+if len(x) > 0:
+    X.append(x)
+    Y.append(y)
+            
+f.close()
+
+return X, Y
+char2id, id2char, tag2id, id2tag = get_vocab("data\train.txt")
+X, Y = get_dataset("data\train.txt", char2id, tag2id)
+X = sequence.pad_sequences(X, sentence_max_length, padding='post')
+Y = sequence.pad_sequences(Y, sentence_max_length, padding='post')
+Y = to_categorical(Y, num_classes=len(tag2id))
+num_words = len(char2id)
+num_labels = len(tag2id)
+model = Sequential()
+model.add(Embedding(num_words, embed_size, mask_zero=True)) # set mak_zero=False gives expected result
+model.add(Dropout(input_dropout))
+model.add(Bidirectional(LSTM(num_lstm_units, return_sequences=True)))
+model.add(Dropout(output_dropout))
+model.add(TimeDistributed(Dense(num_labels, activation='softmax')))
+optimizer = Adam(lr=learning_rate, clipnorm=1.0)
+model.compile(optimizer=optimizer, loss='categorical_crossentropy',
+metrics=['categorical_accuracy'])
+early_stopping = EarlyStopping(monitor='loss', patience=2, verbose=1)
+checkpointer = ModelCheckpoint(filepath="/tmp/model.weights.hdf5",
+verbose=1,
+save_best_only=True)
+model.fit(X, Y, epochs=100, callbacks=[early_stopping])
+model.save("model.h5")
+x = X[0]
+x = np.array([x])
+pred = model.predict_classes(x, batch_size=1)
+for t in pred[0]:
+print id2tag[t],
+Please make sure that the boxes below are checked before you submit your issue.
+If your issue is an implementation question, please ask your question on StackOverflow or on the Keras Slack channel instead of opening a GitHub issue.
+Thank you!
+[* ] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/keras-team/keras.git --upgrade --no-deps
+[* ] Check that your version of CNTK is up-to-date.
+[* ] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

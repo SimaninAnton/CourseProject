@@ -1,0 +1,38 @@
+yangofzeal commented on 23 Jun 2010
+I'm trying to serve a large file during a GET request asynchronously. The following code works with os.popen("cat myfile"), but doesn't work with open("myfile") unless select.poll or ioloop._Select is used. If tornado.ioloop._poll == select.epoll, then I get an IOError (see below)
+I'm using the latest git version of the source with python 2.6.4 on Linux
+class FileServer(tornado.web.RequestHandler):
+@tornado.web.asynchronous
+def get(self):
+self.set_header("Content-Type", "applet/octet-stream")
+self.ioloop = tornado.ioloop.IOLoop.instance()
+if 1:
+# works
+cmd = "cat sample.dat"
+self.pipe = os.popen(cmd)
+elif 0:
+# only works if tornado.ioloop._poll = select.poll or tornado.ioloop._Select
+# IOError if tornado.ioloop._poll = select.epoll
+self.pipe = open("sample.dat",'r')
+self.ioloop.add_handler( self.pipe.fileno(), self.async_callback(self.on_read), self.ioloop.READ )
+def on_read(self, fd, events):
+buffer = self.pipe.read(1024)
+try:
+assert buffer
+self.write(buffer)
+self.flush()
+except:
+self.pipe.close()
+self.ioloop.remove_handler(fd)
+self.finish()
+here's the traceback from the server console output:
+Traceback (most recent call last):
+File "/usr/local/lib/python2.6/dist-packages/tornado/web.py", line 770, in _execute
+getattr(self, self.request.method.lower())(_args, *_kwargs)
+File "/usr/local/lib/python2.6/dist-packages/tornado/web.py", line 854, in wrapper
+return method(self, _args, *_kwargs)
+File "./fileserve.py", line 25, in get
+self.ioloop.add_handler( self.pipe.fileno(), self.async_callback(self.on_read), self.ioloop.READ )
+File "/usr/local/lib/python2.6/dist-packages/tornado/ioloop.py", line 149, in add_handler
+self._impl.register(fd, events | self.ERROR)
+IOError: [Errno 1] Operation not permitted

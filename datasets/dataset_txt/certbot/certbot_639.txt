@@ -1,0 +1,86 @@
+xm74 commented on 27 Mar 2018 •
+edited
+I'm trying to use certbot 0.22.2 with certbot-dns-rfc2136 plugin using TSIG on FreeBSD 11. with NSD 4.1 DNS-server.
+Here is configurations.
+root@beta:~ # uname -v
+FreeBSD 11.1-RELEASE-p8 #0: Tue Mar 13 17:07:05 UTC 2018     root@amd64-builder.daemonology.net:/usr/obj/usr/src/sys/GENERIC
+root@beta:~ # pkg info | egrep "certbot|acme"
+py27-acme-0.22.2,1             ACME protocol implementation in Python
+py27-certbot-0.22.2,1          Let's Encrypt client
+py27-certbot-dns-rfc2136-0.22.2 RFC 2136 DNS Authenticator plugin for Certbot
+root@beta:~ # host `hostname`
+beta.peek.ru has address 78.40.219.163
+beta.peek.ru has IPv6 address 2001:470:28:26f::1
+root@beta:~ # cat /usr/local/etc/nsd/nsd.conf
+...
+key:
+        name: "lekey"
+        algorithm: hmac-sha512
+        secret: "ox+Koh0/bk55s4l3892F3LRjtBztl+Y+k+bf3VN53VW0nfbhR72hs6ZuX0UeuUOSQwQOzAd9c1nX6uVnSN4Lvg=="
+...
+zone:
+        name: "peek.ru"
+        zonefile: "%s/%s.zone"
+        allow-notify: 78.40.219.163 lekey
+        request-xfr: 78.40.219.163 lekey
+...
+root@beta:~ # cat /usr/local/etc/letsencrypt/tsig.conf
+dns_rfc2136_server = 78.40.219.163
+dns_rfc2136_name = lekey
+dns_rfc2136_secret = ox+Koh0/bk55s4l3892F3LRjtBztl+Y+k+bf3VN53VW0nfbhR72hs6ZuX0UeuUOSQwQOzAd9c1nX6uVnSN4Lvg==
+dns_rfc2136_algorithm = HMAC-SHA512
+root@beta:~ # sockstat -46 | grep :53
+nsd      nsd        57787 4  udp4   78.40.219.163:53      *:*
+nsd      nsd        57787 5  udp6   2001:470:28:26f::1:53 *:*
+...
+I trying to get wildcard ceritificate with DNS01 method but got this error.
+root@beta:~ # certbot certonly --dns-rfc2136 --dns-rfc2136-credentials /usr/local/etc/letsencrypt/tsig.conf --agree-tos --email abuse@peek.ru --cert-name peek.ru -d "*.peek.ru" -d peek.ru --server https://acme-v02.api.letsencrypt.org/directory
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Plugins selected: Authenticator dns-rfc2136, Installer None
+
+-------------------------------------------------------------------------------
+You are updating certificate peek.ru to include new domain(s):
++ *.peek.ru
+
+You are also removing previously included domain(s):
+- beta.peek.ru
+- list.peek.ru
+- mail.peek.ru
+- www.peek.ru
+
+Did you intend to make this change?
+-------------------------------------------------------------------------------
+(U)pdate cert/(C)ancel: U
+Renewing an existing certificate
+Performing the following challenges:
+dns-01 challenge for peek.ru
+dns-01 challenge for peek.ru
+Cleaning up challenges
+Encountered exception during recovery
+Received response from server: NOTIMP
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/site-packages/certbot/error_handler.py", line 100, in _call_registered
+    self.funcs[-1]()
+  File "/usr/local/lib/python2.7/site-packages/certbot/auth_handler.py", line 303, in _cleanup_challenges
+    self.auth.cleanup(achalls)
+  File "/usr/local/lib/python2.7/site-packages/certbot/plugins/dns_common.py", line 76, in cleanup
+    self._cleanup(domain, validation_domain_name, validation)
+  File "/usr/local/lib/python2.7/site-packages/certbot_dns_rfc2136/dns_rfc2136.py", line 77, in _cleanup
+    self._get_rfc2136_client().del_txt_record(domain, validation_name, validation)
+  File "/usr/local/lib/python2.7/site-packages/certbot_dns_rfc2136/dns_rfc2136.py", line 168, in del_txt_record
+    .format(dns.rcode.to_text(rcode)))
+PluginError: Received response from server: NOTIMP
+Received response from server: NOTIMP
+TCPdump show no connections to DNS server from binded IP. NSD log is empty too.
+root@beta:~ # tcpdump -i bge0 -n -nn -ttt 'port 53'
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on tun0, link-type NULL (BSD loopback), capture size 262144 bytes
+^C
+0 packets captured
+4 packets received by filter
+0 packets dropped by kernel
+root@beta:~ # tail /usr/local/etc/nsd/var/log/nsd.log
+[2018-03-27 18:00:25.906] nsd[52705]: warning: signal received, shutting down...
+[2018-03-27 18:00:25.921] nsd[72952]: notice: nsd starting (NSD 4.1.17)
+[2018-03-27 18:00:25.924] nsd[72952]: info: setup SSL certificates
+[2018-03-27 18:00:25.968] nsd[75673]: info: zonefile peek.ru/peek.ru.zone is not modified

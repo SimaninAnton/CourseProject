@@ -1,0 +1,78 @@
+jumutc commented on 27 Nov 2018
+Hi, I have a strange TypeError when loading a model with Lambda layer.
+Versions of TF and Keras:
+tensorflow==1.12.0
+Keras==2.2.4
+Code snippet:
+from keras.layers import LSTM, Dropout, RepeatVector, TimeDistributed, Dense, Input, Lambda, concatenate
+from keras.models import Sequential, Model, load_model
+from keras.optimizers import RMSprop
+from keras import backend as K
+import tensorflow as tf
+
+def zero_loss(y_true, _):
+    return K.zeros(K.shape(y_true))
+
+def _build_encoder(input_shape):
+    model = Sequential(name='encoder')
+    model.add(Dropout(0.1, input_shape=input_shape))
+    model.add(LSTM(10, name="recurrent"))
+    model.add(Dropout(0.1))
+
+    return model
+
+def _build_decoder(output_shape):
+    model = Sequential(name='decoder')
+    model.add(RepeatVector(10, input_shape=(10,)))
+    model.add(LSTM(10, name="recurrent", return_sequences=True))
+    model.add(Dropout(0.1))
+    model.add(TimeDistributed(Dense(output_shape[-1])))
+
+    return model
+
+def _build_model():
+    with tf.name_scope("keras_model"):
+        input_shape = (10, 50)
+
+        encoder = _build_encoder(input_shape)
+        decoder = _build_decoder(input_shape)
+
+        input_data = Input(shape=input_shape)
+
+        encoder_out = Lambda(lambda x: encoder(x), name='encoder_out')(input_data)
+        losses = {'decoder': 'mse', 'encoder_out': zero_loss}
+
+        model = Model(inputs=[input_data], outputs=[decoder(encoder_out), encoder_out])
+        model.compile(loss=losses, optimizer=RMSprop())
+
+        return model
+
+model = _build_model()
+model.save("keras.model")
+
+load_model("keras.model", custom_objects={'zero_loss': zero_loss})
+Error:
+Traceback (most recent call last):
+  File "keras_test_snippet.py", line 47, in <module>
+    load_model("keras.model", custom_objects={'zero_loss': zero_loss})
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/saving.py", line 419, in load_model
+    model = _deserialize_model(f, custom_objects, compile)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/saving.py", line 225, in _deserialize_model
+    model = model_from_config(model_config, custom_objects=custom_objects)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/saving.py", line 458, in model_from_config
+    return deserialize(config, custom_objects=custom_objects)
+  File "/usr/local/lib/python3.5/dist-packages/keras/layers/__init__.py", line 55, in deserialize
+    printable_module_name='layer')
+  File "/usr/local/lib/python3.5/dist-packages/keras/utils/generic_utils.py", line 145, in deserialize_keras_object
+    list(custom_objects.items())))
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/network.py", line 1032, in from_config
+    process_node(layer, node_data)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/network.py", line 991, in process_node
+    layer(unpack_singleton(input_tensors), **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/base_layer.py", line 457, in __call__
+    output = self.call(inputs, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/layers/core.py", line 687, in call
+    return self.function(inputs, **arguments)
+  File "keras_test_snippet.py", line 36, in <lambda>
+    encoder_out = Lambda(lambda x: encoder(x), name='encoder_out')(input_data)
+TypeError: 'dict' object is not callable

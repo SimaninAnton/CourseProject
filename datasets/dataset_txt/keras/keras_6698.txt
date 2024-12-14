@@ -1,0 +1,102 @@
+NanditaDamaraju commented on 1 Sep 2015
+After upgrading to the latest version of Keras I get the following error when I try to use graph.fit on the model:
+nb_epoch = 10
+max_features = 20
+maxlen = 9
+batch_size = 32
+embedding_dims = 64
+nb_filters = 10
+filter_length = 3
+hidden_dims = 25
+
+graph = Graph()
+graph.add_input(name='sequence', ndim=2)
+graph.inputs['sequence'].input = T.imatrix()
+
+
+graph.add_node(Embedding(max_features, embedding_dims),
+               name = 'sequence_embedding',
+               input = 'sequence')
+graph.add_node(Convolution1D(input_dim=embedding_dims,
+                    nb_filter=nb_filters,
+                    filter_length=filter_length,
+                    border_mode="valid",
+                    activation="relu",
+                    subsample_length=1),
+
+                    name = 'sequence_conv',
+                    input = 'sequence_embedding')
+
+
+graph.add_node(Flatten(), name = 'sequence_flatten', input = 'sequence_conv')
+output_size = nb_filters * (((maxlen - filter_length) / 1) + 1)
+print output_size
+graph.add_node(Dense(output_size, hidden_dims,activation = "relu" ),
+               name = 'sequence_dense',
+               input = 'sequence_flatten')
+
+
+graph.add_node(
+            Dense(hidden_dims, 32,
+                activation = "relu"),
+            name='merged_output',
+            input='sequence_dense',
+            merge_mode='concat')
+graph.add_node(Dense(32,1, activation='sigmoid'),
+                name= 'merged_final',
+              input = 'merged_output')
+graph.add_output(
+            name='output',
+            input='merged_final')
+
+
+graph.compile('rmsprop',{'output':'mse'})
+Fitting the input:
+graph.fit(
+                    {'sequence':X_train, 'output': Y_train},
+                    batch_size=32,
+                    nb_epoch=nb_epoch,
+                    verbose = 1
+    )
+On keras-0.1.2, works fine
+X_train_shape: (87680, 9)
+Y_train_shape: (87680,)
+Epoch 0
+ 9568/87680 [==>...........................] - ETA: 28s - output: 0.0847
+On keras-0.1.3
+IndexError: index 62887 is out of bounds for axis 0 with size 1
+Full error:
+X_train_shape: (87680, 9)
+Y_train_shape: (87680,)
+Epoch 0
+---------------------------------------------------------------------------
+IndexError                                Traceback (most recent call last)
+<ipython-input-6-c3fc7e82caf1> in <module>()
+      6                     batch_size=32,
+      7                     nb_epoch=nb_epoch,
+----> 8                     verbose = 1
+      9     )
+
+/Library/Python/2.7/site-packages/keras/models.pyc in fit(self, data, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight)
+    676                             verbose=verbose, callbacks=callbacks,
+    677                             val_f=val_f, val_ins=val_ins,
+--> 678                             shuffle=shuffle, metrics=metrics)
+    679         return history
+    680 
+
+/Library/Python/2.7/site-packages/keras/models.pyc in _fit(self, f, ins, out_labels, batch_size, nb_epoch, verbose, callbacks, val_f, val_ins, shuffle, metrics)
+    199                 batch_ids = index_array[batch_start:batch_end]
+    200                 try:
+--> 201                     ins_batch = slice_X(ins, batch_ids)
+    202                 except TypeError as err:
+    203                     print('TypeError while preparing batch. \
+
+/Library/Python/2.7/site-packages/keras/models.pyc in slice_X(X, start, stop)
+     53     if type(X) == list:
+     54         if hasattr(start, '__len__'):
+---> 55             return [x[start] for x in X]
+     56         else:
+     57             return [x[start:stop] for x in X]
+
+IndexError: index 62887 is out of bounds for axis 0 with size 1
+Any idea what's going wrong?

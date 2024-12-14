@@ -1,0 +1,80 @@
+jtiai commented on 29 Nov 2017 •
+edited by carltongibson
+Steps to reproduce
+See attached minimal test case
+Edit by @carltongibson: Pasted in test case since it's not too long:
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import django
+from django.conf import settings
+
+settings.configure(DEBUG=True, SECRET_KEY='!')
+django.setup()
+
+from rest_framework import serializers
+
+
+class MyObject(object):
+    def __init__(self):
+        self.x = 'foobar'
+
+
+class BuggyField(serializers.Field):
+    def __init__(self, *args, **kwargs):
+        self.target = kwargs.pop('target')
+        super(BuggyField, self).__init__(*args, **kwargs)
+
+    def to_representation(self, obj):
+        return obj.x
+
+    def to_internal_value(self, data):
+        if not data:
+            return {self.target: None}
+
+        return {self.target: data}
+
+
+class MyObjectSerializer(serializers.Serializer):
+    foo_field = BuggyField(source='*', target='foo_field', allow_null=True, required=False)
+
+
+working_data = {
+    'foo_field': 'foobar'
+}
+
+# This works just fine
+print "Testing working data..."
+serializer = MyObjectSerializer(data=working_data)
+if serializer.is_valid():
+    print 'DATA:', serializer.validated_data
+
+not_working_data = {
+    'foo_field': None
+}
+
+# Having none as a valid value doesn't work.
+print "Testing working not working data..."
+serializer = MyObjectSerializer(data=not_working_data)
+if serializer.is_valid():
+    print 'DATA:', serializer.validated_data
+Expected behavior
+Value from to_internal_value is returned.
+Actual behavior
+Traceback because run_validation() bails out with empty value without calling to_internal_value first.
+Traceback (most recent call last):
+  File "./drf_bug.py", line 54, in <module>
+    if serializer.is_valid():
+  File "/home/jtiai/.pyenv/versions/keycom-2.8-snet/lib/python2.7/site-packages/rest_framework/serializers.py", line 213, in is_valid
+    self._validated_data = self.run_validation(self.initial_data)
+  File "/home/jtiai/.pyenv/versions/keycom-2.8-snet/lib/python2.7/site-packages/rest_framework/serializers.py", line 407, in run_validation
+    value = self.to_internal_value(data)
+  File "/home/jtiai/.pyenv/versions/keycom-2.8-snet/lib/python2.7/site-packages/rest_framework/serializers.py", line 447, in to_internal_value
+    set_value(ret, field.source_attrs, validated_value)
+  File "/home/jtiai/.pyenv/versions/keycom-2.8-snet/lib/python2.7/site-packages/rest_framework/fields.py", line 105, in set_value
+    dictionary.update(value)
+  File "/home/jtiai/.pyenv/versions/keycom-2.8-snet/lib/python2.7/_abcoll.py", line 571, in update
+    for key, value in other:
+TypeError: 'NoneType' object is not iterable
+drf_bug.zip
+1

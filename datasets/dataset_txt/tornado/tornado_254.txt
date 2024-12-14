@@ -1,0 +1,85 @@
+rmedaer commented on 10 Jan 2018
+Here is two handlers which should IMO (and if I well understood) do the same result.
+The example's purpose is to send (write + flush) chunks one by one in order to handle simultaneous requests.
+The first one yield the result of flush() method which is a Future.
+The second create an instance of Future and use it set_result method as callback for flush().
+The issue demo is available here.
+def mygenerator():
+    for i in range(0, 10):
+        yield 'data'
+
+class WithFutureHandler(RequestHandler):
+    @gen.coroutine
+    def get(self):
+        log('Start request', current_id)
+
+        for chunk in mygenerator():
+            log('Writing from request', current_id)
+            self.write(chunk)
+
+            yield self.flush()
+
+        self.finish()
+
+class WithCallbackHandler(RequestHandler):
+    @gen.coroutine
+    def get(self):
+        log('Start request', current_id)
+
+        for chunk in mygenerator():
+            log('Writing from request', current_id)
+            self.write(chunk)
+
+            f = Future()
+            self.flush(callback=functools.partial(f.set_result, None))
+            yield f
+        
+        self.finish()
+Here is the behavior I'm observing:
+Using Future: I guess the IOLoop is not releasing context of first request during the flush.
+Start request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Writing from request 1
+Start request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Writing from request 2
+Using callback + my own future: At each flush I have the context switching I want !
+Start request 1
+Writing from request 1
+Start request 2
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+Writing from request 1
+Writing from request 2
+I hope my issue description is clear enough ! Many thanks in advance.

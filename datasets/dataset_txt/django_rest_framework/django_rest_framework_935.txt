@@ -1,0 +1,53 @@
+alfalfasprossen commented on 12 Jan 2017
+If an exception occurs in code that is being called through the rest api, the exceptions original traceback and line number are swallowed since the exception is re-raised at a different location. At least that is what I understand why the problem exists. It may be Python 2.x only.
+Example traceback:
+Traceback (most recent call last):
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\django\core\handlers\base.py", line 149, in get_response
+    response = self.process_exception_by_middleware(e, request)
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\django\core\handlers\base.py", line 147, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\dev\test\test\helpers.py", line 127, in decorator
+    return func(*args, **kwargs)
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\django\views\decorators\csrf.py", line 58, in wrapped_view
+    return view_func(*args, **kwargs)
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\django\views\generic\base.py", line 68, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\rest_framework\views.py", line 480, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\rest_framework\views.py", line 437, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\jbecker\.virtualenvs\test\lib\site-packages\rest_framework\views.py", line 448, in raise_uncaught_exception
+    raise exc
+TypeError: cannot concatenate 'str' and 'NoneType' objects
+The location and cause of the TypeError is nowhere to be seen. All traceback listings are internal calls of django and the rest_framework.
+What we did now is to explicitly print the traceback in dispatch() before the exception is handed to the exception handler, where it is possibly re-raised with a wrong traceback:
+def dispatch(self, request, *args, **kwargs):
+        """
+        `.dispatch()` is pretty much the same as Django's regular dispatch,
+        but with extra hooks for startup, finalize, and exception handling.
+        """
+        self.args = args
+        self.kwargs = kwargs
+        request = self.initialize_request(request, *args, **kwargs)
+        self.request = request
+        self.headers = self.default_response_headers  # deprecate?
+
+        try:
+            self.initial(request, *args, **kwargs)
+
+            # Get the appropriate handler method
+            if request.method.lower() in self.http_method_names:
+                handler = getattr(self, request.method.lower(),
+                                  self.http_method_not_allowed)
+            else:
+                handler = self.http_method_not_allowed
+
+            response = handler(request, *args, **kwargs)
+
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()  # Actual exception traceback here.
+            response = self.handle_exception(exc)
+...
+I understand from other sources on the web, that this may be handled differently in Python 3, and that the original traceback of the re-raised exception is correct. Using the rest_framework with Python 2.x though makes this a real pain when trying to debug code errors that only happen when certain input or so is provided through the rest api.
+1

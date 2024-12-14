@@ -1,0 +1,81 @@
+SlowMonk commented on 5 Apr 2019
+def create_cnn(width, height, depth, filters=(16, 32, 64), regress=False):
+    # initialize the input shape and channel dimension, assuming
+    # TensorFlow/channels-last ordering
+    inputShape = (height, width, depth)
+    chanDim = -1
+    # define the model input
+    inputs = Input(shape=inputShape)
+ 
+    # loop over the number of filters
+    for (i, f) in enumerate(filters):
+        # if this is the first CONV layer then set the input
+        # appropriately
+        if i == 0:
+            x = inputs
+ 
+        # CONV => RELU => BN => POOL
+        x = Conv2D(f, (3, 3), padding="same")(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=chanDim)(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        # flatten the volume, then FC => RELU => BN => DROPOUT
+        x = Flatten()(x)
+        x = Dense(16)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=chanDim)(x)
+        x = Dropout(0.5)(x)
+        
+        # apply another FC layer, this one to match the number of nodes
+        # coming out of the MLP
+        x = Dense(4)(x)
+        x = Activation("relu")(x)
+ 
+        # check to see if the regression node should be added
+        if regress:
+            x = Dense(1, activation="linear")(x)
+ 
+        # construct the CNN
+        model = Model(inputs, x)
+ 
+        # return the CNN
+    return model
+# create our Convolutional Neural Network and then compile the model
+# using mean absolute percentage error as our loss, implying that we
+# seek to minimize the absolute percentage difference between our
+# price *predictions* and the *actual prices*
+model = create_cnn(64, 64, 3, regress=True)
+opt = Adam(lr=1e-3, decay=1e-3 / 200)
+model.compile(loss="mean_absolute_percentage_error", optimizer=opt)
+ 
+# train the model
+print("[INFO] training model...")
+model.fit(trainImagesX, trainY, validation_data=(testImagesX, testY),
+    epochs=200, batch_size=8)
+=====================
+ValueError Traceback (most recent call last)
+in
+10 # seek to minimize the absolute percentage difference between our
+11 # price predictions and the actual prices
+---> 12 model = create_cnn(64, 64, 3, regress=True)
+13 opt = Adam(lr=1e-3, decay=1e-3 / 200)
+14 model.compile(loss="mean_absolute_percentage_error", optimizer=opt)
+in create_cnn(width, height, depth, filters, regress)
+15
+16 # CONV => RELU => BN => POOL
+---> 17 x = Conv2D(f, (3, 3), padding="same")(x)
+18 x = Activation("relu")(x)
+19 x = BatchNormalization(axis=chanDim)(x)
+~/anaconda3/envs/tensorflow/lib/python3.6/site-packages/keras/engine/base_layer.py in call(self, inputs, **kwargs)
+412 # Raise exceptions in case the input is not compatible
+413 # with the input_spec specified in the layer constructor.
+--> 414 self.assert_input_compatibility(inputs)
+415
+416 # Collect input shapes to build layer.
+~/anaconda3/envs/tensorflow/lib/python3.6/site-packages/keras/engine/base_layer.py in assert_input_compatibility(self, inputs)
+309 self.name + ': expected ndim=' +
+310 str(spec.ndim) + ', found ndim=' +
+--> 311 str(K.ndim(x)))
+312 if spec.max_ndim is not None:
+313 ndim = K.ndim(x)
+ValueError: Input 0 is incompatible with layer conv2d_14: expected ndim=4, found ndim=2

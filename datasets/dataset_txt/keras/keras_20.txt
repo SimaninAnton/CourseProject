@@ -1,0 +1,122 @@
+Mahi-Mai commented on 22 Nov 2019 •
+edited
+System information
+Have I written custom code (as opposed to using example directory): yes
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Ubuntu Linux
+TensorFlow backend (yes / no): yes
+TensorFlow version: tensorflow-gpu, 1.9.0
+Keras version: 2.2.4
+Python version: 3.6
+CUDA/cuDNN version: V9.0.176
+GPU model and memory: 8xGPUs
+Describe the current behavior
+I have a model and a dataset. I've trained the model for 10 epochs. I load the saved model and- using the same exact dataset, hardware, environment, hyperparameters, code, and settings that I used to train the model the first time- attempt to continue training with model.fit_generator(). The script crashes with an OOM error. I've also attempted to reinitialize the model architecture and only load the weights with the same results.
+In both the initial and subsequent training sessions I am using multi_gpu_model() to take advantage of the 8 given GPUs.
+Describe the expected behavior
+Model should continue training without an OOM error. Ideally, I would load the trained weights from subsequent epochs and manually adjust the learning rate. (I don't want to use reduce LR on plateau.)
+Code to reproduce the issue
+This is the repo I've used as a base: https://github.com/zhixuhao/unet
+Otherwise, it's difficult to produce a simple example of this. Here's what I can offer:
+from zhixuhao_tools import trainGenerator
+
+from keras import models
+from keras.callbacks import CSVLogger, ModelCheckpoint
+
+
+### ======== SET UP TRAINING DATA GENERATOR ======== ###
+
+# GET NUMBER OF TRAINING SAMPLES
+
+nb_train_samples = 52273
+
+# DEFINE UNET GENERATOR
+image_datagen_args = dict(brightness_range=(0.3,1.35))
+mask_datagen_args = dict()
+
+#  BATCH_SIZE OPTIONS POOR
+batch_size = 63
+
+trGen = trainGenerator(batch_size=batch_size,
+                       train_path='dir/train',
+                       image_folder='images',
+                       mask_folder='labels',
+                       image_aug_dict=image_datagen_args,
+                       mask_aug_dict=mask_datagen_args,
+                       image_color_mode = 'rgb',
+                       mask_color_mode = 'grayscale',
+                       save_to_dir = None)
+
+### ======== SET UP VALIDATION DATA GENERATOR ======== ###
+
+# GET NUMBER OF VALIDATION SAMPLES
+nb_val_samples = 20350
+
+# DEFINE UNET GENERATOR
+image_datagen_args = dict()
+mask_datagen_args = dict()
+
+#  BATCH_SIZE
+val_batch_size = 74
+
+valGen = trainGenerator(batch_size=val_batch_size,
+                       train_path='dir/val',
+                       image_folder='images',
+                       mask_folder='labels',
+                       image_aug_dict=image_datagen_args,
+                       mask_aug_dict=mask_datagen_args,
+                       image_color_mode = 'rgb',
+                       mask_color_mode = 'grayscale',
+                       save_to_dir = None)
+
+### ======== SET UP MODEL ======== ###
+
+# LOAD PREVIOUS CHECKPOINT
+chk_pt = models.load_model(f'{tmp_dir}/chk_pt.hdf5')
+
+# SAVE WEIGHTS
+chk_pt.save_weights(f'{tmp_dir}/chk_pt.h5')
+
+# INITIALIZE MODEL
+model = unet(optimizer=Adam(1e-5), pretrained_weights=f'{tmp_dir}/chk_pt.h5')
+
+model = models.load_model(f'{tmp_dir}/chk_pt.hdf5')
+
+# INITIALIZE CHECKPOINTS
+chk = ModelCheckpoint(tmp_dir + '/model.hdf5', monitor='loss',verbose=1, save_best_only=True)
+logger = CSVLogger(tmp_dir + '/training_log.csv', separator = ',', append=False)
+
+# TRAIN MODEL
+model.fit_generator(generator=trGen,
+                    validation_data=valGen,
+                    steps_per_epoch=int(nb_train_samples/batch_size),
+                    validation_steps=int(nb_val_samples/val_batch_size),
+                    epochs=110,
+                    callbacks=[chk, logger])
+
+print('Training complete!')
+Other info / logs
+Traceback (most recent call last):
+  File "Project/U-Net/Training/continue_training_val_weights.py", line 128, in <module>
+    callbacks=[chk, logger])
+  File "/usr/local/anaconda/lib/python3.6/site-packages/keras/legacy/interfaces.py", line 91, in wrapper
+    return func(*args, **kwargs)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/keras/engine/training.py", line 1418, in fit_generator
+    initial_epoch=initial_epoch)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/keras/engine/training_generator.py", line 217, in fit_generator
+    class_weight=class_weight)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/keras/engine/training.py", line 1217, in train_on_batch
+    outputs = self.train_function(ins)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 2715, in __call__
+    return self._call(inputs)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/keras/backend/tensorflow_backend.py", line 2675, in _call
+    fetched = self._callable_fn(*array_vals)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/tensorflow/python/client/session.py", line 1454, in __call__
+    self._session._session, self._handle, args, status, None)
+  File "/usr/local/anaconda/lib/python3.6/site-packages/tensorflow/python/framework/errors_impl.py", line 519, in __exit__
+    c_api.TF_GetCode(self.status.status))
+tensorflow.python.framework.errors_impl.ResourceExhaustedError: OOM when allocating tensor with shape[7,128,128,256] and type float on /job:localhost/replica:0/task:0/device:GPU:0 by allocator GPU_0_bfc
+  [[Node: model_1_8/up_sampling2d_3/ResizeNearestNeighbor = ResizeNearestNeighbor[T=DT_FLOAT, _class=["loc:@train...ighborGrad"], align_corners=false, _device="/job:localhost/replica:0/task:0/device:GPU:0"](model_1_8/conv2d_16/Relu-0-0-TransposeNCHWToNHWC-LayoutOptimizer, model_1_8/up_sampling2d_3/mul)]]
+Hint: If you want to see a list of allocated tensors when OOM happens, add report_tensor_allocations_upon_oom to RunOptions for current allocation info.
+  [[Node: metrics_2/acc/Mean_1/_3357 = _Recv[client_terminated=false, recv_device="/job:localhost/replica:0/task:0/device:CPU:0", send_device="/job:localhost/replica:0/task:0/device:GPU:0", send_device_incarnation=1, tensor_name="edge_8613_metrics_2/acc/Mean_1", tensor_type=DT_FLOAT, _device="/job:localhost/replica:0/task:0/device:CPU:0"]()]]
+Hint: If you want to see a list of allocated tensors when OOM happens, add report_tensor_allocations_upon_oom to RunOptions for current allocation info.
+Failed with exit code: 1

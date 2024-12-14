@@ -1,0 +1,26 @@
+dewhisna commented on 8 Dec 2015
+I attempted to use the letsencrypt-auto script to install a cert on one of my domains that is using WSGI modules on Apache2. The problem is that when it copies the base .conf file to generate one for the SSL equivalent, it doesn't generate new WSGIDaemonProcess names.
+The error you get is as follows:
+Error while running apache2ctl configtest.
+Action 'configtest' failed.
+The Apache error log may have more information.
+AH00526: Syntax error on line 36 of
+/etc/apache2/sites-enabled/mysite.conf:
+Name duplicates previous WSGI daemon definition.
+The Apache log file doesn't have any additional details, but the problem is the following line in the conf files:
+        WSGIDaemonProcess mydaemon \
+            processes=2 \
+            threads=1 \
+            display-name=%{GROUP} \
+            python-path=/var/www/myserver/venv/lib/python2.7/site-packages \
+            python-eggs=/var/www/myserver/data/python-egg-cache
+
+        WSGIProcessGroup mydaemon
+The WSGI Daemon Process name must be unique and there's already one in the base mysite.conf file and so the mysite.conf-le-ssl.conf (or whatever it gets called) causes a duplicate name.
+I don't know that there's an easy fix for the auto script because I believe it's going to necessitate having two different daemons running -- one for the SSL version and one for unencrypted. If the user is switching to encrypted only where there's only one daemon running, perhaps it would work, if the unencrypted gets dropped or delegated to the encrypted.
+Otherwise, where it will get tricky is whether or not two daemons will play nicely when run from the same setup (i.e. same files). Now in my case, as evidenced above, it's a Python script and it happens to interface with a mysql engine on the backend, etc. The mysql daemon should sort out database accesses, but it may be desired (or even necessary) to have separate caches and scripts, etc, between the two for the configuration files and things that would otherwise be co-accessed, as the daemon may not be expecting to have to do file locking and such.
+I had a similar issue when setting up my development environment on this server, though that is a completely separate code base with different paths, etc, so I just named it something like "mydaemon-dev" and ran different daemons. But letsencrypt-auto probably won't know if two daemons can run simultaneously with the same configuration or not, and so it probably can't just change the name to mydaemon-ssl or something for the copy and expect it to work.
+The simple solution is for the user to manually add the SSL setup to the server, but what this bug report is about is for adding a detection mechanism to the letencrypt-auto script to see if a WSGIDaemonProcess is defined and properly notify the user that it has to be manually enabled rather than spewing out a bunch of warnings and exiting in a somewhat incomplete state (as I don't think it finished setting up my other virtual domains that otherwise had no issues until I ran it again and excluded this domain).
+Thanks!
+Donna
+12

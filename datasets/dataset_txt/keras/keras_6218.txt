@@ -1,0 +1,66 @@
+napsternxg commented on 23 Dec 2015
+Using Keras 0.2.0
+From my understanding, if I just want to train a model to predict if the embedding vector is of certain type or not. The following config of the model should be able to take an index of word use its trained embedding and then pass it to a dense layer for prediction.
+model_t = Sequential()
+model_t.add(Embedding(5, 10))
+model_t.add(Dense(1, activation="sigmoid"))
+
+model_t.compile(loss='binary_crossentropy', optimizer='rmsprop')
+However, I am getting the error mentioned below. It looks like the Embedding layer is outputting a sequence of input which is wrong, it should just output a vector of dim (nb_samples, 10).
+---------------------------------------------------------------------------
+AssertionError                            Traceback (most recent call last)
+<ipython-input-53-7a9bf1877969> in <module>()
+      2 model_t.add(Embedding(5, 10))
+      3 #model_t.add(Flatten())
+----> 4 model_t.add(Dense(1, activation="sigmoid"))
+
+/usr/local/lib/python2.7/dist-packages/keras/layers/containers.pyc in add(self, layer)
+     30         self.layers.append(layer)
+     31         if len(self.layers) > 1:
+---> 32             self.layers[-1].set_previous(self.layers[-2])
+     33             if not hasattr(self.layers[0], 'input'):
+     34                 self.set_input()
+
+/usr/local/lib/python2.7/dist-packages/keras/layers/core.pyc in set_previous(self, layer, connection_map)
+     33         if hasattr(self, 'input_ndim'):
+     34             assert self.input_ndim == len(layer.output_shape), "Incompatible shapes: layer expected input with ndim=" +\
+---> 35                 str(self.input_ndim) + " but previous layer has output_shape " + str(layer.output_shape)
+     36         if layer.get_output_mask() is not None:
+     37             assert self.supports_masked_input(), "Cannot connect non-masking layer to layer with masked output"
+
+AssertionError: Incompatible shapes: layer expected input with ndim=2 but previous layer has output_shape (None, None, 10)
+After reading the docs, I realize that by embedding layer outputs the vector of sequences. So in order to fix that I use the following code and am to compile the model successfully:
+model_t = Sequential()
+model_t.add(Embedding(5, 10, input_length=1))
+model_t.add(Flatten())
+model_t.add(Dense(1, activation="sigmoid"))
+
+model_t.compile(loss='binary_crossentropy', optimizer='rmsprop')
+But, when I try to train this model with the following input I again get errors:
+X = [[1],[2],[3]]
+y = [0,1,0]
+
+model_t.fit(X,y)
+I get the following errors:
+Epoch 1/100
+---------------------------------------------------------------------------
+Exception                                 Traceback (most recent call last)
+<ipython-input-58-ed9e34624a3a> in <module>()
+----> 1 model_t.fit(X,y)
+
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in fit(self, X, y, batch_size, nb_epoch, verbose, callbacks, validation_split, validation_data, shuffle, show_accuracy, class_weight, sample_weight)
+    505                          verbose=verbose, callbacks=callbacks,
+    506                          val_f=val_f, val_ins=val_ins,
+--> 507                          shuffle=shuffle, metrics=metrics)
+    508 
+    509     def predict(self, X, batch_size=128, verbose=0):
+
+/usr/local/lib/python2.7/dist-packages/keras/models.pyc in _fit(self, f, ins, out_labels, batch_size, nb_epoch, verbose, callbacks, val_f, val_ins, shuffle, metrics)
+    218                 except TypeError:
+    219                     raise Exception('TypeError while preparing batch. \
+--> 220                         If using HDF5 input data, pass shuffle="batch".\n')
+    221 
+    222                 batch_logs = {}
+
+Exception: TypeError while preparing batch.                         If using HDF5 input data, pass shuffle="batch".
+What am I doing wrong?

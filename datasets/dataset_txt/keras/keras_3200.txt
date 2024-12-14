@@ -1,0 +1,24 @@
+Contributor
+kencoken commented on 16 Feb 2017 •
+edited
+I'm trying to understand how shared layers work with the functional API as described here, particularly in conjunction with TensorFlow device scopes as described here, and whether this can be used as a (albeit inefficient) method for multi-device training.
+I understand that I can specify a model with shared weights by first defining the model itself on one device:
+with tf.device('/cpu:0'):
+    sub_x = Input(shape=(...,))
+    sub_y = <define model layers here>
+    sub_model = Model(input=sub_x, output=sub_y)
+And then call sub_model repeatedly to produce replicas on other devices, which can then be fed separate data, then have their output activations merged and a loss computed for training:
+with tf.device('/gpu:0'):
+    a1 = sub_model(data_1) # all ops in the replica will live on GPU:0
+with tf.device('/gpu:1'):
+    a2 = sub_model(data_2)
+with tf.device('/gpu:2'):
+    a3 = sub_model(data_3)
+with tf.device('/cpu:0'):
+    merged = merge([a1, a2, a3], mode='concat', concat_axis=0)
+model = Model(input=x, output=merged)
+model.compile(optimizer='sgd',
+              loss='mse')
+How does Keras ensure the weights of the individual replicas are kept in sync, despite each being fed separate data? I'd guess the mechanism is much more inefficient than simply averaging parameter updates using TensorFlow server objects What's more, here you suggest this approach is the only way to do data-parallalism in Keras @fchollet
+This seems to work on small dummy networks, but possibly doesn't scale? This would only work if the parameters on each device were kept synchronised constantly, which sounds as if it might be expensive if implemented naively... when different updates are made to each of the model replicas, are the weights guaranteed to be kept up to date? Rather than relying on this, should I be using a TensorFlow optimizer and averaging and applying gradients specifically instead?
+Is the implementation in the TensorFlow backend perhaps using a similar strategy to the following TensorFlow example, where tf.variable_scope(tf.get_variable_scope(), reuse=reuse_variables) is used? The blogpost on using TensorFlow with Keras seems to suggest that both serve the same role, it's written: "Variable sharing should be done via calling a same Keras layer (or model) instance multiple times, NOT via TensorFlow variable scopes" but is the underlying mechanism also very similar?

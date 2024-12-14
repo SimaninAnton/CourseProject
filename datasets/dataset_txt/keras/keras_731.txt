@@ -1,0 +1,27 @@
+robertmaxton42 commented on 5 Oct 2018 •
+edited
+li_in = Input(shape=(None, 1025), name="LeftImagIn")
+rr_in = Input(shape=(None, 1025), name="RightRealIn")
+ri_in = Input(shape=(None, 1025), name="RightImagIn")
+names = ['lr', 'li', 'rr', 'ri']
+
+inp = [lr_in, li_in, rr_in, ri_in]
+conv_in = [TimeDistributed(Reshape((1025, 1)), name=n + "_reshape")(l) for (l, n) in zip(inp, names)]
+convs = [TimeDistributedConvStack(2, 5, name_prefix = n, filt0=16, 
+                                  pooling=(11, 10),
+                                  activation='selu', 
+                                  kernel_initializer='lecun_normal',
+                                  pooling_activation='selu',
+                                  pooling_kernel_initializer='lecun_normal'
+                                 )(l) for (l, n) in zip(conv_in, names)]
+flats = [TimeDistributed(Reshape((-1,)), name=n + "_flatten")(l) for (l, n) in zip(convs, names)]
+merge = Concatenate()(flats)
+
+lstm = CuDNNLSTM(4 * 1025, return_sequences=True)(merge)
+outs = [TimeDistributed(Lambda(lambda inp: inp[1025 * i: 1025 * (i + 1)]), name=n + '_out') for (i, n) in enumerate(names)]
+
+model = Model(inputs=inp, outputs=outs)
+The above code, when run, gives me the error:
+Output tensors to a Model must be the output of a Keras `Layer` (thus holding past layer metadata). Found: <keras.layers.wrappers.TimeDistributed object at 0x7f8ad7660278>
+Does TimeDistributed not count as a Keras layer in general for some reason? If so, how can I work around this? I would rather not try to accumulate across time if at all possible -- as I understand it by default, with return_sequences set to True my model learns as it goes rather than all at once at the end, though it occurs to me that this assumption is unfounded.
+Thanks!

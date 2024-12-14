@@ -1,0 +1,89 @@
+Contributor
+janvanrijn commented on Sep 14, 2018 •
+edited
+Description
+ColumnTransformer requires at least one column for each part it transforms. This sounds logical, but makes automatic experimentation across datasets with mixed input types hard to apply with a single sklearn model. I would need three separate models for:
+datasets that have only numeric inputs
+datasets that have only categorical inputs
+datasets that have mixed (numeric / categorical) inputs
+Of course, this is doable, but it would be extremely convenient to be able to do all this with one sklearn model.
+Steps/Code to Reproduce
+import sklearn
+import sklearn.datasets
+import sklearn.compose
+import sklearn.tree
+import sklearn.impute
+
+X, y = sklearn.datasets.fetch_openml('iris', 1, return_X_y=True)
+
+numeric_transformer = sklearn.pipeline.make_pipeline(
+    sklearn.preprocessing.Imputer(),
+    sklearn.preprocessing.StandardScaler())
+
+categorical_transformer = sklearn.pipeline.make_pipeline(
+    sklearn.impute.SimpleImputer(strategy='constant', fill_value='missing'),
+    sklearn.preprocessing.OneHotEncoder(handle_unknown='ignore')
+)
+
+transformer = sklearn.compose.ColumnTransformer(
+    transformers=[
+        ('numeric', numeric_transformer, []),
+        ('nominal', categorical_transformer, [0,1,2,3])],
+    remainder='passthrough')
+
+clf = sklearn.pipeline.make_pipeline(transformer, sklearn.tree.DecisionTreeClassifier())
+
+clf.fit(X, y)
+Expected Results
+a fitted model :)
+Actual Results
+Traceback (most recent call last):
+  File "/home/janvanrijn/projects/sklearn-bot/testjan.py", line 25, in <module>
+    clf.fit(X, y)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 265, in fit
+    Xt, fit_params = self._fit(X, y, **fit_params)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 230, in _fit
+    **fit_params_steps[name])
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/memory.py", line 329, in __call__
+    return self.func(*args, **kwargs)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 614, in _fit_transform_one
+    res = transformer.fit_transform(X, y, **fit_params)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/compose/_column_transformer.py", line 425, in fit_transform
+    result = self._fit_transform(X, y, _fit_transform_one)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/compose/_column_transformer.py", line 371, in _fit_transform
+    X=X, fitted=fitted, replace_strings=True))
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 983, in __call__
+    if self.dispatch_one_batch(iterator):
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 825, in dispatch_one_batch
+    self._dispatch(tasks)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 782, in _dispatch
+    job = self._backend.apply_async(batch, callback=cb)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 182, in apply_async
+    result = ImmediateResult(func)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/_parallel_backends.py", line 545, in __init__
+    self.results = batch()
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 261, in __call__
+    for func, args, kwargs in self.items]
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/parallel.py", line 261, in <listcomp>
+    for func, args, kwargs in self.items]
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 614, in _fit_transform_one
+    res = transformer.fit_transform(X, y, **fit_params)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 298, in fit_transform
+    Xt, fit_params = self._fit(X, y, **fit_params)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 230, in _fit
+    **fit_params_steps[name])
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/externals/joblib/memory.py", line 329, in __call__
+    return self.func(*args, **kwargs)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/pipeline.py", line 614, in _fit_transform_one
+    res = transformer.fit_transform(X, y, **fit_params)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/base.py", line 462, in fit_transform
+    return self.fit(X, y, **fit_params).transform(X)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/preprocessing/imputation.py", line 158, in fit
+    force_all_finite=False)
+  File "/home/janvanrijn/anaconda3/envs/sklearn-bot/lib/python3.6/site-packages/sklearn/utils/validation.py", line 585, in check_array
+    context))
+ValueError: Found array with 0 feature(s) (shape=(150, 0)) while a minimum of 1 is required.
+Versions
+I just installed the git branch 0.20.X
+Proposed solution
+I can author a PR that checks the column count, or passes through a constant dummy column

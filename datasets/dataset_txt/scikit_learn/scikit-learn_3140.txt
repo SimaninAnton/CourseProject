@@ -1,0 +1,71 @@
+Contributor
+clamus commented on Mar 4, 2016
+This is a follow up on some comments in #6195.
+Here is more or less what I am thinking on doing in regards to the explanation. The idea is to include a version of this explanation in the documentation and docstrings related to the Ledoit-Wolf method. @ogrisel and @GaelVaroquaux, does this sound like a plan?
+# Evaluation of shrinkage estimate from Ledoit-Wolf (LW) procedure.
+# This will be explored by vaying the correlation between variables as
+# well as the number of data samples in realtion to the number of
+# parameters (n_features)
+
+import numpy as np
+import matplotlib.pyplot as plt
+from itertools import product
+
+from sklearn.covariance import ledoit_wolf
+
+np.random.seed(42)
+
+# When the number of samples is much larger than the number of features,
+# one would expect that no shrinkage would be necessary.  The intuition
+# behind this is that if the population covariance is full rank, when
+# the number of sample grows, the sample covariance will also become
+# positive definite.  As a result, no shrinkage would necessary
+# and the method should automatically do this.
+#
+# However, this is not the case in the LW procedure when the
+# population covariance is a multiple of the identity matrix.  While at
+# first this might sound like an issue, it easy to see why this is not
+# the case.  When the population covariance is a multiple of the
+# identity, the LW shrinkage estimate becomes close or equal to 1.
+# This indicates that the optimal estimate of the covariance matrix in
+# the LW sense of the is multiple of the identity.  Since the population
+# covariance was a multiple of the identity matrix, the LW solution is
+# in deed a very good and reasonable.
+
+# NOTE: Include a little math further explaining this situation
+
+n_features = 64
+num_rhos = 10
+num_n_samples = 12
+rhos = np.linspace(0, 0.9, num=num_rhos)
+n_samples = np.logspace(1, num_n_samples, num=num_n_samples, base=2, dtype=int)
+shrinkages = np.zeros((num_rhos, num_n_samples))
+
+for rho, n_sample in product(rhos, n_samples):
+
+    # Generate data Y (n_sample, n_features) where the population correlation
+    # between different features is constant:
+    # rho = Corr(y_{n,i}, y_{n,j}), i != j for all n \in [1, ..., n_sample]
+    if rho == 0:
+        z = np.zeros(n_sample)
+    else:
+        z = np.random.normal(loc=0, scale=np.sqrt(rho), size=n_sample)
+    Z = np.tile(z.reshape(n_sample, 1), n_features)
+    sigma_noise = np.sqrt(1 - rho)
+    E = np.random.normal(loc=0, scale=sigma_noise, size=(n_sample, n_features))
+    Y = Z + E
+
+    # Get the shrinkage estimates from Ledoit-Wolf procedure
+    row = int(rho * 10)
+    col = int(np.log2(n_sample)) - 1
+    shrinkages[row, col] = ledoit_wolf(Y)[1]
+
+fig, ax = plt.subplots()
+cax = ax.imshow(shrinkages, interpolation='none',
+                extent=[0.5, 12.5, 0.95, -0.05], aspect='auto')
+cbar = fig.colorbar(cax, ticks=[0, 0.5, 1])
+ax.set_ylabel('Corr. between features')
+ax.set_xlabel('log2 num. samples')
+title = 'Shrinkage Estimates in Ledoit-Wolf Procedure'
+ax.set_title(title + ' (n_features = %s)' % n_features)
+plt.show(block=False)

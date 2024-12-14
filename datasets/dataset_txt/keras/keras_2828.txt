@@ -1,0 +1,60 @@
+eranamar commented on 28 Mar 2017
+Hello, I am implementing a ResNet with keras functional API. I am saving the model to h5 file via the Model.save() method.
+When try to load the saved model I got an error that says that specific layer is missing. By the name of that layer I understand that it is the layer created by the "shortcut connection" of the residual block.
+I provided the code below to explain further the bug and how to reproduce it:
+from keras.engine import Model
+from keras.layers import Dense, BatchNormalization, Activation, Input
+from keras.layers import add as sum_layers
+from keras.models import load_model
+
+
+def residual_block(input_t, output_dim, scopename, params):
+    input_dim = input_t.get_shape().as_list()[-1]
+
+    fc1 = Dense(units=input_dim,
+                bias_initializer=params['bias_init'],
+                kernel_initializer=params['weights_init'],
+                name='%s/fc1' % scopename)
+
+    fc2 = Dense(units=output_dim,
+                bias_initializer=params['bias_init'],
+                kernel_initializer=params['weights_init'],
+                name='%s/fc2' % scopename)
+
+    bn1 = BatchNormalization(momentum=params['batch_norm'],
+                             name='%s/batch_norm1' % scopename)
+    bn2 = BatchNormalization(momentum=params['batch_norm'],
+                             name='%s/batch_norm2' % scopename)
+    activation = Activation(params['activation'], name='%s/activation' % scopename)
+    shortcut = input_t if input_dim == output_dim else Dense(units=output_dim,
+                                                             bias_initializer=params['bias_init'],
+                                                             kernel_initializer=params['weights_init'],
+                                                             name='%s/shortcut_projection' % scopename)(input_t)
+
+    x = fc1(input_t)
+    x = bn1(x)
+    x = activation(x)
+    x = fc2(x)
+    x = bn2(x)
+    x = sum_layers([x, shortcut], name='%s/shortcut_connection' % scopename)
+    x = activation(x)
+    return x
+
+
+in_dim, resblock_out_dim = 10, 5
+
+in_tensor = Input([in_dim], name='inputs')
+hidden = residual_block(in_tensor, resblock_out_dim, 'ResBlock1', {
+    'activation': 'relu',
+    'bias_init': 'zeros',
+    'weights_init': 'he_normal',
+    'batch_norm': 0.9
+})
+output = Dense(1)(hidden)
+
+model = Model(inputs=in_tensor, outputs=output)
+model.save('test.h5')
+model2 = load_model('test.h5')
+My settings are:
+Linux, keras 2.0.2
+The exception is the following: ValueError: Missing layer: ResBlock1/shortcut_connection which is created with the function sum_layers (2 rows before the end of the function residual_block)

@@ -1,0 +1,13 @@
+Member
+jnothman commented on Apr 11, 2013
+Scorer objects currently provide an interface that returns a scalar score given an estimator and test data. This is necessary for *SearchCV to calculate a mean score across folds, and determine the best score among parameters.
+This is very hampering in terms of the diagnostic information available from a cross-fold validation or parameter exploration, which one can see by comparing to the catalogue of metrics that includes: precision and recall with F-score; scores for each of multiple classes as well as an aggregate; and error distributions (i.e. PR-curve or confusion matrix). @solomonm (#1837) and I (ML, an implementation within #1768) have independently sought Precision and Recall to be returned from cross-validation routines when F1 is used as the cross-validation objective; @eickenberg on #1381 (comment) posed a concern regarding array of scores corresponding to multiple targets.
+I thought it deserved an Issue of its own to solidify the argument and its solution.
+Some design options:
+Allow multiple scorers to be provided to cross_val_score or *SearchCV (henceforth CVEvaluator), with one specified as the objective. But since the Scorer generally calls estimator.{predict,decision_function,predict_proba}, each scorer would repeat this work.
+Separate the objective and non-objective metrics as parameters to CVEvaluator: the scoring parameter remains as it is and a diagnostics parameter provides a callable with similar (same?) arguments as Scorer, but returning a dict. This means that the prediction work is repeated but not necessarily as many times as there are metrics. This diagnostics callable is more flexible and perhaps could be passed the training data as well as the test data.
+Continue to use the scoring parameter, but allow the Scorer to return a dict with a special key for the objective score. This would need to be handled by the caller. For backwards compatibility, no existing scorers would change their behaviour of returning a float. This ensures no repeated prediction work.
+Add an additional method to the Scorer interface that generates a set of named outputs (as with calc_names proposed in #1837), again with a special key for the objective score. This allows users to continue using scoring='f1' but get back precision and recall for free.
+Note that 3. and 4. potentially allow for any set of metrics to be composed into a scorer without redundant prediction work (and 1. allows composition with highly redundant prediction work).
+Comments, critiques and suggestions are very welcome.
+👍 10

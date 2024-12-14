@@ -1,0 +1,106 @@
+zzd1992 commented on 12 May 2017 •
+edited
+I use keras 2.0.3 with tensorflow backend. I train a model for binary classification task which contains several BatchNormalization Layers. It achieve 95% accuracy in validation sets. I save the model, reload it and test it in training sets with batch size 1. The results is very bad. (I already set learning_phase to 0). I think something wrong with BatchNormalization Layers. I remove all BatchNormalization Layers in my model, retrain it and test it in the same way mentioned about. The result looks right.
+Here is my training codes:
+import tensorflow as tf
+import keras
+import keras.layers as kl
+import keras.backend as K
+import numpy as np
+import random
+from preprocess import *
+def network(inputs):
+    model = keras.models.Sequential()
+    model.add(kl.InputLayer(input_shape=(120,120,3),input_tensor=inputs))
+    def c_b_l(num):
+        model.add(kl.Conv2D(num,(3,3),padding='same'))
+        model.add(kl.BatchNormalization())
+        model.add(kl.advanced_activations.LeakyReLU(0.1))
+    c_b_l(32)
+    model.add(kl.MaxPool2D())
+    c_b_l(32)
+    model.add(kl.MaxPool2D())
+    c_b_l(64)
+    model.add(kl.MaxPool2D())
+    c_b_l(96)
+    model.add(kl.AveragePooling2D((15,15)))
+    model.add(kl.Reshape([96]))
+    model.add(kl.Dense(500,activation=keras.activations.relu))
+    model.add(kl.Dense(1,activation=keras.activations.sigmoid))
+    return model
+
+batchsize = 64
+learn_rate = 0.001
+epoch = 200
+eps = 1e-5
+K.set_learning_phase(1)
+print 'Build model...'
+x = tf.placeholder(tf.float32,(None,120,120,3))
+y = tf.placeholder(tf.float32)
+net = network(x)
+net.summary()
+p = net.output[:,0]
+p = tf.clip_by_value(p,eps,1-eps)
+loss = -tf.reduce_mean(y*tf.log(p)+(1-y)*tf.log(1-p))
+op = tf.train.AdamOptimizer(0.001)
+train = op.minimize(loss,var_list=net.weights)
+
+sess = tf.InteractiveSession()
+sess.run(tf.global_variables_initializer())
+
+print 'Load data...'
+x_train = np.load('train.npy')
+y_train = np.load('label.npy')
+y_train = np.array(y_train,'float32')
+_index = range(x_train.shape[0])
+random.shuffle(_index)
+x_train, y_train = x_train[_index], y_train[_index]
+x_train, x_val = x_train[:12000], x_train[12000:]
+y_train, y_val = y_train[:12000], y_train[12000:]
+for i in range(epoch):
+    error, num = 0, 0
+    for _x, _y in iterate_minibatches(x_train, y_train, batchsize, shuffle=True):
+        _x = np.array(_x,dtype='float32')/255 - 0.5
+        _y = np.array(_y,dtype='float32')
+        _, pp, err = sess.run([train,p,loss],{x:_x,y:_y})
+        error += err
+        num += 1
+    print 'train loss of epoch {}: {:.5f}'.format(i+1,error/num)
+    
+    if (i+1)%5==0:
+        error, num = 0, 0
+        for _x, _y in iterate_minibatches(x_val, y_val, batchsize, shuffle=False):
+            _x = np.array(_x,dtype='float32')/255 - 0.5
+            _y = np.array(_y,dtype='float32')
+            err_t = sess.run([p],{x:_x})[0]
+            err_t[err_t<0.5] = 0
+            err_t[err_t>=0.5] = 1
+            acc = np.sum(err_t==_y)/float(batchsize)
+            error += acc
+            num += 1
+        print 'test acc of epoch {}: {:.3f}'.format(i+1,error/num)
+    if (i+1)%10==0:
+        net.save('classify'+str(i+1)+'.h5')
+And here is my test code:
+import tensorflow as tf
+import keras
+import keras.layers as kl
+import keras.backend as K
+import numpy as np
+
+sess = K.get_session()
+model = keras.models.load_model('/home/user1/job/code/model/clasify50.h5')
+x = tf.placeholder('float32',(1,120,120,3))
+y = model(x)
+
+x_train = np.load('train.npy')
+y_train = np.load('label.npy')
+y_train = np.array(y_train,'float32')
+x_train = np.array(x_train,'float32')/255 - 0.5
+
+for i in range(100):
+    d_x = x_train[i]
+    d_x = np.expand_dims(d_x,0)
+    result = sess.run([y],{x:d_x,K.learning_phase():0})[0]
+    print result[0,0],y_train[i]
+What is wrong of my code? Or is there something wrong with BatchNormalization Layer?

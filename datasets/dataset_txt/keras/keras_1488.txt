@@ -1,0 +1,68 @@
+JesperChristensen89 commented on 14 Nov 2017 •
+edited
+Hi all,
+I am working on a very sparse dataset with the point of predicting 6 classes.
+I have tried working with a lot of models and architectures, but the problem remains the same.
+When I start training, the acc for training will slowly start to increase and loss will decrease where as the validation will do the exact opposite.
+I have really tried to deal with overfitting, and I simply cannot still believe that this is what is coursing this issue.
+What have I tried
+Transfer learning on VGG16:
+exclude top layer and add dense layer with 256 units and 6 units softmax output layer
+finetune the top CNN block
+finetune the top 3-4 CNN blocks
+To deal with overfitting I use heavy augmentation in Keras and dropout after the 256 dense layer with p=0.5.
+Creating own CNN with VGG16-ish architecture:
+including batch normalization wherever possible
+L2 regularization on each CNN+dense layer
+Dropout from anywhere between 0.5-0.8 after each CNN+dense+pooling layer
+Heavy data augmentation in "on the fly" in Keras
+Realising that perhaps I have too many free parameters:
+decreasing the network to only contain 2 CNN blocks + dense + output.
+dealing with overfitting in the same manner as above.
+Without exception all training sessions are looking like this:
+The last mentioned architecture looks like this:
+reg = 0.0001
+
+model = Sequential()
+
+model.add(Conv2D(8, (3, 3), input_shape=input_shape, padding='same',
+                kernel_regularizer=regularizers.l2(reg)))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+model.add(Dropout(0.7))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.5))
+
+model.add(Conv2D(16, (3, 3), input_shape=input_shape, padding='same',
+                kernel_regularizer=regularizers.l2(reg)))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+model.add(Dropout(0.7))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.5))
+
+model.add(Flatten())
+model.add(Dense(16, kernel_regularizer=regularizers.l2(reg)))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+model.add(Dropout(0.5))
+
+model.add(Dense(6))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='SGD',metrics=['accuracy'])
+And the data is augmented by the generator in Keras and is loaded with flow_from_directory:
+train_datagen = ImageDataGenerator(rotation_range=10,
+                                    width_shift_range=0.05,
+                                    height_shift_range=0.05,
+                                    shear_range=0.05,
+                                    zoom_range=0.05,
+                                    rescale=1/255.,
+                                    fill_mode='nearest',
+                                    channel_shift_range=0.2*255)
+train_generator = train_datagen.flow_from_directory(
+    train_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    shuffle = True,
+    class_mode='categorical')

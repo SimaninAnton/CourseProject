@@ -1,0 +1,31 @@
+rajeev595 commented on 29 May 2017 •
+edited
+I need a mask of [K.ones_like(x), np.zeros_like(x)] to be multiplied (element-wise) to the output of a convolutional layer in keras, I have tried implementing this functionality in a Lambda layer. This has to be executed in a for loop for 5 layers. Debugging shows that it has computed the product properly for 5 times and mistakingly it does for 6th time and reports the following error: ValueError: Dimensions must be equal, but are 28 and 348 for 'model_6/lambda_25/mul' (op: 'Mul') with input shapes: [?,16,16,28], [?,1,1,348].
+This functionality is not intended. Following is the code and the total error message.
+import keras
+from keras import backend as K
+from keras import losses
+from keras.models import Model, load_model
+from keras.layers import Input, Dense, Conv2D, MaxPooling2D, UpSampling2D, add, concatenate, Lambda
+
+L = 5
+Fc = [16, 32, 64, 128, 256] 
+Fn = [12, 24, 48, 96, 92] 
+
+clean_encs = []
+clean_enc_inp = Input(shape = (32, 32, 3))
+clean_enc = clean_enc_inp
+for i in range(L):
+    clean_enc = Conv2D(Fc[i]+Fn[i] , (3, 3), activation='relu', padding='same', strides=(2, 2))(clean_enc)
+    ones = K.ones_like(clean_enc)[:, :, :, : Fc[i]]
+    zeros = K.zeros_like(clean_enc)[:, :, :, : Fn[i]]
+    clean_mask = K.concatenate((ones, zeros), axis=-1)
+    clean_enc = Lambda(lambda x: x*clean_mask)(clean_enc)
+    clean_encs.append(clean_enc)
+
+clean_encoder = Model(inputs=[clean_enc_inp], outputs=clean_encs)
+clean_encoder.compile(optimizer='adadelta', loss='mean_squared_error')
+
+clean_input = Input(shape = (32, 32, 3))
+clean = clean_encoder(clean_input)
+1

@@ -1,0 +1,58 @@
+cryo111 commented on 7 Sep 2016 •
+edited
+I have a simple custom metric that takes the first row of the predicted value y_pred[0,:] and finds its maximum max(y_pred[0,:]). Both are then concatenated and returned.
+My question is why this works
+import theano
+def find_max(y_true, y_pred):
+    #find max along each row
+    y_pred_max=theano.tensor.max(y_pred,axis=1, keepdims=True)
+    #only return first-row data
+    return theano.tensor.concatenate([y_pred[0,:],y_pred_max[0,:]],0)
+
+#test function with some sample data
+x=theano.tensor.as_tensor_variable([[0.3138,0.27038,0.41579],[0.29844,0.31665,0.38490]])
+
+#gives expected result
+find_max(x,x).eval()
+#array([ 0.3138 ,  0.27038,  0.41579,  0.41579])
+but this fails
+import numpy as np
+np.random.seed(1234)
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import SGD
+from keras.utils import np_utils
+
+#sample train and validation data
+X_t=np.random.randint(0,2, size=(1000, 10))
+X_v=np.random.randint(0,2, size=(1000, 10))
+Y_t=np_utils.to_categorical(np.random.randint(0,3, size=1000))
+Y_v=np_utils.to_categorical(np.random.randint(0,3, size=1000))
+
+#simple FFNN
+model=Sequential()
+sgd=SGD(lr=1e-2,nesterov=True)
+neuron_num=100
+
+#input layer
+model.add(Dense(neuron_num, input_dim=X_t.shape[1],init="glorot_normal",activation="tanh"))
+#hidden layer
+model.add(Dense(neuron_num,init="glorot_normal",activation="tanh"))
+#output layer
+model.add(Dense(Y_t.shape[1],init="glorot_normal",activation="softmax"))
+
+model.compile(loss="categorical_crossentropy",optimizer=sgd,metrics=["accuracy",find_max])
+hist=model.fit(X_t,Y_t,validation_data=(X_v,Y_v),nb_epoch=1, batch_size=256,verbose=0)
+
+#this gives an incorrect output
+hist.history['find_max'][0]
+#array([ 0.3138192 ,  0.27038941,  0.41579139,  0.43336022], dtype=float32)
+Some info:
+Theano==0.8.2 Keras==1.0.8 Python 2.7.6
+Content of .theanorc file
+[global]
+floatX=float32
+device=cpu
+
+[blas]
+ldflags = -llapack -lblas

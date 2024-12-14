@@ -1,0 +1,60 @@
+munichong commented on 4 Sep 2016 •
+edited
+I am using Keras 1.0.7 and TensorFlow 0.10.0 as backend.
+I build an RNN to solve a 'many to many' regression prediction problem:
+def RNN_keras(feat_num, timestep_num=100):
+    model = Sequential()
+    model.add(LSTM(input_shape=(timestep_num, feat_num), output_dim=768, activation='relu', return_sequences=True))  
+    model.add(LSTM(output_dim=256, activation='relu', return_sequences=True))
+    model.add(TimeDistributed(Dense(output_dim=1, activation='relu'))) # sequence labeling
+
+    sgd = SGD(lr=0.01, decay=1e-6, momentum=0.99, nesterov=True)
+    model.compile(loss='mean_squared_error',
+                  optimizer=sgd,
+                  metrics=['mean_squared_error'])
+
+    return model
+This is the code that I use to do training.
+print("\n****** Iterating over each batch of the training data ******")
+for epoch in range(1, NUM_EPOCH+1):
+    batch_index = 0
+
+    for X_batch, y_batch in mig.Xy_gen(mig.X_train, mig.y_train, batch_size=BATCH_SIZE):
+        batch_index += 1        
+
+        ''' RNN '''
+        loss = rnn.train_on_batch(X_batch, y_batch)
+        print("Epoch %d/%d : Batch %d/%d | %s = %f | root_%s = %f" %
+              (epoch, NUM_EPOCH, batch_index, num_batch, 
+               rnn.metrics_names[0], loss[0], rnn.metrics_names[1], np.sqrt(loss[1])))
+
+    ''' Use the RNN trained after this epoch to predict all training examples
+        and compute the training error of this epoch '''    
+    rmsd_training = RMSD_batch()
+    for X_batch, y_batch in mig.Xy_gen(mig.X_train, mig.y_train, batch_size=BATCH_SIZE):  
+        _pred = rnn.predict_on_batch(X_batch) # _pred are all zero !!!
+        rmsd_training.update(y_batch, _pred)
+
+    print("*** Epoch %d: RMSD(training) = %f \n" % (epoch, rmsd_training.final_RMSD()))
+Below is the output of the output: (The input vectors contains only 0 or 1. They are all categorical variables encoded by one-hot encoding. The training data are shuffled at the beginning of every epoch. So far, I put all training examples in on single batch.)
+13945 examples in the training set
+1439 examples in the test set
+
+Building training input vectors ...
+431 unique feature names
+The length of each vector will be 431
+Using TensorFlow backend.
+
+Build model...
+
+****** Iterating over each batch of the training data ******
+Epoch 1/3 : Batch 1/1 | loss = 6356.635742 | root_mean_squared_error = 79.727188
+****** Epoch 1: RMSD(training) = 24.217030 
+
+Epoch 2/3 : Batch 1/1 | loss = 586.464478 | root_mean_squared_error = 24.212215
+****** Epoch 2: RMSD(training) = 24.217030 
+
+Epoch 3/3 : Batch 1/1 | loss = 586.464478 | root_mean_squared_error = 24.212488
+****** Epoch 3: RMSD(training) = 24.217030 
+I find that the loss decreases over epoch. But the RMSD on the training data are the same. (I do not know why the one that I calculated is different from the one calculated by Keras. Not sure how Keras calculate the MSD) Then, I check the prediction. I find that all prediction are all zero in all epochs. This is why the RMSD at the end of all epochs are all the same because the prediction are all zero! I also check the input y. Only about 10% are zero. Zero does not dominate the training y. So I think it is not because of data imbalance. Now, I guess it is because the layers and activation that I am using?
+Does anyone can help me? Thanks a lot!

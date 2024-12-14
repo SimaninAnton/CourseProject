@@ -1,0 +1,27 @@
+Contributor
+joshfriend commented on 30 Oct 2017
+Setup:
+Using pyenv, install a python and a release candidate or beta of the same version. pyenv removes rc/beta pythons from pyenv when the final build is available, so you might have to create the build definition yourself. Put the following in $PYENV_ROOT/plugins/python-build/share/python-build/2.7.14rc1:
+install_package "openssl-1.0.2k" "https://www.openssl.org/source/openssl-1.0.2k.tar.gz#6b3977c61f2aedf0f96367dcfb5c6e578cf37e7b8d913b4ecb6643c3cb88d8c0" mac_openssl --if has_broken_mac_openssl
+install_package "readline-6.3" "https://ftpmirror.gnu.org/readline/readline-6.3.tar.gz#56ba6071b9462f980c5a72ab0023893b65ba6debb4eeb475d7a563dc65cafd43" standard --if has_broken_mac_readline
+install_package "Python-2.7.14rc1" "https://www.python.org/ftp/python/2.7.14/Python-2.7.14rc1.tgz#4d1ca11c5451e1b7cafcabc2003cf80fb3745bac45ba51c39b855b0011a27408" ldflags_dirs standard verify_py27 ensurepip
+(I had managed to have both the RC and final build installed because I had installed 2.7.14rc1 before the final version was out, then forgot to remove it).
+Next, use pyenv shell 2.7.14 to set the version of python for the current shell
+The Problem
+When I run:
+$ pipenv install --python 2.7.14
+Creating a virtualenv for this project…
+Using /Users/josh/.pyenv/versions/2.7.14rc1/bin/python2.7 to create virtualenv…
+Pipenv is prefering the prerelease python over the one I specifically asked for
+Explanation
+Pipenv detects pyenv is installed
+Pipenv scans $PYENV_ROOT/versions for installed pythons
+Pipenv prepends each python to $PATH as it finds them in the PATH
+Pipenv runs which python2.7 and finds ['/Users/josh/.pyenv/versions/2.7.14rc1/bin/python2.7', '/Users/josh/.pyenv/versions/2.7.14/bin/python2.7', '/usr/bin/python2.7'] (shortened a bit, i have a lot of pythons installed)
+Pipenv runs python --version on each and parses the output discarding the rc/beta status
+Since 2.7.14rc1 came first in the path, Pyenv picks it since without the rc1 suffix, it is the version I had asked for.
+I dug through cli.py for a while trying to fix it and found some issues:
+RC/Beta pythons sort last in the glob results when pipenv lists the contents of $PYENV_ROOT/versions, but end up first in $PATH
+Even if the list of pythons is reversed when added to $PATH to restore the sort order, if 2.7.14 is the active python, it is already in the path, so Pipenv skips prepending that one, and only prepends 2.7.14rc1, causing it to take priority.
+I have not yet been able to determine a way to fix this that doesn't break pipenv --python 2.7 installing the latest 2.7.* version, for example.
+1

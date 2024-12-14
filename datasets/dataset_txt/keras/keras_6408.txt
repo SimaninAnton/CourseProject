@@ -1,0 +1,18 @@
+Contributor
+EderSantana commented on 21 Nov 2015
+@fchollet just merged the code to reproduce some results of the Neural Turing Machines paper. This code also has some Keras lessons that the users might find interesting:
+Main code
+Companion example
+Sequence to Sequence learning. In the companion example, we solve the Copy problem where the input is first presented and should be reproduced in the output after an end-of-sequence vector is presented.
+We use a single model to read the inputs and produce the outputs. See the figure bellow from Karpathy's blog post. While the input is presented, we don't care to what is the output. After we are done presenting the input that should be copied, we show the end-of-sequence vector and only zeros afterwards. While the zeros are being input we start caring to the output and comparing it to the target values. We use sample_weight to keep unimportant outputs from interfering with the cost function. sample_weight can be passed as a parameter to model.train_on_batch as shown here
+Neural Turing Machines use a mechanism of attention. They are basically LSTMs that can store entire vectors, instead of single scalars, to their cells. We don't write or read all the stored vectors at once, we actually multiply most of these vectors by (almost) zero, but for one "attended" vector that is multiplied by (almost) one. When we average all these rescaled vectors the result is approximately the attended vector itself. These scaler sum to one, in other words they are a probability distributions calculated with Softmax over the memory locations. See the main code for more details.
+Here is a navigation guide to the main code:
+Start reading the get_output method, which is basically a scan loop.
+Afterwards, read the step function that the scan loop calls. Here is what the step function does (courtesy of my thesis proposal, based on my interpretations of Graves et. al. paper):
+Using h_tm1, update the read vector (aka attention distribution) r_t = f_r(r_tm1, h_tm1)
+Read from memory m_t = read(r_t, M_tm1)
+Using the input and the read vector, update the RNN controller state h_t = RNN(x_t, h_tm1)
+Using new state h_t, update the write vector (another probability distribution) w_t = f_w(w_tm1, h_t)
+Write to memory M_t = write(M_tm1, h_t, w_t).
+Whenever we call a method inside the step function for one of the operations above, you just read its code knowing what it is supposed to do.
+A practical lesson I got from implementing this code was: Don't try to write the full model on the first sit. First write and test all the functions that you are supposed to call inside the scan/for loop in a separate notebook/script. Take your time and make your model as modular as possible. For that case, I first wrote each step to calculate the reading and writing operations and tested them. When I felt satisfied, I simply wrapped everything in the loop in the form you see in the main code. Since Keras already provides the equations to update the states of LSTMs and GRUs I reused the code I needed with proper credit.

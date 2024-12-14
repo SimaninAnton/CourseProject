@@ -1,0 +1,51 @@
+ryanbressler commented on Mar 17, 2014
+I've been repeating some of the recent random forest benchmarks people have done on the forest coverage dataset and have discovered a possible bug that leads to occasional nonsense splits producing larger-then-expected trees due to corrupted or unsorted data values.
+The first odd thing I noticed was that, contrary to what I would expect, the random forest classifier isn't sensitive to low values of the "max_features" parameter. It will produce a very accurate 100,000+ node tree even with max_features=1.
+I've done some cross validation experiments and found that the accuracy of these massive trees on this data set is actually quite good (i.e. a score >.9 from a single tree forest grown with max_features=1) though I suspect the behavior may lead to overfitting on other data sets where a low value of max_features could be used to limit tree complexity.
+The bellow snippet will reproduce the behavior and write out the tree to a .dot file. You'll need the unscaled "covtype" data file in libsvm formatt.
+from sklearn.datasets import load_svmlight_file
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import tree
+
+X,Y = load_svmlight_file("covtype")
+
+rf_parameters = {
+    "n_estimators": 1,
+    "max_features":1
+}
+
+clf = RandomForestClassifier(**rf_parameters)
+X = X.toarray()
+
+clf.fit(X, Y)
+
+f = open("single.covtype.tree.dot","w")
+tree.export_graphviz(clf[0],out_file=f)
+f.close()
+By contrast my implementationn will produce a <10 node tree with very low accuracy when limited to one feature per split. It can only match the single tree accuracy of sklearn if I evaluate most or all of the features as potential splits.
+I've been trying to understand what is going on all week and, while I could easily be wrong, I think I've figured it out. The sklearn implementation appears to be making occasional somewhat incorrect splits of the data due to a flawed sort or related piece of code. The data being out of order or corrupt allows it to find a split even when no positive impurity decrease split should be possible (and, at least in my interpretation, tree growth should terminate).
+The results on the covtype dataset is actually increased performance and complexity in each tree as most of the data remains uncorrupted and the tree has a chance to produce good splits on more of the features as if a higher value of max_feature was specified.
+I'm new to this code base and cython but I think I've verified that something is indeed wrong by adding an order check to the constant value checking while loop on line 1138 of BestSplitter.node_split in _tree.pyx in this branch.:
+while p < end:
+    while (p + 1 < end and
+           Xf[p + 1] <= Xf[p] + CONSTANT_FEATURE_THRESHOLD):
+        p += 1
+        if Xf[p+1]<Xf[p]:
+            with gil:
+                print "%s not Sorted at %s, %s < %s"%(current_feature, p,Xf[p+1], Xf[p])
+If Xf is in increasing order there should never be any output from this but running the above script yields ~5975 lines of output like:
+39 not Sorted at 367363, 8.79945370673e-41 < 1.0
+0 not Sorted at 352678, 1.0 < 3858.0
+8 not Sorted at 198407, 1.0 < 254.0
+8 not Sorted at 13977, 1.0 < 202.0
+3 not Sorted at 538, 1.0 < 108.0
+8 not Sorted at 30, 1.0 < 119.0
+2 not Sorted at 30, 1.0 < 13.0
+7 not Sorted at 309, 115.0 < 225.0
+6 not Sorted at 309, 115.0 < 242.0
+0 not Sorted at 386, 90.0 < 2458.0
+...
+Notably the it appears the values occasionally include values like the 8.7e-41 value that aren't present in the original feature which would suggest that data is being taken from where it shouldn't due to something like a pointer arithmetic error or misplaced bound.
+Running on the iris data set yields ~1 occurrence so it is not related to data set size though it is more common with larger datasets.
+I checked versions .14.1 and .13.1 and at least the surprisingly-large-tree behavior is present there as well though I didn't patch the code to check for unsorted values.
+As I said, I'm new to scikit-learn's codebase so I could be wrong about this but if it is a bug fixing it should lead to improvements in performance in benchmarks cases due to simpler trees though accuracy will become more dependent on max_features. I've been quite impressed with the speed with which the code is able to grow such a large tree.

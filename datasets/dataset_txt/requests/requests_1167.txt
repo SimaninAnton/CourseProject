@@ -1,0 +1,14 @@
+jcmcken commented on Feb 6, 2016
+If I set a CA via an environment variable, such as:
+$ export REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt
+(Where the CA bundle actually does exist)
+And then I prepare a session like this:
+import requests
+
+session = requests.Session()
+session.verify = '/path/to/custom/ca.pem'
+(Again, assume this 2nd CA path exists)
+Executing a session.get against an HTTPS endpoint signed by the 2nd CA but not the first will result in an SSL verification error. This is because the request is defaulting to using the environment CA rather than the session CA. This sort of contradicts my expectations, where the session is much closer to the request in the stack than the process's environment.
+The source of this issue is the merging happening here:
+https://github.com/kennethreitz/requests/blob/3a77b59df222920391359f052cab9319dda31ac7/requests/sessions.py#L625
+...where the conditional validates whether the verification is set at the request level (either True or None) before choosing to set the env CA, but doesn't look at the session (self.verify) (which likely has, and in my case does have, a more accurate CA setting).

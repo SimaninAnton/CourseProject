@@ -1,0 +1,44 @@
+Contributor
+janvanrijn commented on Nov 24, 2017 •
+edited by TomDLT
+Ensemble methods such as GradientBoosting, AdaBoost and RandomForest feature a staged_predict function, which makes it convenient to conduct experiments in that generate 'learning curves' with an increasing number of estimators.
+However, often it is desirable (or mandatory) to perform certain pre-processing steps, i.e., impute missing data or scale the data to unit vector. This requires the use of a pipeline object. Unfortunately, pipeline objects do not have this staged_predict function.
+Steps/Code to Reproduce
+from sklearn.datasets import load_iris
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+X, y = load_iris(True)
+
+vanilla_classifier = GradientBoostingClassifier()
+
+steps = [('scaling', StandardScaler()),
+         ('classifier', GradientBoostingClassifier())]
+pipeline = Pipeline(steps=steps)
+
+for classifier in [vanilla_classifier, pipeline]:
+    classifier.fit(X, y)
+    y_pred = classifier.staged_predict(X)
+    print("Prediction done. ")
+Expected Results
+printed twice: 'Prediction done. ' Once for the vanilla classifier, once for the Pipeline.
+Actual Results
+The vanilla classifier correctly performs the staged_prediction. As the pipeline does not have this, it throws the following error:
+Traceback (most recent call last):
+  File "/home/vanrijn/projects/hyperband/curves/jantest.py", line 16, in <module>
+    y_pred = classifier.staged_predict(X)
+AttributeError: 'Pipeline' object has no attribute 'staged_predict'
+Proposed Solution
+Add a function similar to the following to the Pipeline:
+    def staged_predict(self, X):
+        if not hasattr(self.steps[-1][-1], 'staged_predict'):
+            raise AttributeError('Final step (estimator) does not have attribute staged_predict')
+        if not callable(self.steps[-1][-1].staged_predict):
+            raise AttributeError('Final step (estimator) attribute staged_predict not callable')
+
+        Xt = X
+        for name, transform in self.steps[:-1]:
+            if transform is not None:
+                Xt = transform.transform(Xt)
+        return self.steps[-1][-1].staged_predict(Xt)

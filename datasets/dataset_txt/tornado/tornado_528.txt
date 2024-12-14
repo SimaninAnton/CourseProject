@@ -1,0 +1,72 @@
+rsmith31415 commented on 27 Mar 2016
+I want to use tornado with sqlalchemy (no async), but I'm not entirely sure about the initialization of the database connection. Basically, I have the following:
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy import create_engine
+
+class Database(object):
+    def __init__(self):
+        # using reflection because I have an existing database
+        self.Base = automap_base()
+        self.engine = create_engine('sqlite:///my-database.db')
+        self.Base.prepare(self.engine, reflect=True) 
+
+class IndexHandler(tornado.web.RequestHandler):
+    def initialize(self):
+        self.session = self.application.session
+
+    def on_finish(self):
+        self.session.remove()
+
+class Application(tornado.web.Application):
+
+    def __init__(self):
+        self.database = Database()
+        self.session = scoped_session(sessionmaker(bind=self.database.engine))
+
+        dirname = os.path.dirname(__file__)
+
+        handlers = [
+            (r'/', IndexHandler),
+        ]
+        settings = {
+            'debug': True,
+            'static_path': os.path.join(dirname, 'static'),
+        }
+
+        tornado.web.Application.__init__(self, handlers, **settings)
+I have read a couple of related resources. This blogpost suggests creating the engine in a separate class, passing this engine to the application and initiating a scope_session there. I don't think the author is deleting the session after finishing the request, but I added that part in my sample code.
+On the other hand, this gist instantiates a BaseHandler class that creates the engine and provides a session. In this case, I think, every time you get a request, a new engine and session is created. In the previous example, only a new session is created. I'm not sure if that is an important difference.
+Finally, the sqlalchemy documentation provides this helpful diagram which is similar to what the blogpost is doing:
+Web Server          Web Framework        SQLAlchemy ORM Code
+--------------      --------------       ------------------------------
+startup        ->   Web framework        # Session registry is established
+                    initializes          Session = scoped_session(sessionmaker())
+
+incoming
+web request    ->   web request     ->   # The registry is *optionally*
+                    starts               # called upon explicitly to create
+                                         # a Session local to the thread and/or request
+                                         Session()
+
+                                         # the Session registry can otherwise
+                                         # be used at any time, creating the
+                                         # request-local Session() if not present,
+                                         # or returning the existing one
+                                         Session.query(MyClass) # ...
+
+                                         Session.add(some_object) # ...
+
+                                         # if data was modified, commit the
+                                         # transaction
+                                         Session.commit()
+
+                    web request ends  -> # the registry is instructed to
+                                         # remove the Session
+                                         Session.remove()
+
+                    sends output      <-
+outgoing web    <-
+response
+So what is the proper way to initialize things here?
+Thanks

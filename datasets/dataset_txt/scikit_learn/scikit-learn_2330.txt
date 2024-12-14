@@ -1,0 +1,73 @@
+LouisAmon commented on Mar 10, 2017 •
+edited by lesteve
+Description
+There seems to be a memory leak during the fit_binary (OvA) phase of the SGDClassifier
+I've traced it as far as the fit_binary function but I'm not sure if it comes from the low-level Cython code
+What I've noticed so far is that using a dense matrix makes the memory grow even faster, and using the average version of SGD also ends up bursting the memory and getting killed by the OS memory management.
+Steps/Code to Reproduce
+import os
+import time
+import numpy as np
+from scipy.sparse import csr_matrix
+from sklearn.linear_model.stochastic_gradient import fit_binary
+from sklearn.linear_model import SGDClassifier
+import psutil
+
+# Create a dataset to work on
+n_features = 100000
+n_samples = 34000
+X = csr_matrix((n_samples,n_features), dtype=np.float64)
+y = np.arange(n_samples)
+
+# Create the classifier with default params
+est = SGDClassifier()
+est.classes_ = np.unique(y)
+n_classes = len(est.classes_)
+est._allocate_parameter_mem(n_classes, n_features, None, None)
+est.loss_function = est.loss_function_ = est._get_loss_function('hinge')
+est.t_ = 1.0
+sample_weight = np.full(n_classes, 1, dtype=np.float64)
+
+# Create the process
+process = psutil.Process(os.getpid())
+last_output_time = 0
+for i in range(n_classes):
+    fit_binary(
+        est=est,
+        i=i,
+        X=X,
+        y=y,
+        alpha=est.alpha,
+        C=est.C,
+        learning_rate=est.learning_rate,
+        n_iter=est.n_iter,
+        pos_weight=1,
+        neg_weight=1,
+        sample_weight=sample_weight,
+    )
+    if time.time()-last_output_time >= 5:
+        print("%f GB" % (process.memory_info().rss/1E9))
+        last_output_time = time.time()
+Expected Results
+Based on the fact that the matrix in the above example is actually empty (print(X.data.nbytes) == 0), the above iteration is expected to have virtually no memory footprint
+Actual Results
+0.063582 GB
+0.863699 GB
+1.643700 GB
+2.441302 GB
+3.238900 GB
+4.032500 GB
+4.826100 GB
+5.622100 GB
+6.363701 GB
+7.139701 GB
+7.906902 GB
+8.689299 GB
+9.416499 GB
+...
+Versions
+Darwin-16.4.0-x86_64-i386-64bit
+('Python', '2.7.13 (default, Dec 20 2016, 11:29:35) \n[GCC 4.2.1 Compatible Apple LLVM 8.0.0 (clang-800.0.42.1)]')
+('NumPy', '1.12.0')
+('SciPy', '0.18.1')
+('Scikit-Learn', '0.18.1')

@@ -1,0 +1,11 @@
+Contributor
+pitrou commented on 24 May 2013
+I get the following kind of errors when using digest auth with the curl async client:
+Traceback (most recent call last):
+  File "/home/antoine/tornado/tornado/curl_httpclient.py", line 130, in _handle_socket
+    self.io_loop.update_handler(fd, ioloop_event)
+  File "/home/antoine/tornado/tornado/ioloop.py", line 526, in update_handler
+    self._impl.modify(fd, events | self.ERROR)
+IOError: [Errno 2] No such file or directory
+I did a bit of debugging and I think I understand the problem. When using digest auth, curl runs a first request without any auth headers, so as to first get the server's digest parameters (nonce, etc.). Then it runs a second request with the appropriate auth headers. However, that second request is done on a new connection. What happens is that the second connection re-uses the same fd as the first one. Therefore tornado thinks that fd is already registered on the epoll object, even though it isn't.
+I thought of using pycurl's OPENSOCKETFUNCTION callback to reinitialize the fd's status after we create the socket, but unfortunately it seems pycurl must call dup() on that function's result (i.e. if OPENSOCKETFUNCTION returns fd 8, curl later calls _handle_socket with fd 9). So perhaps _handle_socket() should simply catch ENOENT when update_handler fails and fallback on add_handler. (but of course this would be epoll-specific)

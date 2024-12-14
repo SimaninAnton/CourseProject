@@ -1,0 +1,58 @@
+mpgussert commented on 10 Jan 2017 •
+edited
+Greetings all!
+Suppose that I am currently trying to make an agent for a game. After the agent is trained I would like it to be able to accept a vector encoding the current screen, and return a vector describing what actions to take (like a policy network). However, due to the nature of the game, the current screen is NOT the current state of the game. The game state is something that must be built, managed, and remembered by the network internally. I have thus far been working under the assumption that a network with an LSTM layer is the way to go in order to achieve this. (note: I am not actually making a game agent, it just simplifies the description of my problem)
+To summarize, for each time step of play, the network receives information about ONLY time step t, and generates some action to take at time step t+1
+From my current understanding this is a "many to one" architecture as described here. Is that correct?
+If so, then how do I go about training it? Assume I have a large set of screen -> action values. My questions are...
+would a subsequence of my data be considered a batch? would the input shape to the LSTM units be (1, n_dim), where n_dim is the number of values in my input vector?
+to make the LSTM units in the layer not return "many" outputs, would I use return sequences = False?
+When does the LSTM memory get cleared in training? I see that there is a stateful flag that can be used. what precisely does this do in this context? is it cleared after every batch?
+EDIT:
+A more concise version. Suppose I want to make a network that accepts the value, V, of some time series at time t (only one input) and predicts the value of f(V) at time t+1 (one output). How would i train that model? Here's the example code.
+import numpy as np
+from keras.models import  Sequential
+from keras.layers import Reshape, Dense,  Flatten, LSTM, Activation
+from sklearn.preprocessing import MinMaxScaler
+
+pi = 3.14159
+f = 0.01 #Hz
+omega = 2*pi*f
+
+t = np.arange(10000)
+state = np.sin(omega*t)
+action =np.cos(omega*t)
+ 
+StateTrans = MinMaxScaler(feature_range=(0,1))
+scaledState = StateTrans.fit_transform(state)
+
+ActionTrans = MinMaxScaler(feature_range=(0,1))
+scaledAction = ActionTrans.fit_transform(action)
+  
+xstate = np.reshape(scaledState,(state.shape[0],1,1))
+ystate = np.roll(scaledState,1).reshape(state.shape[0],1)
+ 
+xaction = action.reshape(action.shape[0],1)
+yaction = np.roll(scaledState,1).reshape(action.shape[0],1)
+
+def create_model(nIn, nOut):
+   model = Sequential()
+   model.add(LSTM(10,input_dim=nIn, input_length=1, return_sequences=True))
+   model.add(Flatten())
+   model.add(Dense(10))
+   model.add(Activation('tanh'))
+   model.add(Dense(10))
+   model.add(Activation('tanh'))
+   model.add(Dense(nOut))
+   model.add(Activation('tanh'))
+   model.compile('adam', loss='mse')
+  
+   return model
+ 
+
+ model = create_model(1,1)
+ 
+ model.fit(xstate, yaction, nb_epoch=10, batch_size=1, verbose=1)
+ p = model.predict(xstate)
+ Ip = ActionTrans.inverse_transform(p)
+in this case, the "game" is the time series defined by sine. the network needs to learn that it has to invert the sine function and convert to cosine at t+1. Training seems to flatline at a loss of 0.127 and i have no idea why...

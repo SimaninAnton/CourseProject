@@ -1,0 +1,50 @@
+adammenges commented on Jun 26, 2015
+I've been using the code below for probabilities for quite some time, but as of this morning it's broken:
+  pipeline_svm = Pipeline([
+      ('bow', CountVectorizer(analyzer=tok)),
+      ('tfidf', TfidfTransformer()),
+      ('classifier', SVC(probability=True)),
+  ])
+
+  # pipeline parameters to automatically explore and tune
+  param_svm = [
+    {'classifier__C': [1, 10, 100, 1000], 'classifier__kernel': ['linear']},
+    {'classifier__C': [1, 10, 100, 1000], 'classifier__gamma': [0.001, 0.0001], 'classifier__kernel': ['rbf']},
+  ]
+
+  grid_svm = GridSearchCV(
+      pipeline_svm,  # pipeline from above
+      param_grid=param_svm,  # parameters to tune via cross validation
+      refit=True,  # fit using all data, on the best detected classifier
+      n_jobs=-1,  # number of cores to use for parallelization; -1 for "all cores"
+      scoring='accuracy',  # what score are we optimizing?
+      cv=StratifiedKFold(label_train, n_folds=5),  # what type of cross validation to use
+  )
+
+  svm_detector = grid_svm.fit(doc_train, label_train)
+
+## Then later:
+  svm_detector.predict_proba(x)
+Which now gives me the error:
+Traceback (most recent call last):
+  File "/usr/local/bin/arc", line 118, in <module>
+    update_model()
+  File "/usr/local/bin/arc", line 59, in update_model
+    update_on_disk_predictions()
+  File "/usr/local/bin/arc", line 35, in update_on_disk_predictions
+    ra.write_key_to_r(p['id'], 'prediction', predict(p)[0][0])
+  File "/usr/local/bin/arc", line 12, in predict
+    return classification.predict([tok_r(x)])
+  File "/Users/adammenges/Development/arc/classification.py", line 62, in predict
+    return get_model().predict_proba(x)
+  File "/usr/local/lib/python2.7/site-packages/sklearn/utils/metaestimators.py", line 35, in __get__
+    self.get_attribute(obj)
+  File "/usr/local/lib/python2.7/site-packages/sklearn/utils/metaestimators.py", line 35, in __get__
+    self.get_attribute(obj)
+  File "/usr/local/lib/python2.7/site-packages/sklearn/svm/base.py", line 608, in predict_proba
+    self._check_proba()
+  File "/usr/local/lib/python2.7/site-packages/sklearn/svm/base.py", line 574, in _check_proba
+    if not self.probability or self.probA_.size == 0 or self.probB_.size == 0:
+AttributeError: 'SVC' object has no attribute 'probA_'
+The only thing I've done recently is rerun https://github.com/fonnesbeck/ScipySuperpack
+Is this a known issue with a new version, or am I missing something else?

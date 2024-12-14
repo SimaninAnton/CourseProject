@@ -1,0 +1,63 @@
+vsenko commented on 29 Nov 2017
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+Training a reasonably big model that includes CuDNNGRU or CuDNNLSTM layers leads to hangs if data preparation is done using multiprocessing (fit_generator with use_multiprocessing=True).
+This code utilizes CuDNNGRU and hangs on my system on 3-15 epoch:
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
+
+import numpy as np
+from keras.utils import Sequence
+from keras.models import Model
+from keras.layers import Input, RepeatVector, CuDNNGRU
+
+BATCH_SIZE = 64
+DIM_A = 50
+DIM_B = 26
+
+class MySequence(Sequence):
+    def __len__(self):
+        return 200
+
+    def __getitem__(self, idx):
+        sample = np.zeros((BATCH_SIZE, DIM_A, DIM_B), dtype=np.float32)
+        return sample, sample
+
+if __name__ == '__main__':
+    inputs = Input(shape=(DIM_A, DIM_B))
+
+    encoded = CuDNNGRU(DIM_B*30, return_sequences=True)(inputs)
+    encoded = CuDNNGRU(DIM_B*30, return_sequences=True)(encoded)
+    encoded = CuDNNGRU(1000)(encoded)
+
+    decoded = RepeatVector(DIM_A)(encoded)
+    decoded = CuDNNGRU(DIM_B*30, return_sequences=True)(decoded)
+    decoded = CuDNNGRU(DIM_B*30, return_sequences=True)(decoded)
+    decoded = CuDNNGRU(DIM_B, return_sequences=True)(decoded)
+
+    model = Model(inputs, decoded)
+    model.compile(optimizer='adam', loss='mean_squared_error')
+
+    train_sequence = MySequence()
+    model.fit_generator(
+        train_sequence,
+        len(train_sequence),
+        epochs=100,
+        verbose=1,
+        workers=4,
+        use_multiprocessing=True)
+After the script hangs ps usually shows 2 or 3 processes instead of 5. Sometimes there are [python3] <defunct> entries.
+Replacing CuDNNGRU => GRU makes the training slower, but it runs without problems.
+I observe the same behavior if I use CuDNNLSTM while using LSTM runs OK!
+System configuration:
+Ubuntu 16.04
+Keras (2.1.1) installed from git today
+tensorflow-gpu (1.4.0)
+GeForce GTX 1080 GPU
+cuda-8-0 (8.0.61-1)
+libcudnn6 (6.0.21-1+cuda8.0)
+python3.5 (3.5.2-2ubuntu0~16.04.3)

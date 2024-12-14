@@ -1,0 +1,50 @@
+BKHMSI commented on 5 Jul 2018
+I am trying to implement a custom loss function similar to the one implemented by FaceNet and OpenFace 0.2.0 where the input batch B contains P different identities with K images each.
+I need to generate the triplets from those embeddings in the loss function in order to calculate the loss.
+The triplets are generated using the following method: for each embedding (anchor) I select another embedding with the same label (positive) and the hardest negative embedding (negative), i.e. the one that has the minimum distance between it and the anchor.
+The batch is constructed by having the embeddings with the same label / class one after the other.
+Thus I will have P * ( K * (K-1) // 2 ) triplets
+I attempted to write the custom loss function in tensorflow (Disclaimer: I am new to tensorflow, so bear with me):
+I am using Keras 2.2.0, Tensorflow 1.5.0
+def get_hard_neg(anchor, embeddings, mask):
+    embeddings_masked = embeddings * mask
+    distances = tf.norm(anchor-embeddings_masked)
+    dist_idx  = tf.argmin(distances)
+    return dist_idx
+
+def batch_hard_negative_triplet_loss(labels, embeddings):
+
+    margin = 1
+    feat_size = 512
+    num_identities = 6
+    samples_per_id = 20
+
+    triplet_list = []
+    pos_dist_list, neg_dist_list = [], []
+
+    for i in range(num_identities * samples_per_id):
+        anchor = embeddings[i]
+        mask = tf.logical_not(tf.equal(labels[i], labels))
+        mask = tf.expand_dims(mask, 1)
+        anchor_tiled = tf.tile([anchor], [num_identities * samples_per_id, 1])
+        hard_neg = get_hard_neg(anchor_tiled, embeddings, mask)
+        mult = (i // samples_per_id)+1 
+        for j in range(i+1,samples_per_id*mult):
+            triplet_list += [(anchor, embeddings[j], embeddings[hard_neg])]
+
+    triplets = tf.stack(triplet_list)
+    
+    for i in range(num_identities * (samples_per_id * (samples_per_id-1)) // 2):
+        pos_dist_list += [tf.norm(triplets[i,0] - triplets[i,1])]
+        neg_dist_list += [tf.norm(triplets[i,0] - triplets[i,2])]
+
+    pos_dist = tf.stack(pos_dist_list)
+    neg_dist = tf.stack(neg_dist_list)
+
+    triplet_loss = tf.reduce_mean(tf.maximum(pos_dist - neg_dist + margin, 0.))
+
+    return triplet_loss
+When I compile my model like this and call fit, Keras freezes after printing Epoch 1/x
+model.compile(optimizer=optim, loss=batch_hard_negative_triplet_loss, metrics=[])
+Any help or guidance will be greatly appreciated
+Thanks!

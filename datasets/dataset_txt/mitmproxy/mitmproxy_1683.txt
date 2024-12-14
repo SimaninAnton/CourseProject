@@ -1,0 +1,42 @@
+mlandauer commented on 25 Apr 2014
+I'm seeing the following traceback occasionally on running mitmdump:
+Error in processing of request from 172.17.0.5:49138
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.7/dist-packages/netlib/tcp.py", line 376, in request_thread
+    self.handle_connection(request, client_address)
+  File "/usr/local/lib/python2.7/dist-packages/libmproxy/proxy.py", line 549, in handle_connection
+    h.handle()
+  File "/usr/local/lib/python2.7/dist-packages/libmproxy/proxy.py", line 196, in handle
+    while self.handle_request(cc) and not cc.close:
+  File "/usr/local/lib/python2.7/dist-packages/libmproxy/proxy.py", line 268, in handle_request
+    response_reply = self.channel.ask("response", response)
+  File "/usr/local/lib/python2.7/dist-packages/libmproxy/controller.py", line 52, in ask
+    g = m.reply.q.get(timeout=0.5)
+AttributeError: DummyReply instance has no attribute 'q'
+This is running on Ubuntu 12.04 with the following options
+mitmdump -q -T -a -s mitmproxy/log_to_morph.py --confdir mitmproxy
+For completeness log_to_morph.py logs each http/https request to a local rest service and is like this:
+import urllib
+import os
+from libmproxy.script import concurrent
+
+@concurrent
+def response(context, flow):
+  url = os.environ['MORPH_URL'] + "/connection_logs"
+  params = urllib.urlencode({
+    'ip_address': flow.request.client_conn.address[0],
+    'method': flow.request.method,
+    'scheme': flow.request.scheme,
+    'host': flow.request.headers["Host"][0],
+    'path': flow.request.path,
+    'request_size': len(flow.request.content),
+    'response_size': len(flow.response.content),
+    'key': os.environ['MITMPROXY_SECRET']
+  })
+  try:
+    s = urllib.urlopen(url, params)
+    s.close()
+  # If we can't contact the morph server still handle this request.
+  # If we let this exception pass up the chain the request would get dropped
+  except IOError, e:
+    print "Error contacting Morph server:", e

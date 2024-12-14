@@ -1,0 +1,51 @@
+C3l1n commented on 16 Aug 2016 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Set custom CSRF header name in settings.py eg.
+setting.py:
+CSRF_HEADER_NAME = "HTTP_X_XSRF_TOKEN"
+Go to api view
+Login to account with permission to modificate any data
+make request with unsafe method - for example modify data
+Expected behavior
+Request should work and data should be modified.
+Actual behavior
+Systems gives error CSRF Failed: CSRF token missing or incorrect.
+Patch
+rest_framework/static/rest_framework/js/csrf.js change line 49 to:
+xhr.setRequestHeader(window.drf.csrfHeaderName, csrftoken);
+rest_framework/templates/rest_framework/base.html add new line between lines 265-266 from:
+window.drf = {
+          csrfCookieName: "{{ csrf_cookie_name|default:'csrftoken' }}"
+};
+to
+window.drf = {
+          csrfHeaderName: "{{ csrf_header_name|default:'X-CSRFToken' }}",
+          csrfCookieName: "{{ csrf_cookie_name|default:'csrftoken' }}"
+};
+same story in file rest_framework/templates/rest_framework/admin.html but modification should be done between lines 234 and 235
+window.drf = {
+          csrfCookieName: "{{ csrf_cookie_name|default:'csrftoken' }}"
+};
+to
+window.drf = {
+          csrfHeaderName: "{{ csrf_header_name|default:'X-CSRFToken' }}",
+          csrfCookieName: "{{ csrf_cookie_name|default:'csrftoken' }}"
+};
+rest_framework/renderers.py add new line between 678 and 679 before:
+            'csrf_cookie_name': settings.CSRF_COOKIE_NAME,
+        }
+after
+            'csrf_cookie_name': settings.CSRF_COOKIE_NAME,
+            'csrf_header_name': (settings.CSRF_HEADER_NAME[5:].replace("_","-") if settings.CSRF_HEADER_NAME.startswith('HTTP_') else settings.CSRF_HEADER_NAME.replace("_","-")),
+        }
+and that is all. Last modification have those replaces call because Django documentation say:
+As with other HTTP headers in request.META, the header name received from the server is normalized by converting all characters to uppercase, replacing any hyphens with underscores, and adding an 'HTTP_' prefix to the name. For example, if your client sends a 'X-XSRF-TOKEN' header, the setting should be 'HTTP_X_XSRF_TOKEN'.
+ps. great job guys! Nice module.

@@ -1,0 +1,53 @@
+Contributor
+parag2489 commented on 25 Oct 2016 •
+edited
+I am trying to write a layer which will:
+Take an image as input (say 3 x 224 x 224).
+Extract a small window (say 3 x 32 x 32) out of that image.
+Do some operations (say K.dot(window, self.W)) which results in a vector (say 1 x 200)
+Go to the next location in the image (say stride = 32) and repeat step 3 till all windows have been covered.
+Give the output which will be of the form (200 x 224/32 x 224/32) = (200 x 7 x 7).
+Is it possible to do this with keras and efficiently? This is my attempt:
+class MyModel(Layer):
+    def __init__(self, output_dim, weights, input_dim, batch_size=32, blockSize=32, stride=32, **kwargs):
+        self.output_dim = output_dim
+        self.wts = weights  # weights is a list where each element is a weight matrix
+        self.input_dim = input_dim
+        self.batch_size = batch_size
+        self.blockSize = blockSize
+        self.stride = stride
+        super(MyModel, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        wts = self.wts
+        wtsVariable = []
+        for w in wts:
+            wtsVariable.append(K.variable(w))
+        self.W = wtsVariable
+        self.trainable_weights = self.W  # so trainable_weights will be a list as required
+
+    def operation(self, block_x):
+        return K.dot(K.dot(block_x, self.W[0]), self.W[1])   # My actual operation will output a `1xn` vector and the operation is differentiable
+
+    def call(self, x, mask=None):
+        rowCount = -1
+        # do I add (self.batch_size,) in the output batch size as shown below?
+        output = T.shared(np.zeros((self.batch_size,)+self.output_dim,dtype=np.float32))  
+
+        for rowIter in range(0,self.input_dim[1]-self.blockSize, self.stride):  # input is of the form channels x row x columns
+            rowCount += 1
+            colCount = -1
+            for colIter in range(0,self.input_dim[2]-self.blockSize, self.stride):
+                colCount += 1
+                # do I have to operate on sample axis as shown below? 
+                block_x = x[:,:,rowIter:rowIter+self.blockSize,colIter:colIter+self.blockSize]
+                # do a forward propagation using the weights available in self.trainable_weights
+                tmp = self.operation(block_x)
+                # is the following method correct to set a location of output? Also, do I have to operate on sample axis? 
+                output = T.tensor.set_subtensor(output[:,:,rowCount,colCount],tmp)
+        return output
+
+    def get_output_shape_for(self, input_shape):
+        return ((input_shape[0],) + self.output_dim)
+So in short, the call function in above layer implements a sliding window using two for loops. For every window, it calls operation() which gives 1xn vector. Now output is a tensor of size n x m x k, so we set each location indexed by (m,k) in the output with our 1xn vector. Once we fill all the locations in the output, we return it. Another thing, do I have to operate on sample axis too? If I don't, then I get an error that the output shape produced is only three dimensional instead of 4.
+I have implemented this, it runs but my problem is that it gives me an error saying that: maximum recursion depth exceeded while computing gradient. If I increase the recursion limit to 30,000, it takes forever to compute a minibatch of 32 images.

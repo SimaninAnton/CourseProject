@@ -1,0 +1,80 @@
+Contributor
+mrjbq7 commented on Feb 16, 2013
+I ran into some odd behavior with RandomForestClassifiers:
+Calling predict_proba() is a lot slower for clfs trained with n_jobs > 1.
+Worse, though, is that results are different for varying n_jobs.
+See this test script:
+import time
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+
+X = np.random.randn(100, 1000)
+y = np.random.randint(0, 2, 100)
+
+clfs = [
+    RandomForestClassifier(n_estimators=1000,
+                           n_jobs=n_jobs,
+                           random_state=12345)
+    for n_jobs in range(1, 9)
+]
+
+for clf in clfs:
+    t0 = time.time()
+    clf.fit(X, y)
+    print 'fit() n_jobs=%s took %.3f seconds' % (clf.n_jobs,
+                                                 time.time() - t0)
+
+X2 = np.random.randn(100, 1000)
+
+probas = []
+for clf in clfs:
+    t0 = time.time()
+    proba = clf.predict_proba(X2)
+    print 'predict_proba() n_jobs=%s took %.3f seconds' % (clf.n_jobs,
+                                                           time.time() - t0)
+    probas.append(proba)
+
+for proba1, proba2 in zip(probas, probas[1:]):
+    print np.allclose(proba1, proba2)
+You can see the time difference between n_jobs=1 and n_jobs > 1 and the unequal prediction results by running it:
+$ python2.7 bar.py 
+fit() n_jobs=1 took 2.709 seconds
+fit() n_jobs=2 took 2.353 seconds
+fit() n_jobs=3 took 1.870 seconds
+fit() n_jobs=4 took 1.607 seconds
+fit() n_jobs=5 took 1.478 seconds
+fit() n_jobs=6 took 1.374 seconds
+fit() n_jobs=7 took 1.311 seconds
+fit() n_jobs=8 took 1.182 seconds
+predict_proba() n_jobs=1 took 0.042 seconds
+predict_proba() n_jobs=2 took 0.760 seconds
+predict_proba() n_jobs=3 took 0.717 seconds
+predict_proba() n_jobs=4 took 0.731 seconds
+predict_proba() n_jobs=5 took 0.730 seconds
+predict_proba() n_jobs=6 took 0.732 seconds
+predict_proba() n_jobs=7 took 0.730 seconds
+predict_proba() n_jobs=8 took 0.734 seconds
+False
+False
+False
+False
+False
+False
+False
+With these versions:
+$ python2
+Python 2.7.3 (default, Dec 22 2012, 21:14:12) 
+[GCC 4.7.2] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import numpy
+>>> numpy.__version__
+'1.7.0'
+>>> import scipy
+>>> scipy.__version__
+'0.11.0'
+>>> import pandas
+>>> pandas.__version__
+'0.10.1'
+>>> import sklearn
+>>> sklearn.__version__
+'0.13'

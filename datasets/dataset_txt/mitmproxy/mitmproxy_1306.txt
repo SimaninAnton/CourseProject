@@ -1,0 +1,58 @@
+ghost commented on 30 Sep 2015
+What's the problem?
+Different sites could not be called when mitmdump runs, e.g. Amazon(US) and CRLs from Microsoft. Amazon will open but do not load some CSS and pictures resulting in an very ugly page. Probably every site using Akamai is affected.
+What's expected?
+Windows should get its CRLs and Amazon site should be displayed normally.
+Which versions are affected?
+The master version of mitmdump/libmproxy from yesterday was used.
+In detail the last commit should be
+c6811bd for mitmproxy
+0f9a725 for pathod and
+2e1f7ec for netlib.
+How to reproduce the problem?
+It should be enough to run mitmdump with SSL support and in transparent proxy mode to capture data. Then use a client with installed root certificate to call a site with Akamai like https://www.amazon.com. A Windows client may try to update its CRLs after some time.
+Why does this happen?
+One CRL from Microsoft is used as an example.
+The client asked for
+GET /pkiops/crl/MicSecSerCA2011_2011-10-18.crl HTTP/1.1
+Cache-Control: max-age = 750
+Connection: Keep-Alive
+Accept: */*
+If-Modified-Since: Sun, 27 Sep 2015 05:01:39 GMT
+If-None-Match: "24caf397e1f8d01:0"
+User-Agent: Microsoft-CryptoAPI/6.1
+Host: www.microsoft.com
+mitmdump will alter this request and asked the server for
+GET /pkiops/crl/MicSecSerCA2011_2011-10-18.crl HTTP/1.1
+Cache-Control: max-age = 750
+Connection: Keep-Alive
+Accept: */*
+If-Modified-Since: Sun, 27 Sep 2015 05:01:39 GMT
+If-None-Match: "24caf397e1f8d01:0"
+User-Agent: Microsoft-CryptoAPI/6.1
+host: 23.206.108.111
+This leads to the result
+HTTP/1.0 400 Bad Request
+Server: AkamaiGHost
+Mime-Version: 1.0
+Content-Type: text/html
+Content-Length: 259
+Expires: Tue, 29 Sep 2015 10:50:56 GMT
+Date: Tue, 29 Sep 2015 10:50:56 GMT
+Connection: close
+
+<HTML><HEAD>
+<TITLE>Invalid URL</TITLE>
+</HEAD><BODY>
+<H1>Invalid URL</H1>
+The requested URL "&#47;pkiops&#47;crl&#47;MicSecSerCA2011&#95;2011&#45;10&#45;18&#46;crl", is invalid.<p>
+Reference&#32;&#35;9&#46;76a9645f&#46;1443523856&#46;276b8d47
+</BODY></HTML>
+Mitmdump exchange the Host header with domain with a host header with IP. The RFC mentioned that the header are case-insensitive. Thus the IP seems to be the problem, server with virtual hosts and it seems Akamai server, too, do not know which one is requested.
+Is there a workaround?
+Well in netlib/http/request.py in the @host.setter function starting in line 106 the last part after comment # Update host header could be commented out to prevent the Host header to get modified.
+Why is this post here?
+I am not sure where to post it. The workaround is in netlib but the problem exists in mitmdump thus I put it here. I am sorry if this is wrong.
+Is there something else?
+May I ask a question? This is not the first time to see that the destination/host from the TCP layer is used by mitmdump for the header field at HTTP layer. There are different technique like virtual hosts and load balancing which may not work that way.
+Is there a special reason for this strategy?

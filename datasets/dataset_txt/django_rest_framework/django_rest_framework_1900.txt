@@ -1,0 +1,22 @@
+mrcoles commented on 31 Mar 2015
+Edit: I created a PR with hopefully clearer wording and actual code #2796
+When the Serializer.get_value(self, dictionary) method is called on an empty dataset it returns a different value depending on the request format, e.g.:
+format="multipart" - returns an OrderedDict({}) object
+format="json" - returns a rest_framework.fields.empty object
+When you then call my_serializer.data, for json it skips that field, but for multipart it tries to serialize that nested serializer (potentially raising exceptions for underlying fields that are not required=False).
+This can be triggered by adding a custom field to a ModelSerializer of another Serializer that doesn’t map to anything on the underlying instance with required=False.
+While the scenario I’m describing is likely stretching best-case usage of the DRF, I do not see why one should see different functionality based on the format of the request. I can try putting together a pull request for this, but I’d appreciate some feedback on if anyone agrees and what the best plan of action would be. Here’s one approach:
+def get_value(self, dictionary):
+    # We override the default field access in order to support
+    # nested HTML forms.
+    if html.is_html_input(dictionary):
+        return html.parse_html_dict(dictionary, prefix=self.field_name) or empty
+    return dictionary.get(self.field_name, empty)
+Alternatively, the parse_html_dict could be updated to accept a default and empty could be passed in. For the sake of being pythonic, then it should probably default to None (and require us to update all other calls that expect an empty dict as a default) or do something weird like check for it in **kwargs and only apply it then.
+If this were changed, some additional places that look affected:
+ListSerializer.get_vaue() calls html.parse_html_list in the same way and should probably be updated
+ListSerializer.to_internal_value() also calls html.parse_html_list
+fields.DictField.get_value() and to_internal_value() call html.parse_html_dict
+fields.ListField.get_value() & to_internal_value() call html.parse_html_list
+It looks like maybe only the get_value() calls would make sense to take this change.
+Btw, I was wondering at first if there was some explicit requirement in multipart to pass all data, since it’s more emulating an HTML form, but that argument doesn’t seem to stand up to the idea of doing a PATCH and the nature of re-using the same serializer across various HTTP method types.

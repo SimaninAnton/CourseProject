@@ -1,0 +1,24 @@
+Contributor
+orf commented on 21 Feb 2017 •
+edited
+Hi,
+I was surprised to find that when updating a m2m relation DRF makes O(n) queries when updating ManyRelatedField instances due to this loop: https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/relations.py#L489-L498
+I think it was designed this way to throw a reasonable error if a related PK does not exist, and to be as extensible as possible.
+However I think the most common case of using a ManyRelatedField isn't served well by this and could be improved. The most common case would be just a ManyRelatedField with the related objects pk as the value, and the current implementation will make N queries for the models.
+And to override this you would need to create a custom field and override the to_internal_value function to fetch it.
+For this common case wouldn't something like this implementation be suitable, and couldn't something like this be included in DRF?
+       def to_internal_value(self, data):
+           if isinstance(data, type('')) or not hasattr(data, '__iter__'):
+                self.fail('not_a_list', input_type=type(data).__name__)
+           if not self.allow_empty and len(data) == 0:
+                self.fail('empty')
+
+           values = list(self.child_relation.get_queryset.filter(pk__in=data))
+
+           if len(values) != len(data):
+               missing_primary_keys = set(v.pk for v in values) - set(data)
+               self.fail('missing_ids', ids_not_found=list(missing_primary_keys))
+
+           return values
+Just use pk__in to fetch all the models in a single query, then compare the length of the result with the length of the given data. If they don't match then we are missing a record and we can use a set operator to find out which ones and raise a validation error with the missing primary keys?
+2

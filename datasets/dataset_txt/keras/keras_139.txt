@@ -1,0 +1,85 @@
+KimMeen commented on 5 Jul 2019
+System information
+Have I written custom code (as opposed to using example directory): Yes
+OS Platform and Distribution (e.g., Linux Ubuntu 16.04): Ubuntu 16.04
+TensorFlow backend (yes / no): Yes
+TensorFlow version: 1.12.0
+Keras version: Latest
+Python version: 3.6
+CUDA/cuDNN version: CUDA 9.0 / libcudnn7_7.0.5.15-1+cuda9.0_amd64
+GPU model and memory: 2 * RTX 2070 8G
+Describe the current behavior
+I created a model by using the bidirectional LSTM but it cannot be passed through multi_gpu_model() method when I trying to do the distributed training.
+with tf.device('/cpu:0'):
+     model = tf.keras.Sequential()
+     model.add(layers.Bidirectional(layers.LSTM(_HIDDEN_SIZE, return_sequences=True, input_shape=(_TIME_STEPS, _FEATURE_DIMENTIONS))))
+     model.add(layers.Dropout(0.5))
+     model.add(layers.Bidirectional(layers.LSTM(_HIDDEN_SIZE, return_sequences=True)))
+     model.add(layers.Dropout(0.5))
+     model.add(layers.TimeDistributed(layers.Dense(_NUM_CLASSES)))
+     model.add(layers.Flatten())
+     model.add(layers.Dense(_NUM_CLASSES, activation='softmax'))
+If you remove the bidirectional wrapper and use the normal LSTM layer, the error below will not happen:
+2019-07-05 12:09:29.034218: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2019-07-05 12:09:29.199596: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:964] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2019-07-05 12:09:29.200231: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1432] Found device 0 with properties: 
+name: GeForce RTX 2070 major: 7 minor: 5 memoryClockRate(GHz): 1.725
+pciBusID: 0000:01:00.0
+totalMemory: 7.76GiB freeMemory: 7.42GiB
+2019-07-05 12:09:29.329679: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:964] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2019-07-05 12:09:29.330551: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1432] Found device 1 with properties: 
+name: GeForce RTX 2070 major: 7 minor: 5 memoryClockRate(GHz): 1.725
+pciBusID: 0000:03:00.0
+totalMemory: 7.77GiB freeMemory: 7.65GiB
+2019-07-05 12:09:29.330632: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1511] Adding visible gpu devices: 0, 1
+2019-07-05 12:09:29.806507: I tensorflow/core/common_runtime/gpu/gpu_device.cc:982] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-07-05 12:09:29.806532: I tensorflow/core/common_runtime/gpu/gpu_device.cc:988]      0 1 
+2019-07-05 12:09:29.806537: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1001] 0:   N N 
+2019-07-05 12:09:29.806540: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1001] 1:   N N 
+2019-07-05 12:09:29.807007: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 7134 MB memory) -> physical GPU (device: 0, name: GeForce RTX 2070, pci bus id: 0000:01:00.0, compute capability: 7.5)
+2019-07-05 12:09:29.807412: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:1 with 7358 MB memory) -> physical GPU (device: 1, name: GeForce RTX 2070, pci bus id: 0000:03:00.0, compute capability: 7.5)
+Traceback (most recent call last):
+  File "debug.py", line 54, in <module>
+    para_model = multi_gpu_model(model, gpus = _GPUs, cpu_merge = True, cpu_relocation = False)
+  File "/home/tpc2/anaconda3/envs/machine-learning/lib/python3.6/site-packages/tensorflow/python/keras/utils/multi_gpu_utils.py", line 239, in multi_gpu_model
+    outputs = model(inputs)
+  File "/home/tpc2/anaconda3/envs/machine-learning/lib/python3.6/site-packages/tensorflow/python/keras/engine/base_layer.py", line 694, in __call__
+    in_deferred_mode = isinstance(input_list[0], DeferredTensor)
+IndexError: list index out of range
+Code to reproduce the issue
+The testing code has been attached below:
+import numpy as np
+import csv
+import time
+import math
+import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras.utils import multi_gpu_model
+
+
+# parameters here
+_GPUs = 2
+_LR = 0.00003
+_BATCH_SIZE = 128
+_EPOCH = 150
+_NUM_CLASSES = 2
+_TIME_STEPS = 10
+_FEATURE_DIMENTIONS = 34
+_HIDDEN_SIZE = 300
+
+
+# Model defined below: Bidirectional LSTM + Fully connected layers
+with tf.device('/cpu:0'):
+    model = tf.keras.Sequential()
+    model.add(layers.Bidirectional(layers.LSTM(_HIDDEN_SIZE, return_sequences=True, input_shape=(_TIME_STEPS, _FEATURE_DIMENTIONS))))
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Bidirectional(layers.LSTM(_HIDDEN_SIZE, return_sequences=True)))
+    model.add(layers.Dropout(0.5))
+    model.add(layers.TimeDistributed(layers.Dense(_NUM_CLASSES)))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(_NUM_CLASSES, activation='softmax'))
+    opt = tf.keras.optimizers.Adam(lr = _LR)
+
+para_model = multi_gpu_model(model, gpus = _GPUs, cpu_merge = True, cpu_relocation = False)
+para_model.compile(optimizer = opt, loss = 'binary_crossentropy', metrics = ['accuracy'])
+Anyone know it's a bug or caused by myself? Thank you.

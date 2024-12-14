@@ -1,0 +1,141 @@
+itayB commented on 26 Mar 2019
+I guys,
+I'm publishing my question from SO here, if someone can help:
+Setup: Python 2.7.15, Tornado 5.1
+I have a web-server machine that handles ~40 /recommend requests per second.
+The average response time is 25ms, but there's a big divergence (some requests can take more than 500ms).
+Each request generates between 1-8 Elasticsearch queries (HTTP requests) internally.
+Each Elasticsearch query can take between 1-150ms.
+The Elasticsearch requests are handled synchronously via elasticsearch-dsl library.
+The goal is to reduce the i/o waiting time (queries to Elasticsearch) and handle more requests per second so I can reduce the number of machines.
+One thing is unacceptable - I don't want to increase the average handle time (25ms).
+I found some tornado-elasticsearch implementations on the web, but since I need to use only one endpoint to Elasticsearch (/_search) I am trying to do that alone.
+Below there's a degenerated implementation of my web-server. With the same load (~40 request per second) the average request response time increased to 200ms!
+Digging in, I see that the internal async handle time (queries to Elasticsearch) is not stable and the time takes to each fetch call might be different, and the total average (in ab load test) is high.
+I'm using ab to simulate the load and measure it internally by printing the current fetch handle time, average fetch handle time and maximum handle time.
+When doing one request at a time (concurrency 1):
+ab -p es-query-rcom.txt -T application/json -n 1000 -c 1 -k 'http://localhost:5002/recommend'
+my prints looks like: [avg req_time: 3, dur: 3] [current req_time: 2, dur: 3] [max req_time: 125, dur: 125] reqs: 8000
+But when I try to increase the concurrency (up to 8): ab -p es-query-rcom.txt -T application/json -n 1000 -c 8 -k 'http://localhost:5002/recommend'
+now my prints looks like: [avg req_time: 6, dur: 13] [current req_time: 4, dur: 4] [max req_time: 73, dur: 84] reqs: 8000
+The average req is now x2 slower (or x4 by my measurements)!
+What do I miss here? why do I see this degradation?
+web_server.py:
+import tornado
+from tornado.httpclient import AsyncHTTPClient
+from tornado.options import define, options
+from tornado.httpserver import HTTPServer
+from web_handler import WebHandler
+
+SERVICE_NAME = 'web_server'
+NUM_OF_PROCESSES = 1
+
+
+class Statistics(object):
+    def __init__(self):
+        self.total_requests = 0
+        self.total_requests_time = 0
+        self.total_duration = 0
+        self.max_time = 0
+        self.max_duration = 0
+
+
+class RcomService(object):
+    def __init__(self):
+        print 'initializing RcomService...'
+        AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient", max_clients=3)
+        self.stats = Statistics()
+
+    def start(self, port):
+        define("port", default=port, type=int)
+        db = self.get_db(self.stats)
+        routes = self.generate_routes(db)
+        app = tornado.web.Application(routes)
+        http_server = HTTPServer(app, xheaders=True)
+        http_server.bind(options.port)
+        http_server.start(NUM_OF_PROCESSES)
+        tornado.ioloop.IOLoop.current().start()
+
+    @staticmethod
+    def generate_routes(db):
+        return [
+            (r"/recommend", WebHandler, dict(db=db))
+        ]
+
+    @staticmethod
+    def get_db(stats):
+        return {
+            'stats': stats
+        }
+
+
+def main():
+    port = 5002
+    print('starting %s on port %s', SERVICE_NAME, port)
+
+    rcom_service = RcomService()
+    rcom_service.start(port)
+
+
+if __name__ == '__main__':
+    main()
+web_handler.py:
+import time
+import ujson
+from tornado import gen
+from tornado.gen import coroutine
+from tornado.httpclient import AsyncHTTPClient
+from tornado.web import RequestHandler
+
+
+class WebHandler(RequestHandler):
+    def initialize(self, db):
+        self.stats = db['stats']
+
+    @coroutine
+    def post(self, *args, **kwargs):
+        result = yield self.wrapper_innear_loop([{}, {}, {}, {}, {}, {}, {}, {}])  # dummy queries (empty)
+        self.write({
+            'res': result
+        })
+
+    @coroutine
+    def wrapper_innear_loop(self, queries):
+        result = []
+        for q in queries:  # queries are performed serially 
+            res = yield self.async_fetch_gen(q)
+            result.append(res)
+        raise gen.Return(result)
+
+    @coroutine
+    def async_fetch_gen(self, query):
+        url = 'http://localhost:9200/my_index/_search'
+
+        headers = {
+                'Content-Type': 'application/json',
+                'Connection': 'keep-alive'
+        }
+
+        http_client = AsyncHTTPClient()
+        start_time = int(round(time.time() * 1000))
+        response = yield http_client.fetch(url, method='POST', body=ujson.dumps(query), headers=headers)
+        end_time = int(round(time.time() * 1000))
+        duration = end_time - start_time
+        body = ujson.loads(response.body)
+        request_time = int(round(response.request_time * 1000))
+        self.stats.total_requests += 1
+        self.stats.total_requests_time += request_time
+        self.stats.total_duration += duration
+        if self.stats.max_time < request_time:
+            self.stats.max_time = request_time
+        if self.stats.max_duration < duration:
+            self.stats.max_duration = duration
+        duration_avg = self.stats.total_duration / self.stats.total_requests
+        time_avg = self.stats.total_requests_time / self.stats.total_requests
+        print "[avg req_time: " + str(time_avg) + ", dur: " + str(duration_avg) + \
+              "] [current req_time: " + str(request_time) + ", dur: " + str(duration) + "] [max req_time: " + \
+              str(self.stats.max_time) + ", dur: " + str(self.stats.max_duration) + "] reqs: " + \
+              str(self.stats.total_requests)
+        raise gen.Return(body)
+I tried to play a bit with the async class (Simple vs curl), the max_clients size, but I don't understand what is the best tune in my case.
+But

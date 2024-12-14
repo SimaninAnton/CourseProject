@@ -1,0 +1,50 @@
+Asayu123 commented on 8 Mar 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Define a ModelSerializer with a model that contains TextField with choices.
+from django.db import models
+from rest_framework.serializers import ModelSerializer
+
+# Model Definition
+class Network(models.Model):
+    name = models.TextField()
+    description = models.TextField(blank=True)
+    status = models.TextField(choices=(('active', 'active'), ('inactive', 'inactive')))
+    ... 
+# Serializer Definition
+class NetworkSerializer(ModelSerializer):
+
+    class Meta:
+        model = Network
+        fields = '__all__'
+Instantiate the Serializer with data.
+Expected behavior
+A instance of the Serializer has a ChoiceField named 'status' with a style: {'base_template': 'input.html'}
+Actual behavior
+A instance of the Serializer has a ChoiceField named 'status' with a style: {'base_template': 'textarea.html'}
+Problem
+Consequently, Django REST framework's built-in form renderer treats this attribute same as a free-descriptive text.
+Causes
+As you can see, when a serializer builds standard fields, get model's field's kwargs first.
+django-rest-framework/rest_framework/serializers.py
+Line 1176 in d2994e0
+ field_kwargs = get_field_kwargs(field_name, model_field) 
+and If original field model has Textfield, style {'base_template': 'textarea.html'} will be applied as a default field argument of the serializer.
+django-rest-framework/rest_framework/utils/field_mapping.py
+Line 91 in c674687
+ if isinstance(model_field, models.TextField) or (postgres_fields and isinstance(model_field, postgres_fields.JSONField)): 
+Then HTMLFormRenderer treats this field, it temporally applies default style "style: {'base_template': 'input.html'}"
+however, this style will be overridden with {'base_template': 'textarea.html'} that has been set via serializer instantiation.
+django-rest-framework/rest_framework/renderers.py
+Line 342 in a540acd
+ style.update(field.style) 
+Acknowledgements
+I am not sure whether this is expected behavior or not, so I created this issue.
+It looks like applying a default style in an initialization process of serializer causes this issue, so move this application to HTMLFormRender might solve this problem.
+Thank you in advance :)

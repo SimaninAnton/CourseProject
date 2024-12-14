@@ -1,0 +1,42 @@
+napsternxg commented on 4 Jan 2016
+I am trying to implement the Character CNN + LSTM model presented in this paper (http://arxiv.org/abs/1511.08308) for Named Entity Recognition using Keras. However, I am facing issue with including the Character based CNN features along with the word embedding for the model.
+The basic code for my model using Bidirectional LSTM using Keras Graph model is presented here: https://github.com/napsternxg/DeepSequenceClassification
+However, for each word I also want to add CNN based features on the character embedding to the model input. I know I can do this by creating a new input node and adding a CNN layer to it and then merging the Convolution + Pooling output with the Embedding features, but I am facing issues with defining the model input. For each word in the sequence I will have a sequence of characters which I can pad to make it say max_word_char_size long, but this will make the input layer consist of 3 dimensions (samples, maxlen, max_word_char_size) then this layer will pass through an character embedding layer which will output a layer of size (samples, maxlen, max_word_char_size, char_embedding_size) and I am not sure how to go about doing this.
+I have come up with the following hack using different dim_ordering modes and Reshape layers to ensure I get 1 vector per word in each sequence. These vectors will then be concatenated with the embedding of each word.
+import theano, keras
+from keras.models import Sequential, Graph
+from keras.layers.core import Dense, Dropout, Activation, TimeDistributedDense, Flatten, Merge, Reshape
+from keras.layers.embeddings import Embedding
+from keras.layers.recurrent import LSTM, GRU
+from keras.layers.convolutional import Convolution1D, MaxPooling1D, Convolution2D, MaxPooling2D
+from keras.preprocessing.sequence import pad_sequences
+
+import numpy as np
+
+max_len, max_char_len = 5, 4
+char_vocab = 100
+char_embedding_size=50
+nb_filters = 10
+# Sequence words represented as sequence of sequence of characters
+X_c = np.array([[[0,1,2,3], [0,1,2,3],[0,1,2,3],[0,1,2,3], [0,1,2,3]],
+               [[0,1,2,3], [0,1,2,3],[0,1,2,3],[0,1,2,3], [0,1,2,3]]])
+# corresponding sequence of words
+X_w = np.array([[1,1,1,1,1], [1,1,1,1,1]])
+print X_c.shape, X_w.shape
+# Output: (2, 5, 4) (2, 5)
+
+
+model = Sequential()
+model.add(Embedding(char_vocab, char_embedding_size, input_length=max_len*max_char_len))
+model.add(Reshape((max_len, max_char_len, char_embedding_size)))
+model.add(Convolution2D(nb_filters, 1, 2, dim_ordering='tf', border_mode='same')) # Hack to ensure I get output per word
+model.add(MaxPooling2D((2, 2), dim_ordering='th')) # Hack to get output per word
+model.add(Reshape((max_len, 10)))
+
+model.compile(optimizer='adam', loss='mse')
+
+input = X_c.reshape(2,max_len*max_char_len) # Hack to pass all chars to the embedding layer.
+output = model.predict(input)
+print output.shape
+# Outputs: (2, 5, 10)
+I look forward to your feedback if this is the correct way to go about it or if there is any other better way to do it.

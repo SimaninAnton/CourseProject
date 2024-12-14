@@ -1,0 +1,45 @@
+nip3o commented on 16 Sep 2015
+For very large integers, a ModelSerializer with an IntegerField will crash when doing serializer.save() if the value from data is so large that it would cause integer overflow in the database. I added an example test case in this fork, which yields the following output when running the tests on my computer:
+[venv] [master] ~/dev/django-rest-framework $ ./runtests.py TestIntegerOverflow --fast
+====================================================== test session starts =======================================================
+platform darwin -- Python 2.7.9 -- py-1.4.30 -- pytest-2.6.4
+plugins: cov, django
+collected 746 items
+
+tests/test_model_serializer.py F
+
+============================================================ FAILURES ============================================================
+_______________________________________________ TestIntegerOverflow.test_overflow ________________________________________________
+tests/test_model_serializer.py:861: in test_overflow
+    serializer.save()
+rest_framework/serializers.py:180: in save
+    self.instance = self.create(validated_data)
+rest_framework/serializers.py:832: in create
+    instance = ModelClass.objects.create(**validated_data)
+venv/lib/python2.7/site-packages/django/db/models/manager.py:127: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+venv/lib/python2.7/site-packages/django/db/models/query.py:348: in create
+    obj.save(force_insert=True, using=self.db)
+venv/lib/python2.7/site-packages/django/db/models/base.py:734: in save
+    force_update=force_update, update_fields=update_fields)
+venv/lib/python2.7/site-packages/django/db/models/base.py:762: in save_base
+    updated = self._save_table(raw, cls, force_insert, force_update, using, update_fields)
+venv/lib/python2.7/site-packages/django/db/models/base.py:846: in _save_table
+    result = self._do_insert(cls._base_manager, using, fields, update_pk, raw)
+venv/lib/python2.7/site-packages/django/db/models/base.py:885: in _do_insert
+    using=using, raw=raw)
+venv/lib/python2.7/site-packages/django/db/models/manager.py:127: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+venv/lib/python2.7/site-packages/django/db/models/query.py:920: in _insert
+    return query.get_compiler(using=using).execute_sql(return_id)
+venv/lib/python2.7/site-packages/django/db/models/sql/compiler.py:974: in execute_sql
+    cursor.execute(sql, params)
+venv/lib/python2.7/site-packages/django/db/backends/utils.py:64: in execute
+    return self.cursor.execute(sql, params)
+venv/lib/python2.7/site-packages/django/db/backends/sqlite3/base.py:318: in execute
+    return Database.Cursor.execute(self, query, params)
+E   OverflowError: Python int too large to convert to SQLite INTEGER
+======================================== 745 tests deselected by '-kTestIntegerOverflow' =========================================
+====================================== 1 failed, 745 deselected, 2 warnings in 2.91 seconds ======================================
+I believe that serializers should never crash as a result of user input, which makes this a bug. In practice it is possible to workaround this by specifying some large number as a max_value validator, though.
+A similar issue (#12030) has been around in Django for quite some time, until it was fixed in Django 1.7. It might be possible to use some parts from this fix in order to deal with the fact that the maximum integer value depends on the database backend.

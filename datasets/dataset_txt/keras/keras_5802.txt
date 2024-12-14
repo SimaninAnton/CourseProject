@@ -1,0 +1,58 @@
+MInner commented on 8 Mar 2016
+Hi,
+that's clear enough how to get the value of intermediate layer given specific input:
+  encoding = model.layers[4].get_output(train=False).eval({model.layers[0].input: to_encode})
+but it is not that clear, how could one get an output of the model given an intermediate value:
+  model.layers[-1].get_output(train=False).eval({model.layers[5].get_input(): to_decode})
+  decoder = theano.function([model.layers[5].get_input(train=False)], model.get_output(train=False))
+both of samples above raise UnusedInputError: theano.function was asked to create a function computing outputs given certain inputs, but the provided input variable at index 0 is not part of the computational graph needed to compute the outputs: Elemwise{add,no_inplace}.0.
+That should theoretically work as soon as this thing works:
+import theano
+import theano.tensor as T
+
+x = T.dscalar('x')
+y = x**2
+z = y + 3
+
+f = theano.function([x], z)
+print f(10)
+
+g = theano.function([y], z)
+print g(100)
+Thank you,
+Ben
+(I'm working with @farizrahman4u 's custom seq2seq layers if that is important, just in case)
+upd: MissingInputError: ("An input of the graph, used to compute DimShuffle{1,0,2}(<TensorType(float32, 3D)>), was not provided and not given a value.Use the Theano flag exception_verbosity='high',for more information on this error.", <TensorType(float32, 3D)>) is thrown if I set higher verbosity level; the model is just a Sequencial stack of layers
+upd2: but it seems to not reproduce with ordinary nets:
+model = Sequential()
+model.add(Dense(10, input_dim=2, init='uniform'))
+model.add(Activation('tanh'))
+model.add(Dropout(0.5))
+model.add(Dense(10, init='uniform'))
+model.add(Activation('tanh'))
+model.add(Dropout(0.5))
+model.add(Dense(3, init='uniform'))
+model.add(Activation('softmax'))
+
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy',
+              optimizer=sgd)
+
+model.fit(X_train, y_train,
+          nb_epoch=20,
+          batch_size=16,
+          show_accuracy=True,
+          verbose=0)
+
+print model.evaluate(X_test, y_test, batch_size=16)
+
+import numpy as np
+slice_id = 3
+reprenestation = model.layers[slice_id].get_output(train=False) \
+                                       .eval({model.layers[0].input: X_train.astype(np.float32)})
+
+print reprenestation.shape
+model.layers[-1].get_output(train=False).eval({model.layers[slice_id+1].get_input(): reprenestation})
+works just fine
+well, that's weird
+full gist: https://gist.github.com/MInner/a5c88e6f31ab6fc0ee00

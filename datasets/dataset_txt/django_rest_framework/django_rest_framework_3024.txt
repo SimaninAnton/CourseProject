@@ -1,0 +1,40 @@
+oundead commented on 11 Nov 2012
+Serialization of 1.2Mb of JSON (call init of ModelSerializer) takes about 44 seconds on my computer.
+It's very slow!.. I wrote own Serializer for Django Models with nested serialization. Serialization of 1.2Mb of JSON takes about 2 seconds.
+Serializer Code:
+def model_to_dict(inst, nested = []):
+    if inst is None:
+        return None
+    if not isinstance(inst, models.Model):
+        ret = []
+        for i in inst.all():
+            ret.append(model_to_dict(i,nested))
+        return ret
+    else:
+        obj = {}
+        for key,val in inst.__dict__.items():
+            if not key.startswith("_"):
+                obj[key] = val
+        if isinstance(nested, dict):
+            for n,v in nested.items():
+                obj[n] =  model_to_dict(getattr(inst,n), v)
+        else:
+            for n in nested:
+                obj[n] =  model_to_dict(getattr(inst,n))
+        return obj
+class HackSerializer:
+    nested = []
+    def __init__(self, data, instance=None, context=None):
+        self.data = []
+        for i in instance:
+            self.data.append(model_to_dict(i,self.nested))
+Usage:
+....
+class HackClientSerializer(HackSerializer):
+    nested = {"firm":{"region":[]}, "types":[], "areas":[], "users_states":["user","state"], "furnishings":[], "resident":[]}
+
+class ClientResource(ListAPIView):
+    model = Clients
+    serializer_class = HackClientSerializer
+    queryset = Clients.objects.prefetch_related("resident", "firm__region", "types", "areas", "users_states__user", "users_states__state", "furnishings", )
+....

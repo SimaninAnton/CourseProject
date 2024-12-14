@@ -1,0 +1,66 @@
+jiaqizho commented on 30 Sep 2015
+it appear in when i using the celery with flask_sqlalchemy
+i am using the celery with context by http://flask.pocoo.org/docs/0.10/patterns/celery/
+but i find "copy_current_request_context" is not work , because the context is typeof the AppContext not the RequestContext . so when invoke @copy_current_request_context , it raise the
+RuntimeError('This decorator can only be used at local scopes '
+'when a request context is on the stack. For instance within '
+'view functions.')
+so i try to replace the RequestContext with AppContext in @copy_current_request_context , it work!
+the code which i changed ( from flask/ctx.py ):
+def copy_current_request_context(f):
+
+    top = _app_ctx_stack.top
+    if top is None:
+        raise RuntimeError('This decorator can only be used at local scopes '
+            'when a request context is on the stack.  For instance within '
+            'view functions.')
+    reqctx = top.copy()
+    def wrapper(*args, **kwargs):
+        with reqctx:
+            return f(*args, **kwargs)
+    return update_wrapper(wrapper, f)
+
+
+
+
+
+class AppContext(object):
+
+    def __init__(self, app):
+        self.app = app
+        self.url_adapter = app.create_url_adapter(None)
+        self.g = app.app_ctx_globals_class()
+
+        # Like request context, app contexts can be pushed multiple times
+        # but there a basic "refcount" is enough to track them.
+        self._refcnt = 0
+
+    def copy(self):
+
+        mapp = self.__class__(self.app,)
+        return mapp
+
+    def push(self):
+        """Binds the app context to the current context."""
+        self._refcnt += 1
+        _app_ctx_stack.push(self)
+        appcontext_pushed.send(self.app)
+
+    def pop(self, exc=None):
+        """Pops the app context."""
+        self._refcnt -= 1
+        if self._refcnt <= 0:
+            if exc is None:
+                exc = sys.exc_info()[1]
+            self.app.do_teardown_appcontext(exc)
+        rv = _app_ctx_stack.pop()
+        assert rv is self, 'Popped wrong app context.  (%r instead of %r)' \
+            % (rv, self)
+        appcontext_popped.send(self.app)
+
+    def __enter__(self):
+        self.push()
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        self.pop(exc_value)

@@ -1,0 +1,19 @@
+Contributor
+jeffhunter commented on 9 Apr 2012
+parse_multipart_form_data (in httputil.py) assumes that either nothing or a single \r\n appears after the final form boundary. According to RFC 1341, if additional information appears after the final form boundary, it should be ignored.
+http://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
+"There appears to be room for additional information prior to the first encapsulation boundary and following the final boundary. These areas should generally be left blank, and implementations should ignore anything that appears before the first boundary or after the last one."
+In particular, AFNetworking (an iOS library), puts two \r\n after the final boundary, which causes parse_multipart_form_data to fail.
+AFNetworking/AFNetworking@54194a3#diff-0
+I don't think AFNetworking really needs to do that, but it's within the bounds of the RFC.
+I have worked around it by making the following change. I'm not sure if it's the best way to fix it, but it works for me:
+-    if data.endswith(b("\r\n")):
+-        footer_length = len(boundary) + 6
+-    else:
+-        footer_length = len(boundary) + 4
+-    parts = data[:-footer_length].split(b("--") + boundary + b("\r\n"))
++    final_boundary_index = data.rfind(b("--") + boundary + b("--"))
++    if final_boundary_index == -1:
++        logging.warning("Invalid multipart/form-data")
++        return
++    parts = data[:final_boundary_index].split(b("--") + boundary + b("\r\n"))```

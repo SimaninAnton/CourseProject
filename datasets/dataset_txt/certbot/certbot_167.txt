@@ -1,0 +1,67 @@
+Member
+bmw commented on 9 May 2019 •
+edited
+To reproduce this, I think you need Certbot 0.31.0+ and an ACME server that reuses authorizations.
+I ran this command and it produced this output:
+Here is each command and the renewal configuration file it produces.
+The plugin used first here is irrelevant, you just have to get a cert with a valid authz.
+sudo certbot certonly --staging --webroot -w /var/www/html -d example.com
+produces
+# renew_before_expiry = 30 days
+version = 0.34.0
+archive_dir = /etc/letsencrypt/archive/example.com
+cert = /etc/letsencrypt/live/example.com/cert.pem
+privkey = /etc/letsencrypt/live/example.com/privkey.pem
+chain = /etc/letsencrypt/live/example.com/chain.pem
+fullchain = /etc/letsencrypt/live/example.com/fullchain.pem
+
+# Options used in the renewal process
+[renewalparams]
+authenticator = webroot
+account = 0652f690fd6e48af380ad6d6a1b4e792
+webroot_path = /var/www/html,
+server = https://acme-staging-v02.api.letsencrypt.org/directory
+[[webroot_map]]
+example.com = /var/www/html
+This next command is the start of the problem. Notice the empty value from webroot_map when compared to the previous value.
+sudo certbot certonly --staging --webroot -w /var/www/html -d example.com --renew-by-default
+produces
+# renew_before_expiry = 30 days
+version = 0.34.0
+archive_dir = /etc/letsencrypt/archive/example.com
+cert = /etc/letsencrypt/live/example.com/cert.pem
+privkey = /etc/letsencrypt/live/example.com/privkey.pem
+chain = /etc/letsencrypt/live/example.com/chain.pem
+fullchain = /etc/letsencrypt/live/example.com/fullchain.pem
+
+# Options used in the renewal process
+[renewalparams]
+authenticator = webroot
+account = 0652f690fd6e48af380ad6d6a1b4e792
+webroot_path = /var/www/html,
+server = https://acme-staging-v02.api.letsencrypt.org/directory
+[[webroot_map]]
+Finally, this command removes all references to the webroot from the renewal configuration file.
+sudo certbot renew --force-renewal
+produces
+# renew_before_expiry = 30 days
+version = 0.34.0
+archive_dir = /etc/letsencrypt/archive/example.com
+cert = /etc/letsencrypt/live/example.com/cert.pem
+privkey = /etc/letsencrypt/live/example.com/privkey.pem
+chain = /etc/letsencrypt/live/example.com/chain.pem
+fullchain = /etc/letsencrypt/live/example.com/fullchain.pem
+
+# Options used in the renewal process
+[renewalparams]
+authenticator = webroot
+account = 0652f690fd6e48af380ad6d6a1b4e792
+server = https://acme-staging-v02.api.letsencrypt.org/directory
+Certbot's behavior differed from what I expected because:
+Certbot dropped the reference to the webroot path. This is bad because renewal will fail with:
+Missing command line flag or config entry for this setting: Input the webroot for example.com
+when authz are no longer available to be reused.
+What's going on?
+While I haven't verified this, I think what's going on here is a combination of authz reuse (which Certbot understands as of version 0.31.0) and full parsing of the webroot options not happening until the challenge is preformed by the webroot plugin.
+I'm imagining the 2nd command causes the value for webroot_path to be preserved because it is set on the command line. webroot_map is preserved because webroot_path is set on the command line and webroot_map is considered modified if webroot_path is set due to the code here, however, webroot_map is empty because the webroot plugin never ran.
+When certbot renew --force-renewal runs, I think webroot_map is initially set to it's default value and webroot_path is dropped due to the code here. After that, I think webroot_map is also dropped and not written to the renewal configuration file because it has its default value.

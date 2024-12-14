@@ -1,0 +1,18 @@
+Contributor
+gmr commented on 26 Jan 2016
+The addition of additional arguments to tornado.template.ParseError adds two additional required variables that breaks external libraries that extend tornado.template.Template that they can not exist and support < 4.3 and 4.3 without try/catch logic around raising the exception. In addition, this breaks tornado.template.Template on line 368.
+To address this we're using a pattern like:
+if end == -1:
+    try:
+      raise template.ParseError("Missing end block %%} on line %d" %
+                                line)
+    except TypeError:
+      raise template.ParseError("Missing end block %%} on", "str", line)
+The addition of required kwargs without default values has made internal libraries built on tornado.template.Template unusable in 4.3 and patching in support is ugly at best. While I know it's not good practice, we are referencing template._Text in our extension of tornado.template.Template which also now requires a pattern like:
+try:
+    body.chunks.append(template._Text(reader.consume(),
+                                      reader.line))
+except TypeError:
+    body.chunks.append(template._Text(reader.consume(),
+                                      reader.line, 'all'))
+While I don't expect a change in behavior going forward, making such things have defaults would have been trivial and not made 4.3 backwards incompatible with < 4.3 in this module.

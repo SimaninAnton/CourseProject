@@ -1,0 +1,54 @@
+Contributor
+parag2489 commented on 11 May 2017
+I want to implement the Superpixel pooling layer defined in the following paper "Weakly Supervised Semantic Segmentation Using Superpixel Pooling Network", originally implemented in Torch (implementation unavailable). I wish to do it in Theano preferably.
+I will give a small example to show what the layer does. It takes the following inputs:
+feature_map: shape = (batch_size, height, width, feature_dim)
+superpixel_map: shape = (batch_size, height, width)
+Let us assume two small matrices with batch_size = 1, height = width = 2, feature_dim = 1
+feature_map = np.array([[[[ 0.1], [ 0.2 ]],
+                                         [[ 0.3], [ 0.4]]]])
+
+superpixel_map = np.array([[[ 0,  0],
+                                             [ 1,  2]]])
+Now, the output will be of the shape = (batch_size, n_superpixels, feature_dim). Here n_superpixels is basically = np.amax(superpixel_map) + 1.
+The output is computed as follows.
+Find the positions where superpixel_map == i, where i varies from 0 to n_superpixels - 1. Let's consider i = 0. The positions for i = 0 are (0, 0, 0) and (0, 0, 1)
+Now average the elements at those positions in the feature map. This gives us the value (0.1 + 0.2) / 2 = 0.15. Do this for i = 1 and i = 2, that gives us the values 0.3 and 0.4 respectively.
+Now, the problem is made complex because usually batch_size > 1 and height, width >> 1.
+I implemented a new layer in Keras that basically does this but I used for loops. Now, if height = width = 32. Theano gives maximum recursion depth error. Anyone knows how this can be solved? If TensorFlow offers something new, then I am ready to switch to TensorFlow backend too.
+The code for my new layer is as follows:
+class SuperpixelPooling(Layer):
+    def __init__(self, n_superpixels=None, n_features=None, batch_size=None, input_shapes=None, **kwargs):
+        super(SuperpixelPooling, self).__init__(**kwargs)
+           
+        # self.input_spec = InputSpec(ndim=4)
+        self.n_superpixels = n_superpixels
+        self.n_features = n_features
+        self.batch_size = batch_size
+        self.input_shapes = input_shapes  # has to be a length-2 tuple, First tuple has shape of feature map and the next tuple has 
+                                          # length of superpixel map. Shapes are of the form (height, width, feature_dim)
+    def compute_output_shape(self, input_shapes):
+        return (input_shapes[0][0],
+                    self.n_superpixels,
+                    self.n_features)
+    def call(self, inputs):
+        # x = feature map
+        # y = superpixel map, index from [0, n-1]
+        x = inputs[0]  # batch_size x m x n x k
+        y = inputs[1]  # batch_size x m x n
+        ht = self.input_shapes[0][0]
+        wd = self.input_shapes[0][1]
+        z = K.zeros(shape=(self.batch_size, self.n_superpixels, self.n_features), dtype=float)
+        count = K.zeros(shape=(self.batch_size, self.n_superpixels, self.n_features), dtype=int)
+        for b in range(self.batch_size):
+            for i in range(ht):
+                for j in range(wd):
+                    z = T.inc_subtensor(z[b, y[b, i, j], :], x[b, i, j, :])
+                    count = T.inc_subtensor(count[b, y[b, i, j], :], 1)
+        z /= count   
+        return z
+    def get_config(self):
+        config = {'n_superpixels': self.n_superpixels, 'n_features': self.n_features}
+        base_config = super(SuperpixelPooling, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+I think the recursion depth exceeded problem is due to the nested for loops I have used. I do not see a way of avoiding those loops. If anyone has any suggestions, let me know.

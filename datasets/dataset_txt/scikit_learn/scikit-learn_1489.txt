@@ -1,0 +1,10 @@
+alvinthai commented on Mar 17, 2018 •
+edited
+Description
+This is related to issue #10802, multi-metric scoring is especially slow in the case of pipeline estimators. As @jimmywan points out, each scorer from the scoring dict is called because predictions are repeated.
+The predict call in a pipeline calls the transformation every time a prediction is made. Since multi-metric scoring calls the predict function of the pipeline, the number of transform calls before the refit equal:
+cv * 1 + cv * (1 + return_train_score) * len(scoring)
+This total number THEN gets multiplied by the size of the parameter grid in a search.
+It should be unnecessary to repeat the transform calls len(scoring) times, it can be expensive to repeat the exact same transformation on X_test and X_train each time predict or predict_proba is called.
+For the case where return_train_score is not False, the original fit step already covers the initial X_train transformation, so there is a multiple of cv * len(scoring) extra calls to transform X_train added under the current implementation.
+My suggestion would be to perform a fit_transform step under L475 for _fit_and_score, and pass the transformed X_test and X_train datasets, along with the pipeline final estimator, to the scorers in L519 and L522 when pipeline estimators are encountered.

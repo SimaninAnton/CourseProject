@@ -1,0 +1,136 @@
+twotimesfiftyfive commented on Jan 22, 2014
+Code demonstrating:
+from sklearn import preprocessing, cross_validation
+from scipy.ndimage import convolve
+from sklearn.neural_network import BernoulliRBM
+from sklearn.pipeline import Pipeline
+from sklearn import linear_model, datasets, metrics
+import numpy as np
+
+# create fake dataset
+data, labels = datasets.make_classification(n_samples=250000)
+data = preprocessing.scale(data)
+X_train, X_test, y_train, y_test = cross_validation.train_test_split(data, labels, test_size=0.7, random_state=0)
+
+# print details
+print X_train.shape, X_test.shape, y_train.shape, y_test.shape
+print np.max(X_train) 
+print np.min(X_train)
+print np.mean(X_train, axis=0)
+print np.std(X_train, axis=0)
+
+if np.sum(np.isnan(X_train)) or np.sum(np.isnan(X_test)):
+    print "NaN found!"
+
+if np.sum(np.isnan(y_train)) or np.sum(np.isnan(y_test)):
+    print "NaN found!"
+
+if np.sum(np.isinf(X_train)) or np.sum(np.isinf(X_test)):
+    print "Inf found!"
+
+if np.sum(np.isinf(y_train)) or np.sum(np.isinf(y_test)):
+    print "Inf found!"  
+
+# train and test
+logistic = linear_model.LogisticRegression()
+rbm = BernoulliRBM(random_state=0, verbose=True)
+classifier = Pipeline(steps=[('rbm', rbm), ('logistic', logistic)])
+
+# Training RBM-Logistic Pipeline
+classifier.fit(X_train, y_train)
+
+# Training Logistic regression
+logistic_classifier = linear_model.LogisticRegression(C=100.0)
+logistic_classifier.fit(X_train, y_train)
+
+print("Logistic regression using RBM features:\n%s\n" % (
+    metrics.classification_report(
+        y_test,
+        classifier.predict(X_test))))
+Stack trace:
+(73517, 3) (171540, 3) (73517,) (171540,)
+2.0871168057
+-2.21062647188
+[-0.00237028 -0.00104526  0.00330683]
+[ 0.99907225  0.99977328  1.00225843]
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+/usr/lib/python2.7/dist-packages/IPython/utils/py3compat.pyc in execfile(fname, *where)
+    173             else:
+    174                 filename = fname
+--> 175             __builtin__.execfile(filename, *where)
+
+/home/test.py in <module>()
+     75 
+     76 # Training RBM-Logistic Pipeline
+
+---> 77 classifier.fit(X_train, y_train)
+     78 
+     79 # Training Logistic regression
+
+
+/usr/local/lib/python2.7/dist-packages/sklearn/pipeline.pyc in fit(self, X, y, **fit_params)
+    128         data, then fit the transformed data using the final estimator.
+    129         """
+--> 130         Xt, fit_params = self._pre_transform(X, y, **fit_params)
+    131         self.steps[-1][-1].fit(Xt, y, **fit_params)
+    132         return self
+
+/usr/local/lib/python2.7/dist-packages/sklearn/pipeline.pyc in _pre_transform(self, X, y, **fit_params)
+    118         for name, transform in self.steps[:-1]:
+    119             if hasattr(transform, "fit_transform"):
+--> 120                 Xt = transform.fit_transform(Xt, y, **fit_params_steps[name])
+    121             else:
+    122                 Xt = transform.fit(Xt, y, **fit_params_steps[name]) \
+
+/usr/local/lib/python2.7/dist-packages/sklearn/base.pyc in fit_transform(self, X, y, **fit_params)
+    409         else:
+    410             # fit method of arity 2 (supervised transformation)
+
+--> 411             return self.fit(X, y, **fit_params).transform(X)
+    412 
+    413 
+
+/usr/local/lib/python2.7/dist-packages/sklearn/neural_network/rbm.pyc in fit(self, X, y)
+    304 
+    305             for batch_slice in batch_slices:
+--> 306                 pl_batch = self._fit(X[batch_slice], rng)
+    307 
+    308                 if verbose:
+
+/usr/local/lib/python2.7/dist-packages/sklearn/neural_network/rbm.pyc in _fit(self, v_pos, rng)
+    245 
+    246         if self.verbose:
+--> 247             return self.score_samples(v_pos)
+    248 
+    249     def score_samples(self, v):
+
+/usr/local/lib/python2.7/dist-packages/sklearn/neural_network/rbm.pyc in score_samples(self, v)
+    268         fe_ = self._free_energy(v_)
+    269 
+--> 270         return v.shape[1] * logistic_sigmoid(fe_ - fe, log=True)
+    271 
+    272     def fit(self, X, y=None):
+
+/usr/local/lib/python2.7/dist-packages/sklearn/utils/extmath.pyc in logistic_sigmoid(X, log, out)
+    498     """
+    499     is_1d = X.ndim == 1
+--> 500     X = array2d(X, dtype=np.float)
+    501 
+    502     n_samples, n_features = X.shape
+
+/usr/local/lib/python2.7/dist-packages/sklearn/utils/validation.pyc in array2d(X, dtype, order, copy, force_all_finite)
+     91     X_2d = np.asarray(np.atleast_2d(X), dtype=dtype, order=order)
+     92     if force_all_finite:
+---> 93         _assert_all_finite(X_2d)
+     94     if X is X_2d and copy:
+     95         X_2d = safe_copy(X_2d)
+
+/usr/local/lib/python2.7/dist-packages/sklearn/utils/validation.pyc in _assert_all_finite(X)
+     25     if (X.dtype.char in np.typecodes['AllFloat'] and not np.isfinite(X.sum())
+     26             and not np.isfinite(X).all()):
+---> 27         raise ValueError("Array contains NaN or infinity.")
+     28 
+     29 
+
+ValueError: Array contains NaN or infinity.

@@ -1,0 +1,83 @@
+dbazile commented on Mar 4, 2017
+I'm getting SSL validation errors for certificates signed by well-known root CAs when using the REQUESTS_CA_BUNDLE environment variable in Python 3.6 from a project that was working in Python 3.5.
+My use case is, let's say I have an app that uses requests to talk to both https://localhost:8080 and https://google.com. I use a self-signed certificate for comms with localhost and rely on the system's SSL trust store for the comms with google.
+Is anyone else seeing this issue?
+Environment
+Version
+OS macOS Sierra 10.12.3
+OpenSSL 0.9.8zh (the default one that comes with macOS Sierra)
+Requests 2.12.1, 2.13.0
+Python 3.6.0
+Steps to Reproduce
+____ [~/code/_experiments/requests_ca_bundle_problem] ____ $ cat openssl.cnf
+[req]
+default_bits = 2048
+default_md = sha256
+default_days = 30
+prompt = no
+distinguished_name = req_distinguished_name
+
+[req_distinguished_name]
+countryName = "US"
+stateOrProvinceName = "XX"
+localityName = "X"
+organizationName= "X"
+organizationalUnitName = "X"
+commonName = "localhost"
+
+[add_san]
+subjectAltName = DNS:localhost
+
+____ [~/code/_experiments/requests_ca_bundle_problem] ____ $ openssl req -x509 -new -nodes -config openssl.cnf -extensions add_san -keyout key.pem -out cert.pem
+Generating a 2048 bit RSA private key
+.........+++
+.................................................+++
+writing new private key to 'key.pem'
+-----
+
+____ [~/code/_experiments/requests_ca_bundle_problem] ____ $ REQUESTS_CA_BUNDLE=cert.pem python3 -c 'import requests; requests.get("https://google.com")'
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 600, in urlopen
+    chunked=chunked)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 345, in _make_request
+    self._validate_conn(conn)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 844, in _validate_conn
+    conn.connect()
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/packages/urllib3/connection.py", line 326, in connect
+    ssl_context=context)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/packages/urllib3/util/ssl_.py", line 324, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 401, in wrap_socket
+    _context=self, _session=session)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 808, in __init__
+    self.do_handshake()
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 1061, in do_handshake
+    self._sslobj.do_handshake()
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/ssl.py", line 683, in do_handshake
+    self._sslobj.do_handshake()
+ssl.SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/adapters.py", line 423, in send
+    timeout=timeout
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/packages/urllib3/connectionpool.py", line 630, in urlopen
+    raise SSLError(e)
+requests.packages.urllib3.exceptions.SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/api.py", line 70, in get
+    return request('get', url, params=params, **kwargs)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/api.py", line 56, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/sessions.py", line 488, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/sessions.py", line 609, in send
+    r = adapter.send(request, **kwargs)
+  File "/Library/Frameworks/Python.framework/Versions/3.6/lib/python3.6/site-packages/requests/adapters.py", line 497, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)

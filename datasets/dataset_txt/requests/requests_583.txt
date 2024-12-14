@@ -1,0 +1,55 @@
+tonywangcn commented on Jun 26, 2017 •
+edited
+Summary.
+I have a proxy service that has been used for months. Everything works well until Twitter. The code here is a proxy test script between google and twitter. Of course Https.
+For "https://www.google.com" and "https://mobile.twitter.com", the script both run 180 times. Most of google succeeded, however, all of twitter failed.
+google:success times is 171, failed is 9, and total is 180
+twitter:success times is 0, failed is 180, and total is 180
+Half is "ConnectTimeoutError", and left is "ProxyError"
+Stackoverflow version
+Expected Result
+The success rate should keep the same
+Actual Result
+HTTPSConnectionPool(host='mobile.twitter.com', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x107446150>, 'Connection to proxyip timed out. (connect timeout=10)'))
+HTTPSConnectionPool(host='mobile.twitter.com', port=443): Max retries exceeded with url: / (Caused by ProxyError('Cannot connect to proxy.', error(54, 'Connection reset by peer')))
+Without "Upgrade-Insecure-Requests", the errors keep the same.
+So I'm curious about is there any method to debug these errors?
+Reproduction Steps
+from gevent import monkey, spawn, joinall, sleep
+monkey.patch_all()  # Magic!
+
+import requests
+import sys
+
+s = requests.Session()
+proxys = "https://username:password@ip:port"
+class test_proxy:
+    success = 0
+    failed = 0
+    total = 0
+
+    def tweet(self):
+        #url = "https://www.google.com"
+        url = "https://mobile.twitter.com"
+        header = {
+            "Referer": url,
+            "Upgrade-Insecure-Requests": 1,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.86 Safari/537.36",
+        }
+        try:
+            a = s.get(url, proxies={"https": proxys}, timeout=10)
+            self.success += 1
+        except Exception as e:
+            print(e)
+            self.failed += 1
+        self.total += 1
+        print("sucess times is {}, failed is {}, and total is {}".format(
+            self.success, self.failed, self.total))
+
+
+test = test_proxy()
+
+while True:
+    joinall([spawn(test.tweet) for _ in range(50)])
+System Information
+python2.7

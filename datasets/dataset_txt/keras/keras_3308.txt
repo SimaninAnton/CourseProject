@@ -1,0 +1,104 @@
+isaacgerg commented on 4 Feb 2017 •
+edited
+keras version 1.2.1, tensorflow 0.12.1, windows 7
+I am trying to verify that a large data flow I have created is working correctly. As part of this task, I have noticed that when I pass to fit() the same data for training and validation I do not get the same loss and accuracy. I have no dropout layers in the model so train and evaluate behavior should be the same. I have reproduced the problem by modifying the mnist_cnn.py example. You can simply cut and paste it to demonstrate the problem.
+I will include @fchollet and @farizrahman4u names on here because you both have said that many of the real errors do not get bubbled up to your level. If there is something I am doing wrong, please kindly explain and I will produce a writeup for others who have this same question.
+Thank you.
+#Trains a simple convnet on the MNIST dataset.
+
+#Gets to 99.25% test accuracy after 12 epochs
+#(there is still a lot of margin for parameter tuning).
+#16 seconds per epoch on a GRID K520 GPU.
+
+
+import numpy as np
+np.random.seed(1337)  # for reproducibility
+
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers import Dense, Activation, Flatten
+from keras.layers import Convolution2D, MaxPooling2D
+from keras.utils import np_utils
+from keras import backend as K
+
+batch_size = 128
+nb_classes = 10
+nb_epoch = 12
+
+# input image dimensions
+img_rows, img_cols = 28, 28
+# number of convolutional filters to use
+nb_filters = 32
+# size of pooling area for max pooling
+pool_size = (2, 2)
+# convolution kernel size
+kernel_size = (3, 3)
+
+# the data, shuffled and split between train and test sets
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+
+if K.image_dim_ordering() == 'th':
+    X_train = X_train.reshape(X_train.shape[0], 1, img_rows, img_cols)    
+    input_shape = (1, img_rows, img_cols)
+else:
+    X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols, 1)    
+    input_shape = (img_rows, img_cols, 1)
+
+X_train = X_train.astype('float32')
+X_train /= 255
+print('X_train shape:', X_train.shape)
+print(X_train.shape[0], 'train samples')
+
+# convert class vectors to binary class matrices
+Y_train = np_utils.to_categorical(y_train, nb_classes)
+
+model = Sequential()
+
+model.add(Convolution2D(nb_filters, kernel_size[0], kernel_size[1],
+                        border_mode='valid',
+                        input_shape=input_shape))
+model.add(Activation('relu'))
+model.add(Convolution2D(nb_filters, kernel_size[0], kernel_size[1]))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=pool_size))
+
+model.add(Flatten())
+model.add(Dense(128))
+model.add(Activation('relu'))
+model.add(Dense(nb_classes))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adadelta',
+              metrics=['accuracy'])
+
+model.fit(X_train, Y_train, batch_size=batch_size, nb_epoch=nb_epoch,
+          verbose=2, validation_data=(X_train, Y_train))
+score = model.evaluate(X_train, Y_train, verbose=2)
+print('Test score:', score[0])
+print('Test accuracy:', score[1])
+The output:
+Using TensorFlow backend.
+X_train shape: (60000, 28, 28, 1)
+60000 train samples
+Train on 60000 samples, validate on 60000 samples
+Epoch 1/3
+85s - loss: 0.2610 - acc: 0.9223 - val_loss: 0.0870 - val_acc: 0.9744
+Epoch 2/3
+83s - loss: 0.0650 - acc: 0.9807 - val_loss: 0.0443 - val_acc: 0.9868
+Epoch 3/3
+84s - loss: 0.0434 - acc: 0.9871 - val_loss: 0.0370 - val_acc: 0.9896
+Test score: 0.0369881959642
+Test accuracy: 0.98955
+EDIT 1, ran with theano v 0.8.2. The issue persists. Here is the output:
+Using Theano backend.
+Using gpu device 0: GeForce GTX TITAN Black (CNMeM is disabled, cuDNN not available)
+Train on 60000 samples, validate on 60000 samples
+Epoch 1/3
+35s - loss: 0.2552 - acc: 0.9231 - val_loss: 0.0742 - val_acc: 0.9780
+Epoch 2/3
+34s - loss: 0.0649 - acc: 0.9810 - val_loss: 0.0453 - val_acc: 0.9866
+Epoch 3/3
+35s - loss: 0.0441 - acc: 0.9868 - val_loss: 0.0307 - val_acc: 0.9913
+Test score: 0.0306677584447
+Test accuracy: 0.991266666667

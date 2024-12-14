@@ -1,0 +1,58 @@
+preuter commented on 14 Jun 2016 •
+edited
+I'm trying to implement double deep-Q learning where I copy the weights from an on-policy model to an off-policy model at intervals. Each time I copy the weights, I end up leaking memory. Over time, I run out of resources and the learning loop crashes - OOM. The amount of memory leaked is proportional to the number of weights used in the model. So if io_shape were much larger, more memory would leak per round.
+Using backend: TensorFlow=='0.8.0' with GPU.
+pip Keras=='1.0.4'
+from keras.models import Sequential
+from keras.layers.core import Dense
+from keras.optimizers import rmsprop
+
+import resource, gc
+
+class Model(object):
+  """Model encapsulation for Keras Sequential object."""
+  def __init__(self, io_shape=None):
+    if io_shape is None:
+      raise TypeError("io_shape must be a tuple (in_size, out_size)")
+    self.model = Sequential()
+    self.model.add(Dense(512, input_shape=(io_shape[0],), activation='relu'))
+    self.model.add(Dense(512, activation='relu'))
+    self.model.add(Dense(io_shape[1], activation='linear'))
+    self.optimizer = rmsprop(lr=0.001)
+    self.model.compile(optimizer=self.optimizer, loss='mse')
+  #
+  def get_lr(self):
+    return K.get_value(self.optimizer.lr)
+  #
+  def set_lr(self, lr):
+    K.set_value(self.optimizer.lr, lr)
+
+
+A = Model(io_shape=(32,16))
+B = Model(io_shape=(32,16))
+for i in range(5):
+  print('begin step Memory usage: %s (kb)' % resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+  B.model.set_weights(A.model.get_weights())
+  gc.collect()
+$ python memory.py
+Using TensorFlow backend.
+I tensorflow/stream_executor/dso_loader.cc:108] successfully opened CUDA library libcublas.so.7.5 locally
+I tensorflow/stream_executor/dso_loader.cc:108] successfully opened CUDA library libcudnn.so.4.0.7 locally
+I tensorflow/stream_executor/dso_loader.cc:108] successfully opened CUDA library libcufft.so.7.5 locally
+I tensorflow/stream_executor/dso_loader.cc:108] successfully opened CUDA library libcuda.so locally
+I tensorflow/stream_executor/dso_loader.cc:108] successfully opened CUDA library libcurand.so.7.5 locally
+I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:924] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+I tensorflow/core/common_runtime/gpu/gpu_init.cc:102] Found device 0 with properties:
+name: GeForce GTX TITAN X
+major: 5 minor: 2 memoryClockRate (GHz) 1.076
+pciBusID 0000:01:00.0
+Total memory: 12.00GiB
+Free memory: 11.84GiB
+I tensorflow/core/common_runtime/gpu/gpu_init.cc:126] DMA: 0
+I tensorflow/core/common_runtime/gpu/gpu_init.cc:136] 0: Y
+I tensorflow/core/common_runtime/gpu/gpu_device.cc:806] Creating TensorFlow device (/gpu:0) -> (device: 0, name: GeForce GTX TITAN X, pci bus id: 0000:01:00.0)
+begin step Memory usage: 503232 (kb)
+begin step Memory usage: 510896 (kb)
+begin step Memory usage: 511948 (kb)
+begin step Memory usage: 515116 (kb)
+begin step Memory usage: 517492 (kb)

@@ -1,0 +1,53 @@
+lobpcg commented on Mar 5, 2019 •
+edited
+Description
+AMG spectral clustering fails just after a few iterations of LOBPCG; see also #10715 and #11965.
+I have suggested the fix is in #6489 (comment) which is tested by @dfilan in #6489 (comment)
+Steps/Code to Reproduce
+import sklearn.cluster
+import scipy.sparse as sparse
+import random
+
+random.seed(1337)
+
+rand_int = random.randrange(1000)
+num_nodes = 1000
+X = sparse.rand(num_nodes, num_nodes, density = 0.1, random_state = rand_int)
+upper = sparse.triu(X) - sparse.diags(X.diagonal())
+sym_matrix = upper + upper.T
+clustering = sklearn.cluster.SpectralClustering(n_clusters = 3,
+eigen_solver = 'amg',
+random_state = rand_int,
+affinity = 'precomputed')
+labels = clustering.fit(sym_matrix)
+Expected Results
+No error is thrown. The code works fine.
+Actual Results
+Error like:
+numpy.linalg.LinAlgError: 3-th leading minor of the array is not positive definite
+The problem
+sklearn\manifold\spectral_embedding_.py sets up the AMG preconditioning for LOBPCG in line
+ml = smoothed_aggregation_solver(check_array(laplacian, 'csr'))
+sklearn AMG implementation follows, without any reference, AMG preconditioning for graph Laplacian first proposed and tested in
+Andrew Knyazev, Multiscale Spectral Graph Partitioning and Image Segmentation. Workshop on Algorithms for Modern Massive Data Sets; Stanford University and Yahoo! Research June 21–24, 2006
+http://math.ucdenver.edu/~aknyazev/research/conf/image_segment_talk_UCDavis06/image_segment_talk_Stanford06.pdf (slide 13)
+But the Laplacian matrix is always singular, having at least one zero eigenvalue, corresponding to the trivial eigenvector, which is a constant. Using a singular matrix for preconditioning may be expected to result in often random failures in LOBPCG and is not supported by the existing theory; see
+https://doi.org/10.1007/s10208-015-9297-1
+The fix
+Although undocumented in the original reference given above, we used a simple fix in
+https://bitbucket.org/joseroman/blopex/wiki/HypreforImageSegmentation.md
+which is just to shift the Laplacian's diagonal by a positive scalar, alpha, before solving for its eigenvalues. The scalar used was alpha=1e-5, and the matrix was shifted with the MATLAB command:
+Mat=Mat+alpha*speye(n);
+A similar approach, with alpha=1, is used, in line 323 of https://github.com/mmp2/megaman/blob/master/megaman/utils/eigendecomp.py
+In #6489 (comment) @dfilan successfully tested the following in double-precision: Changing line 293 to sklearn\manifold\spectral_embedding_.py from
+ml = smoothed_aggregation_solver(check_array(laplacian, 'csr'))
+to
+        laplacian4AMG = laplacian + 1e-10 * sparse.eye(laplacian.shape[0])
+        ml = smoothed_aggregation_solver(check_array(laplacian4AMG, 'csr'))
+but this creates a second matrix, to be used just for AMG preconditioning. It may be possible to just shift the whole Laplacian:
+        laplacian = laplacian + 1e-10 * sparse.eye(laplacian.shape[0])
+        ml = smoothed_aggregation_solver(check_array(laplacian, 'csr'))
+The choice of alpha=1e-10 here should be OK in double-precision, but I would advocate alpha=1e-5 to be also safe in single-precision. Choosing an increasingly positive alpha may be expected to slow down the LOBPCG convergence, e.g., alpha=1 is probably excessively large, while the change from alpha=1e-10 to alpha=1e-5 would probably be unnoticeable.
+If the Laplacian is not normalized, i.e. its diagonal is not all ones, its shift changes the eigenpairs, so the results of the spectral embedding and clustering also change depending on the value of the shift, if the whole Laplacian is shifted. If the shift is small, the changes may be unnoticeable. The safe choice is using the separate Laplacian laplacian4AMG shifted only inside the smoothed_aggregation_solver, then the shift value may only affect the convergence speed, but not the results of the spectral embedding and clustering.
+Versions
+All, including scikit-learn 0.21.dev0

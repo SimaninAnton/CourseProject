@@ -1,0 +1,261 @@
+amberdiehl commented on 7 Mar 2018
+Hi,
+I have done my best to debug this myself, spent hours searching google, searched issues here, and post to google groups.
+I am trying to serialize an object using a custom HyperlinkedRelatedField. The subclass is required to get the correct object to link to--the target class contains two objects for each item, a "Draft" object, and the "Published" object.
+For example, assume a model "EventSeries":
+PK Title Status Slug
+1 EventSeries A Draft eventseries-a
+14 EventSeries A Published eventseries-a
+2 EventSeries B Draft eventseries-b
+22 EventSeries B Published eventseries-b
+By default the "draft" event is returned, so this initial override is done in get_queryset method within the Viewset.
+However, for each Event Series there can be 0, n related Event objects which also have a draft and published version.
+These are related to the EventSeries model using a custom HyperlinkedRelatedField. This enables me to use the get_object method to return the published object instead of the draft.
+This works perfectly as long as there are associated Event objects. When there are none, I am getting the error Cannot resolve URL for hyperlinked relationship...
+I have tried adding allow_null=True, allow_blank=True to the custom HyperlinkedRelatedField but neither help.
+The expected behavior would be to simply serialize the relationship as "events: null" or "events: ".
+Codes snippets below. Please note that in the code below, the actual model that equates to "EventSeries" above is "Program". I hope I didn't leave too much code--all these models have foreign key relationships to each other, so I thought it might be confusing to remove that code.
+Thanks in advance for your help.
+`class MicroPagination(PageNumberPagination):
+page_size = 2
+class EventHyperlink(serializers.HyperlinkedRelatedField):
+view_name = 'content_endpoints:event-detail'
+queryset = Event.objects.all()
+
+def get_url(self, obj, view_name, request, format):
+
+    published_object = obj.get_published()  # get the published version of the object
+
+    if not published_object:  # draft object was not published
+        primary_key = FAKE_PRIMARY_KEY
+    else:
+        primary_key = published_object.pk
+
+    url_kwargs = {
+        'pk': primary_key
+    }
+
+    return reverse(view_name, kwargs=url_kwargs, request=request, format=format)
+
+def get_object(self, view_name, view_args, view_kwargs):
+    lookup_kwargs = {
+        'pk': view_kwargs['pk']
+    }
+    return self.get_queryset().get(**lookup_kwargs)
+
+def to_representation(self, *args, **kwargs):
+    this = 'that'
+class BaseSerializer(serializers.HyperlinkedModelSerializer):
+layout = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:layout-detail',
+    many=False,
+    read_only=True
+)
+polymorphic_ctype = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:contenttype-detail',
+    many=False,
+    read_only=True)
+slug = CleanedSlugField()
+category = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:category-detail',
+    many=False,
+    read_only=True)
+location = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:location-detail',
+    many=False,
+    read_only=True)
+image = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:image-detail',
+    many=False,
+    read_only=True)
+
+starts = serializers.SerializerMethodField()
+ends = serializers.SerializerMethodField()
+absolute_url = serializers.SerializerMethodField()
+
+def get_starts(self, obj):
+    return obj.get_starts()
+
+def get_ends(self, obj):
+    return obj.get_ends()
+
+def get_absolute_url(self, obj):
+    cleaned_slug = obj.slug.rstrip('$')
+    protocol = self.context['request']._request.META['SERVER_PROTOCOL'].split('/')
+    host = self.context['request']._request.META['HTTP_HOST']
+    path = app_reverse('event-detail', args=(cleaned_slug,))
+    return protocol[0] + '://' + host + path
+class ExhibitionAndProgramContentSerializer(BaseSerializer):
+hero_image = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:image-detail',
+    many=False,
+    read_only=True
+)
+hero_video = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:video-detail',
+    many=False,
+    read_only=True
+)
+
+events = EventHyperlink(
+    many=True,
+    required=False,
+    allow_null=True,
+)
+#events = serializers.HyperlinkedRelatedField(
+#    view_name='content_endpoints:event-detail',
+#    source='events.published',
+#    many=True,
+#    read_only=True,
+#    allow_null=True,
+#)
+programs = ProgramHyperlink(many=True)
+#programs = serializers.HyperlinkedRelatedField(
+#    view_name='content_endpoints:program-detail',
+#    source='programs.published',
+#    many=True,
+#    read_only=True,
+#    allow_null = True,
+#)
+
+content_header = serializers.SerializerMethodField()
+content_sponsor = serializers.SerializerMethodField()
+content_event_main = serializers.SerializerMethodField()
+
+def get_content_header(self, obj):
+    serializer = ContentSerializer(
+        instance=obj.contentitem_set.filter(placeholder__title='Header'),
+        many=True,
+        context=self.context,
+    )
+    return serializer.data
+
+def get_content_sponsor(self, obj):
+    serializer = ContentSerializer(
+        instance=obj.contentitem_set.filter(placeholder__title='Sponsors'),
+        many=True,
+        context=self.context,
+    )
+    return serializer.data
+
+def get_content_event_main(self, obj):
+    serializer = ContentSerializer(
+        instance=obj.contentitem_set.filter(placeholder__title='Event-Main'),
+        many=True,
+        context=self.context,
+    )
+    return serializer.data
+class EventSerializer(BaseSerializer):
+url = serializers.HyperlinkedIdentityField(
+    view_name='content_endpoints:event-detail',
+)
+
+exhibitions = ExhibitionHyperlink(
+    many=True,
+)
+#exhibitions = serializers.HyperlinkedRelatedField(
+#    view_name='content_endpoints:exhibition-detail',
+#    source='exhibitions.published',
+#    many=True,
+#    read_only=True,
+#    allow_null=True,
+#)
+programs = ProgramHyperlink(many=True)
+#programs = serializers.HyperlinkedRelatedField(
+#    view_name='content_endpoints:program-detail',
+#    source='programs.published',
+#    many=True,
+#    read_only=True,
+#    allow_null=True,
+#)
+slide_show = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:slideshow-detail',
+    source='slide_show.published',
+    many=False,
+    read_only=True
+)
+
+content_info = serializers.SerializerMethodField()
+content_sponsor = serializers.SerializerMethodField()
+
+class Meta:
+    model = Event
+    fields = '__all__'
+
+def get_content_info(self, obj):
+    serializer = ContentSerializer(
+        instance=obj.contentitem_set.filter(placeholder__title='Event Information'),
+        many=True,
+        context=self.context,
+    )
+    return serializer.data
+
+def get_content_sponsor(self, obj):
+    serializer = ContentSerializer(
+        instance=obj.contentitem_set.filter(placeholder__title='Sponsors'),
+        many=True,
+        context=self.context,
+    )
+    return serializer.data
+class EventViewSet(viewsets.ReadOnlyModelViewSet):
+queryset = Event.objects.all().order_by('created')
+serializer_class = EventSerializer
+pagination_class = PageNumberPagination
+def get_queryset(self):
+    return self.queryset.published()
+class ExhibitionSerializer(ExhibitionAndProgramContentSerializer):
+url = serializers.HyperlinkedIdentityField(
+    view_name='content_endpoints:exhibition-detail',
+)
+
+department = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:department-detail',
+    many=True,
+    read_only=True
+)
+press_release = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:pressrelease-detail',
+    source='press_release.published',
+    many=False,
+    read_only=True
+)
+image_press_override = serializers.HyperlinkedRelatedField(
+    view_name='content_endpoints:image-detail',
+    many=False,
+    read_only=True
+)
+
+class Meta:
+    model = Exhibition
+    fields = '__all__'
+class ExhibitionViewSet(viewsets.ReadOnlyModelViewSet):
+queryset = Exhibition.objects.all().order_by('created')
+serializer_class = ExhibitionSerializer
+pagination_class = PageNumberPagination
+def get_queryset(self):
+    return self.queryset.published()
+class ProgramSerializer(ExhibitionAndProgramContentSerializer):
+url = serializers.HyperlinkedIdentityField(
+    view_name='content_endpoints:program-detail',
+)
+
+exhibitions = ExhibitionHyperlink(many=True)
+#exhibitions = serializers.HyperlinkedRelatedField(
+#    view_name='content_endpoints:exhibition-detail',
+#    source='exhibitions.published',
+#    many=True,
+#    read_only=True,
+#    allow_null=True,
+#)
+
+class Meta:
+    model = Program
+    fields = '__all__'
+class ProgramViewSet(viewsets.ReadOnlyModelViewSet):
+queryset = Program.objects.all().order_by('created')
+serializer_class = ProgramSerializer
+pagination_class = MicroPagination
+def get_queryset(self):
+    published_qs = self.queryset.published()
+    return published_qs
+`

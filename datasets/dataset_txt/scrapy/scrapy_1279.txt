@@ -1,0 +1,29 @@
+alexgarel commented on Mar 16, 2015
+I wanted to use request priority to crawl a site based on a cookie session. I had to submit a search form and navigate through search results. Because current search was held in the cookie session, I had to first navigate first search submission, then the second.
+So I wanted to do such a thing (simplifying):
+class MySpider(BaseSpider):
+
+    self.start_urls = ['http://example.com/search']
+
+    def parse(self, response):
+        for data in DATA:
+            yield FormRequest.from_response(
+                formdata=data, callback=self.parse_result, priority=-10)
+
+    def parse_result(self, response):
+        hxs = HtmlXPathSelector(response)
+        # handle items
+        # compute next_page_url
+        if next_page_url:
+            yield Request(next_page_url, dont_filter=True, priority=10)
+I was expecting Scrapy to
+take first form request, yielded by parse
+call parse_result
+then process yielded next_page requests of higher priority, till exhausted
+then take next form request
+It do not happens like that. Indeed, the form request are all processed before the other requests.
+Indeed, I think this happens because Scrapy merges requests yielded by parse()
+into a single deferred using scrapy.utils.defer.parallel.
+This merge is controlled by CONCURRENT_ITEMS settings (defaults to 100).
+I think this particularity should be mentioned in priority documentation here, isn't it ?
+Note : I also know I can change the cookie to have separate sessions for my searches. And yes it's the way I'd go for that particular problem.

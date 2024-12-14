@@ -1,0 +1,49 @@
+dithyrambe commented on 29 Dec 2017
+Hi,
+I'm wondering if there is an elegant way to do so :
+I have a network outputing a (9 x 9 x 9) matrix (ie. 9 rows by 9 cols by 9 channel, you can see it as a 81 x 9 Dense output layer).
+The thing is, I want to output non-mutually-exclusive classes on it. For each 9 by 9 dimension, I need to output the more likely of 9 possible classes (channels). But the 81 "pixels" can share same value.
+Here is what I've figured out so far :
+Nice architecture, but wrong classification task
+model = Sequential()
+model.add(Dense(64, activation='relu', input_shape=input_shape))
+model.add(Dense(64, activation='relu'))
+model.add(Flatten())
+model.add(Dense(81*9, activation='softmax'))
+model.add(Reshape((9, 9, 9)))
+
+solver.compile(
+    optimizer=Adadelta(),
+    loss='categorical_crossentropy',  # Here, loss might be the whole problem ...
+)
+The thing is my predictions will sum to 1.0 on each output whereas I want them to sum at 81. This is because optimizer will consider 9 x 9 x 9 mutually-exclusive classes.
+example of output of what I want to avoid
+In[]: model.predict(Xtrain).sum((1, 2, 3))  # summing on all dimensions except 0
+Out[]: array([1., 1., 1., ..., 1., 1., 1.])  # shape is len(Xtrain) 
+I manage to workarround with :
+classificaiton task is fine, but net structure is painful ...
+model = Sequential()
+model.add(Dense(64, activation='relu', input_shape=input_shape))
+model.add(Dense(64, activation='relu'))
+model.add(Flatten())
+
+grid = Input(shape=input_shape)  # define Input Layer to plug on model
+features = model(grid)  # define features created by the Network
+
+# define one Dense layer to plug on model
+# Each layer is independant
+digit_placeholders = [
+    Dense(10, activation='softmax')(features)
+    for i in range(81)
+]
+
+solver = Model(grid, digit_placeholders)
+
+solver.compile(
+    optimizer=Adadelta(),
+    loss='categorical_crossentropy',  # This time, loss is fine
+)
+This way, each of my 9 x 9 "pixel" (ie 81 output) will look separately for the more likely classes between 9 (channels). This is what I want, however, I don't find it quite elegant ...
+Is there a way to achieve the same classification task without defining 81 independents Dense output layer. Is there a loss function that would help me achieving this ?
+Thanks a lot for your help.
+dithyrambe

@@ -1,0 +1,15 @@
+Contributor
+minrk commented on 31 Jan 2018
+One hiccup I've encountered working with the new asyncio support is that I have some applications where I instantiate Future objects in one thread to be used in an IOLoop that's in a background thread. It's a basic pattern of building a blocking API with tornado in the background. This works fine with concurrent.futures, which don't hold a reference to the loop, but it doesn't work anymore now that tornado uses asyncio.Future, which create a reference to the ioloop at construction time, and I believe aren't threadsafe in general. Specifically, I found that it's my calls to gen.multi_future, where I'm getting Futures created by tornado wrapping my concurrent.futures that result in hangs. I've managed to fix the problem in my application by shipping a copy of multi_future that only changes _create_future to return concurrent.futures.Future instead of asyncio.Future.
+I'm doing something akin to:
+loop = IOLoop(make_current=False)
+
+def ioloop_thread():
+    loop.make_current()
+
+def other_thread():
+    future = Future()
+    loop.add_callback(lambda : something_that_will_resolve(future))
+I can get in situations where the future never resolves, because of code like this, since future._loop isn't running.
+With tornado 5, I can create Futures attached to a specific loop with loop.asyncio_loop.create_future(), but gen.multi_future() doesn't give me the option to specify a loop.
+My real question is: what's the best way to construct Futures in one thread when the IO is happening in another, or backing up a bit, what's the best way to do a blocking API with tornado handling events in the background?

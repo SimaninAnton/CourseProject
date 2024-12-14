@@ -1,0 +1,36 @@
+shanmukha1211499 commented 24 days ago
+I have a python(2.7) flask(0.10.1) app running and configured celery(3.1.25) along with it in the following way
+tasks.py
+from celery import Celery
+broker_urls = [
+    'amqp://my_user:passwd@rabbit-host-1:5672//',
+    'amqp://my_user:passwd@rabbit-host-2:5672//',
+    'amqp://my_user:passwd@rabbit-host-3:5672//',
+]
+celery = Celery('tasks', broker=broker_urls)
+celery.conf.BROKER_FAILOVER_STRATEGY = "round-robin"
+
+@celery.task
+def add(x, y):
+    return x + y
+app.py
+from gevent.wsgi import WSGIServer
+from flask import Flask
+
+app = Flask("testapp")
+http_server = WSGIServer(('',8000), app)
+http_server.serve_forever()
+urls.py
+from flask import Blueprint
+
+api = Blueprint('api',__name__)
+
+@api.route("/")
+def index_api():
+    add(10,20)
+I run the application as python app.py,
+When I run the flask application if rabbit-host-1 is down it is picking up the next live broker
+rabbit-host-2 and working fine. But if rabbit-host-1 is down after I started my app I think it is still connected to rabbit-host-1 and things are not working even rabbit-host-2 and rabbit-host-3 are alive.
+But the celery worker was able to failover immediately when any of the brokers are down, by using given round-robin fashion.
+celery worker --app=tasks
+Have I missed something to configure properly which is causing failover not to work with flask?

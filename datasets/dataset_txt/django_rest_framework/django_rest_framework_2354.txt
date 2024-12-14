@@ -1,0 +1,67 @@
+Opa- commented on 7 Oct 2014
+Hi,
+I'm building an API that needs Hyperlinked Relations and some Object Permissions which are handled well by Django Guardian. While I was doing some tests, I saw that Rest Framework doesn't check if I have the permissions to update an object posted as related.
+Let's say I got these two models in Django :
+class Identity(models.Model):
+    name = models.CharField(_('name'), max_length=250, blank=False, null=False)
+
+class Contact(models.Model):
+    identity = models.ForeignKey(Identity, null=False, related_name='contact_methods')
+    value = models.CharField(_('value'), max_length=250, blank=False)
+and these serializers :
+class IdentitySerializer(HyperlinkedModelSerializer):
+
+    class Meta:
+        model = Identity
+        fields = ('url',
+                  'name',)
+
+class ContactSerializer(HyperlinkedModelSerializer):
+
+    class Meta:
+        modal = Contact
+        fields = ('url',
+                  'value',
+                  'identity',)
+Now let's imagine that in my App there are a lot of identities, but I can only access mine thanks to Django Guardian. Let's say that the URL of my identity is :
+http://api.example.com/identities/1
+I'm supposed to have the permission to update only this identity.
+Now if I make a POST request of a Contact object with this URL as 'identity' field, this should work:
+curl -X POST
+    -L http://api.example.com/contacts/
+    -H 'Authorization: Token 78087744a51bd55c5145ea6110422f053dd31a6e'
+    -H 'ContentType: application/json'
+    --data '{"value": "555-555-555", "identity": "http://api.example.com/identities/1"}'
+and we expect this one to fail because we don't have the permissions on the identity 46747
+curl -X POST
+    -L http://api.example.com/contacts/
+    -H 'Authorization: Token 78087744a51bd55c5145ea6110422f053dd31a6e'
+    -H 'ContentType: application/json'
+    --data '{"value": "555-555-555", "identity": "http://api.example.com/identities/46747"}'
+But the two requests succeed, and the second object gets updated without having permission on it.
+I looked up into the Rest Framework code to know where exactly the problem is, and I came up on this method in relations.py :
+    def get_object(self, queryset, view_name, view_args, view_kwargs):
+        """
+        Return the object corresponding to a matched URL.
+
+        Takes the matched URL conf arguments, and the queryset, and should
+        return an object instance, or raise an `ObjectDoesNotExist` exception.
+        """
+        lookup = view_kwargs.get(self.lookup_field, None)
+        pk = view_kwargs.get(self.pk_url_kwarg, None)
+        slug = view_kwargs.get(self.slug_url_kwarg, None)
+
+        if lookup is not None:
+            filter_kwargs = {self.lookup_field: lookup}
+        elif pk is not None:
+            filter_kwargs = {'pk': pk}
+        elif slug is not None:
+            filter_kwargs = {self.slug_field: slug}
+        else:
+            raise ObjectDoesNotExist()
+
+        return queryset.get(**filter_kwargs)
+There isn't any implementation of permissions checking here. The framework just checks if the object exists on a given URL and that's all.
+For the moment I made a little patch on my App by rewriting the create methods of my ContactViewSet and manually checking if the user has the permission by getting the object myself and performing a user.has_perm(obj, 'can_update_object') on it but I think this isn't clean at all.
+Do you have any other suggestions to fix this ?
+For the long term, is there any implementation of permission checking on related objects planned ?

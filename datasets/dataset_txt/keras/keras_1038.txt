@@ -1,0 +1,72 @@
+eromoe commented on 10 May 2018 •
+edited
+Hello,
+I have two word2vec model built by gensim .
+My code:
+def create_lstm():
+    inputs_1 = Input(shape=(CONFIG.timesteps_len,))
+    inputs_2 = Input(shape=(CONFIG.timesteps_len,))
+
+    char_em = charhp.get_keras_embedding_layer()(inputs_1)
+    pinyin_em = pinyinhp.get_keras_embedding_layer()(inputs_2)
+
+    em = concatenate([char_em, pinyin_em])
+
+    x = Bidirectional(LSTM(256, activation='sigmoid', recurrent_activation='hard_sigmoid', return_sequences=True))(em)
+
+    x = TimeDistributed(Dense(64, activation='relu'))(x)
+
+    main_out = TimeDistributed(Dense(1, activation = 'softmax'))(x)
+
+    model = Model(inputs=[inputs_1, inputs_2], outputs=main_out)
+
+    model.compile(optimizer='adam', 
+               loss='binary_crossentropy',
+               metrics=['accuracy'])
+
+    return model
+
+
+def input_generator(batch_size):
+    cnt = 0
+    inputs_1 = []
+    inputs_2 = []
+
+    with codecs.open(CONFIG.input_path, 'r', 'utf-8') as f:
+        while True:
+            chars = f.readline().split()
+            pinyins = f.readline().split()
+
+            for c, p  in zip(chars, pinyins) :
+                cnt +=1
+                
+                inputs_1.append(c)
+                inputs_2.append(p)
+
+                if not cnt % batch_size:
+                    yield [inputs_1, inputs_2], np.ones(batch_size)
+                    inputs_1 = []
+                    inputs_2 = []
+
+model.fit_generator(input_generator(6), 
+                            steps_per_epoch=CONFIG.steps_per_epoch,
+                            epochs=CONFIG.epochs,
+                            verbose=1, 
+                            validation_data=input_generator(32),
+                            validation_steps=CONFIG.validation_steps,
+                            initial_epoch=0)
+Get error
+Traceback (most recent call last):
+  File "lstm_work.py", line 304, in <module>
+    main()
+  File "lstm_work.py", line 286, in main
+    initial_epoch=0)
+  File "/usr/local/lib/python3.5/dist-packages/keras/legacy/interfaces.py", line 87, in w
+rapper
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/keras/engine/training.py", line 2136, in f
+it_generator
+    batch_size = x[0].shape[0]
+Then I understand input_generator have to return inputs_1, np.ones(batch_size).
+But here I need both inputs_1 and inputs_2 . input_2 is another format with same size as input_1, I need merge them together after through the two embedding layer.
+But I have no idea what is the proper way to do this .

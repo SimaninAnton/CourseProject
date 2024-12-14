@@ -1,0 +1,62 @@
+rth commented on 9 Feb 2017 •
+edited
+Currently it does not seem possible to run unit-tests on endpoints that accept a nested dictionary as input when using flask with webargs / marshmallow,
+Here is a minimal example,
+from flask import Flask
+from webargs import fields
+from webargs.flaskparser import use_args
+
+app = Flask(__name__)
+
+hello_args = { 
+    'a': fields.Nested({'name' : fields.Str()})
+}
+
+@app.route('/', methods=['POST'])
+@use_args(hello_args)
+def index(args):
+    return 'Hello ' + str(args)
+
+
+def test_app():
+    app.config['TESTING'] = True
+    test_app = app.test_client(use_cookies=False)
+    test_app.post(data={"a": {"name": "Alice"}})
+
+
+if __name__ == '__main__':
+    app.run()
+which runs as expected,
+% curl -H "Content-Type: application/json" -X POST \
+       -d '{"a":{"name": "Alice"}}' http://localhost:5000  
+
+Hello {'a': {'name': 'Alice'}}%
+however if I try running tests on it, the argument parsing fails in werkzeug.test.EnvironBuilder with the following error,
+nosetests test.py                                                      
+E
+======================================================================
+ERROR: test.test_app
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib64/python3.4/site-packages/nose/case.py", line 198, in runTest
+    self.test(*self.arg)
+  File "/tmp/test.py", line 26, in test_app
+    test_app.post(data={"a": {"name": "Alice"}})
+  File "/home/rth/.local/lib64/python3.4/site-packages/werkzeug/test.py", line 788, in post
+    return self.open(*args, **kw)
+  File "/home/rth/.local/lib64/python3.4/site-packages/flask/testing.py", line 103, in open
+    builder = make_test_environ_builder(self.application, *args, **kwargs)
+  File "/home/rth/.local/lib64/python3.4/site-packages/flask/testing.py", line 34, in make_test_environ_builder
+    return EnvironBuilder(path, base_url, *args, **kwargs)
+  File "/home/rth/.local/lib64/python3.4/site-packages/werkzeug/test.py", line 338, in __init__
+    self._add_file_from_data(key, value)
+  File "/home/rth/.local/lib64/python3.4/site-packages/werkzeug/test.py", line 355, in _add_file_from_data
+    self.files.add_file(key, **value)
+TypeError: add_file() got multiple values for argument 'name'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.011s
+
+FAILED (errors=1)
+this uses Python 3.5, flask 0.12 and webargs 1.5.2.
+Any suggestions on how to address this issue (or possible workarounds) would be much appreciated.

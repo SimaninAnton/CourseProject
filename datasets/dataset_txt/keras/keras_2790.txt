@@ -1,0 +1,33 @@
+caoyuan commented on 30 Mar 2017 •
+edited
+I was trying to implement the seq2seq model with attention by rolling out the decoder one step at a time, but the resulting graph is unreasonably huge which makes the training and inference extremely slow and inefficient. Looking at the Tensorflow graph, it seems all model weights (GRU, attention etc.) are transferred from the nodes at time step 0 to all nodes at time steps > 0, creating a highly complex graph structure. But shouldn't these model weights be fetched by all times steps from a common place, instead of being transferred again and again from step 0?
+Below is my implementation, and part of the decoder graph (first a few steps of a 20 step roll-out) can be found here https://drive.google.com/open?id=0Bycn-mCLj2bvNmZ3ZEFRdVV1YUE. The way I implemented the decoder may not be very efficient, however creating such a huge graph is kind of surprising and I would like to understand if this is something expected with the Keras implementation:
+def OneDecStep(embed_layer, rnn_stack, dense_layer, concat_layer,
+                             rnn_num_layers, xt, extra_in_t):`
+        """Unroll decoder for one step."""
+        layer_in = embed_layer(xt)
+        for l in range(rnn_num_layers):
+            # Feed extra input to every layer.
+            layer_in = concat_layer([layer_in, extra_in_t])
+            layer_in = rnn_stack[l](layer_in)
+            # Use the bottom layer state as the query state
+            if l == 0:
+                query_state = layer_in
+        pred = dense_layer(layer_in)
+        return pred, query_state`
+
+# Stateful RNN stack of rnn_num_layers layers
+rnn_stack = []
+for l in range(rnn_num_layers):
+       if l < self.rnn_num_layers - 1:
+            rnn_unit = GRU(model_dim, stateful=True, return_sequences=True)
+       else:
+            rnn_unit = GRU(model_dim, stateful=True, return_sequences=False)
+            rnn_stack.append(rnn_unit)
+
+# Decoder rollout for dec_max_len steps
+for t in range(dec_max_len):
+      ctx_vec = attn([query_state, src_enc])
+      label = get_label(label_seq)
+      predict, query_state = OneDecStep(dec_embed, rnn_stack, dec_softmax,
+                       dec_concat,  self.rnn_num_layers, label, ctx_vec)

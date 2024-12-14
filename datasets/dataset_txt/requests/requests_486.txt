@@ -1,0 +1,81 @@
+mysteryegg commented on Oct 4, 2017 •
+edited
+Summary
+Explicitly calling out method-level auth parameter that matches associated session-level auth seems to yield functionally different behavior.
+Expected Results
+I am parsing a CSV file containing references to local filenames that I am uploading via Requests to a RESTful API I'm helping test. The intended behavior is for the script to upload the files referenced in the CSV after establishing Digest authentication. The server should respond 401, then requests should respond accordingly, followed by a 200 response from the server.
+Actual Results
+I recently encountered an error response from the server and found I got a different response simply by updating my python code to use Session() objects. Upon further testing, I have developed two code blocks that appear to be functionally equivalent but receive very different responses from the server. I am having a hard time determining why these two code blocks behave differently.
+The first code block shown below properly negotiates Digest authentication, receiving a 401 response from the server, sending the second part of the request, then receiving a 200 response.
+The second code block is as close to the first as I can make it while still reproducing the problem. Notice the code snippet contains a method-level auth argument which is an exact duplicate of the session-level authentication. However, for whatever reason, the API I'm testing responds 502 to this latter code block in response to the initial request, i.e. the point at which I would expect a 401 response. I will address the server-side error, but I'm confused regarding how the two blocks of code are functionally different.
+import sys, time, requests, csv
+from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+custom_header = {'X-Requested-Auth': 'Digest'}
+host = raw_input("Enter host address, including scheme: ")
+user = raw_input("Enter username: ")
+password = raw_input("Enter password: ")
+#v1 is a string representation of some xml
+with open('myFiles.csv', 'rb') as csvfile:
+    csvin = csv.DictReader(csvfile, delimiter=',', quotechar='"')
+    with requests.Session() as s:
+        #Define session-level auth method and custom header
+        s.auth = HTTPDigestAuth(user, password)
+        s.headers.update(custom_header)
+        for row in csvin:
+                data = {'param1': v1, 'param2': 'some value'}
+                with open(row['Presentation File'], 'rb') as f:
+                    print "Track found. Uploading..."
+                    r = s.post(host+'/api/uploadTrack', data=data, files={'file': (row['Presentation File'],f)}, verify=False, timeout=(6.05, 70))
+import sys, time, requests, csv
+from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+custom_header = {'X-Requested-Auth': 'Digest'}
+host = raw_input("Enter host address, including scheme: ")
+user = raw_input("Enter username: ")
+password = raw_input("Enter password: ")
+#v1 is a string representation of some xml
+with open('myFiles.csv', 'rb') as csvfile:
+    csvin = csv.DictReader(csvfile, delimiter=',', quotechar='"')
+    with requests.Session() as s:
+        #Define session-level auth method and custom header
+        s.auth = HTTPDigestAuth(user, password)
+        s.headers.update(custom_header)
+        for row in csvin:
+                data = {'param1': v1, 'param2': 'some value'}
+                with open(row['Presentation File'], 'rb') as f:
+                    print "Track found. Uploading..."
+                    r = s.post(host+'/api/uploadTrack', auth=HTTPDigestAuth(user, password), data=data, files={'file': (row['Presentation File'],f)}, verify=False, timeout=(6.05, 70))
+System Information
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": ""
+  },
+  "idna": {
+    "version": "2.6"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "2.7.5"
+  },
+  "platform": {
+    "release": "3.10.0-693.2.2.el7.x86_64",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "",
+    "version": null
+  },
+  "requests": {
+    "version": "2.18.4"
+  },
+  "system_ssl": {
+    "version": "1000105f"
+  },
+  "urllib3": {
+    "version": "1.22"
+  },
+  "using_pyopenssl": false
+}
+Note that I can reproduce in a Windows environment using request 2.11.1, so this is not a recent regression.

@@ -1,0 +1,61 @@
+jsphon commented on 11 Feb 2016
+Hello,
+I am trying to recreate the calculations of a Siamese Network. The purpose of this exercise is to ensure that I understand what is happening in the background.
+In the code below, I fit the Siamese Network with random data. Then I use the model to predict the outputs (y_hat1). Then I attempt to reproduce the predictions myself (y_hat2). However, the results are very different.
+Please could you help me understand where I am going wrong.
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, Siamese, Layer
+from keras.optimizers import SGD
+
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+from pylab import rcParams
+rcParams['figure.figsize'] = 10, 8
+
+import numpy as np
+import keras
+N       = 100
+X_train = np.random.randn( 100, 5 )
+y_train = 0.1 * X_train[:,[0]] - 0.2 * X_train[:,[1]] + 0.01 * np.random.randn( 100, 1 )
+
+in_dim  = 5
+input1 = Sequential()
+input2 = Sequential()
+input1.add(Layer(input_shape=(in_dim,)))
+input2.add(Layer(input_shape=(in_dim,)))
+shared_layer      = Dense(1, activation='linear')
+siamese_layer = Siamese(shared_layer, [input1, input2], merge_mode='concat', concat_axis=1)
+
+output_layer = Dense( 1, activation='linear' )
+model = Sequential()
+model.add( siamese_layer )
+model.add( output_layer )
+model.compile(loss='mean_squared_error', optimizer='sgd')
+model.fit( [ X_train, X_train ], y_train, nb_epoch=10 )
+
+# Use the model
+y_hat1 = model.predict( [X_train, X_train])
+
+# Recreate the results manually
+slW      = shared_layer.W.get_value()
+slb      = shared_layer.b.get_value()
+ww       = np.repeat( slW, 2, axis=0 )
+bb       = np.repeat( slb, 2, axis=0 )
+
+olW      = output_layer.W.get_value()
+olb      = output_layer.b.get_value()
+
+XX_train = np.c_[ X_train, X_train ]
+l1       = np.dot( XX_train, ww ) + bb
+y_hat2   = np.dot( l1, olW ) + olb
+
+# Compare the results
+print( np.c_[ y_hat1, y_hat2 ] )
+
+plt.plot(y_hat1)
+plt.plot(y_hat2)
+
+np.testing.assert_array_almost_equal( y_hat1, y_hat2 )
+Thank you!
+Jon.

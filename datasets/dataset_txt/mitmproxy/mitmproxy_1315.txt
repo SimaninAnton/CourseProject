@@ -1,0 +1,27 @@
+ghost commented on 18 Sep 2015
+What's the problem?
+Mitmdump is configured as a transparent proxy with ssl support, the certificate is installed. The sites with ssl could be captured but with some thousand URIs for https and http none for https is replayed, only http.
+I'm not sure if this is related to #755.
+What's expected?
+The https sites should be replayed, too.
+Which versions are affected?
+The master version of mitmdump/libmproxy from yesterday was used.
+In 0.13 this problem was not there.
+How to reproduce the problem?
+The best way I can think of is to search for a file with HTTPS, like a picture from wikipedia, to capture it with a transparent mitmdump and than to replay this. I used --no-pop but I think this doesn't matter.
+Why does this happen?
+For a better understanding I modified the output of mitmdump. Thus it told me when a replay was done and additionally the value of _hash from flow.py. Therefore I added a print(repr(key)) in front of the return of the _hash function.
+Now I used the logo from wikipedia for the test. With the modified hash function there is a line printed for every response in the captured file on startup. In this case it is something like
+['443', 'http', 'GET', [...]
+When a request occur some new line are printed, in this case something like
+['443', 'https', 'GET', [...]
+192.168.X.X:59990: clientconnect
+192.168.X.X GET https://[...]
+192.168.X.X GET https://[...]
+ << 200 OK 10kB
+192.168.X.X:59990: clientdisconnect
+Do not forget, the output is modified thus more is printed than normal. But the problem is also revealed. When the captured file is loaded the saved data is loaded with scheme http. But the request is done with https thus there is no match but a miss and mitmdump did not find the captured data even though it is there.
+By looking into the captured file it is clear, that the data is saved with scheme https and thus correctly.
+How could the problem be solved?
+Well to be true I undo some code. I removed line 249 scheme = "https" if flow.client_conn and flow.client_conn.ssl_established else "http" and set scheme=r.scheme. This is a workaround and I could not tell the side effects of this.
+But to say the truth I do not understand why there is such a line. Depending on the comment I think that libmproxy may downgrade https connection to http ones. And to be able to find the data the scheme is modified. But if scheme could only be https and http and that you try to find the response in both cases, I do not know why scheme is not simply removed.

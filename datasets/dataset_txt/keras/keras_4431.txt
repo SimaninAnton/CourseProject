@@ -1,0 +1,55 @@
+phdowling commented on 6 Sep 2016
+I'm building a model that entails embedding a sequence words, and summing over the vectors to get a single dense representation. This dense representation is then repeated and merged with the embedding another sequence of words.
+For computing the sum over vectors, I wrote a Lambda layer that simply performs a K.sum(x, axis=1) operation on the input.
+Question 1: I use axis=1 because I assumer the lambda layer gets applied to a whole batch of inputs at a time, meaning axis 0 is the sample index, while axis 1 indexes the words (i.e. word vectors after embedding) in each sample. Is this correct?
+Now, I get a compile error when I actually want to build this model. Below is a simple, almost runnable version of what I want to build. If you uncomment the LSTM line and comment out the custom Lambda layer, everything compiles fine (even though the LSTM should do the same dimensionality transformation!).
+from keras.layers import Input, Lambda, Embedding, merge, RepeatVector, LSTM
+from keras.models import Model
+from keras import backend as K
+import numpy as np
+vocab_size = 2
+
+# Inputs and embeddings 
+inp = Input((4,), dtype="int32")
+inp2 = Input((4,), dtype="int32")
+embed = Embedding(input_dim=vocab_size, output_dim=3, name="word_embeddings")(inp)
+embed2 = Embedding(input_dim=vocab_size, output_dim=3, name="word_embeddings")(inp2)
+
+# My custom lambda for computing the sum of vectors the input sequence
+embedding_sum = Lambda(lambda x: K.sum(x, axis=1))(embed)
+# If we use this LSTM layer below instead of our lambda, everything works! 
+#embedding_sum = LSTM(3, return_sequences=False)(embed)
+
+# Repeat the sum to merge it with the other sequence
+embedding_sum_repeated = RepeatVector(4)(embedding_sum)
+
+# Do the element-wise merge
+merged = merge([embed2, embedding_sum_repeated], mode="dot")
+
+# Build model
+model = Model(inp, embedding_sum)
+model.compile(optimizer="rmsprop", loss="binary_crossentropy", metrics=["accuracy"])
+
+# run an example
+x = np.array([
+    [0, 1, 1, 0],
+    [1, 1, 1, 0]
+    ]
+)
+
+model.predict(x)
+This throws an error on model compilation:
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 1522, in merge
+    name=name)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 1180, in __init__
+    node_indices, tensor_indices)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 1236, in _arguments_validation
+    '%s != %s. ' % (shape1[dot_axes[0]], shape2[dot_axes[1]]) +
+TypeError: 'int' object has no attribute '__getitem__'
+Now, this error is an error caused within some code that actually is supposed to throw an exception. At that point in topology.py:
+raise Exception('Dimension incompatibility using dot mode: ' +
+                                '%s != %s. ' % (shape1[dot_axes[0]], shape2[dot_axes[1]]) +
+                                'Layer shapes: %s, %s' % (shape1, shape2))
+Could someone help out here? The lambda layer seems to mess up the dimensions of my tensor.

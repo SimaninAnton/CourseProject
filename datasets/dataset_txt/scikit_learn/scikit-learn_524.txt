@@ -1,0 +1,110 @@
+nattiechan commented on May 14, 2019
+Description
+Trying to use GridSearch to optimize my model but it is giving me results worse than the baseline model despite having the baseline parameters in the search. I thought the randomness in Random Forest and XGBoost may be contributing to the issue but I am consistently getting worse results from GridSearch CV.
+Steps/Code to Reproduce
+# Import Packages
+import numpy as np
+import pandas as pd
+from sklearn import pipeline, preprocessing
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+from xgboost import XGBClassifier
+
+# Creating a function for displaying evaluation metrics
+def model_results(model, x_test, y_test):
+    
+    # Evaluation:
+    # Accuracy score:
+    print("Accuracy:",model.score(x_test,y_test), "\n")
+
+    # f1 score
+    y_pred = model.predict(x_test)
+    print(confusion_matrix(y_test,y_pred))
+    print("Precision score:",precision_score(y_test, y_pred))
+    print("Recall score:",recall_score(y_test, y_pred))
+    print("F1 score:",f1_score(y_test, y_pred, average = "micro"), "\n")
+
+# Building and evaluating baseline models
+x = #private data I cannot share
+y = #private data I cannot share, but they are categorized as 0/1
+
+xgb = [("normalize", preprocessing.StandardScaler()),
+       ("model", XGBClassifier(n_jobs = -1))]
+
+rf = [("normalize", preprocessing.StandardScaler()),
+      ("model", RandomForestClassifier(n_estimators = 5, n_jobs = -1))]  
+# using n_estimators to create a model that does not overfit due to a small dataset
+
+for name,model in [["XGB",xgb],["RF",rf]]:
+    pipe = pipeline.Pipeline(model)
+    model = pipe.fit(x,y)
+    print(name)
+    model_results(model,x,y)
+
+# Using GridSearchCV
+estimator = [("normalize", preprocessing.StandardScaler()), ("model", RandomForestClassifier())]
+
+pipe = pipeline.Pipeline(estimator)
+
+parameters = [{"model": [RandomForestClassifier()],
+               "normalize": [preprocessing.StandardScaler(),preprocessing.MinMaxScaler(), None],
+               "model__max_depth":[1,2,3,4,5,None],"model__n_estimators":[1,3,5,10], "model__n_jobs":[-1]},
+              {"model": [XGBClassifier()],
+               "normalize": [preprocessing.StandardScaler(),preprocessing.MinMaxScaler(), None],
+               "model__max_depth":[1,2,3,4,5],"model__n_estimators":[1,10,50,100], "model__n_jobs":[-1]}]
+
+model = GridSearchCV(pipe,parameters,cv=3, scoring = "f1_micro", iid = True, return_train_score=True)
+fitted_model = model.fit(x,y)
+print(fitted_model.best_params_)
+model_results(model.best_estimator_,x,y)
+Expected Results
+Since the baseline parameters are included in GridSearchCV, I am expecting GridSearch CV to produce a model that performs the same or better the baseline model.
+Actual Results
+--- Baseline models ---
+XGB
+Accuracy: 0.9285714285714286
+[[49 0]
+[ 4 3]]
+Precision score: 1.0
+Recall score: 0.42857142857142855
+F1 score: 0.9285714285714286
+RF
+Accuracy: 0.9821428571428571
+[[48 1]
+[ 0 7]]
+Precision score: 0.875
+Recall score: 1.0
+F1 score: 0.9821428571428571
+--- GridSearch CV ---
+{'model': RandomForestClassifier(bootstrap=True, class_weight=None, criterion='gini',
+max_depth=3, max_features='auto', max_leaf_nodes=None,
+min_impurity_decrease=0.0, min_impurity_split=None,
+min_samples_leaf=1, min_samples_split=2,
+min_weight_fraction_leaf=0.0, n_estimators=5, n_jobs=-1,
+oob_score=False, random_state=None, verbose=0,
+warm_start=False), 'model__max_depth': 3, 'model__n_estimators': 5, 'model__n_jobs': -1, 'normalize': None}
+Accuracy: 0.8928571428571429
+[[49 0]
+[ 6 1]]
+Precision score: 1.0
+Recall score: 0.14285714285714285
+F1 score: 0.8928571428571429
+Versions
+System:
+python: 3.7.1 (default, Dec 14 2018, 13:28:58) [Clang 4.0.1 (tags/RELEASE_401/final)]
+executable: /anaconda3/bin/python
+machine: Darwin-17.7.0-x86_64-i386-64bit
+BLAS:
+macros: SCIPY_MKL_H=None, HAVE_CBLAS=None
+lib_dirs: /anaconda3/lib
+cblas_libs: mkl_rt, pthread
+Python deps:
+pip: 18.1
+setuptools: 40.6.3
+sklearn: 0.20.1
+numpy: 1.15.4
+scipy: 1.1.0
+Cython: 0.29.2
+pandas: 0.23.4
+👍 1

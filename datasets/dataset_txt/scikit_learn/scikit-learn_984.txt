@@ -1,0 +1,31 @@
+Contributor
+janvanrijn commented on Oct 19, 2018
+Today I discovered a huge mistake in my experimental pipeline, mostly due to me making too many and in particular the wrong assumptions. In order to prevent other people from making the same assumptions, I think the MissingIndicator documentation can be slightly improved. In particular, it was unclear to me that it transforms the input array into missing indicator variables, rather than adding these missing indicator variables. Some things that I would clarify:
+Binary indicators for missing values. should maybe be: Transforms the input array into binary indicators for missing values. Personally, I would also add: Note that this component typically does not work well in a vanilla pipeline consisting of preprocessors and a classifier, but rather could be added using a column_transformer (or something in that sense)
+The placeholder for the missing values. All occurrences of missing_values will be imputed. should maybe be: This seems incorrect. As per previous point, MissingIndicator is not an imputer, but rather something that recognized which entrees are missing and transforms these into the boolean array
+It is not clear that the MissingIndicator should never be added to a vanilla pipeline consisting of preprocessors and a classifier; at least not in a practical sense: after the missing indicator there will not be much left to learn for the classifier, except which features were missing. Rather, it could be added to a ColumnTransformer (as per following example)
+[...] values in fit This is applicable [...] -> missing dot.
+Also, this would be an appropriate example to Impute and Indicate. I would propose to add this to doc/modules/impute.rst
+import sklearn.datasets
+import sklearn.model_selection
+import sklearn.svm
+import sklearn.pipeline
+import sklearn.impute
+import sklearn.compose
+
+
+X, y = sklearn.datasets.fetch_openml(data_id=6, return_X_y=True)
+transformer = sklearn.compose.ColumnTransformer(
+    transformers=[
+        ('vanilla_features', sklearn.impute.SimpleImputer(strategy='constant', fill_value=-1), list(range(X.shape[1]))),
+        ('indicate_features', sklearn.impute.MissingIndicator(error_on_new=False), [])],
+    remainder='passthrough')
+
+clf = sklearn.pipeline.make_pipeline(transformer,
+                                     sklearn.feature_selection.VarianceThreshold(),
+                                     sklearn.svm.SVC())
+
+scores = sklearn.model_selection.cross_val_score(clf, X, y, cv=5)
+
+print(scores.mean())
+If you agree, I could contribute with a PR.

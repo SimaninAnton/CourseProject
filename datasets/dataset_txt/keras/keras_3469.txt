@@ -1,0 +1,36 @@
+dc-ai commented on 14 Jan 2017 •
+edited
+I've followed a number of multitask DNN issues here (#3893, #3206, #2650, #462), but I'm really not understanding how to implement it correctly.
+I have 3 tasks to predict and it is a binary classification problem for each task.
+Main Issue
+Using a shared "core" NN adapted from the "Shared vision model" from the tutorial: https://keras.io/getting-started/functional-api-guide/. I have modified that model by making the model have multiple inputs and multiple outputs, but they share the same weights. However, when I prepare my data separately, each task will have a different number of samples, and I ran into an error saying that all input need to have the same number of samples?
+It seems that keras does not support it if the a MT-DNN model has multiple inputs and each input have different number of samples?
+Another workaround
+So, then I tried fixing the number of samples, by using the entire dataset, and my binary classification now has "Y", "N" and missing data (NaN). I did a one-hot encoding and modified the network to use a single input, X and maintain 3 separate inputs for the predictions, y1, y2, y3. However that causes problem because the missing data "class" is being predicted by the model. I know a number of posts have suggested adding a mask layer, but I can't figure out how to implement them:
+For example:
+Let's say I assigned 0 to missing data (NaN). Do I apply the mask at the beginning before any layer? I thought that would remove the data from being "seen" by the NN, but I ran into errors that convolutional layers cannot handle masked values.
+A few suggestions recommended masking the output, and this is the part I don't understand. Because I have already one-hot encoded the 3 options, "Y", "N" and "missing data", how do I go about to mask the output for "missing data"?
+If anyone can help me on this, that will be much appreciated. Thanks.
+A sample code for what I am running is below. This is one of many variations, this network takes a set of images and predict 3 tasks using the same weights:
+task_input = Input(shape=(1, 100, 100))
+mtdnn = Convolution2D(100, 5, 5, subsample=(2, 2), border_mode="same", init=init)(task_input)
+mtdnn = Dropout(0.33)(mtdnn)
+mtdnn = Convolution2D(100, 2, 2, subsample=(1, 1), border_mode="same", init=init)(mtdnn)
+mtdnn = Flatten()(mtdnn)
+mtdnn = Dense(128)(mtdnn)
+task_output = Dropout(0.33)(mtdnn)
+mtdnn_model = Model(task_input, task_output)
+
+task_all = Input(shape=(1, 100, 100))
+
+out_a = mtdnn_model(task_all)
+out_b = mtdnn_model(task_all)
+out_c = mtdnn_model(task_all)
+
+predict_a = Dense(3, activation="softmax")(out_a)
+predict_b = Dense(3, activation="softmax")(out_b)
+predict_c = Dense(3, activation="softmax")(out_c)
+
+model = Model(input=task_all, output=[predict_a, predict_b, predict_c])
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+4

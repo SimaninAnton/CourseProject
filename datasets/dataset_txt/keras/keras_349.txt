@@ -1,0 +1,58 @@
+MrDavidG commented on 8 Mar 2019
+I am trying to freeze the weights of certain layer in a prediction model with Keras and mnist dataset, but it does not work. The code is like:
+from keras.layers import Dense, Flatten
+from keras.utils import to_categorical
+from keras.models import Sequential, load_model
+from keras.datasets import mnist
+from keras.losses import categorical_crossentropy
+
+import numpy as np
+
+def load_data():
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+    x_train /= 255
+    x_test /= 255
+    y_train = to_categorical(y_train, num_classes=10)
+    y_test = to_categorical(y_test, num_classes=10)
+    return x_train, y_train, x_test, y_test
+
+
+def run():
+    x_train, y_train, x_test, y_test = load_data()
+    model = Sequential([Flatten(input_shape=(28, 28)),
+                        Dense(300, name='dense1', activation='relu'),
+                        Dense(100, name='dense2', activation='relu'),
+                        Dense(10, name='dense3', activation='softmax')])
+    model.trainable = True
+    model.compile(optimizer='Adam',
+                  metrics=['accuracy'],
+                  loss=categorical_crossentropy)
+
+    print(model.summary())
+    model.fit(x_train, y_train, epochs=5, verbose=2)
+    print(model.evaluate(x_test, y_test))
+    return model
+
+def freeze(model):
+    x_train, y_train, x_test, y_test = load_data()
+    name = 'dense1'
+    weightsAndBias = model.get_layer(name=name).get_weights()
+    # freeze the weights of this layer
+    model.get_layer(name=name).trainable = False
+    # record the weights before retrain
+    weights_before = weightsAndBias[0]
+    # retrain
+    model.fit(x_train, y_train, verbose=2, epochs=1)
+    weights_after = model.get_layer(name=name).get_weights()[0]
+    if (weights_before == weights_after).all():
+        print('the weights did not change!!!')
+    else:
+        print('the weights changed!!!!')
+
+if __name__ == '__main__':
+    model = run()
+    freeze(model)
+The program outputs 'the weights changed!!!!'.
+I do not understand why the weights of the layer named 'dense1' changes after setting model.get_layer(name=name).trainable = False.

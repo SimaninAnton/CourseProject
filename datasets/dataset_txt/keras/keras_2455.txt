@@ -1,0 +1,36 @@
+taivanbat commented on 7 May 2017
+Hi, I was trying to build separate encoder and decoder models based on the example shown:
+here
+But trying to define the encoder and decoder separately, then making an autoencoder that uses both leads to this error:
+Invalid argument: You must feed a value for placeholder tensor 'encoder_input' with dtype float [[Node: encoder_input = Placeholder[dtype=DT_FLOAT, shape=[], _device="/job:localhost/replica:0/task:0/gpu:0"]()]]
+Here is my code
+# make encoder
+encoder_input = Input(shape=(MAX_SENTENCE_SIZE, VOCAB_SIZE), name='encoder_input')
+mask = Masking(mask_value=0.0)(encoder_input)
+encoded = LSTM(ENCODING_SIZE, return_sequences=False, name='encoded')(mask)
+        
+encoder = Model(encoder_input, encoded) 
+        
+# make decoder
+decoder_input = Input(shape=(ENCODING_SIZE,))
+decoded = RepeatVector(MAX_SENTENCE_SIZE)(decoder_input)
+decoded = LSTM(VOCAB_SIZE, return_sequences=True)(decoded)
+decoded = TimeDistributed(Dense(VOCAB_SIZE, activation='softmax', 
+                                    name='decoded'))(decoded)
+        
+decoder = Model(decoder_input, decoded)
+
+# make autoencoder
+encoder_decoder_input = Input(shape=(MAX_SENTENCE_SIZE, VOCAB_SIZE), 
+                              name='encoder_decoder_input')
+encoder_output = encoder(encoder_decoder_input)
+decoder_output = decoder(encoder_output)
+
+sequence_autoencoder = Model(encoder_decoder_input, decoder_output)
+sequence_autoencoder.compile(loss='categorical_crossentropy', optimizer='adam')
+Then I train like the following. I used np.zeros for a single batch just as dummy data. I am using train_on_batch because all my data won't fit on memory.
+german_batch = np.zeros([BATCH_SIZE, MAX_SENTENCE_SIZE, VOCAB_SIZE])
+english_batch = np.zeros([BATCH_SIZE, MAX_SENTENCE_SIZE, VOCAB_SIZE])
+loss = sequence_autoencoder.train_on_batch(german_batch, english_batch)
+I have tried changing shape into batch_shape and including the batch size that way but it still shows the same error. I made sure that my input is the correct dimensions and of dtype float
+Does this have anything to do with using encoder_decoder_input as an input to the encoder model?

@@ -1,0 +1,62 @@
+pankajb64 commented on 15 Dec 2016
+I am new to keras and deep learning in general. I am trying to implementation Visual Attention based Image Caption generation based on Xu et. al I have created a new class AttentionLSTM based on the existing LSTM class. I want to retrieve the value of one of the states (alpha - the weights of features vectors), however whenever I access it (at the end of each batch), it is always comes up as an all-zero tensor. My model is as follows:
+SEQUENCE_LENGTH = 45
+MAX_SENTENCE_LENGTH = SEQUENCE_LENGTH - 3 # 1 for image, 1 for start token, 1 for end token
+OUTPUT_DIM = 512
+ANNOTATION_DIM = 512
+WORD_DIM = 512
+ANNOTATION_SIZE=196
+
+x_inp = Input(shape=(SEQUENCE_LENGTH-1, VOCAB_COUNT))
+z_inp = Input(shape=(ANNOTATION_SIZE, ANNOTATION_DIM,))
+z_mean = Input(shape=(ANNOTATION_DIM,))
+h_Dense = Dense(OUTPUT_DIM, input_dim=ANNOTATION_DIM, activation='softmax')(z_mean)
+c_Dense = Dense(OUTPUT_DIM, input_dim=ANNOTATION_DIM, activation='softmax')(z_mean)
+xt_dense = TimeDistributed(Dense(WORD_DIM))(x_inp)
+aLstm_Layer = AttentionLSTM(output_dim=WORD_DIM, z_dim=ANNOTATION_DIM, W_regularizer=l2(0.01), U_regularizer=l2(0.01), Z_regularizer=l2(0.01), dropout_W=0.3, dropout_U=0.3, dropout_Z=0.3, return_sequences=True)
+aLstm = aLstm_Layer([xt_dense, h_Dense, c_Dense, z_inp])
+tdense = TimeDistributed(Dense(VOCAB_COUNT))(aLstm)
+act = Activation('softmax')(tdense)
+model = Model(input=[x_inp, z_inp, z_mean], output=act)
+
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=1, nb_epoch=1, verbose=1)
+My attention has the following code in step function
+def step(self, x, states):
+ prev_h1 = states[0]
+ prev_c1 = states[1]
+ proj_z = states[2]
+ alphaz = states[3]
+ B_U = states[4]
+ B_W = states[5]
+ B_Z = states[6]
+
+ proj_state = K.dot(prev_h1, self.Wd_att)
+ proj_z = proj_z + proj_state[:, None, :]
+ proj_list = []
+ proj_list.append(proj_z)
+ proj_z = K.tanh(proj_z)
+
+ alpha = K.dot(proj_z, self.U_att ) + self.b2_att
+ alpha_shape = alpha.shape
+ alpha = K.softmax(alpha.reshape((alpha_shape[0], alpha_shape[1])))
+
+ alphaz = alpha
+ self.alphaz = alpha
+
+ z = (self.initial_z * alpha[:, :, None]).sum(1)
+            #Remaing code same as LSTM.step()
+To get the alpha value, I have defined the following function:
+alphaz = aLstm_Layer.states[3]
+alpha_func = K.function([x_inp, z_inp, z_mean], alphaz)
+al = alpha_func(x_train)
+print(al)
+The above print statement always returns
+b'CudaNdarray([[ 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]])'
+I am setting alpha to zero in reset_states() and get_initial_states().
+Am I doing something wrong (with the model or the way I retrieve alpha) ? Is there a better way to get the value of layer.states ? (I am doing this because I don't know if there's a way to make a layer give multiple outputs)
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).

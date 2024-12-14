@@ -1,0 +1,81 @@
+melvyn-sopacua commented on 2 Feb 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+An assertion in the code about the presence of the view_name argument in HyperLinkedRelatedField is a classic example of premature optimization. It makes it impossible to implement custom fields that retrieve the api URL from the model class. As a result, this generates a bunch of boiler plate that can be avoided.
+Following the documentation:
+# models.py with `pip install django-autoslug`
+from autoslug.fields import AutoSlugField
+from django.db import models
+
+class SluggedPermalinkMixin(object):
+    _detail_view_name = None
+    _api_view_name = None
+
+    @models.permalink
+    def get_absolute_url(self):
+        model_name = self._meta.model_name
+        viewname = self._detail_view_name or '{}_detail'.format(model_name)
+        return viewname, [str(self.slug)]
+
+    absolute_url = property(get_absolute_url, doc="Permalink")
+
+    @models.permalink
+    def get_api_url(self):
+        model_name = self._meta.model_name
+        viewname = self._api_view_name or 'api-{}_detail'.format(model_name)
+        return viewname, [str(self.slug)]
+
+class Album(models.Model, SluggedPermalinkMixin):
+    album_name = models.CharField(max_length=100)
+    artist = models.CharField(max_length=100)
+    slug = AutoSlugField(populate_from='album_name', unique_with='artist',
+                         max_length=200)
+
+    class Meta:
+        unique_together = ['album_name', 'artist']
+
+
+class Track(models.Model, SluggedPermalinkMixin):
+    album = models.ForeignKey(Album, related_name='tracks',
+                              on_delete=models.CASCADE)
+    order = models.IntegerField()
+    title = models.CharField(max_length=100)
+    duration = models.IntegerField()
+    slug = AutoSlugField(
+        populate_from='title', unique_with=('order', 'album__title'),
+        max_length=255
+    )
+
+    class Meta:
+        unique_together = ('album', 'order')
+        ordering = ['order']
+Now since this model (and as such every instance) already knows how to generate it's API detail URL, the get_url API is working against us, but lets try anyway:
+# serializers.py
+class PermalinkRelatedField(serializers.HyperlinkedRelatedField):
+    def get_url(self, obj, *args, **kwargs):
+        return obj.get_api_url()
+
+class AlbumSerializer(serializers.ModelSerializer):
+    tracks = PermalinkRelatedField(read_only=True)
+
+    class Meta:
+        model = Album
+        fields = ('album_name', 'artist', 'tracks')
+Expected behavior
+python manage.py check to not show issues.
+Actual behavior
+# snipped for brevity
+    class AlbumSerializer(serializers.ModelSerializer):
+  File "/home/melvyn/hg/django/projects/drfserialization/snippets/serializers.py", line 17, in AlbumSerializer
+    tracks = PermalinkRelatedField(read_only=True)
+  File "/home/melvyn/.virtualenvs/restframework/lib/python3.5/site-packages/rest_framework/relations.py", line 272, in __init__
+    assert self.view_name is not None, 'The `view_name` argument is required.'
+AssertionError: The `view_name` argument is required.
+If get_url is supposed to return a string that is an URL, then why not trust it to do so?
+Note that PermalinkRelatedField() does not have access to AlbumSerializer.Meta.model (in a way that is obvious and/or supported) to somewhat work around the issue in it's init, but to be honest - init() shouldn't verify how the default behavior works that is driven by get_url(). If get_url() can get it done without a view name, then so be it.

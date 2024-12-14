@@ -1,0 +1,38 @@
+Contributor
+datumbox commented on 18 Jan 2017 •
+edited
+I am writing a pipeline that fine-tunes the pre-trained models of Keras 1.2.0. To speed it up, instead of freezing the layers I try to:
+Feed the training images once to the "frozen" part of the network and store the intermediate output to a file.
+Train iteratively the remaining network by feeding directly the intermediate output from the file.
+If you don't use data augmentation, this should yield a significant speed improvement. Unfortunately the step 2 fails with a "Graph Disconnected" exception. I tried alternative ways to do this (such as using the K.function() approach) but it still fails.
+Below you will find a simple example that reproduces the problem and the error message:
+import keras.applications
+from keras.models import Model
+from keras.layers import Input
+from keras.preprocessing import image
+from keras.applications.imagenet_utils import preprocess_input
+import numpy as np
+
+# Read some random image
+img = image.load_img('/path/to/image.jpg', target_size=(224, 224))
+x = image.img_to_array(img)
+x = np.expand_dims(x, axis=0)
+x = preprocess_input(x)
+
+# Load a pre-trained model
+model = keras.applications.resnet50.ResNet50(weights='imagenet', include_top=False, input_tensor=Input(shape=(224, 224, 3)))
+
+# Feed the image and get the bn_conv1 output: WORKS!
+bn_conv1_model = Model(input=model.input, output=model.get_layer('bn_conv1').output)
+bn_conv1_output = bn_conv1_model.predict(x)
+
+# Feed directly the bn_conv1 output to the remaining layers: FAILS!
+avg_pool_model = Model(input=Input(model.get_layer('bn_conv1').output_shape[1:]), output=model.get_layer('avg_pool').output) # This line throws exception
+avg_pool_output = avg_pool_model.predict(bn_conv1_output)
+The error message is:
+Traceback (most recent call last):
+File "", line 1, in
+File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 1987, in init
+str(layers_with_complete_input))
+RuntimeError: Graph disconnected: cannot obtain value for tensor Tensor("input_1:0", shape=(?, 224, 224, 3), dtype=float32) at layer "input_1". The following previous layers were accessed without issue: []
+1

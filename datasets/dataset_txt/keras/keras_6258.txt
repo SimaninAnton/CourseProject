@@ -1,0 +1,96 @@
+Contributor
+tboquet commented on 15 Dec 2015
+Hello all,
+When I tried to run some scripts after updating to the latest version of Theano and Keras I had some errors.
+I maybe didn't notice a change on my side but I tried to run the tests and it seems the shape inference is not behaving nicely:
+Using gpu device 0: GeForce GTX 980 (CNMeM is disabled)
+......FF.........
+======================================================================
+FAIL: test_shape_inference.test_Convolution1D
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/thomas/anaconda3/envs/anapy27/lib/python2.7/site-packages/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/home/thomas/libraries/forks/keras/tests/test_shape_inference.py", line 75, in test_Convolution1D
+    check_layer_output_shape(layer, input_data)
+  File "/home/thomas/libraries/forks/keras/tests/test_shape_inference.py", line 18, in check_layer_output_shape
+    assert output.shape[1:] == expected_output_shape, "output shape: {} expected output shape: {}".format(output.shape[1:], ex
+pected_output_shape)                                                                                                         
+AssertionError: output shape: (2, 1) expected output shape: (3, 1)
+
+======================================================================
+FAIL: test_shape_inference.test_Convolution2D
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/thomas/anaconda3/envs/anapy27/lib/python2.7/site-packages/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/home/thomas/libraries/forks/keras/tests/test_shape_inference.py", line 91, in test_Convolution2D
+    check_layer_output_shape(layer, input_data)
+  File "/home/thomas/libraries/forks/keras/tests/test_shape_inference.py", line 18, in check_layer_output_shape
+    assert output.shape[1:] == expected_output_shape, "output shape: {} expected output shape: {}".format(output.shape[1:], ex
+pected_output_shape)                                                                                                         
+AssertionError: output shape: (1, 2, 2) expected output shape: (1, 3, 3)
+
+----------------------------------------------------------------------
+Ran 17 tests in 7.296s
+
+FAILED (failures=2)
+I tried to digg in and I made my example work but the tests are still failing.
+This is my reproductible example:
+from sklearn.feature_extraction.image import extract_patches_2d
+import theano
+import keras
+
+
+import numpy as np
+np.random.seed(1337)
+
+from keras.models import Graph
+from keras.layers.core import Dense, Flatten
+from keras.layers.convolutional import Convolution1D, MaxPooling1D
+
+len_ts_y = 60
+sample = 1000
+Fs = 8000
+f = 5
+x_bug = np.arange(sample)
+
+y_test = np.sin(2 * np.pi * f * x_bug / Fs)
+y_test = y_test+np.random.normal(0, 0.2, sample)
+
+data_patched = extract_patches_2d(y_test[:,None], (len_ts_y+1,1))
+y_train = data_patched[:,:,-1]
+endog_train = data_patched[:,-len_ts_y-1:-1,-1]
+
+model = Graph()
+model.add_input(name='endog', input_shape=(len_ts_y,1))
+
+model.add_node(Convolution1D(nb_filter=4,
+                            filter_length=2,
+                            border_mode="same",
+                            activation="relu",
+                            subsample_length=1,
+                            ),
+                            name='conv_1', input='endog')
+model.add_node(Flatten(), name="flat", input='conv_1')
+model.add_node(Dense(32, activation="sigmoid"), name="Dense", input='flat')
+model.add_node(Dense(1, activation="softplus"), name='last_dense', input='Dense')
+model.add_output(name='output', input='last_dense')
+model.compile(optimizer='sgd', loss={'output':'mse'})
+
+model.fit({'endog': endog_train[:-100,:, None], 'output': y_train[:-100,-1]},
+          validation_data={'endog':endog_train[-100:,:, None], 'output': y_train[-100:,-1]},
+          batch_size=128,
+          nb_epoch=4)
+I changed the size of the output_shape in the conv_output_length function of convolutionnal.py to make the above example work :
+def conv_output_length(input_length, filter_size, border_mode, stride):
+    if input_length is None:
+        return None
+    assert border_mode in {'same', 'valid'}
+    if border_mode == 'same':
+        output_length = input_length
+    elif border_mode == 'valid':
+        output_length = input_length - filter_size + 1
+    return ((output_length + stride - 1) // stride) - 1
+Does anyone is having the same errors?
+Thank you!

@@ -1,0 +1,67 @@
+Contributor
+GrahamDumpleton commented on Sep 25, 2013
+For a Squid configuration of:
+http_port 3128
+https_port 3129 cert=/usr/local/opt/squid/etc/ssl/squid.crt key=/usr/local/opt/squid/etc/ssl/squid.key
+And test names where:
+The 'http_port' annotation indicates whether Squid HTTP port was used.
+The 'https_port' annotation indicates whether Squid HTTPS port was used.
+The 'scheme' annotation in test names refers to whether the scheme was part of proxy definition in proxies dictionary passed to requests
+no_scheme --> { 'https': 'localhost:3129' }
+http_scheme --> { 'https': 'http://localhost:3129' }
+https_scheme --> { 'https': 'https://localhost:3129' }
+Results for different requests versions are:
+                    requests        0.9.3   1.2.3   2.0.0
+
+                    no_proxy        PASS    PASS    PASS
+         http_port_no_scheme        PASS    FAIL    FAIL
+  http_port_with_http_scheme        PASS    PASS    PASS
+ http_port_with_https_scheme        FAIL    FAIL    PASS
+        https_port_no_scheme        FAIL    PASS    FAIL
+ https_port_with_http_scheme        FAIL    FAIL    FAIL
+https_port_with_https_scheme        PASS    PASS    FAIL
+The problem one I am concerned about is https_port_with_https_scheme as this no longer works any more.
+I fully realise that http_port_with_https_scheme now works and that this presumably would use CONNECT as is the safest option, but we would have to notify all customers relying on https_port_with_https_scheme that what they used before no longer works and they will need to change their configuration they have. If they don't heed that instruction, then we will start see failed connections and complaints.
+BTW, it would be really good if the documentation explained the differences between all the combinations, what mechanisms they use and what represents best practice for being the safest/best to use.
+Test used for https_port_with_https_scheme is:
+import unittest
+import requests
+
+PROXY_HOST = 'localhost'
+PROXY_HTTP_PORT = 3128
+PROXY_HTTPS_PORT = 3129
+
+REMOTE_URL = 'https://pypi.python.org/pypi'
+
+class TestProxyingOfSSLRequests(unittest.TestCase):
+
+    def test_proxy_via_squid_https_port_with_https_scheme(self):
+        proxies = { 'https': 'https://%s:%s' % (PROXY_HOST, PROXY_HTTPS_PORT) }
+
+        response = requests.get(REMOTE_URL, proxies=proxies)
+
+        self.assertTrue(len(response.content) != 0)
+
+if __name__ == '__main__':
+    unittest.main()
+For full set of tests and results see:
+https://dl.dropboxusercontent.com/u/22571016/requests-ssl-proxy.tar
+Cheat sheet for setting up Squid on MacOS X with SSL support from our own cheat sheet is:
+To test proxying via SSL, the easiest thing to do is install 'squid' via 'brew' under MacOSX, but avoid the standard recipe and instead use:
+brew install https://raw.github.com/mxcl/homebrew/a7bf4c381f4e38c24fb23493a92851ea8339493e/Library/Formula/squid.rb
+This will install 'squid' with SSL support.
+You can then generate a self signed certificate to use:
+cd /usr/local/opt/squid/etc
+mkdir ssl
+cd ssl
+
+openssl genrsa -des3 -out squid.key 1024
+openssl req -new -key squid.key -out squid.csr
+cp squid.key squid.key.org
+openssl rsa -in squid.key.org -out squid.key
+openssl x509 -req -days 365 -in squid.csr -signkey squid.key -out squid.crt
+Then edit the the squid configuration file at '/usr/local/opt/squid/etc/squid.conf', adding:
+https_port 3129 cert=/usr/local/opt/squid/etc/ssl/squid.crt key=/usr/local/opt/squid/etc/ssl/squid.key
+Then use configuration of:
+proxy_host = localhost
+proxy_port = 3129

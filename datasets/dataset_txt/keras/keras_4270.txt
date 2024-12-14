@@ -1,0 +1,106 @@
+neouyghur commented on 30 Sep 2016
+I wrote a code for training autoencoder with Keras. I want this autoencoder for feature extraction from images. In my experiment, images are input, which all belong to one class. I have train and validation sets. The following is my code:
+from keras.layers import Input, Dense, Convolution2D, MaxPooling2D, UpSampling2D
+from keras.models import Model
+
+
+# dimensions of our images.
+img_width, img_height = 256, 256
+
+train_data_dir = '/home/osman/keras_test/train'
+validation_data_dir = '/home/osman/keras_test/validation'
+nb_train_samples = 200
+nb_validation_samples = 50
+nb_epoch = 50
+
+input_img = Input(shape=(3, img_width, img_height))
+
+x = Convolution2D(16, 3, 3, activation='relu', border_mode='same')(input_img)
+x = MaxPooling2D((2, 2), border_mode='same')(x)
+x = Convolution2D(8, 3, 3, activation='relu', border_mode='same')(x)
+x = MaxPooling2D((2, 2), border_mode='same')(x)
+x = Convolution2D(8, 3, 3, activation='relu', border_mode='same')(x)
+encoded = MaxPooling2D((2, 2), border_mode='same')(x)
+
+# at this point the representation is (8, 4, 4) i.e. 128-dimensional
+
+x = Convolution2D(8, 3, 3, activation='relu', border_mode='same')(encoded)
+x = UpSampling2D((2, 2))(x)
+x = Convolution2D(8, 3, 3, activation='relu', border_mode='same')(x)
+x = UpSampling2D((2, 2))(x)
+x = Convolution2D(16, 3, 3, activation='relu')(x)
+x = UpSampling2D((2, 2))(x)
+decoded = Convolution2D(1, 3, 3, activation='sigmoid', border_mode='same')(x)
+
+autoencoder = Model(input_img, decoded)
+autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+
+# this is the augmentation configuration we will use for training
+train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+
+# this is the augmentation configuration we will use for testing:
+# only rescaling
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+        train_data_dir,
+        target_size=(img_width, img_height),
+        batch_size=32,
+        class_mode=None)
+
+print type(train_generator)
+
+validation_generator = test_datagen.flow_from_directory(
+        validation_data_dir,
+        target_size=(img_width, img_height),
+        batch_size=32,
+        class_mode=None)
+
+autoencoder.fit_generator(
+        train_generator,
+        samples_per_epoch=20,
+        nb_epoch=nb_epoch,
+        # batch_size=128,
+        #shuffle=True,
+        validation_data=(validation_generator,validation_generator),
+        nb_val_samples=5
+        )
+I got this expectation,
+Found 200 images belonging to 1 classes.
+<class 'keras.preprocessing.image.DirectoryIterator'>
+Found 50 images belonging to 1 classes.
+
+---------------------------------------------------------------------------
+Exception                                 Traceback (most recent call last)
+<ipython-input-26-ad3295fdbaae> in <module>()
+     68         #shuffle=True,
+     69         validation_data=(validation_generator,validation_generator),
+---> 70         nb_val_samples=5
+     71         )
+
+/home/osman/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/engine/training.pyc in fit_generator(self, generator, samples_per_epoch, nb_epoch, verbose, callbacks, validation_data, nb_val_samples, class_weight, max_q_size, nb_worker, pickle_safe)
+   1388                                 '(val_x, val_y, val_sample_weight) '
+   1389                                 'or (val_x, val_y). Found: ' + str(validation_data))
+-> 1390             val_x, val_y, val_sample_weights = self._standardize_user_data(val_x, val_y, val_sample_weight)
+   1391             self.validation_data = val_x + [val_y, val_sample_weights]
+   1392         else:
+
+/home/osman/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/engine/training.pyc in _standardize_user_data(self, x, y, sample_weight, class_weight, check_batch_dim, batch_size)
+    959                                    self.internal_input_shapes,
+    960                                    check_batch_dim=False,
+--> 961                                    exception_prefix='model input')
+    962         y = standardize_input_data(y, self.output_names,
+    963                                    output_shapes,
+
+/home/osman/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/engine/training.pyc in standardize_input_data(data, names, shapes, check_batch_dim, exception_prefix)
+     68                             ': data should be a Numpy array, '
+     69                             'or list/dict of Numpy arrays. '
+---> 70                             'Found: ' + str(data)[:200] + '...')
+     71         if len(names) != 1:
+     72             # case: model expects multiple inputs but only received
+
+Exception: Error when checking model input: data should be a Numpy array, or list/dict of Numpy arrays. Found: <keras.preprocessing.image.DirectoryIterator object at 0x7f0020899110>...

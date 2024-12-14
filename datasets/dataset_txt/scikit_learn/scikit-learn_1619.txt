@@ -1,0 +1,40 @@
+Member
+TomDLT commented on Jan 12, 2018 •
+edited
+Estimators relying on NearestNeighbors (NN), and their related params:
+params = (algorithm, leaf_size, metric, p, metric_params, n_jobs)
+sklearn.neighbors:
+NearestNeighbors(n_neighbors, radius, *params)
+KNeighborsClassifier(n_neighbors, *params)
+KNeighborsRegressor(n_neighbors, *params)
+RadiusNeighborsClassifier(radius, *params)
+RadiusNeighborsRegressor(radius, *params)
+LocalOutlierFactor(n_neighbors, *params)
+~KernelDensity(algorithm, metric, leaf_size, metric_params)
+sklearn.manifold:
+TSNE(method="barnes_hut", metric)
+Isomap(n_neighbors, neighbors_algorithm, n_jobs)
+LocallyLinearEmbedding(n_neighbors, neighbors_algorithm, n_jobs)
+SpectralEmbedding(affinity='nearest_neighbors', n_neighbors, n_jobs)
+sklearn.cluster:
+SpectralClustering(affinity='nearest_neighbors', n_neighbors, n_jobs)
+DBSCAN(eps, *params)
+How do they call NearestNeighbors ?
+Inherit from NeighborsBase._fit: NearestNeighbors, KNeighborsClassifier, KNeighborsRegressor, RadiusNeighborsClassifier, RadiusNeighborsRegressor, LocalOutlierFactor
+Call BallTree/KDTree(X): KernelDensity
+Call kneighbors_graph(X): SpectralClustering, SpectralEmbedding
+Call NearestNeighbors().fit(X): TSNE, DBSCAN, Isomap, kneighbors_graph
+Do they handle other form of input X?
+Handle precomputed distances matrix, with (metric/affinity='precomputed'): TSNE, DBSCAN, SpectralEmbedding, SpectralClustering
+Handle KNeighborsMixin object: kneighbors_graph
+Handle NeighborsBase object: all estimators inheriting NeighborsBase + UnsupervisedMixin
+Handle BallTree/KDTree object: all estimators inheriting NeighborsBase + SupervisedFloatMixin/SupervisedIntegerMixin
+Issues:
+We don't have all NN parameters in all classes (e.g. n_jobs in TSNE).
+We can't give a custom NN estimators to these classes. (PR #3922 #8999)
+The handle of input X as a NearestNeighbors/BallTree/KDTree object is not consistent, and not well documented. Sometimes it is documented but does not work (e.g. Isomap), or not well documented but it does work (e.g. LocalOutlierFactor). Most classes almost handle it since NearestNeighbors().fit(NearestNeighbors().fit(X)) works, but a call to check_array(X) prevents it (e.g. Isomap, DBSCAN, SpectralEmbedding, SpectralClustering, LocallyLinearEmbedding, TSNE).
+The handle of X as a precomputed distances matrix is not consistent, and sometimes does not work with sparse matrices (as given by kneighbors_graph) (e.g. TSNE #9691).
+Proposed solutions:
+A. We could generalize the use of precomputed distances matrix, and use pipelines to chain NearestNeighbors with other estimators. Yet it might not be possible/efficient for some estimators. I this case one would have to adapt the estimators to allow for the following: Estimator(neighbors='precomputed').fit(distance_matrix, y)
+B. We could improve the checking of X to enable more widely having X as a NearestNeighbors/BallTree/KDTree fitted object. The changes would be probably limited, however, this solution is not pipeline-friendly.
+C. To be pipeline-friendly, a custom NearestNeighbors object could be passed in the params, unfitted. We could then put all NN-related parameters in this estimator parameter, and allow custom estimators with a clear API. This is essentially what is proposed in #8999.

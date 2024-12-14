@@ -1,0 +1,63 @@
+easadi commented on 9 May 2019
+Can anybody help me in finding a way to resume training for an LSTM model with fit_generator without restating the loss value to inf?
+Background: I am training an LSTM model and I have a very big time series data (many sample times) and only 2 features. Therefore the shape of my time series x data is N by 2 where N is a very large number. I use a batch generator to randomly segment my data in smaller batches of batch_N by 2 (where batch_N is much smaller than N):
+def batch_generator(batch_size, sequence_length): 
+...
+    for i in range(batch_size):
+        ...
+       x_batch[i] = batch_x_train_scaled[idx:idx+sequence_length]
+       y_batch[i] = batch_y_train_scaled[idx:idx+sequence_length] 
+ yield (x_batch, y_batch)
+I use also a ModelCheckpoint to save the best-trained model
+callback_checkpoint = ModelCheckpoint(filepath=path_checkpoint, 
+monitor='val_loss', verbose=1,save_weights_only=False, save_best_only=True)
+Also, every time I want to resume the training, first I load the last saved model:
+if True:
+    try:
+#         model.load_weights(path_checkpoint)
+        model = load_model(path_checkpoint)
+
+    except Exception as error:
+        print("Error trying to load checkpoint.")
+        print(error)
+What is the Problem? Every time I resume the training, a new batch file is loaded first into the fit_generator and the model would use the last save weights. the loss value is reset to inf. Therefore, at the end of the first resumed training epoch, no matter how good or bad is the training outcomes, the model reports that the val_loss is improved from inf to some number and thus overwrites the new weights. The problem is that sometimes the new weights are not as optimal as the previous ones (due to the fact that this time the model is using new batch data for training) and thus I will lose some optimum weights.
+What I have done so far to fix this issue?
+Approach one (unsuccessful): defining custom loss function:
+def my_loss(y_true, y_pred):
+    train_loss = binary_crossentropy(y_true, y_pred)
+    validation_loss = 2*binary_crossentropy(y_true, y_pred)
+    temp=tf.keras.backend.cast(validation_loss,'float16')
+    if temp>1:  # update 1 to last best val_loss before resume training
+        validation_loss=validation_loss+np.inf
+# validation_loss=np.inf
+    return tf.keras.backend.in_train_phase(train_loss, validation_loss)
+
+model.compile(loss=my_loss, optimizer=optimizer)
+results of approach one:
+Error:
+---> 12     if temp>1:
+TypeError: Using a `tf.Tensor` as a Python `bool` is not allowed. Use `if t is not None:` instead of `if t:` to test if a tensor is defined, and use TensorFlow ops such as tf.cond to execute subgraphs conditioned on the value of a tensor.
+Approach two (unsuccessful): defining a custom callback to save model:
+best_val_loss = 1 # update 1 to last best val_loss before resume training
+
+def saveModel(epoch,logs):
+    val_loss = logs['val_loss']
+    if val_loss < best_val_loss:
+        best_val_loss=val_loss
+        model.save('my_model.hdf5')
+
+my_callback = LambdaCallback(on_epoch_end=saveModel)
+results of approach two:
+UnboundLocalError: local variable 'best_val_loss' referenced before assignment
+Approach three(unsuccessful): defining a custom callback to save model:
+best_val_loss = 1 # update 1 to last best val_loss before resume training
+
+def saveModel(epoch,logs,best_val_loss):
+    val_loss = logs['val_loss']
+    if val_loss < best_val_loss:
+        best_val_loss=val_loss
+        model.save('my_model.hdf5')
+
+my_callback = LambdaCallback(on_epoch_end=saveModel)
+results of approach three:
+TypeError: saveModel() missing 1 required positional argument: 'best_val_loss'

@@ -1,0 +1,77 @@
+vladlep commented on 26 Jan 2015
+Hello,
+I have an api that is used for mobile to send receipts. With the version 2.4 it used to work but now when i upgraded to 3.0.3 it does not work anymore.
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+ def add_cost(request):
+     first line of the method
+At the first line the request is already wrong from what i can see in the debugger.
+
+In this case the request.data is the same as the request.DATA and has for image the value 'filename.png' instead of the actual file. I get his error:
+{ValidationError}{'image': [u'The submitted data was not a file. Check the encoding type on the form.']}
+I also wrote a test for the same api call:
+def test_upload_normal_cost(self):
+   path = settings.STATICFILES_DIRS[0]+"/img/gekko.jpg"
+    test_file = open(path, "r")
+    cost_type = CostType.objects.all().first()
+    data = {
+        'owner_company': self.company.id,
+        "amount": 242,
+        "description": "test cost",
+        "cost_type": cost_type.id,
+        "payment_type ": "cash",
+        'date': '2015-01-24',
+        'costline1_amount': 42,
+        'costline2_amount': 0,
+        'image': test_file,
+    }
+    add_url = reverse('costs_api_add_cost')
+For this test, the image upload is working. The computed request.data is correct:
+
+In the request.DATA we do not have anymore the key image, we just have it in request.FILE.
+The mobile calls for iOS and Android are in the txt files. They are the default way of doing it from what i know. Also our apps are in production, so i would prefer to know if there is a solution on the api side. I can not force everybody to update to a new version.
+Thanks in advance,
+Vlad
+--- iOS
+AFHTTPClient *client = [[AFHTTPClient alloc] initWithBaseURL:[NSURL URLWithString:kAPIUploadReceipt]];
+
+[client registerHTTPOperationClass:[AFJSONRequestOperation class]];
+
+NSString *authValue = [NSString stringWithFormat:@"Bearer %@", [[NSUserDefaults standardUserDefaults] valueForKey:kKeyAccessToken]];
+
+NSLog(@"The token is %@", authValue);
+[client setDefaultHeader:@"Authorization" value:authValue];
+
+NSMutableURLRequest *request = [client multipartFormRequestWithMethod:@"POST" path:nil parameters:[NSDictionary dictionaryWithDictionary:params] constructingBodyWithBlock: ^(id <AFMultipartFormData>formData) {
+
+    [formData appendPartWithFileData:UIImageJPEGRepresentation([ArchiverUnarchiver getImageWithId:receipt.idi], 0.5) name:@"image" fileName:@"filename.jpeg" mimeType:@"image/jpeg"];
+}];
+---android
+        HttpClient httpclient = new DefaultHttpClient();
+
+        HttpResponse response;
+        String responseString;
+        HttpPost post = new HttpPost(uri[0]);
+
+        if (token.length() > 0) {
+            post.addHeader("Authorization", "Bearer " + token);
+        }
+
+        if (file != null) {
+
+            MultipartEntity multipartEntity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+
+            for (int i =0; i < params.size(); i ++)
+                multipartEntity.addPart(params.get(i).getName(), new StringBody(params.get(i).getValue()));
+
+            multipartEntity.addPart("image", file);
+
+            post.setEntity(multipartEntity);
+
+        } else {
+
+            post.setEntity(new UrlEncodedFormEntity(params));
+
+        }
+
+        response = httpclient.execute(post);

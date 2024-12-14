@@ -1,0 +1,66 @@
+Contributor
+matthiasplappert commented on 30 Jun 2016
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+There appears to be a problem with BatchNormalization for models that use the functional API and have more than 1 inputs. Here's a brief example that reproduces the problem on master (a1610eb) for both backends.
+from keras.layers import Input, Dense, BatchNormalization, merge
+from keras.models import Model
+from keras.utils.visualize_util import plot
+
+# this returns a tensor
+in1 = Input(shape=(10,))
+in2 = Input(shape=(10,))
+
+# a layer instance is callable on a tensor, and returns a tensor
+x = Dense(64, activation='relu')(in1)
+bn = BatchNormalization()(x)
+x = Dense(64, activation='relu')(merge([bn, in2], mode='concat'))
+predictions = Dense(10, activation='softmax')(x)
+
+# this creates a model that includes
+# the Input layer and three Dense layers
+model = Model(input=[in1, in2], output=predictions)
+plot(model, to_file='model.png', show_shapes=True)
+model.compile(optimizer='rmsprop',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+As soon as compile() is called, the following exception is raised:
+Traceback (most recent call last):
+  File "test.py", line 21, in <module>
+    metrics=['accuracy'])
+  File "/home/plappert/Projects/PdF/experiments/venv/local/lib/python2.7/site-packages/Keras-1.0.5-py2.7.egg/keras/engine/training.py", line 523, in compile
+    masks = self.compute_mask(self.inputs, mask=None)
+  File "/home/plappert/Projects/PdF/experiments/venv/local/lib/python2.7/site-packages/Keras-1.0.5-py2.7.egg/keras/engine/topology.py", line 1959, in compute_mask
+    output_tensors, output_masks, output_shapes = self.run_internal_graph(inputs, masks)
+  File "/home/plappert/Projects/PdF/experiments/venv/local/lib/python2.7/site-packages/Keras-1.0.5-py2.7.egg/keras/engine/topology.py", line 2087, in run_internal_graph
+    output_tensors = to_list(layer.call(computed_tensor, computed_mask))
+  File "/home/plappert/Projects/PdF/experiments/venv/local/lib/python2.7/site-packages/Keras-1.0.5-py2.7.egg/keras/layers/normalization.py", line 118, in call
+    raise Exception('You are attempting to share a '
+Exception: You are attempting to share a same `BatchNormalization` layer across different data flows. This is not possible. You should use `mode=2` in `BatchNormalization`, which has a similar behavior but is shareable (see docs for a description of the behavior).
+It should be clear from the above example that the BN layer is used correctly. Furthermore, if one uses only a single input but a rather similar model besides this, everything works as expected. Here's an example for this working scenario as well:
+from keras.layers import Input, Dense, BatchNormalization, merge
+from keras.models import Model
+from keras.utils.visualize_util import plot
+
+# this returns a tensor
+in1 = Input(shape=(10,))
+in2 = Input(shape=(10,))
+
+# a layer instance is callable on a tensor, and returns a tensor
+x = Dense(64, activation='relu')(in1)
+bn = BatchNormalization()(x)
+x = Dense(64, activation='relu')(merge([bn, x], mode='concat'))
+predictions = Dense(10, activation='softmax')(x)
+
+# this creates a model that includes
+# the Input layer and three Dense layers
+model = Model(input=in1, output=predictions)
+plot(model, to_file='model.png', show_shapes=True)
+model.compile(optimizer='rmsprop',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+An easy temporary fix for this is to simple disable the code that raises the exception since my usage should be correct. However, I'm not sure how to address this problem properly, so I'm opening this issue.
+2

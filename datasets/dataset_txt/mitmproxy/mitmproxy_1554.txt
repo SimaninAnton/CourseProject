@@ -1,0 +1,44 @@
+Cheffu commented on 18 Dec 2014
+Hi,
+I use mitmproxy resp. inline script just for intercepting messages, then send them to another application which may modify the message and then the message will be forwarded by mitmproxy to the server resp. the client.
+Thereby I stumbled accross an error. I retrieve the string representation of the message, send it to my application and then rebuild an HTTPRequest object. The problem is that the host isn't used correctly for the url of the created HTTPRequest object.
+I created a simple demo code for this problem
+from libmproxy.protocol.http import HTTPRequest
+import StringIO
+
+def request(context, flow):    
+    decoded = flow.request.decode()
+
+    handledRequestStream = StringIO.StringIO(flow.request.assemble())
+    handledRequest = HTTPRequest.from_stream(handledRequestStream)
+
+    print flow.request.url
+    print handledRequest.url
+
+    flow.request = handledRequest
+The print output will be something like:
+http://www.cnet.com/news/
+None://None:None/news/
+This results in the following error:
+10.0.2.2:57480: Traceback (most recent call last):
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 100, in handle
+    protocol_handler(self.conntype)(self, **conn_kwargs).handle_messages()
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/protocol/http.py", line 1008, in handle_messages
+    while self.handle_flow():
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/protocol/http.py", line 1095, in handle_flow
+    self.process_server_address(flow)  # The inline script may have changed request.host
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/protocol/http.py", line 1345, in process_server_address
+    self.live.change_server(address, ssl=ssl)
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/protocol/primitives.py", line 221, in change_server
+    self.c.establish_server_connection(ask=False)
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/proxy/server.py", line 164, in establish_server_connection
+    self.server_conn.connect()
+  File "/home/hans/.local/lib/python2.7/site-packages/libmproxy/proxy/connection.py", line 140, in connect
+    tcp.TCPClient.connect(self)
+  File "/home/hans/.local/lib/python2.7/site-packages/netlib/tcp.py", line 330, in connect
+    connection.connect(self.address())
+  File "/usr/lib/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+TypeError: coercing to Unicode: need string or buffer, NoneType found
+I found a workaround for myself but a fix would be better ;)
+Best regards

@@ -1,0 +1,83 @@
+fmr commented on 25 Jun 2013
+I have the following scenario:
+Given the model below, the value of the date_read field determines whether a notification has been read. Setting this field to None will mark this unread. Also, I want to be able to update the location of the notification (i.e. Inbox or Archive) without touching the read state of the notification. However, I couldn't figure out how to set the value of the date_read field to None without triggering a serializer error.
+customer/models.py
+class Notification(models.Model):
+    recipient = models.ForeignKey('auth.User', related_name='notifications',
+                                  db_index=True)
+
+    sender = models.ForeignKey('auth.User', null=True)
+
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+
+    category = models.CharField(max_length=255, null=True)
+
+    INBOX, ARCHIVE = 'Inbox', 'Archive'
+    choices = (
+        (INBOX, _(INBOX)),
+        (ARCHIVE, _(ARCHIVE)))
+    location = models.CharField(max_length=32, choices=choices,
+                                default=INBOX)
+
+    date_sent = models.DateTimeField(auto_now_add=True)
+    date_read = models.DateTimeField(null=True)
+
+    class Meta:
+        ordering = ('-date_sent',)
+        abstract = True
+
+    def __unicode__(self):
+        return self.subject
+
+    def archive(self):
+        self.location = self.ARCHIVE
+        self.save()
+    archive.alters_data = True
+
+    @property
+    def is_read(self):
+        return self.date_read is not None
+api/serializers.py
+class NotificationSerializer(serializers.ModelSerializer):
+    date_read = serializers.DateTimeField(source='date_read', default=None, required=False)
+    partial = True
+
+    class Meta:
+        model = get_model('customer', 'Notification')
+        fields = (
+            'id',
+            'location',
+            'subject',
+            'body',
+            'sender',
+            'recipient',
+            'date_sent',
+            'date_read',
+        )
+        read_only_fields = (
+            'subject',
+            'body',
+            'sender',
+            'recipient',
+            'date_sent',
+        )
+I have tried a number of combinations of arguments for the DateTimeField to make it accept null values, but haven't had any luck with it.
+api/views.py
+class NotificationRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+
+    model = Notification
+    permission_classes = (IsAuthenticated,)
+    serializer_class = serializers.NotificationSerializer
+This is the API view I'm trying to use it for - to allow the user to send a PUT request to update a notification object.
+Testing:
+In [1]: from api.serializers import NotificationSerializer
+
+In [2]: serializer = NotificationSerializer(data={'location': 'Archive'})
+
+In [3]: serializer.is_valid()
+Out[3]: False
+
+In [4]: serializer.errors
+Out[4]: {'date_read': [u'This field cannot be blank.']}
+Using the Browsable API:

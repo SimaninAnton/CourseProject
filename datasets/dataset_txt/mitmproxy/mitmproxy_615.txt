@@ -1,0 +1,55 @@
+chenzx commented on 13 Jul 2017 •
+edited
+Steps to reproduce the problem:
+I want to implement a special http-ALG, on the base of a reverse proxy, plus rewriting non-upstream urls (including server's 302 redirect urls, and urls in JSON response), but i failed:
+Any other comments? What have you tried so far?
+Cmd line: mitmdump -R http://api.music.163.com -p 8888 -s mitmproxy-addon-http-ALG.py
+& Script code here：
+    from urllib.parse import urlparse
+    from mitmproxy import ctx
+
+    HTTP_ALG_PREFIX = "http://192.168.99.245:8888/"
+
+    def addPrefix(url):
+        if url.startswith("http://") and not url.startswith(HTTP_ALG_PREFIX):
+            url = HTTP_ALG_PREFIX + url
+        return url
+
+    def removePrefix(url):
+        if url.startswith(HTTP_ALG_PREFIX):
+            url = url[len(HTTP_ALG_PREFIX):]
+        return url
+
+    class HttpALGCustom_RewriteNonUpstreamHostUrls:
+        def requestheaders(self, flow):
+            print(repr(flow.request.headers))
+            print("flow.request.url={} flow.request.path={}".format(flow.request.url, flow.request.path))
+            path = flow.request.path
+            if path.startswith("/http://"):
+                new_url = path[1:]
+                print("new_url={}".format(new_url))
+                flow.request.url = new_url
+                #TODO: set Host from url?
+                o = urlparse(new_url)
+                print("modify request.headers.Host to {}".format(o.netloc))
+                flow.request.headers[b"Host"] = o.netloc #mitmproxy不支持在addon里面修改Host吗？
+        
+        def responseheaders(self, flow):
+            location = flow.response.headers.get("Location")
+            if location:
+                flow.response.headers["Location"] = HTTP_ALG_PREFIX + location
+        
+        def response(self, flow):
+            bytes_content = flow.response.content
+            str_content = bytes_content.decode("utf8")
+            if flow.request.path.startswith("/openapi"):
+                str_content = str_content.replace("http://", HTTP_ALG_PREFIX+"http://")
+            flow.response.content = str_content.encode("utf8")
+        
+        def error(self, flow):
+            print("error: {}".format(flow.error))
+
+
+    def start():
+        return HttpALGCustom_RewriteNonUpstreamHostUrls()
+        

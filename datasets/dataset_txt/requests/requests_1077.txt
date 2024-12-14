@@ -1,0 +1,28 @@
+wujek-srujek commented on May 13, 2016 •
+edited
+I am using mitmproxy for development of a RESTful API client as I want to see what's sent. I noticed that sometimes I don't see all requests in my proxy logs. I narrowed down the code to a reproducible test case.
+How to reproduce: start some proxy locally which allows you to see the requests, set the HTTP(S)_PROXY variables and execute the following code:
+#!/usr/bin/env python3 
+import requests
+session = requests.Session()
+def retry_hook(res, *args, **kwargs):
+    req = res.request
+    print(req)
+    if 'X-Retried-Request' not in req.headers:
+        print('(Retrying)')
+        req.headers['X-Retried-Request'] = True
+        return session.send(req)
+    else:
+        print('(Not retrying retried request)')
+
+session.get('https://www.google.de', hooks={'response': retry_hook}, verify=False)
+I'm using google.de as I am in Germany and google.com results in redirects, which I don't want to see in my log. Depending on where you test this, use a different domain.
+What the code does: it sends a request, and using a hook, when the response is ready, it re-sends the original request. The first time the request is re-sent is sets a custom header, so that the next time the request is not re-sent as the header is discovered. The first time the request is immediately re-sent, the second time it is not. Every time the hook is invoked the request is printed out.
+I see the following output (ignoring a warning about unverified HTTPS requests):
+<PreparedRequest [GET]>
+(Retrying)
+<PreparedRequest [GET]>
+(Not retrying retried request)
+However, in my proxy window, I only see the first request, the second one is not seen (the custom header is missing from the request, that's how I know it is the second one that's missing.
+Now, this is a contrived example, let me explain a real world scenario. We have a RESTful service which requires OAuth2 tokens for authorization. The tokens we have are valid for 3 minutes. I am writing a tool in Python which allows us to call the service, and it handles authentication transparently: it gets a token initially, and as long as it is valid, it uses it. At some point, a 401 response will be returned, that's when the hook comes in - it recognizes 401, fetches another token, sets it on the session and request again, and retries the request once. The result of this retried request is the result of the hook, meaning that a unauthorized first request is 'forgotten', and the retried one is returned. Any other result than 401, and retried requests resulting in 401 get standard treatment.
+There is an issue that such retried requests always fail when a proxy is in place, but as they correctly fetched the token and set it on the Session, subsequent requests don't have this problem.

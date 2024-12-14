@@ -1,0 +1,36 @@
+arw180 commented on 18 Aug 2015
+I was implementing some bare-bones custom pagination of sorts that worked fine in 3.1.3 but is now broken since updating to 3.2.0 (FWIW it's also broken in 3.2.2). If there was an API change, I haven't been able to find it in the code or the docs.
+Relevant code snippets:
+views.py:
+class ListingSearchViewSet(viewsets.ModelViewSet):
+    serializer_class = serializers.ListingSerializer
+    filter_backends = (filters.SearchFilter, )
+    search_fields = ('title', 'description', 'description_short',)
+    pagination_class = None
+
+def get_queryset(self):
+        filter_params = {}
+        limit = self.request.query_params.get('limit', False)
+        offset = self.request.query_params.get('offset', False)
+        if limit:
+            filter_params['limit'] = limit
+        if offset:
+            filter_params['offset'] = offset
+        return model_access.filter_listings(self.request.user.username,
+            filter_params)
+
+    def list(self, request):
+        return super(ListingSearchViewSet, self).list(self, request)
+model_access.py:
+def filter_listings(username, filter_params):
+    objects = models.Listing.objects.for_user(username).all()
+    # enforce any pagination params
+    if 'offset' in filter_params:
+        offset = int(filter_params['offset'])
+        objects = objects[offset:]
+
+    if 'limit' in filter_params:
+        limit = int(filter_params['limit'])
+        objects = objects[:limit]
+    return objects
+In all versions since 3.1.3, I get the following error when invoking this endpoint: AssertionError: Cannot create distinct fields once a slice has been taken.. If I remove the line that does the limiting (objects = objects[:limit]), I don't get the assertion error. Offset seems to behave in a similar manner.

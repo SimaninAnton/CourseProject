@@ -1,0 +1,61 @@
+abridgett commented on 4 Apr 2018
+Steps to reproduce the problem:
+Use a setup such as redirect_requests.py
+Send a keepalive request into MITM
+This is passed onto the upstream server and response returned (fine)
+Wait a little while - upstream closes the connection with a FIN
+(MITMproxy did not respond to this)
+Wait a bit longer and send another request to MITM
+MITM attempts to send this to the upstream which responds with a RST
+Client sees a 502 bad gateway error
+Any other comments? What have you tried so far?
+In our case we were using https://www.npmjs.com/package/json-server#cli-usage as the upstream server but it appears to be complying with keepalive docs. Just very surprised we are the only people seeing this :-)
+Workaround for us was to add flow.request.headers['Connection'] = 'close', this closed the upstream connection after each request.
+GET /config HTTP/1.1
+Host: 127.0.0.1
+Connection: keep-alive
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Linux; Android 7.1.1; Android SDK built for x86 Build/NYC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Encoding: identity
+Accept-Language: en-US,en;q=0.8
+
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Vary: Origin, Accept-Encoding
+Access-Control-Allow-Credentials: true
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: -1
+X-Content-Type-Options: nosniff
+Content-Type: application/json; charset=utf-8
+Content-Length: 4094
+ETag: W/"ffe-YXiFVkdRXmM5eFcp/fDfl4O1X+w"
+Date: Wed, 04 Apr 2018 12:53:09 GMT
+Connection: keep-alive
+
+{
+  "content": {
+....
+}
+
+[ NB: FIN is sent by upstream and received by MITM here]
+
+GET /config HTTP/1.1
+Host: 127.0.0.1
+Connection: keep-alive
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Linux; Android 7.1.1; Android SDK built for x86 Build/NYC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Encoding: identity
+Accept-Language: en-US,en;q=0.8
+If-None-Match: W/"ffe-YXiFVkdRXmM5eFcp/fDfl4O1X+w"
+ 
+[ RST now received]
+System information
+Mitmproxy: 3.0.3
+Python: 3.6.5
+OpenSSL: OpenSSL 1.0.2o 27 Mar 2018
+Platform: Darwin-17.5.0-x86_64-i386-64bit

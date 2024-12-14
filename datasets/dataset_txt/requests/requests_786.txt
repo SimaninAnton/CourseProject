@@ -1,0 +1,122 @@
+lukas-gitl commented on Feb 2, 2017
+When using requests.post (have not tried other methods) I get the following errors intermittently.
+Errors
+('Connection aborted.', BadStatusLine("''",))
+('Connection aborted.', error(104, 'Connection reset by peer'))
+("bad handshake: SysCallError(104, 'ECONNRESET')",)
+EOF occurred in violation of protocol (_ssl.c:661)
+HTTPSConnectionPool(host='...', port=443): Max retries exceeded with url: ... (Caused by NewConnectionError('<requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x...>: Failed to establish a new connection: [Errno 110] Operation timed out',))
+Sometimes I just get a 502 or 504 back, but that might be a remote issues
+The amount this happens differs, but at least a few times every hour (we are sending a few thousand logs per hour). I wasn't able to reproduce these errors locally or reliably.
+I have experienced this will various targets hosts, namely the api provided by: loggly.com, logentries.com, logz.io. Since they all have the issue I don't think it is a server configuration problem.
+This issue first appeared about a year ago when we set this up. However it seems to have gotten more problematic since we are sending more requests.
+Setup
+Running Python on Elastic Beanstalk inside a Single Container Docker Configuration behind an Elastic Load Balancer. The outgoing requests happen in various threads (not just in the main thread).
+More information that might be useful:
+EC2 Instance OS (cat /etc/*-release)
+NAME="Amazon Linux AMI"
+VERSION="2016.09"
+ID="amzn"
+ID_LIKE="rhel fedora"
+VERSION_ID="2016.09"
+PRETTY_NAME="Amazon Linux AMI 2016.09"
+ANSI_COLOR="0;33"
+CPE_NAME="cpe:/o:amazon:linux:2016.09:ga"
+HOME_URL="http://aws.amazon.com/amazon-linux-ami/"
+Amazon Linux AMI release 2016.09
+Docker Version (docker --version)
+Docker version 1.12.6, build 7392c3b/1.12.6
+Docker Container OS (cat /etc/*-release)
+3.4.6
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.4.6
+PRETTY_NAME="Alpine Linux v3.4"
+HOME_URL="http://alpinelinux.org"
+BUG_REPORT_URL="http://bugs.alpinelinux.org"
+Python 2.7.13
+pip freeze --local results:
+alembic==0.8.10
+aniso8601==1.2.0
+apns==2.0.1
+awsebcli==3.9.0
+backports.ssl-match-hostname==3.5.0.1
+blessed==1.9.5
+boto==2.45.0
+botocore==1.5.7
+cement==2.8.2
+cffi==1.9.1
+click==6.7
+colorama==0.3.7
+contextlib2==0.5.4
+coverage==4.3.4
+cryptography==1.7.2
+docker-py==1.7.2
+dockerpty==0.4.1
+docopt==0.4.0
+docutils==0.13.1
+enum34==1.1.6
+Faker==0.7.7
+Flask==0.12
+Flask-Compress==1.4.0
+Flask-Limiter==0.9.3
+Flask-Migrate==2.0.3
+Flask-RESTful==0.3.5
+-e flask-restful-swagger==0.15.5
+Flask-Script==2.0.5
+Flask-SQLAlchemy==2.1
+Flask-Testing==0.6.1
+funcsigs==1.0.2
+GeoAlchemy2==0.4.0
+idna==2.2
+ipaddress==1.0.18
+itsdangerous==0.24
+Jinja2==2.9.5
+jmespath==0.9.1
+limits==1.2.1
+Mako==1.0.6
+mandrill==1.0.57
+MarkupSafe==0.23
+mock==2.0.0
+nose==1.3.7
+pathspec==0.5.0
+pbr==1.10.0
+pep8==1.7.0
+pexpect==4.2.1
+psycopg2==2.6.2
+ptyprocess==0.5.1
+pyasn1==0.1.9
+pybars3==0.9.2
+pycparser==2.17
+pycrypto==2.6.1
+pymemcache==1.4.0
+PyMeta3==0.5.1
+pyOpenSSL==16.2.0
+python-dateutil==2.6.0
+python-editor==1.0.3
+python-gcm==0.1.5
+pytz==2016.10
+PyYAML==3.12
+requests==2.13.0
+rollbar==0.13.10
+semantic-version==2.5.0
+six==1.10.0
+SQLAlchemy==1.1.5
+tabulate==0.7.5
+uWSGI==2.0.14
+vcrpy==1.10.5
+wcwidth==0.1.7
+websocket-client==0.40.0
+Werkzeug==0.11.15
+wrapt==1.10.8
+Not working Solutions
+I have found similar issues here, but was not able to fix it with any of the described solutions. I have tried a lot of different approaches, non of which seem to work. Would much appreciate advice and what I should try next.
+Added a small sleep, since I thought this might be related to this GIL issue
+Tried running requests in separate processes instead of a thread, since GIL issue implied this might help
+Tried to use sessions per thread as to not open too many TCP connections, but no difference in error rate
+Tried installing various libraries (pyopenssl, pyasn1, and ndg-httpsclient) as recommended here and here.
+Tried injecting from requests.packages.urllib3.contrib import pyopenssl; pyopenssl.inject_into_urllib3() like described here.
+switched from ubuntu to alpine docker container
+updated everythign to the latest version (including ec2 and docker version)
+Some other stuff that I can't remember at this point
+What else should I try? Any idea what might be causing this? What tools should I use to debug this? I'm kind of at a loss here.

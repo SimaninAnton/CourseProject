@@ -1,0 +1,35 @@
+Contributor
+mjtamlyn commented on 8 Mar 2013
+Somewhere between 2.1 and 2.2 a change was introduced in the field_to_native method of serializers (or possibly in the is_simple_callable utility function). This has resulted in an additional query on list views. Here are two tracebacks which execute the same query in debug_toolbar:
+/lib/python2.7/site-packages/django/contrib/staticfiles/handlers.py in __call__(72)
+  return self.application(environ, start_response)
+/lib/python2.7/site-packages/rest_framework/views.py in dispatch(401)
+  response = handler(request, *args, **kwargs)
+/lib/python2.7/site-packages/rest_framework/generics.py in get(201)
+  return self.list(request, *args, **kwargs)
+/lib/python2.7/site-packages/rest_framework/mixins.py in list(91)
+  return Response(serializer.data)
+/lib/python2.7/site-packages/rest_framework/serializers.py in data(389)
+  self._data = self.to_native(obj)
+/lib/python2.7/site-packages/rest_framework/serializers.py in to_native(279)
+  value = field.field_to_native(obj, field_name)
+/lib/python2.7/site-packages/rest_framework/serializers.py in field_to_native(314)
+  if is_simple_callable(obj):
+/lib/python2.7/site-packages/rest_framework/fields.py in is_simple_callable(30)
+  args, _, _, defaults = inspect.getargspec(obj)
+/lib/python2.7/site-packages/django/contrib/staticfiles/handlers.py in __call__(72)
+  return self.application(environ, start_response)
+/lib/python2.7/site-packages/rest_framework/views.py in dispatch(401)
+  response = handler(request, *args, **kwargs)
+/lib/python2.7/site-packages/rest_framework/generics.py in get(201)
+  return self.list(request, *args, **kwargs)
+/lib/python2.7/site-packages/rest_framework/mixins.py in list(91)
+  return Response(serializer.data)
+/lib/python2.7/site-packages/rest_framework/serializers.py in data(389)
+  self._data = self.to_native(obj)
+/lib/python2.7/site-packages/rest_framework/serializers.py in to_native(279)
+  value = field.field_to_native(obj, field_name)
+/lib/python2.7/site-packages/rest_framework/serializers.py in field_to_native(325)
+  return [self.to_native(item) for item in obj.all()]
+I'm not sure exactly what the change is, but I consider this a pretty major regression - the query to generate the list could be very complex, and executing it twice is wasteful.
+Perhaps there should be some assertNumQueries tests for simple cases to ensure this does not happen.

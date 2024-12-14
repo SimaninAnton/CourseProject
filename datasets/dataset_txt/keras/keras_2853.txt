@@ -1,0 +1,40 @@
+fferroni commented on 26 Mar 2017
+Hello,
+Reading the source code for Recurrent.py, it would appear that a layer like LSTM would be able to accept multiple input tensors. In call() of Recurrent, I see an option like ifinstance(inputs, list) then it will pick the first element of that list to be the input data tensor, and the rest as initial_states presumably.
+https://github.com/fchollet/keras/blob/ec9c95fdbd60c2d86288858563c57b0007b24430/keras/layers/recurrent.py#L263
+ def call(self, inputs, mask=None, initial_state=None, training=None):
+        # input shape: `(samples, time (padded with zeros), input_dim)`
+        # note that the .build() method of subclasses MUST define
+        # self.input_spec and self.state_spec with complete input shapes.
+        if initial_state is not None:
+            if not isinstance(initial_state, (list, tuple)):
+                initial_states = [initial_state]
+            else:
+                initial_states = list(initial_state)
+        if isinstance(inputs, list):
+            initial_states = inputs[1:]
+            inputs = inputs[0]
+However, if I run a simple script like such
+import numpy as np
+from keras.models import Model
+from keras.layers import LSTM, Input
+
+data_input = Input(shape=(10,5))
+time_input = Input(shape=(10,1))
+
+asynchronous = LSTM(15)([data_input, time_input])
+model = Model(inputs=[data_input, time_input], outputs=asynchronous)
+I get the following exception:
+Traceback (most recent call last):
+  File "ras.py", line 24, in <module>
+    main()
+  File "ras.py", line 16, in main
+    asynchronous = LSTM(15)([data_input, time_input])
+  File "/usr/local/lib/python2.7/dist-packages/keras/layers/recurrent.py", line 252, in __call__
+    return super(Recurrent, self).__call__(inputs, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 511, in __call__
+    self.assert_input_compatibility(inputs)
+  File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 401, in assert_input_compatibility
+    str(input))
+ValueError: Layer lstm_1 expects 1 inputs, but it received 2 input tensors. Input received: <built-in function input>
+I am actually trying to write a custom layer which requires two input tensors than inherits from Recurrent, but I am not sure whether I need to change the Recurrent class as well at this point... from the source code it would appear it can accept a list, and it would just use the first element of that list as the main input tensor. Can someone clarify?

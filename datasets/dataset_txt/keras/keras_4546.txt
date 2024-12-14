@@ -1,0 +1,66 @@
+seongwook-ham commented on 23 Aug 2016 •
+edited
+related to #2226 #956 #3080
+I've already build the function to get gradient of each layers on batch using theano backend function.
+It works well but takes time too much.
+I use train on batch method on gtx 980 Ti and intel core i7-4770
+training time per batch is 0.0.... sec but gradient time per batch is about 4.5 sec
+I want to get gradient with less computation time.
+So I've read callback method (https://gist.github.com/jiumem/cb0963ca3a2196128a82) but this method can not calculate gradient exactly on Nesterov=True
+I've thought to use optimizer to get grardient.
+`class SGD_custom(Optimizer):
+'''Stochastic gradient descent, with support for momentum,
+learning rate decay, and Nesterov momentum.
+# Arguments
+    lr: float >= 0. Learning rate.
+    momentum: float >= 0. Parameter updates momentum.
+    decay: float >= 0. Learning rate decay over each update.
+    nesterov: boolean. Whether to apply Nesterov momentum.
+'''
+def __init__(self, lr=0.01, momentum=0., decay=0.,
+             nesterov=False, **kwargs):
+    super(SGD_custom, self).__init__(**kwargs)
+    self.__dict__.update(locals())
+    self.iterations = K.variable(0.)
+    self.lr = K.variable(lr)
+    self.momentum = K.variable(momentum)
+    self.decay = K.variable(decay)
+
+def get_updates(self, params, constraints, loss):
+    grads = self.get_gradients(loss, params)
+    #custom grad global 
+    global savegrad#
+    savegrad=grads#
+    print savegrad#
+    lr = self.lr * (1. / (1. + self.decay * self.iterations))
+    self.updates = [(self.iterations, self.iterations + 1.)]
+
+    # momentum
+    self.weights = [K.variable(np.zeros(K.get_value(p).shape)) for p in params]
+    for p, g, m in zip(params, grads, self.weights):
+        v = self.momentum * m - lr * g  # velocity
+        self.updates.append((m, v))
+
+        if self.nesterov:
+            new_p = p + self.momentum * v - lr * g
+        else:
+            new_p = p + v
+
+        # apply constraints
+        if p in constraints:
+            c = constraints[p]
+            new_p = c(new_p)
+        self.updates.append((p, new_p))
+    return self.updates
+
+def get_config(self):
+    config = {'lr': float(K.get_value(self.lr)),
+              'momentum': float(K.get_value(self.momentum)),
+              'decay': float(K.get_value(self.decay)),
+              'nesterov': self.nesterov}
+    base_config = super(SGD_custom, self).get_config()
+    return dict(list(base_config.items()) + list(config.items()))
+`
+but printed output is [GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0, GpuFromHost.0]
+I don't know what to do
+is there some way to get gradient from training procedure? or with very low computational cost?

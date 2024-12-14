@@ -1,0 +1,94 @@
+edouard-lopez commented on 9 Sep 2015
+The following requirements work fine with tests suite
+django-filter==0.11.0
+django-model-utils==2.3.1
+Django==1.8.4
+djangorestframework==3.2.2
+drf-extensions==0.2.7
+Error
+Upgrading to djangorestframework 3.2.3, tests throw this :
+Traceback (most recent call last):
+  File "projects/xyz/core/tests/test_accounts.py", line 60, in test_can_list_accounts
+    response = self.client.get('/api/accounts/', format='json')
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/test.py", line 162, in get
+    response = super(APIClient, self).get(path, data=data, **extra)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/test.py", line 88, in get
+    return self.generic('GET', path, **r)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/django/test/client.py", line 379, in generic
+    return self.request(**r)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/test.py", line 159, in request
+    return super(APIClient, self).request(**kwargs)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/test.py", line 111, in request
+    request = super(APIRequestFactory, self).request(**kwargs)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/django/test/client.py", line 466, in request
+    six.reraise(*exc_info)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/django/utils/six.py", line 659, in reraise
+    raise value
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/django/core/handlers/base.py", line 132, in get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/django/views/decorators/csrf.py", line 58, in wrapped_view
+    return view_func(*args, **kwargs)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/viewsets.py", line 87, in view
+    return self.dispatch(request, *args, **kwargs)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/views.py", line 466, in dispatch
+    response = self.handle_exception(exc)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/views.py", line 463, in dispatch
+    response = handler(request, *args, **kwargs)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/mixins.py", line 40, in list
+    queryset = self.filter_queryset(self.get_queryset())
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/generics.py", line 151, in filter_queryset
+    queryset = backend().filter_queryset(self.request, queryset, self)
+  File ".virtualenvs/xyz/lib/python3.4/site-packages/rest_framework/filters.py", line 107, in filter_queryset
+    for search_field in search_fields
+TypeError: 'NoneType' object is not iterable
+Test
+    def test_can_list_accounts(self):
+        self.client.force_authenticate(user=self.cust_admin)
+        response = self.client.get('/api/accounts/', format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+Views
+class AccountViewSet(viewsets.ModelViewSet):
+    queryset = Account.objects.all()
+    serializer_class = AccountSerializer
+
+    def get_queryset(self):
+        customer = self.request.user.customer
+        if customer:
+            return self.queryset.filter(customer=customer)
+        return self.queryset
+Serializer
+class AccountSerializer(serializers.ModelSerializer):
+    group = serializers.SlugRelatedField(slug_field='name', queryset=Group.objects.all(), required=False, allow_null=True)
+    new_password = serializers.CharField(max_length=128, required=False, allow_null=True, write_only=True)
+
+    class Meta:
+        model = Account
+        fields = ('id', 'url', 'username', 'first_name', 'last_name', 'email', 'group', 'customer', 'is_superuser', 'is_active',
+                  'date_joined', 'last_login', 'new_password', 'default_warehouse', 'current_warehouse', 'default_customer', 'current_customer')
+        read_only_fields = ('date_joined', 'last_login')
+        write_only_fields = ('new_password',)
+
+    def update(self, instance, validated_data):
+        instance = super(AccountSerializer, self).update(instance, validated_data)
+        pwd = validated_data.get('new_password')
+        if pwd:
+            instance.set_password(pwd)
+        instance.save()
+        return instance
+
+    @transaction.atomic
+    def create(self, validated_data):
+        pwd = validated_data.pop('new_password', None)
+        group = validated_data.pop('group', None)
+        account =  Account.objects.create(**validated_data)
+        if pwd:
+            account.set_password(pwd)
+            account.save()
+        if group:
+            account.group = group
+            account.save()
+        return account
+Questions
+The 3.2.3 release only speak about Added regex style to SearchFilter. (#3316).
+Any suggestion what's the matter here?

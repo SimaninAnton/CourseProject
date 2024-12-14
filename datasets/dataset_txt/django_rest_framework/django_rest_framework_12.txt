@@ -1,0 +1,26 @@
+robinhundt commented 23 days ago
+Summary
+EDIT: At the end of this issue i realized that this problem is the fault of the django-rest-framework-jwt library, but it is an easy to make mistake, because the documentation of APISettings does not declare it as internal. I'm not sure if there are many projects using this class wrongly for their own code.
+The APISettings class located in rest_framework/settings.py uses caching which has previously led to problems with the override_settings method provided in django (see #2466 as well as #2473).
+Unfortunately the function reload_api_settings which looks like this:
+def reload_api_settings(*args, **kwargs):
+    setting = kwargs['setting']
+    if setting == 'REST_FRAMEWORK':
+        api_settings.reload()
+only reloads the settings when the setting sent by the signal is REST_FRAMEWORK.
+When the an app (like https://github.com/jpadilla/django-rest-framework-jwt ) is used which makes use of the APISettings class to construct it's own api_settings singleton, the condition in the reload_api_settings function causes overrides of library settings (e.g. JWT_AUTH see https://jpadilla.github.io/django-rest-framework-jwt/ ) to be ignored.
+I'm not a hundred percent sure if this is really an issue of django-rest-framework or of django-rest-framework-jwt using the the internal? APISettings class.
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Use django-rest-framework-jwt with django-rest-framework
+Perform request that accesses JWT_AUTH settings
+Use override_setting to overrde a setting from the JWT_AUTH dict
+Change will not be reflected since settings are cached and signal is ignored
+Expected behavior
+Actual behavior

@@ -1,0 +1,90 @@
+Contributor
+nemesisdesign commented on 25 Jun 2013
+If i'm not wrong, is not easy to add non model fields to a ModelSerializer. If I'm wrong I apologize and I would really like to know how to do it properly.
+But just in case I'm not I want to show you this working code snippet i just came up with.
+What it does is to create a ModelSerializer in which an option "non_native_fields" can be specified.
+Every non_native_field will neither be tried to be instantiated into the model object instance, nor it will be displayed (for example in a GET request).
+I developed this to implement "password_confirmation" field.
+from rest_framework import serializers
+
+
+class ExtensibleModelSerializerOptions(serializers.SerializerOptions):
+    """
+    Meta class options for ModelSerializer
+    """
+    def __init__(self, meta):
+        super(ExtensibleModelSerializerOptions, self).__init__(meta)
+        self.model = getattr(meta, 'model', None)
+        self.read_only_fields = getattr(meta, 'read_only_fields', ())
+        self.non_native_fields = getattr(meta, 'non_native_fields', ())
+
+
+class ExtensibleModelSerializer(serializers.ModelSerializer):
+
+    _options_class = ExtensibleModelSerializerOptions
+
+    def restore_object(self, attrs, instance=None):
+        """
+        Deserialize a dictionary of attributes into an object instance.
+        You should override this method to control how deserialized objects
+        are instantiated.
+        """
+        for field in self.opts.non_native_fields:
+            attrs.pop(field)
+
+        return super(ExtensibleModelSerializer, self).restore_object(attrs, instance)
+
+    def to_native(self, obj):
+        """
+        Serialize objects -> primitives.
+        """
+        ret = self._dict_class()
+        ret.fields = {}
+
+        for field_name, field in self.fields.items():
+            # --- BEGIN EDIT --- #
+            if field_name in self.opts.non_native_fields:
+                continue
+            # --- END --- #
+            field.initialize(parent=self, field_name=field_name)
+            key = self.get_field_key(field_name)
+            value = field.field_to_native(obj, field_name)
+            ret[key] = value
+            ret.fields[key] = field
+        return ret
+
+### Example usage ###
+
+from django.utils.translation import ugettext_lazy as _
+# my project custom user model which adds few fields to the classic user model
+from .models import Profile
+
+class ProfileCreateSerializer(ExtensibleModelSerializer):
+    """ Profile Serializer """
+
+    password_confirmation = serializers.CharField(max_length=Profile._meta.get_field('password').max_length)
+
+    def validate_password_confirmation(self, attrs, source):
+        """
+        password_confirmation check
+        """
+        password_confirmation = attrs[source]
+        password = attrs['password']
+
+        if password_confirmation != password:
+            raise serializers.ValidationError(_('Password confirmation mismatch'))
+
+        return attrs
+
+    class Meta:
+        model = Profile
+        fields = (
+            # required
+            'username', 'email', 'password', 'password_confirmation',
+            # optional
+            'first_name', 'last_name', 'about', 'gender',
+            'birth_date', 'address', 'city', 'country'
+        )
+        non_native_fields = ('password_confirmation', )
+Thanks
+5

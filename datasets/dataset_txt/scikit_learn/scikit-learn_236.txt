@@ -1,0 +1,90 @@
+bgx90 commented on Sep 21, 2019 •
+edited
+Description
+When I run GridSearchCV.fit() it causes a memory leak that eventually consumes all physical memory (16 GB) and causes my python process to be killed.
+Steps/Code to Reproduce
+Create a python file that contains the code below
+Download this csv file Churn_Modelling.csv.txt, remove the .txt extension (I had to add that to upload the file to github), and put it in the same folder as the python file from step 1
+Run the code with python
+Watch the python process's memory consumption continually increase and never decrease
+import numpy as np
+import pandas as pd
+
+# Import data set
+dataset = pd.read_csv('Churn_Modelling.csv')
+X = dataset.iloc[:, 3:13].values
+y = dataset.iloc[:, 13].values
+
+# Encode categorical data
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
+
+ct = ColumnTransformer(
+    [
+        ('Country',
+         OneHotEncoder(),
+         [1]),
+        ('Gender',
+         OrdinalEncoder(),
+         [2])
+    ],
+    remainder='passthrough')
+
+X = ct.fit_transform(X)
+X = X[:, 1:]
+
+# Split dataset into training and test sets
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+# Feature scaling
+from sklearn.preprocessing import StandardScaler
+
+sc = StandardScaler()
+X_train = sc.fit_transform(X_train)
+X_test = sc.transform(X_test)
+
+# Build ANN
+from keras.wrappers.scikit_learn import KerasClassifier
+from keras.models import Sequential
+from keras.layers import Dense
+from sklearn.model_selection import GridSearchCV
+
+def build_classifier(optimizer):
+    classifier = Sequential()
+    classifier.add(Dense(units=6, kernel_initializer='uniform', activation='relu', input_dim=11))
+    classifier.add(Dense(units=6, kernel_initializer='uniform', activation='relu'))
+    classifier.add(Dense(units=1, kernel_initializer='uniform', activation='sigmoid'))
+    classifier.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    return classifier
+
+classifier = KerasClassifier(build_fn=build_classifier)
+
+# Tune the ANN
+parameters = {'batch_size':[25, 32], 'epochs':[100, 500], 'optimizer':['adam', 'rmsprop']}
+grid_search = GridSearchCV(estimator=classifier, param_grid=parameters, scoring='accuracy', cv=10)
+grid_search = grid_search.fit(X_train, y_train)
+best_parameters = grid_search.best_params_
+best_accuracy = grid_search.best_score_
+Expected Results
+Code runs to completion without leaking memory
+Actual Results
+The call to GridSearchCv.fit() begins running the epochs and consumes all available RAM (16 GB total) causing the python process running the code to be killed before the code can finish running
+Versions
+System:
+python: 3.7.3 | packaged by conda-forge | (default, Jul 1 2019, 21:52:21) [GCC 7.3.0]
+executable: /home/user/miniconda3/envs/super_ds/bin/python
+machine: Linux-5.2.0-2-amd64-x86_64-with-debian-bullseye-sid
+Python deps:
+pip: 19.2.3
+setuptools: 41.2.0
+sklearn: 0.21.3
+numpy: 1.17.2
+scipy: 1.3.1
+Cython: None
+pandas: 0.25.1
+Keras:
+keras: 2.3.0
+keras-applications: 1.0.8
+keras-preprocessing: 1.1.0

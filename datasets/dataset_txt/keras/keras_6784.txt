@@ -1,0 +1,142 @@
+napsternxg commented on 9 Aug 2015
+I have the following code for training a model on the IRIS dataset
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation
+from keras.optimizers import SGD
+
+from sklearn.datasets import load_iris
+from sklearn.cross_validation import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+
+iris = load_iris()
+
+X, y = iris.data, iris.target
+enc = OneHotEncoder()
+y= enc.fit_transform(y[:, np.newaxis]).toarray()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=42)
+
+print X.shape, y.shape # Outputs ((150L, 4L), (150L, 3L))
+
+
+# Implement Model in Keras
+model = Sequential()
+model.add(Dense(X.shape[1], 10, init='uniform', activation='tanh'))
+model.add(Dropout(0.5))
+model.add(Dense(10, 10, init='uniform', activation='tanh'))
+model.add(Dropout(0.5))
+model.add(Dense(10, y.shape[1], init='uniform', activation='softmax'))
+
+sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+# Compile the model using theano
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+
+from sklearn import cross_validation
+print model.to_yaml()
+"""
+Outputs the following:
+class_mode: categorical
+layers:
+- {W_constraint: null, W_regularizer: null, activation: tanh, activity_regularizer: null,
+  b_constraint: null, b_regularizer: null, init: uniform, input_dim: !!python/long '4',
+  name: Dense, output_dim: 10}
+- {name: Dropout, p: 0.5}
+- {W_constraint: null, W_regularizer: null, activation: tanh, activity_regularizer: null,
+  b_constraint: null, b_regularizer: null, init: uniform, input_dim: 10, name: Dense,
+  output_dim: 10}
+- {name: Dropout, p: 0.5}
+- {W_constraint: null, W_regularizer: null, activation: softmax, activity_regularizer: null,
+  b_constraint: null, b_regularizer: null, init: uniform, input_dim: 10, name: Dense,
+  output_dim: !!python/long '3'}
+loss: categorical_crossentropy
+name: Sequential
+optimizer: {decay: 1.0e-06, lr: 0.1, momentum: 0.9, name: SGD, nesterov: true}
+theano_mode: null
+"""
+
+# Perform cross validated training
+kf = cross_validation.KFold(X.shape[0], n_folds=10)
+scores = []
+for train_index, test_index in kf:
+    model.fit(X[train_index], y[train_index], nb_epoch=20, batch_size=20, verbose=0)
+    scores.append(model.evaluate(X[test_index], y[test_index], show_accuracy=1))
+print scores
+print np.mean(scores)
+
+"""
+After many runs I get the following output:
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+0.0
+
+This means that the model accuracy is 0.0
+"""
+Since I am getting the model accuracy as 0 hence I decided to reset the weights of the model and train it again. Here is how I did it:
+#print model.get_weights()
+model.set_weights(np.array([np.random.rand(*k.shape) for k in model.get_weights()]))
+kf = cross_validation.KFold(X.shape[0], n_folds=10)
+scores = []
+for train_index, test_index in kf:
+    model.fit(X[train_index], y[train_index], nb_epoch=20, batch_size=20, verbose=0)
+    scores.append(model.evaluate(X[test_index], y[test_index], show_accuracy=1))
+print scores
+print np.mean(scores)
+"""
+This time I get the following outputs:
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+[[0.28251698613166809, 1.0], [0.1529315859079361, 1.0], [0.12931123375892639, 1.0], [0.6154976487159729, 0.33333333333333331], [0.86187130212783813, 0.0], [1.0279873609542847, 0.0], [0.70736020803451538, 0.33333333333333331], [0.74620842933654785, 0.0], [0.73251497745513916, 0.0], [0.86093902587890625, 0.0]]
+[ 0.61171388  0.36666667]
+"""
+Notice the accuracy is around 0.366 and this is after multiple runs. And it keeps going down continuously.
+However, I get very good results (not the best) using around 30k epochs when I try to train a logistic regression using the following code:
+logit = Sequential()
+logit.add(Dense(X.shape[1], y.shape[1], init='uniform', activation='softmax'))
+logit_sgd = SGD()
+logit.compile(loss='categorical_crossentropy', optimizer=logit_sgd)
+
+kf = cross_validation.KFold(X.shape[0], n_folds=10)
+for train_index, test_index in kf:
+    logit.fit(X[train_index], y[train_index], nb_epoch=10000, batch_size=200, verbose=0)
+    scores.append(logit.evaluate(X[test_index], y[test_index], show_accuracy=1)[1])
+print scores
+print np.mean(scores)
+"""
+Output after running the above loop 2-3 times:
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+15/15 [==============================] - 0s
+[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.66666666666666663, 0.66666666666666663, 0.66666666666666663, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.80000000000000004, 0.80000000000000004, 1.0, 1.0, 0.73333333333333328, 1.0, 1.0, 1.0, 1.0, 1.0, 0.80000000000000004, 0.8666666666666667, 1.0, 1.0, 0.73333333333333328, 1.0, 1.0, 1.0, 1.0, 1.0, 0.80000000000000004, 0.8666666666666667, 1.0, 1.0, 0.73333333333333328, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.8666666666666667, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.8666666666666667, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.8666666666666667, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.8666666666666667, 1.0, 1.0, 0.8666666666666667, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.80000000000000004, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.8666666666666667, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8666666666666667, 0.93333333333333335, 1.0, 1.0, 0.8666666666666667, 1.0]
+0.894509803922
+"""
+The decision surfaces for the logistic regression and the neural net are:
+I have also tried to reset the learning rates, momentum and decay of the SGD but the model always gets stuck in the accuracy around 58-64%
+What can be the reason for this ?
+I will try some more things. My working copy can be seen at the Ipython notebook: https://github.com/napsternxg/ipython-notebooks/blob/master/Keras%20Demo.ipynb
+UPDATE: After doing some more debugging, I found that the neural network model is just learning to predict only 2 of the 3 classes. The pair of classes are usually (0, 1) and (0,2).

@@ -1,0 +1,77 @@
+nayakt commented on 26 Jul 2017 •
+edited
+Hi,
+I have created a custom layer and using it in my model on top of LSTM. But when I am trying to concatenate the output of two such custom layers, I am getting following error:
+Epoch 1/1
+** On entry to SGEMM parameter number 10 had an illegal value
+Traceback (most recent call last):
+File "relation-classifier-model.py", line 399, in
+run_lstm_model(train_data, dev_data, best_model_file_name, out_file_name)
+File "relation-classifier-model.py", line 306, in run_lstm_model
+steps_per_epoch=train_steps, epochs=1, verbose=2)
+File "/home/nayak/.local/lib/python2.7/site-packages/keras/legacy/interfaces.py", line 87, in wrapper
+return func(*args, **kwargs)
+File "/home/nayak/.local/lib/python2.7/site-packages/keras/engine/training.py", line 1845, in fit_generator
+class_weight=class_weight)
+File "/home/nayak/.local/lib/python2.7/site-packages/keras/engine/training.py", line 1565, in train_on_batch
+outputs = self.train_function(ins)
+File "/home/nayak/.local/lib/python2.7/site-packages/keras/backend/theano_backend.py", line 1197, in call
+return self.function(*inputs)
+File "/home/nayak/.local/lib/python2.7/site-packages/theano/compile/function_module.py", line 897, in call
+storage_map=getattr(self.fn, 'storage_map', None))
+File "/home/nayak/.local/lib/python2.7/site-packages/theano/gof/link.py", line 325, in raise_with_op
+reraise(exc_type, exc_value, exc_trace)
+File "/home/nayak/.local/lib/python2.7/site-packages/theano/compile/function_module.py", line 883, in call
+self.fn() if output_subset is None else
+RuntimeError: cublasSgemmBatched: (cublas) Invalid value.
+Apply node that caused the error: GpuGemmBatch{inplace=True}(GpuAllocEmpty{dtype='float32', context_name=None}.0, TensorConstant{1.0}, InplaceGpuDimShuffle{0,1,x}.0, InplaceGpuDimShuffle{0,x,1}.0, TensorConstant{0.0})
+Toposort index: 552
+Inputs types: [GpuArrayType(float32, 3D), TensorType(float32, scalar), GpuArrayType(float32, (False, False, True)), GpuArrayType(float32, (False, True, False)), TensorType(float32, scalar)]
+Inputs shapes: [(16, 300, 13), (), (16, 300, 1), (16, 1, 13), ()]
+Inputs strides: [(15600, 52, 4), (), (2400, 4, 4), (52, 52, 4), ()]
+Inputs values: ['not shown', array(1.0, dtype=float32), 'not shown', 'not shown', array(0.0, dtype=float32)]
+Outputs clients: [[GpuReshape{3}(GpuGemmBatch{inplace=True}.0, MakeVector{dtype='int64'}.0)]]
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+I ran the code in CPU and it worked well for 'concatenation'.
+But when I try to Add them it works.
+Custom Layer
+class WeightedGlobalAverage(Layer):
+def init(self, output_dim, **kwargs):
+self.output_dim = output_dim
+super(WeightedGlobalAverage, self).init(**kwargs)
+def build(self, input_shape):
+    # Create a trainable weight variable for this layer.
+    self.kernel = self.add_weight(name='kernel',
+                                  shape=(self.output_dim, 1),
+                                  initializer='uniform',
+                                  trainable=True)
+    super(WeightedGlobalAverage, self).build(input_shape)
+
+def call(self, x):
+    reduce_last_dim = Lambda(lambda x: x[:, :, 0], output_shape=lambda shape: (shape[0], shape[1]))
+    y = reduce_last_dim(K.dot(x, self.kernel))
+    weights = K.softmax(y)
+    return K.batch_dot(x, weights, axes=[1, 1])
+
+def compute_output_shape(self, input_shape):
+    return input_shape[0], self.output_dim
+
+def get_config(self):
+    config = {'output_dim': self.output_dim}
+    base_config = super(WeightedGlobalAverage, self).get_config()
+    return dict(list(base_config.items()) + list(config.items()))
+Model Code
+arg1_input = Input(shape=(None, vec_dim), dtype='float32', name='arg1_ctx_input')
+arg2_input = Input(shape=(None, vec_dim), dtype='float32', name='arg2_ctx_input')
+arg1_output = LSTM(sent_vec_dim, return_sequences=True)(arg1_input)
+arg2_output = LSTM(sent_vec_dim, return_sequences=True)(arg2_input)
+arg1_output = WeightedGlobalAverage(sent_vec_dim)(arg1_output)
+arg2_output = WeightedGlobalAverage(sent_vec_dim)(arg2_output)
+Following line is raising the error
+merge_output = Concatenate(axis=-1)([arg1_output, arg2_output])
+labels = Dense(units=len(relation_cls_label_map), activation='softmax', name='labels')(merge_output)
+
+lstm_model = Model(inputs=[arg1_input, arg2_input], outputs=[labels])
+Note: If I change the 'theano' flag 'optimizer=None', then it is running.
+Entire code is available here: https://github.com/nayakt/IE

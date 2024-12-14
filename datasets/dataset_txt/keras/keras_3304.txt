@@ -1,0 +1,48 @@
+Contributor
+toddgardner commented on 5 Feb 2017
+If set_learning_phase has been called the next layer in the model gets an error, as described here:
+http://stackoverflow.com/questions/41704617/exception-extending-keras-vgg16-model-self-assert-input-compatibilityx-throw
+(included a full reproducer below)
+I believe this is the result of the change: 8c0c377#diff-05ec8fc63f0e9bb35f99c0ca76a66d0e
+In particular, if set_learning_phase has been called, call returns a function, not a tensor, because in_train_phase does not evaluate the callable if set_learn_phase is called.
+The most robust fix is probably to make in_train/test_phase accept a callable, like switch does, and evaluate it in case set_learning_phase has been called. Not sure how to test it but can through together a PR.
+[*] Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+[*] If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+[*] Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+import keras
+from keras import backend as K
+from keras.layers import Convolution2D, MaxPooling2D, Flatten, Input
+from keras.layers import Dense, Dropout, Reshape, Input
+import numpy as np
+from keras.applications import vgg16
+
+K.set_learning_phase(0)
+input_tensor = Input((224, 224, 3))
+model = vgg16.VGG16(input_tensor=input_tensor, include_top=False)
+x = model.output
+x = Flatten()(x)
+x = Dense(1024, activation='relu')(x)
+x = Dropout(0.5)(x)
+x = Dense(512,activation='relu')(x)
+x = Dropout(0.5)(x)
+x = Dense(256,activation='relu')(x)
+x = Dropout(0.5)(x)
+x = Dense(1)(x)
+model2 = Model(model.input, x)
+model2.predict(np.zeros((1, 224, 224, 3)))
+Produces:
+$ python test-keras.py 
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "test-keras.py", line 15, in <module>
+    x = Dense(512,activation='relu')(x)
+  File "/Users/todd/miniconda2/envs/landmarker/lib/python2.7/site-packages/keras/engine/topology.py", line 529, in __call__
+    self.assert_input_compatibility(x)
+  File "/Users/todd/miniconda2/envs/landmarker/lib/python2.7/site-packages/keras/engine/topology.py", line 457, in assert_input_compatibility
+    if K.ndim(x) < ndim:
+  File "/Users/todd/miniconda2/envs/landmarker/lib/python2.7/site-packages/keras/backend/tensorflow_backend.py", line 399, in ndim
+    dims = x.get_shape()._dims
+AttributeError: 'function' object has no attribute 'get_shape'

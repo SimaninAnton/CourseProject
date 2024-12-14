@@ -1,0 +1,44 @@
+Contributor
+iskandr commented on 11 Jul 2015
+I'm building a network using the new Graph model which takes two sequences as inputs, feeds them through an RNN, concatenates the final output vectors, and passes that on to a dense layer. I expected that the input size of dense layer should be twice the output dimensionality of the RNNs but this doesn't seem to be working.
+Does anyone know what I may be doing wrong?
+graph = Graph()
+graph.add_input(name='peptide', ndim=3)
+graph.add_input(name='mhc', ndim=3)
+
+# RNN for peptide sequences
+graph.add_node(JZS1(input_dim=20, output_dim=5), name="peptide_rnn", input="peptide")
+
+# RNN for MHC sequences
+graph.add_node(JZS1(input_dim=20, output_dim=5), name="mhc_rnn", input="mhc")
+
+# concatenate last output of both RNNs and transform them into a lower dimensional space
+graph.add_node(Dense(5 * 2, 16, activation="relu"), name="hidden", merge_mode="concat", inputs=("peptide_rnn", "mhc_rnn"))
+
+# output prediction of affinity
+graph.add_node(Dense(16, 1, activation="sigmoid"), name="affinity", input="hidden")
+
+# weird that I have to name the output twice
+graph.add_output(name='affinity_output', input='affinity')
+graph.compile('rmsprop', {'affinity_output':'mse'})
+The error that I get is:
+Traceback (most recent call last):
+  File "train-jsz-rnn.py", line 138, in <module>
+    history = graph.fit({'peptide':padded_peptides, 'mhc':padded_mhc, 'affinity_output':log_target_values}, nb_epoch=1)
+  File "/home/ubuntu/keras/keras/models.py", line 537, in fit
+    validation_split=validation_split, val_f=val_f, val_ins=val_ins, shuffle=shuffle, metrics=metrics)
+  File "/home/ubuntu/keras/keras/models.py", line 135, in _fit
+    outs = f(*ins_batch)
+  File "/home/ubuntu/anaconda/lib/python2.7/site-packages/theano/compile/function_module.py", line 588, in __call__
+    self.fn.thunks[self.fn.position_of_error])
+  File "/home/ubuntu/anaconda/lib/python2.7/site-packages/theano/compile/function_module.py", line 579, in __call__
+    outputs = self.fn()
+ValueError: dimension mismatch in args to gemm (128,5)x(10,16)->(128,16)
+Apply node that caused the error: GpuDot22(GpuJoin.0, hidden_W)
+Inputs shapes: [(128, 5), (10, 16)]
+Inputs strides: [(5, 1), (16, 1)]
+Inputs types: [CudaNdarrayType(float32, matrix), CudaNdarrayType(float32, matrix)]
+It seems like the two RNN outputs are not actually getting merged into a 10 dimensional vector, is that expected?
+edit: This error goes away (and the model trains successfully) when using the Theano CPU backend.
+edit 2.0: The error goes away even on the GPU if I switch the JZS1 RNN to an LSTM.
+edit 3.0 Actually, the error persists with LSTMs but only if I'm using floatX=32. Current hypothesis: merging of input variables doesn't get handled correctly when calling an external matrix multiply routine.

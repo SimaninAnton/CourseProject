@@ -1,0 +1,25 @@
+Contributor
+jgorset commented on May 9, 2011
+requests is incompatible with unicode strings that contain non-ASCII characters because it relies on urllib to coerce dictionaries into their query string equivalents:
+Traceback (most recent call last):
+  File "test.py", line 5, in <module>
+    print requests.get('http://example.org', params={'foo': u'føø'})
+  File "/Library/Python/2.6/site-packages/requests/core.py", line 467, in get
+    return request('GET', url, params=params, headers=headers, cookies=cookies, auth=auth)
+  File "/Library/Python/2.6/site-packages/requests/core.py", line 451, in request
+    auth=kwargs.pop('auth', auth_manager.get_auth(url)))
+  File "/Library/Python/2.6/site-packages/requests/core.py", line 76, in __init__
+    self._enc_data = urllib.urlencode(data)
+  File "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/urllib.py", line 1261, in urlencode
+    v = quote_plus(str(v))
+UnicodeEncodeError: 'ascii' codec can't encode characters in position 1-2: ordinal not in range(128)
+This shortcoming has been discussed in the python-dev mailing list, wherein it is agreed that urllib should raise a TypeError if its arguments are not byte strings. This was never implemented, however, and while the exception it raises now is certainly an improvement to the one it produced back then, urllib continues to raise it only if an unicode string cannot be encoded with the system's default encoding (which, in turn, defaults to ASCII).
+# This works, because all characters in the word "foo" exist in ASCII
+requests.get('http://example.org', params={'foo': u'foo'})
+
+# This doesn't work, because "ø" does not exist in ASCII
+requests.get('http://example.org', params={'foo': u'føø'})
+
+# This remedies the issue, but is arguably not the right place to be doing it
+requests.get('http://example.org', params={'foo': u'føø'.encode('utf-8')})
+It may be outside the scope of this library to facilitate for urllib so that it does not choke on ASCII-incompatible unicode strings, but I would at least consider to either transparently encode unicode strings as UTF-8 or raise a TypeError upon receiving unicode strings as request data or parameters.

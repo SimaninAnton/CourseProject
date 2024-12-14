@@ -1,0 +1,152 @@
+suraj-deshmukh commented on Nov 2, 2018 •
+edited
+I have written a spider which crawls the website up to certain depth and downloads pdf/docs files using scrapy's inbuild file downloader. It works well except for one url(http://www.imerys.com).
+scrapy_pdf.py
+import scrapy
+from scrapy.spiders import CrawlSpider, Rule
+from scrapy.linkextractors import LinkExtractor
+from scrapy.shell import inspect_response
+# from scrapy_splash import SplashRequest
+from scrapy.http import Request
+# from urllib.parse import urlencode, parse_qs
+# from O365 import Message
+import subprocess
+import datetime
+import re
+import pandas as pd
+from ..items import PdfCrawlerItem
+
+def check_link(url):
+    # function to check url for relevancy
+    return check
+
+def extract_domain(url):
+    url = url.replace("http://","")
+    url = url.replace("https://","")
+    url = url.replace("www.","")
+    if url[-1] == '/':
+        url = url[0:-1]
+    return url.strip()
+
+class MySpider(CrawlSpider):
+    name = 'pdf_extractor'
+    rules = (
+        Rule(LinkExtractor(tags="a", deny_extensions = []), callback='parse_document',follow=True),
+    )
+
+    def __init__(self, ip, **kwargs):
+        domain = extract_domain(ip)
+        self.domain = domain
+        subprocess.call(["mkdir","/home/dev/scrapy-inbuild-downloader-example/pdf_crawler/documents/"+domain])
+        self.start_time = datetime.datetime.now()
+        self.start_urls =  [ip] # py36
+        self.allowed_domains = [domain]
+        super().__init__(**kwargs)  # python3
+        
+    def parse_document(self, response):
+        content_type = response.headers.get('Content-Type',None).decode("utf-8")
+        url = response.url
+        if content_type == "application/pdf" or content_type == "application/msword":
+            # print("checking url: %s"%url)
+            check = check_link(url)
+            if check:
+                # print("pass url: %s"%url)
+                name = response.headers.get('Content-Disposition',None)
+                if name:
+                    name = name.decode("utf-8")
+                    name = re.findall(r"filename=(.*)", name)
+                    if name:
+                        name = name[0].replace("\"",'').replace('\'','')
+                        if name.endswith('.pdf') or name.endswith('.doc') or name.endswith('.docx'):
+                            pass
+                        else:
+                            name = name + '.pdf' if content_type == "application/pdf" else name + '.docx'
+                    else:
+                        name = url.split('/')[-1]
+                else:
+                    name = url.split('/')[-1]
+                item = PdfCrawlerItem()
+                item['file_urls'] = url
+                item['name'] = self.domain+"/"+name
+                print(item)
+                return item
+            # else:
+                # print("checking url: %s"%url)
+
+    def close(self, spider, reason): # override this method for receiving notification after job finished.
+        time = datetime.datetime.now() - self.start_time
+        time = time.total_seconds() / 3600.
+        print("total time:", time)
+items.py
+import scrapy
+
+class PdfCrawlerItem(scrapy.Item):
+    # define the fields for your item here like:
+    # name = scrapy.Field()
+    file_urls = scrapy.Field()
+    name = scrapy.Field()
+pipelines.py
+from scrapy.pipelines.files import FilesPipeline
+from scrapy import Request
+
+class PdfCrawlerPipeline(FilesPipeline):       
+    def file_path(self, request, response=None, info=None):
+        return request.meta.get('filename','')
+
+    def get_media_requests(self, item, info):
+        file_url = item['file_urls']
+        meta = {'filename': item['name']}
+        yield Request(url=file_url, meta=meta)
+    
+    # def item_completed(self, results, item, info):
+        # print(item['name'])
+        # return item
+logs
+2018-11-02 16:05:33 [scrapy.extensions.logstats] INFO: Crawled 1796 pages (at 343 pages/min), scraped 18 items (at 3 items/min)
+2018-11-02 16:06:33 [scrapy.extensions.logstats] INFO: Crawled 1796 pages (at 0 pages/min), scraped 18 items (at 0 items/min)
+
+
+{'downloader/exception_count': 5,
+ 'downloader/exception_type_count/twisted.web._newclient.ResponseFailed': 3,
+ 'downloader/exception_type_count/twisted.web._newclient.ResponseNeverReceived': 2,
+ 'downloader/request_bytes': 724471,
+ 'downloader/request_count': 1819,
+ 'downloader/request_method_count/GET': 1819,
+ 'downloader/response_bytes': 448477779,
+ 'downloader/response_count': 1814,
+ 'downloader/response_status_count/200': 1776,
+ 'downloader/response_status_count/301': 8,
+ 'downloader/response_status_count/302': 3,
+ 'downloader/response_status_count/404': 18,
+ 'downloader/response_status_count/500': 9,
+ 'dupefilter/filtered': 24148,
+ 'file_count': 18,
+ 'file_status_count/downloaded': 15,
+ 'file_status_count/uptodate': 3,
+ 'finish_reason': 'shutdown',
+ 'finish_time': datetime.datetime(2018, 11, 2, 10, 10, 56, 530946),
+ 'httperror/response_ignored_count': 19,
+ 'httperror/response_ignored_status_count/404': 16,
+ 'httperror/response_ignored_status_count/500': 3,
+ 'item_scraped_count': 18,
+ 'log_count/DEBUG': 240624,
+ 'log_count/ERROR': 1,
+ 'log_count/INFO': 31,
+ 'log_count/WARNING': 3,
+ 'memusage/max': 258433024,
+ 'memusage/startup': 84455424,
+ 'offsite/domains': 58,
+ 'offsite/filtered': 1536,
+ 'request_depth_max': 2,
+ 'response_received_count': 1797,
+ 'retry/count': 10,
+ 'retry/max_reached': 4,
+ 'retry/reason_count/500 Internal Server Error': 6,
+ 'retry/reason_count/twisted.web._newclient.ResponseFailed': 2,
+ 'retry/reason_count/twisted.web._newclient.ResponseNeverReceived': 2,
+ 'scheduler/dequeued': 1792,
+ 'scheduler/dequeued/memory': 1792,
+ 'scheduler/enqueued': 1794,
+ 'scheduler/enqueued/memory': 1794,
+ 'start_time': datetime.datetime(2018, 11, 2, 10, 7, 7, 304081)}
+I am not able to figure out whats wrong with above code because it works well with the sites that i have tested except above one.

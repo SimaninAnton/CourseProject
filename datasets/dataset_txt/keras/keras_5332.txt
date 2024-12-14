@@ -1,0 +1,47 @@
+Shen256 commented on 27 Apr 2016 •
+edited
+......
+convs = []
+model = Graph()
+# adding the input as usual
+model.add_input(name='sentence', input_shape=(1,), dtype='int')
+# passing the sentence through the Embedding layer
+model.add_node(Embedding(max_features, embedding_dims, dropout=0.2), name='sentence_embeddings', input='sentence')
+
+# and now create the convolutions/max_pooling
+for i in filter_length:
+    model.add_node(Convolution1D(nb_filter=nb_filter,
+                                 filter_length=i,
+                                 border_mode="valid",
+                                 activation="relu",
+                                 subsample_length=1),
+                                 name=str(i)+'_convolution',
+                                 input='sentence_embeddings',
+                                 )
+
+    # that's an approximation of 1-maxpooling that i never really checked.
+    model.add_node(MaxPooling1D(pool_length= maxlen - i + 1), name=str(i)+'_maxpooling', input=str(i)+'_convolution')
+    model.add_node(Flatten(), name=str(i)+'_sentence_embedding', input=str(i)+'_maxpooling')
+    convs.append(str(i)+'_sentence_embedding')
+
+# We add a vanilla hidden layer:
+model.add_node(Dense(hidden_dims * len(convs)), inputs=convs, name='h1')
+......
+When I ran the code, ZeroDivisionError happened.
+Build model...
+Traceback (most recent call last):
+  File "rtp_cnn00.py", line 87, in <module>
+    model.add_node(Dense(hidden_dims * len(convs)), inputs=convs, name='h1')
+  File "/Library/Python/2.7/site-packages/keras/legacy/models.py", line 184, in add_node
+    layer.add_inbound_node(merge)
+  File "/Library/Python/2.7/site-packages/keras/engine/topology.py", line 537, in add_inbound_node
+    self.build(input_shape=input_shapes[0])
+  File "/Library/Python/2.7/site-packages/keras/layers/core.py", line 594, in build
+    name='{}_W'.format(self.name))
+  File "/Library/Python/2.7/site-packages/keras/initializations.py", line 58, in glorot_uniform
+    s = np.sqrt(6. / (fan_in + fan_out))
+ZeroDivisionError: float division by zero
+I just copied the code at #1023, and added a new line: model.add_node(Dense(hidden_dims * len(convs)), inputs=convs, name='h1')
+The ''hidden_dims'' is equal to the number of filters.
+When tracing the error, I found that self.build(input_shape=input_shapes[0]) received a negative value whose the absolute value was right.
+I don't know how to solve it.

@@ -1,0 +1,36 @@
+Contributor
+diox commented on 16 Jan 2014
+Django-rest-framework 2.3.11 introduced a change in JSONEncoder:
+263281d#diff-27312aae63fb81a41655ac1bb422214c
+This allows dict-like objects to be rendered into json properly. Unfortunately, that broke rendering of django QuerySet objects, which was working fine before.
+Here is a simple patch against tests exhibiting the issue:
+diff --git a/rest_framework/tests/test_renderers.py b/rest_framework/tests/test_renderers.py
+index 2ae8ae1..eed69f2 100644
+--- a/rest_framework/tests/test_renderers.py
++++ b/rest_framework/tests/test_renderers.py
+@@ -264,6 +264,11 @@ def strip_trailing_whitespace(content):
+     return re.sub(' +\n', '\n', content)
+
+
++from django.db import models
++class DummyTestModel(models.Model):
++    name = models.CharField(max_length=42, default='')
++
++
+ class JSONRendererTests(TestCase):
+     """
+     Tests specific to the JSON Renderer
+@@ -276,6 +281,13 @@ class JSONRendererTests(TestCase):
+         ret = JSONRenderer().render(_('test'))
+         self.assertEqual(ret, b'"test"')
+
++    def test_render_queryset(self):
++        DummyTestModel.objects.create(name='dummy')
++        qs = DummyTestModel.objects.values('id', 'name')
++        ret = JSONRenderer().render(qs)
++        data = json.loads(ret.decode('utf-8'))
++        self.assertEquals(data, list(qs))
++
+     def test_render_dict_abc_obj(self):
+         class Dict(MutableMapping):
+             def __init__(self):

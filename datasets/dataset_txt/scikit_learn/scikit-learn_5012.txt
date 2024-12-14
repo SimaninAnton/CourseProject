@@ -1,0 +1,53 @@
+Contributor
+erg commented on Jan 24, 2013
+Found this one doing nosetests in a loop:
+ERROR: sklearn.decomposition.tests.test_dict_learning.test_dict_learning_online_overcomplete
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/site-packages/nose-1.2.1-py2.7.egg/nose/case.py", line 197, in runTest
+    self.test(*self.arg)
+  File "/home/erg/python/scikit-learn/sklearn/decomposition/tests/test_dict_learning.py", line 117, in test_dict_learning_online_overcomplete
+    dico = MiniBatchDictionaryLearning(n_components, n_iter=20).fit(X)
+  File "/home/erg/python/scikit-learn/sklearn/decomposition/dict_learning.py", line 1099, in fit
+    random_state=self.random_state)
+  File "/home/erg/python/scikit-learn/sklearn/decomposition/dict_learning.py", line 625, in dict_learning_online
+    alpha=alpha).T
+  File "/home/erg/python/scikit-learn/sklearn/decomposition/dict_learning.py", line 239, in sparse_encode
+    init=init, max_iter=max_iter)
+  File "/home/erg/python/scikit-learn/sklearn/decomposition/dict_learning.py", line 100, in _sparse_encode
+    lasso_lars.fit(dictionary.T, X.T, Xy=cov)
+  File "/home/erg/python/scikit-learn/sklearn/linear_model/least_angle.py", line 576, in fit
+    eps=self.eps, return_path=False)
+  File "/home/erg/python/scikit-learn/sklearn/linear_model/least_angle.py", line 233, in lars_path
+    % (n_iter, alphas[n_iter], n_active, diag))
+UnboundLocalError: local variable 'alphas' referenced before assignment
+The error happens in sklearn/linear_model/least_angle.py.
+In lars_path, alphas does not get set because return_path is False.
+    if return_path:
+        coefs = np.zeros((max_features + 1, n_features))
+        alphas = np.zeros(max_features + 1)
+    else:
+        coef, prev_coef = np.zeros(n_features), np.zeros(n_features)
+        alpha, prev_alpha = np.array([0.]), np.array([0.])  # better ideas?
+So when the warning is triggered, it throws an exception:
+            if diag < 1e-7:
+                # The system is becoming too ill-conditioned.
+                # We have degenerate vectors in our active set.
+                # We'll 'drop for good' the last regressor added
+                warnings.warn('Regressors in active set degenerate. '
+                              'Dropping a regressor, after %i iterations, '
+                              'i.e. alpha=%.3e, '
+                              'with an active set of %i regressors, and '
+                              'the smallest cholesky pivot element being %.3e'
+                              % (n_iter, alphas[n_iter], n_active, diag))
+                # XXX: need to figure a 'drop for good' way
+                Cov = Cov_not_shortened
+                Cov[0] = 0
+                Cov[C_idx], Cov[0] = swap(Cov[C_idx], Cov[0])
+                continue
+To trigger the bug, in sklearn/decomposition/tests/test_dict_learning.py:
+def test_dict_learning_online_overcomplete():
+    np.random.seed(7059323924)
+    n_components = 12
+    dico = MiniBatchDictionaryLearning(n_components, n_iter=20).fit(X)
+    assert_true(dico.components_.shape == (n_components, n_features))

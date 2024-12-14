@@ -1,0 +1,121 @@
+Froskekongen commented on 21 Apr 2016
+When saving a model using the theano backend, model.predict(...) gives different results using theano backend than when using tensorflow backend.
+To reproduce, estimate imdb_cnn.py using theano, and save model:
+from __future__ import print_function
+import numpy as np
+np.random.seed(1337)  # for reproducibility
+
+from keras.preprocessing import sequence
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, Lambda
+from keras.layers.embeddings import Embedding
+from keras.layers.convolutional import Convolution1D
+from keras.datasets import imdb
+from keras import backend as K
+import pickle as pkl
+
+import json
+
+max_features = 5000
+maxlen = 400
+batch_size = 32
+embedding_dims = 50
+nb_filter = 250
+filter_length = 3
+hidden_dims = 250
+nb_epoch = 2
+
+print('Loading data...')
+(X_train, y_train), (X_test, y_test) = imdb.load_data(nb_words=max_features,
+                                                      test_split=0.2)
+print(len(X_train), 'train sequences')
+print(len(X_test), 'test sequences')
+
+print('Pad sequences (samples x time)')
+X_train = sequence.pad_sequences(X_train, maxlen=maxlen)
+X_test = sequence.pad_sequences(X_test, maxlen=maxlen)
+print('X_train shape:', X_train.shape)
+print('X_test shape:', X_test.shape)
+
+print('Build model...')
+model = Sequential()
+
+model.add(Embedding(max_features,
+                    embedding_dims,
+                    input_length=maxlen,
+                    dropout=0.2))
+
+# we add a Convolution1D, which will learn nb_filter
+# word group filters of size filter_length:
+model.add(Convolution1D(nb_filter=nb_filter,
+                        filter_length=filter_length,
+                        border_mode='valid',
+                        activation='relu',
+                        subsample_length=1))
+
+def max_1d(X):
+    return K.max(X, axis=1)
+
+model.add(Lambda(max_1d, output_shape=(nb_filter,)))
+
+# We add a vanilla hidden layer:
+model.add(Dense(hidden_dims))
+model.add(Dropout(0.2))
+model.add(Activation('relu'))
+
+model.add(Dense(1))
+model.add(Activation('sigmoid'))
+
+model.compile(loss='binary_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+model.fit(X_train, y_train,
+          batch_size=batch_size,
+          nb_epoch=nb_epoch,
+          validation_data=(X_test, y_test))
+
+with open('model_def.json','w') as ff:
+    json_string = model.to_json()
+    ff.write(json_string)
+
+model.save_weights('model_weights.h5')
+with open('test_mats.pkl','wb') as ff:
+    pkl.dump(X_test[:10,:],ff)
+Thereafter, run the following with both theano and tensorflow backend:
+import keras.models
+import pickle as pkl
+
+with open('model_def.json') as ff:
+    model_json=ff.read()
+    model=keras.models.model_from_json(model_json)
+model.compile(loss='binary_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+model.load_weights('model_weights.h5')
+with open('test_mats.pkl','rb') as ff:
+    X_test=pkl.load(ff)
+
+preds=model.predict(X_test)
+Output for preds gives for me:
+Theano:
+array([[ 0.16684522],
+       [ 0.25272971],
+       [ 0.36945793],
+       [ 0.16739839],
+       [ 0.88364273],
+       [ 0.82070017],
+       [ 0.79505318],
+       [ 0.204108  ],
+       [ 0.98700511],
+       [ 0.3569603 ]])
+Tensorflow:
+array([[ 0.36927289],
+       [ 0.63945651],
+       [ 0.27223432],
+       [ 0.12937595],
+       [ 0.94742638],
+       [ 0.90359509],
+       [ 0.46261272],
+       [ 0.22862789],
+       [ 0.97504425],
+       [ 0.58718359]])

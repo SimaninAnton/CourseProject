@@ -1,0 +1,48 @@
+unioncos commented on 11 Aug 2018 •
+edited
+My edit solution is wrong. the certbot_dns_rfc2136 authenticator is not working properly after all. When if successfully adds the TXT record it does not flush the record to the zone file/ this can be observed by doing a " rndc sync -clean " while waiting ion the TXT record to propagate. /when it goes to clean up the challenge the same occurs - it stops in the jnl file until a rndc sync -clean is done
+This is programming issue I cannot configure around
+EDIT / SOLUTION
+This issue may not or ever have a solution under the certbot-dns-rfc2136 authenticator because the DNS is a non-authoritative server to Google’s public servers, without a “Google account” and we do not intend to get one, and we do not want to run our DNS in authoritative mode due to the load it could experience. The certbot manual mode with the --manual-auth-hook and our own authenticator and cleanup scripts with a custom RESTFUL api or NSUPDATE will have to be used - unless someone else knows of another way to solve it
+The issue history is below
+A manual wildcard cert was obtained. It is known this would not renew, ( see #6280 ) so the dns_rfc2136 authenticator was installed and configured. The purpose was to do dry-run efforts to get the renew working so it could be used by the cron script. The DNS is working correctly and the jnl file writes and the _acme-challenge.xxxxxxxx.com zone file is modified; however it appears though it reports it successfully adds a TXT record, it then fails that no TXT record is found. xxxxxxxx.com is a replacement here for the actual domain
+The /var/log/letsencrypt/letsencrypt.log in part reads
+531:INFO:certbot.auth_handler:dns-01 challenge for xxxxxxxx.com
+555:DEBUG:certbot_dns_rfc2136.dns_rfc2136:Received authoritative SOA response for _acme-challenge.xxxxxxxx.com
+567:DEBUG:certbot_dns_rfc2136.dns_rfc2136:Successfully added TXT record
+578:DEBUG:certbot_dns_rfc2136.dns_rfc2136:Received authoritative SOA response for _acme-challenge.xxxxxxxx.com
+584:DEBUG:certbot_dns_rfc2136.dns_rfc2136:Successfully added TXT record
+then fails as thus
+Failed authorization procedure. xxxxxxxx.com (dns-01): urn:ietf:params:acme:error:unauthorized :: The client lacks sufficient authorization :: No TXT record found at _acme-challenge.xxxxxxxx.com, xxxxxxxx.com (dns-01): urn:ietf:params:acme:error:unauthorized :: The client lacks sufficient authorization :: No TXT record found at _acme-challenge.xxxxxxxx.com
+If I do a dig while I am waiting on a propagaion delay of 120 seconds I get
+[root@main ~]# dig @localhost _acme-challenge.xxxxxxxx.com TXT
+; <<>> DiG 9.9.4-RedHat-9.9.4-61.el7 <<>> @localhost _acme-challenge.xxxxxxxx.com TXT
+; (2 servers found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 18692
+;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;_acme-challenge.xxxxxxxx.com. IN TXT
+;; ANSWER SECTION:
+_acme-challenge.xxxxxxxx.com. 120 IN TXT “qH5GT_row8vPRP-oVxnoBkRWB5tt5fBoy0QyyBN4hWU”
+_acme-challenge.xxxxxxxx.com. 120 IN TXT “5l5vWFIUQlhgMrqZnkDnc5h2hIYsbNHZzf3EV8Ucm2M”
+;; AUTHORITY SECTION:
+xxxxxxxx.com. 172798 IN NS ns1.yyyyyyy.com.
+xxxxxxxx.com. 172798 IN NS ns2.yyyyyyy.com.
+;; ADDITIONAL SECTION:
+ns1.yyyyyyy.com. 172798 IN A xxx.xxx.xxx.xxx
+ns2.yyyyyyy.com. 172798 IN A xxx.xxx.xxx.xxx
+;; Query time: 4129 msec
+;; SERVER: 127.0.0.1#53(127.0.0.1)
+;; WHEN: Fri Aug 10 19:36:57 CDT 2018
+;; MSG SIZE rcvd: 252
+Still the same - no TXT record found - and then the TXT entries above are gone after cleanup and the run completed
+Domain: xxxxxxxx.com
+Type: unauthorized
+Detail: No TXT record found at _acme-challenge.xxxxxxxx.com
+I saw an issue about CNAMES possible required here => https://community.letsencrypt.org/t/renew-using-dns-01-challenge/53498/2 - so is this related at all as a requirement ??
+OR
+Is this caused by a configuration issue someone recognizes or might this be a bug ??

@@ -1,0 +1,77 @@
+gmrhub commented on 14 Mar 2017
+Hi folks. I was trying to do some classification using 3D CNN.
+The loss is decreasing gradually, but the predictions are not in sync with the loss (even on the train data).
+After some long debugging I found that, the model seems to be modifying the supplied true labels also.
+I tested even after upgrading both Tensorflow and Keras.
+For a quick example, I could reproduce with the fallowing synthetic model and data ( random data).
+`import numpy as np
+from keras.models import Model
+from keras.layers import Input, Convolution3D, MaxPooling3D, BatchNormalization, Activation, Dense, Flatten
+from keras.optimizers import Adam
+from keras import backend as K
+from keras.metrics import binary_crossentropy, categorical_crossentropy
+import tensorflow as tf
+import os
+K.set_image_dim_ordering('th') # Theano dimension ordering in this code
+this returns a truth label for each batch
+def GT(y_true, y_pred):
+return y_true[0,0] #y_pred[0,0]
+Basic synthetic 3D CNN network for classification
+def test_net():
+inputs = Input((1,32,64,64))
+conv = Convolution3D(8,3, 3, 3, activation='relu', border_mode='same')(inputs)
+conv = BatchNormalization(axis=1)(conv)
+pool = MaxPooling3D(pool_size=(4,4,4))(conv)
+conv = Convolution3D(16,3, 3, 3, activation='relu', border_mode='same')(pool)
+conv = BatchNormalization(axis=1)(conv)
+conv = Convolution3D(16,3, 3, 3, activation='relu', border_mode='same')(conv)
+conv = BatchNormalization(axis=1)(conv)
+pool = MaxPooling3D(pool_size=(4,4,4))(conv)
+
+dense = Flatten()(pool)
+
+dense = Dense(512,activation='relu')(dense)
+dense = Dense(1024,activation='relu')(dense)
+dense = Dense(512,activation='relu')(dense)
+dense = Dense(100,activation='relu')(dense)
+
+prediction = Dense(1,activation='sigmoid')(dense)
+
+model = Model(input=inputs, output=prediction)
+model.compile(optimizer=Adam(lr=1.0e-5), loss=binary_crossentropy,metrics=[GT])
+return model
+def train_test_net(gpuID):
+os.environ["CUDA_VISIBLE_DEVICES"] = gpuID
+# basic synthetic random data generation
+def flip_generator(batch_size):
+    alt_i = 0
+    inputs = np.ndarray((100,1,32,64,64), dtype=np.float32)
+    output = np.ndarray((100,1), dtype=np.float32)
+    for samp_i in range(100):
+        inputs[samp_i,:,:] = np.random.random((1,32,64,64))
+        output[samp_i] = float(samp_i%2)
+
+    while 1:
+        alt_i += batch_size
+        if alt_i >= 100:
+            alt_i = batch_size
+        yield inputs[alt_i-batch_size:alt_i], output[alt_i-batch_size:alt_i]
+
+
+# train for some epochs
+model = test_net()
+nb_epoch = 50
+samples_per_epoch=50
+lr = 0.1
+
+print('training for lr: ', lr)
+model.optimizer.lr.assign(lr)
+model.fit_generator(flip_generator(5), samples_per_epoch=samples_per_epoch,nb_epoch=nb_epoch, verbose=1,max_q_size=16, nb_worker=1)
+train_test_net('1')`
+In the metrics I am returning one of the true label of each batch.
+The output looks like this,
+5/50 [==>...........................] - ETA: 17s - loss: 0.6826 - GT: 0.0000e+010/50 [=====>........................] - ETA: 9s - loss: 0.7981 - GT: 0.5000 50/50 [==============================] - 5s - loss: 0.7710 - GT: 0.5000 Epoch 2/50 50/50 [==============================] - 3s - loss: 0.6882 - GT: 0.4000 Epoch 3/50 50/50 [==============================] - 3s - loss: 0.6749 - GT: 0.5000 Epoch 4/50
+Eventually the model tries to learn random data also :).
+Please correct me if I am doing anything wrong in my model architecture (though I doubt if any mistakes).
+Right direction to the issue is greatly appreciated, thanks.
+1

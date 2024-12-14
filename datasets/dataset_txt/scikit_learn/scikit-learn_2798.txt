@@ -1,0 +1,27 @@
+Contributor
+betatim commented on Aug 31, 2016 •
+edited
+check_cv (from model_selection/_split.py) should have an argument to allow the caller to pass random_state that is then used by StratifiedKFold. KFold by default does not shuffle so does not need random_state so you will have to decide if it is worth passing random_state to it or not.
+This will make for example LogisticRegressionCV deterministic.
+For historical purposes, below the original bug report which was going in the wrong direction (ignore it unless you are interested in history):
+Description
+LogisticRegressionCV uses StratifiedKFold unlike (most/all?) of the other *CV estimators. Changing it to KFold breaks some tests.
+This came up in #7270 (comment) as you don't get an identical estimator because check_cv() doesn't pass on the random_state to StratifiedKFold.
+Steps/Code to Reproduce
+Change logistic.py:1574 to classifier=False so it returns a KFold instance, then run:
+nosetests -s --pdb sklearn/linear_model/tests/test_logistic.py which fails with:
+======================================================================
+ERROR: sklearn.linear_model.tests.test_logistic.test_n_iter
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/thead/anaconda/envs/sklearn/lib/python3.5/site-packages/nose/case.py", line 198, in runTest
+    self.test(*self.arg)
+  File "/Users/thead/git/scikit-learn/sklearn/linear_model/tests/test_logistic.py", line 923, in test_n_iter
+    clf.fit(X, y)
+  File "/Users/thead/git/scikit-learn/sklearn/linear_model/logistic.py", line 1703, in fit
+    sample_weight=sample_weight)
+  File "/Users/thead/git/scikit-learn/sklearn/linear_model/logistic.py", line 679, in logistic_regression_path
+    n_features, classes.size, n_features + 1))
+ValueError: Initialization coef is of shape (1, 5), expected shape (3, 4) or (3, 5)
+My guess is that somehow it doesn't take into account the other two classes (the test uses a three class problem)??
+From #7270 (comment) it seems that we should switch to using KFold. If that doesn't work can we pass random_state on so that the folds become reproducible?

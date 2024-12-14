@@ -1,0 +1,41 @@
+shahzzzam commented on Aug 7, 2015
+This is my first issue ever on any repo. So kindly forgive me if I'm asking a naive question or don't have enough information provided.
+I am currently working on an API in Flask-Restful on Client side and also have to consume the Server side API using Requests API.
+So I was adding an image along with some other form components like text and sending it to the Server side API using Requests' POST call.
+The datastructure understood by Flask-restful for Images/ Files is werkzeug.datastructures.FileStorage, which I think is similar to a Multi-dict.
+def post():
+    payload_data = {}   # some data
+    payload_files = {}   # abc.png
+    url = http://xyz/api/
+    response_obj = requests.post(url, data=payload_data, files=payload_file)
+Now inside the models.py, at line https://github.com/kennethreitz/requests/blob/master/requests/models.py#L117 gives me the value for files as
+[('form_image', <FileStorage: 'abc.png' ('image/png')>)]
+# form_image is just the name of the image in form.
+The key-value structure of a normal FileStorage object is something like this (from debugger)
+* {FileStorage} <FileStorage: 'abc.png' ('image/png')>
+     * _parsed_content_type = {tuple} ('image/png', {})
+     * content_length = {int} 0
+     * content_type = {str} 'image/png'
+     * filename = {str} 'abc.png'
+     * headers = {Headers} Content-Disposition: form-data; name="form_image";
+     * filename="abc.png"\r\nContent-Type: image/png\r\n\r\n
+     * mimetype = {str} 'image/png'
+     * mimetype_params = {dict} {}
+     * name = {str} 'form_image'
+     * stream = {BufferedRandom} <_io.BufferedRandom name=9>
+Note that the filename is inside the key filename and not name.
+Then it calls the guess_filename at
+fn = guess_filename(v) or k
+In the guess_filename(obj), the value of the obj is still
+<FileStorage: 'abc.png' ('image/png')>
+THIS LINE checks the object and checks the key "name" instead of "filename"
+name = getattr(obj, 'name', None)
+After this, the value of name is now "form_image" instead of "abc.png"
+As a result, the server side receives the file with the name form_image, instead of the real file name.
+Is there a solution to this? Please let me know.
+If not, it seems that FileStorage works differently than was anticipated in guess_filename. So does there have to be some line that does this:
+from werkzeug import datastructures
+if isinstance(obj, FileStorage):
+    name = getattr(obj, 'filename', None)
+else:
+    name = getattr(obj, 'name', None)

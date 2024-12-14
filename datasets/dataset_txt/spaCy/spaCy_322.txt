@@ -1,0 +1,110 @@
+Collaborator
+adrianeboyd commented on 19 Sep 2019
+How to reproduce the behaviour
+You need this keywords file: https://github.com/mpuig/spacy-lookup/blob/master/data/keywords.txt
+If you process the sample keywords before doing all the extra processing, the match is found. You can also process the sample keywords again after all the extra processing and the match is still found.
+If you load the sample keywords after doing all the extra processing (as below) and keyword_limit is at least 10067, the match is not found. Any lower, the match is found.
+I think it's probably something related to the Vocab and not PhraseMatcher itself, but I really don't know?
+import spacy
+from spacy.matcher import PhraseMatcher
+from spacy.matcher import Matcher
+
+def run_matching(matcher, docs):
+    matches = []
+    for doc in docs:
+        matches.extend([match for match in matcher(doc)])
+
+    return (len(matches), matches)
+
+def run(with_extra_keyword_processing=False):
+    print("\n\nRunning test", "*with*" if with_extra_keyword_processing else "*without*", "extra document processing")
+
+    keyword_limit = 10067
+
+    nlp = spacy.load('en')
+
+    if with_extra_keyword_processing:
+        print("Processing a lot of keywords, then discarding...")
+        unused_keywords = []
+        count = 0
+        with open("keywords.txt") as fileh:
+            for line in fileh:
+                unused_keywords.append(line.strip())
+                if count > keyword_limit:
+                    break
+                count += 1
+        unused_keywords = [nlp.make_doc(keyword) for keyword in unused_keywords]
+
+    keywords = sample_keywords()
+    keywords = [nlp.make_doc(keyword) for keyword in keywords]
+    print("Loaded sample keywords")
+    print("Keywords:", keywords)
+    print("# Keywords:", len(keywords))
+
+    texts = sample_texts()
+    docs = list(nlp.tokenizer.pipe(texts))
+    print("Loaded sample docs")
+    print("# Docs:", len(docs))
+
+    smatcher = Matcher(nlp.vocab)
+    pmatcher = PhraseMatcher(nlp.vocab)
+
+    for keyword in keywords:
+        smatcher.add(keyword.text, None, [{"ORTH": token.text} for token in keyword])
+        pmatcher.add(keyword.text, None, keyword)
+
+    for matcher in [smatcher, pmatcher]:
+        print("\nMatcher type:", type(matcher))
+        (len_matches, matches) = run_matching(matcher, docs)
+        print("# Matches", len_matches)
+        print("Matches:", matches)
+
+def sample_keywords():
+    return ["Hanif Kureishi"]
+
+def sample_texts():
+    return [
+"""
+A real triumph for Roger Michell and Hanif Kureishi, and the rest of the team. A must see for serious film lovers.
+""",
+]
+
+if __name__ == "__main__":
+    run()
+    run(with_extra_keyword_processing=True)
+Output:
+Running test *without* extra document processing
+Loaded sample keywords
+Keywords: [Hanif Kureishi]
+# Keywords: 1
+Loaded sample docs
+# Docs: 1
+
+Matcher type: <class 'spacy.matcher.matcher.Matcher'>
+# Matches 1
+Matches: [(4725172808025326492, 8, 10)]
+
+Matcher type: <class 'spacy.matcher.phrasematcher.PhraseMatcher'>
+# Matches 1
+Matches: [(4725172808025326492, 8, 10)]
+
+
+Running test *with* extra document processing
+Processing a lot of keywords, then discarding...
+Loaded sample keywords
+Keywords: [Hanif Kureishi]
+# Keywords: 1
+Loaded sample docs
+# Docs: 1
+
+Matcher type: <class 'spacy.matcher.matcher.Matcher'>
+# Matches 1
+Matches: [(4725172808025326492, 8, 10)]
+
+Matcher type: <class 'spacy.matcher.phrasematcher.PhraseMatcher'>
+# Matches 0
+Matches: []
+Your Environment
+spaCy version: 2.1.8
+Platform: Linux-4.19.0-5-amd64-x86_64-with-debian-10.0
+Python version: 3.7.3

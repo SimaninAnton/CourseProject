@@ -1,0 +1,42 @@
+tdryer commented on 15 Sep 2014
+Using curl_httpclient, executing a request in the streaming callback of another request raises an error from pycurl. Using simple_httpclient (remove AsyncHTTPClient.configure line) works as expected. Tested on Ubuntu 14.04 with Python 2.7.6 / Tornado 4.0.2 / pycurl 7.19.5.
+from tornado import ioloop, gen, httpclient
+
+@gen.coroutine
+def main():
+    httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+    http_client = httpclient.AsyncHTTPClient()
+
+    @gen.coroutine
+    def sync():
+        yield http_client.fetch('https://httpbin.org/get')
+
+    def streaming_callback(stuff):
+        ioloop.IOLoop.instance().add_future(sync(), lambda f: f.result())
+
+    yield http_client.fetch('https://httpbin.org/get', streaming_callback=streaming_callback)
+
+
+if __name__ == '__main__':
+    ioloop.IOLoop.instance().run_sync(main)
+ERROR:tornado.application:Exception in callback <functools.partial object at 0x7f389c10b4c8>
+Traceback (most recent call last):
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/ioloop.py", line 565, in _run_callback
+    ret = callback()
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/stack_context.py", line 275, in null_wrapper
+    return fn(*args, **kwargs)
+  File "curl_test.py", line 13, in <lambda>
+    ioloop.IOLoop.instance().add_future(sync(), lambda f: f.result())
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/concurrent.py", line 109, in result
+    raise_exc_info(self._exc_info)
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/gen.py", line 175, in wrapper
+    yielded = next(result)
+  File "curl_test.py", line 10, in sync
+    yield http_client.fetch(httpclient.HTTPRequest('https://httpbin.org/get'))
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/httpclient.py", line 245, in fetch
+    self.fetch_impl(request, handle_response)
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/curl_httpclient.py", line 82, in fetch_impl
+    self._process_queue()
+  File "/home/tom/.virtualenvs/newest-tornado/local/lib/python2.7/site-packages/tornado/curl_httpclient.py", line 216, in _process_queue
+    self._multi.add_handle(curl)
+error: cannot add/remove handle - multi_perform() already running

@@ -1,0 +1,104 @@
+Jhy1993 commented on 27 Sep 2016
+================================keras model=======================
+from keras.models import Sequential, Graph
+from keras.layers.core import Dense, Dropout, Flatten, RepeatVector
+from keras.layers import LSTM
+from keras.layers import Convolution2D, MaxPooling2D, AveragePooling2D
+from keras.layers.normalization import BatchNormalization
+from keras.layers.wrappers import TimeDistributed
+from util import categorical_accuracy_per_sequence
+def build_CNN(img_channels=1, img_width=150,img_height=40,nb_class=10):
+model = Graph()
+model.add_input(name='input', input_shape=(img_channels, img_height, img_width))
+#1 conv
+model.add_node(Convolution2D(32, 5, 5, border_mode='same', activation='relu'), input='input', name='conv1')
+model.add_node(MaxPooling2D(pool_size=(2, 2), strides=(1, 1)), input='conv1', name='pool1')
+model.add_node(Dropout(0.5), input='pool1', name='drop1')
+model.add_node(BatchNormalization(axis=1), input='drop1', name='norm1')
+#2 conv
+model.add_node(Convolution2D(32, 5, 5, border_mode='same', activation='relu'), input='norm1', name='conv2')
+model.add_node(AveragePooling2D(pool_size=(2, 2), strides=(1, 1)), input='conv2', name='pool2')
+model.add_node(Dropout(0.5), input='pool2', name='drop2')
+model.add_node(BatchNormalization(axis=1), input='drop2', name='norm2')
+#3 conv
+model.add_node(Convolution2D(32, 3, 3, border_mode='same', activation='relu'), input='norm2', name='conv3')
+model.add_node(AveragePooling2D(pool_size=(2, 2), strides=(1, 1)), input='conv3', name='pool3')
+model.add_node(Dropout(0.5), input='pool3', name='drop3')
+model.add_node(BatchNormalization(axis=1), input='drop3', name='norm3')
+#4 conv
+model.add_node(Convolution2D(32, 3, 3, border_mode='same', activation='relu'), input='norm3', name='conv4')
+model.add_node(AveragePooling2D(pool_size=(2, 2), strides=(1,1)), input='conv4', name='pool4')
+model.add_node(Dropout(0.5), input='pool4', name='drop4')
+model.add_node(BatchNormalization(axis=1), input='drop4', name='norm4')
+# flaten
+model.add_node(Flatten(), input='norm4', name='flat')
+# 4 char
+model.add_node(Dense(10), input='flat', name='f1')
+model.add_node(Dense(10), input='flat', name='f2')
+model.add_node(Dense(10), input='flat', name='f3')
+model.add_node(Dense(10), input='flat', name='f4')
+# merge
+model.add_output(name='output', inputs=['f1', 'f2', 'f3', 'f4'])
+model.compile(loss='categorical_crossentropy',
+optimizer='adam',
+metrics=["accuracy"])
+return model
+==============================generate and train================
+def data_generator():
+size_im = (150, 40) # width, height
+set_char = "0123456789"
+nb_image = 50
+nb_char = 4#random.choice([4, 6])
+font_path = '\fonts\english\Helvetica Bold.ttf'
+data = np.empty((nb_image, 1, size_im[1], size_im[0]), dtype="float32")
+label = np.empty((nb_image, nb_char*len(set_char)))
+while True:
+im, cont=captcha_draw(size_im=size_im, nb_char=nb_char,
+set_char=set_char,
+overlap=0.3,
+rd_text_pos=True,
+rd_text_size=True,
+rd_text_color=False,
+rd_bg_color=False,
+#noise=['line', 'point'],
+noise=['line'],
+rotate=False,
+dir_path='img_data/',
+fonts={'eng':font_path})
+# print cont
+arr = np.asarray(im, dtype="float32") / 255.0
+data[:,:,:] = arr
+lab = process_label(cont, set_char, nb_char)
+# print 'sds' + str(lab.shape)
+label[:] = lab.T
+print label
+# yield data, label
+#for graph model
+yield ({'input': data, 'output': label})
+def process_label(lab, set_char, nb_char):
+#translate str (in captcha) into label (only use num)
+#like one hot encoder
+lab = list(lab)
+label = []
+for i in lab:
+label_temp = np.zeros([len(set_char), 1])
+for j in range(len(set_char)):
+#print set_char[j]
+if i == set_char[j]:
+label_temp[j] =1
+# print label_temp
+label.extend(label_temp)
+return np.asarray(label, dtype="float32")
+print ('Start DL Model')
+model = build_CNN()
+print ('Start fit on generator')
+#data_generator
+model.fit_generator(data_generator(),
+samples_per_epoch=512,
+nb_epoch=30,
+verbose=1,
+show_accuracy=True
+# validation_data=None
+# class_weight=None
+# nb_worker=2
+)

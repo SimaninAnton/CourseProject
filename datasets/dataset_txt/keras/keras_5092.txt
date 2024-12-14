@@ -1,0 +1,31 @@
+mx commented on 26 May 2016
+First, thank you for the wonderful library. It is extremely useful!
+Now, on to the issue. I have a time series of real-valued numbers that I want to do prediction on. The inputs can be variable length, so I am masking them with a Masking layer at the input.
+It seems that my only options for masking value though are np floats, and out-of-band values like np.inf and np.nan seem to generate NaNs in the output. I can pick an unlikely value for my mask value but that seems very fragile. It would be very helpful if some out-of-band value could be provided for masking instead, a constant like keras.layers.Masking.MASK.
+Here's an example of the problem:
+import numpy as np
+from keras.layers import Dense, LSTM, Masking
+from keras.models import Sequential
+
+np.random.seed(412)
+dataset = np.random.rand(1, 10000, 2)
+dataset[:, 0:3, :] = np.inf
+
+model = Sequential()
+model.add(Masking(mask_value=np.inf, batch_input_shape=(1, 20, 2)))
+model.add(LSTM(32, stateful=True))
+model.add(Dense(2))
+model.compile(optimizer='rmsprop',
+              loss='mse',
+              metrics=['accuracy'])
+
+for i in range(0, dataset.shape[1]-20, 20):
+    model.train_on_batch(dataset[:, i:i+20, :], dataset[:, i+20, :])
+    if (i/20) % 10:
+        model.reset_states()
+Outputs:
+>>> model.predict(dataset[:, 0:20, :])
+array([[ nan,  nan]])
+>>> model.predict(dataset[:, 20:40, :])
+array([[ nan,  nan]])
+Since the input isn't guaranteed to take on a known range I need an out-of-band value I can provide for masking purposes.

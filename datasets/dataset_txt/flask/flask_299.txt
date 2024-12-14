@@ -1,0 +1,67 @@
+chadjaros commented on 7 Sep 2018
+This issue tracker is a tool to address bugs in Flask itself.
+Please use the #pocoo IRC channel on freenode or Stack Overflow for general
+questions about using Flask or issues not related to Flask.
+If you'd like to report a bug in Flask, fill out the template below. Provide
+any any extra information that may be useful / related to your problem.
+Ideally, create an MCVE, which helps us
+understand the problem and helps check that it is not caused by something in
+your code.
+Expected Behavior
+Tell us what should happen.
+Providing a custom JSON encoder doesn't break if simplejson happens to be included in the pip dependencies
+    pip install simplejson #OR install any library that has simplejson as a dependency
+
+    ----
+
+    import json
+    
+    class JsonSerializer:
+      def __init__(self, encodings=None, **kwargs):
+
+        if encodings:
+            self._encodings = encodings
+        else:
+            self._encodings = self._get_default_type_encodings()
+        # dict of kwargs
+        if kwargs is None:
+            self._kwargs = {}
+        else:
+            self._kwargs = kwargs
+
+      def encode(self, o):
+        return self.dumps(o)
+
+      def dumps(self, obj, kwargs_dict=None):
+        kwargs = self._kwargs.copy()
+
+        # Override init kwargs
+        if kwargs_dict is not None:
+            kwargs.update(kwargs_dict)
+
+        return json.dumps(obj, **kwargs_dict)
+
+    ----
+
+    application.json_encoder = JsonSerializer
+
+    jsonify({"some": "object})
+Actual Behavior
+Tell us what happens instead.
+Results in
+    ....
+    File "/opt/pyenv/versions/***/lib/python3.5/site-packages/flask/json.py", line 263, in jsonify
+      (dumps(data, indent=indent, separators=separators), '\n'),
+    File "/opt/pyenv/versions/***/lib/python3.5/site-packages/flask/json.py", line 123, in dumps
+      rv = _json.dumps(obj, **kwargs)
+    File "/opt/pyenv/versions/***/lib/python3.5/site-packages/simplejson/__init__.py", line 399, in dumps
+      **kw).encode(obj)
+    ...
+    File "/opt/pyenv/versions/3.5.4/lib/python3.5/json/__init__.py", line 237, in dumps
+    **kw).encode(obj)
+    TypeError: __init__() got an unexpected keyword argument 'for_json'
+Noticed this conversation #1602. It's unfortunate that it was closed with no action being taken, implicitly switching between incompatible json implementations based on presence of a library seems like an egregiously bad design decision.
+Environment
+Python version: 3.5
+Flask version: 0.12.1
+Werkzeug version: 0.12.1

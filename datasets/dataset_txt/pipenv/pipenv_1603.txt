@@ -1,0 +1,143 @@
+Groxx commented on 31 Jan 2018
+Describe your environment
+OS Type: OS X Version 10.13.3 (17D47)
+Python version: from pipenv run python --version: Python 2.7.14
+Pipenv version: from pipenv run pip --version: pip 9.0.1
+Expected result
+When no sources are defined in the Pipfile, pip install and pipenv install should find the same packages.
+Actual result
+pip.conf's index-url appears to be ignored, though extra-index-url works.
+Given an empty Pipfile (or nonexistent):
+$ cat Pipfile
+[dev-packages]
+
+
+
+[packages]
+And a ~/.pip/pip.conf file like this:
+$ cat ~/.pip/pip.conf
+[global]
+disable-pip-version-check = yes
+extra-index-url = https://public_internal/pypi/simple https://pypi.python.org/simple
+index-url = https://some:auth@private_internal/index
+timeout = 60
+pipenv does not search the index-url index at all, and duplicates the official pypi:
+$ pipenv install --verbose internal
+Creating a virtualenv for this project…
+⠋Using real prefix '/usr/local/Cellar/python/2.7.14_2/Frameworks/Python.framework/Versions/2.7'
+New python executable in /Users/stevenl/.virtualenvs/env-14nofN5B/bin/python2.7
+Also creating executable in /Users/stevenl/.virtualenvs/env-14nofN5B/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /Users/stevenl/.virtualenvs/env-14nofN5B
+Installing internal…
+⠙Installing u'internal'
+$ "/Users/stevenl/.virtualenvs/env-14nofN5B/bin/pip" install   --verbose   "internal" -i https://pypi.python.org/simple --exists-action w
+Collecting internal
+  3 location(s) to search for versions of internal:
+  * https://pypi.python.org/simple/internal/
+  * https://public_internal/pypi/simple/internal/
+  * https://pypi.python.org/simple/internal/
+  Getting page https://pypi.python.org/simple/internal/
+  Looking up "https://pypi.python.org/simple/internal/" in the cache
+  No cache entry available
+  Starting new HTTPS connection (1): pypi.python.org
+  "GET /simple/internal/ HTTP/1.1" 404 35
+  Status code 404 not in [200, 203, 300, 301]
+  Could not fetch URL https://pypi.python.org/simple/internal/: 404 Client Error: Not Found (internal does not exist) for url: https://pypi.python.org/simple/internal/ - skipping
+  Getting page https://public_internal/pypi/simple/internal/
+  Looking up "https://public_internal/pypi/simple/internal/" in the cache
+  No cache entry available
+  Starting new HTTPS connection (1): public_internal
+  "GET /pypi/simple/internal/ HTTP/1.1" 404 None
+  Status code 404 not in [200, 203, 300, 301]
+  Could not fetch URL https://public_internal/pypi/simple/internal/: 404 Client Error: Not Found (internal does not exist) for url: https://public_internal/pypi/simple/internal/ - skipping
+Cleaning up...
+Exception information:
+Traceback (most recent call last):
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/basecommand.py", line 215, in main
+    status = self.run(options, args)
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/commands/install.py", line 335, in run
+    wb.build(autobuilding=True)
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/wheel.py", line 749, in build
+    self.requirement_set.prepare_files(self.finder)
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/req/req_set.py", line 380, in prepare_files
+    ignore_dependencies=self.ignore_dependencies))
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/req/req_set.py", line 554, in _prepare_file
+    require_hashes
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/req/req_install.py", line 278, in populate_link
+    self.link = finder.find_requirement(self, upgrade)
+  File "/Users/stevenl/.virtualenvs/env-14nofN5B/lib/python2.7/site-packages/pip/index.py", line 514, in find_requirement
+    'No matching distribution found for %s' % req
+DistributionNotFound: No matching distribution found for internal
+
+Error:  An error occurred while installing internal!
+  Could not find a version that satisfies the requirement internal (from versions: )
+No matching distribution found for internal
+When I put the private_internal index into the extra-index-url (I just copied it):
+$ cat ~/.pip/pip.conf
+[global]
+disable-pip-version-check = yes
+extra-index-url = https://public_internal/pypi/simple https://pypi.python.org/simple https://some:auth@private_internal/index
+index-url = https://some:auth@private_internal/index
+timeout = 60
+The whole thing works:
+$ pipenv install --verbose internal
+Creating a virtualenv for this project…
+⠋Using real prefix '/usr/local/Cellar/python/2.7.14_2/Frameworks/Python.framework/Versions/2.7'
+New python executable in /Users/stevenl/.virtualenvs/env-14nofN5B/bin/python2.7
+Also creating executable in /Users/stevenl/.virtualenvs/env-14nofN5B/bin/python
+Installing setuptools, pip, wheel...done.
+
+Virtualenv location: /Users/stevenl/.virtualenvs/env-14nofN5B
+Installing internal…
+Installing u'internal'
+⠙$ "/Users/stevenl/.virtualenvs/env-14nofN5B/bin/pip" install   --verbose   "internal" -i https://pypi.python.org/simple --exists-action w
+Collecting internal
+  4 location(s) to search for versions of internal:
+  * https://pypi.python.org/simple/internal/
+  * https://public_internal/pypi/simple/internal/
+  * https://pypi.python.org/simple/internal/
+  * https://some:auth@private_internal/index/internal/
+  Getting page https://pypi.python.org/simple/internal/
+  Looking up "https://pypi.python.org/simple/internal/" in the cache
+  No cache entry available
+  Starting new HTTPS connection (1): pypi.python.org
+  "GET /simple/internal/ HTTP/1.1" 404 35
+  Status code 404 not in [200, 203, 300, 301]
+  Could not fetch URL https://pypi.python.org/simple/internal/: 404 Client Error: Not Found (internal does not exist) for url: https://pypi.python.org/simple/internal/ - skipping
+  Getting page https://public_internal/pypi/simple/internal/
+  Looking up "https://public_internal/pypi/simple/internal/" in the cache
+  No cache entry available
+  Starting new HTTPS connection (1): public_internal
+  "GET /pypi/simple/internal/ HTTP/1.1" 404 None
+  Status code 404 not in [200, 203, 300, 301]
+  Could not fetch URL https://public_internal/pypi/simple/internal/: 404 Client Error: Not Found (internal does not exist) for url: https://public_internal/pypi/simple/internal/ - skipping
+  Getting page https://some:auth@private_internal/index/internal/
+  Looking up "https://private_internal/index/internal/" in the cache
+  No cache entry available
+  Starting new HTTPS connection (1): private_internal
+  "GET /index/internal/ HTTP/1.1" 200 None
+  Updating cache with response from "https://private_internal/index/internal/"
+  Analyzing links from page https://private_internal/index/internal/
+    Found link https://private_internal/packages/legacy/internal-1.0.1-3.tar.gz#md5=8ab88bfbbeba7e52b228acf68a07f368 (from https://private_internal/index/internal/), version: 1.0.1-3
+
+... etc ...
+(the 404s on public_internal are probably correct, but I don't control this configuration)
+Steps to replicate
+This replicates with any customized index-url. e.g. this will only search pypi.python.org:
+$ cat .pip/pip.conf
+[global]
+disable-pip-version-check = yes
+index-url = https://public_internal/pypi/simple
+timeout = 60
+$ pipenv install --verbose internal
+Installing internal…
+⠋Installing u'internal'
+$ "/Users/stevenl/.virtualenvs/env-14nofN5B/bin/pip" install   --verbose   "internal" -i https://pypi.python.org/simple --exists-action w
+Collecting internal
+  1 location(s) to search for versions of internal:
+  * https://pypi.python.org/simple/internal/
+  Getting page https://pypi.python.org/simple/internal/
+  Looking up "https://pypi.python.org/simple/internal/" in the cache
+  No cache entry available

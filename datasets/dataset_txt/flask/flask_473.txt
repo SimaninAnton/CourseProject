@@ -1,0 +1,101 @@
+Contributor
+Nickatak commented on 15 Jan 2018 •
+edited
+Expected Behavior:
+I expect examples in documentation to provide a fully working script with no errors. The snippet in question is a basic example of saving a file in an uploads directory. When ran, the file should be saved to the given upload directory designated by the global variable UPLOAD_FOLDER and then user should be redirected to a URL for the newly uploaded file.
+Notes:
+I am using windows, so the upload folder works fine without a beginning '/' for os.join() [tested], but that really isn't the issue.
+When the redirect is called from within upload_file(), the supplied name for url_for() is 'uploaded_file' instead of 'upload_file'.
+import os
+from flask import Flask, request, redirect, url_for, render_template, flash
+from werkzeug.utils import secure_filename
+app = Flask(__name__)
+app.secret_key = "ThisIsSecret"
+
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/', methods=['GET', 'POST'])
+def upload_file():
+    if request.method == 'POST':
+        # check if the post request has the file part
+        if 'file' not in request.files:
+            flash('No file part')
+            return redirect(request.url)
+        file = request.files['file']
+        # if user does not select file, browser also
+        # submit an empty part without filename
+        if file.filename == '':
+            flash('No selected file')
+            return redirect(request.url)
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            return redirect(url_for('uploaded_file',
+                                    filename=filename))
+    return '''
+    <!doctype html>
+    <title>Upload new File</title>
+    <h1>Upload new File</h1>
+    <form method=post enctype=multipart/form-data>
+      <input type=file name=file>
+      <input type=submit value=Upload>
+    </form>
+    '''
+
+app.run(debug=True)
+Actual Behavior
+The file is indeed saved, but upon redirect, the endpoint 'uploaded_file' cannot be found and thus produces the following traceback upon trying to build the endpoint.
+Traceback (most recent call last):
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1997, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1985, in wsgi_app
+    response = self.handle_exception(e)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1540, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1982, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1614, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1517, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1612, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1598, in dispatch_request
+    return self.view_functions[rule.endpoint](**req.view_args)
+  File "C:\Users\Nickatak\downloads\testing\server.py", line 32, in upload_file
+    filename=filename))
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\helpers.py", line 333, in url_for
+    return appctx.app.handle_url_build_error(error, endpoint, values)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\app.py", line 1805, in handle_url_build_error
+    reraise(exc_type, exc_value, tb)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\flask\helpers.py", line 323, in url_for
+    force_external=external)
+  File "C:\Users\Nickatak\downloads\venv\lib\site-packages\werkzeug\routing.py", line 1776, in build
+    raise BuildError(endpoint, values, method, self)
+BuildError: Could not build url for endpoint 'uploaded_file' with values ['filename']. Did you mean 'upload_file' instead?
+Issue recreation steps:
+Create a venv and activate it.
+pip install flask.
+Proceed to the following available documentation page: http://flask.pocoo.org/docs/0.12/patterns/fileuploads/#a-gentle-introduction
+Assemble the two pieces of the script given under the above section as one server.py file ^.
+Create a folder that has the same name as your UPLOAD_FOLDER variable/app.config['UPLOAD_FOLDER'].
+Run the development server.
+Navigate to localhost:5000.
+Select a file to upload (any file in the allowed extensions will recreate this error) with the 'Choose File' button.
+Attempt to upload the file with the 'Upload' button.
+Suggested solution:
+Change this line in the function called upload_file:
+return redirect(url_for('uploaded_file', filename=filename))
+To this:
+return redirect(url_for('upload_file', filename=filename))
+Also, if you don't mind, I'd like to work on this issue (be assigned it as a newcomer), if this is sufficiently seen as an error.
+Environment
+Python version: 2.7.14
+Flask version: 0.12.2
+Werkzeug version: 0.14.1

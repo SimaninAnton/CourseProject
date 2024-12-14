@@ -1,0 +1,33 @@
+Contributor
+karlw00t commented on 4 Jun 2016 •
+edited
+Running the unit tests against HEAD (e048aa4), I'm able to reproduce a single failing unit tests in:
+tests/test_instance_config.py::test_main_module_paths
+I'm able to reproduce the bug on Amazon Linux 2016.03.1 and RHEL 7.2. I'm running on a fresh EC2 instance in both cases, and the steps to reproduce are the same, here is my bash history:
+sudo yum install python-virtualenv
+sudo yum groupinstall 'Development Tools'
+virtualenv flask
+cd flask/
+git clone https://github.com/pallets/flask.git
+cd flask/
+source ../bin/activate
+pip install -e .
+pip install -r test-requirements.txt
+py.test tests/test_instance_config.py::test_main_module_paths
+failing output:
+modules_tmpdir = local('/tmp/pytest-of-ec2-user/pytest-0/test_main_module_paths0/modules_tmpdir'), purge_module = <function inner at 0x170c1b8>
+def test_main_module_paths(modules_tmpdir, purge_module):
+    app = modules_tmpdir.join('main_app.py')
+    app.write('import flask\n\napp = flask.Flask("__main__")')
+    purge_module('main_app')
+
+    from main_app import app
+    here = os.path.abspath(os.getcwd())
+  assert app.instance_path == os.path.join(here, 'instance')
+E assert '/home/ec2-us...r/py-instance' == '/home/ec2-use...lask/instance'
+E - /home/ec2-user/flask/var/py-instance
+E ? ^ ^ ---
+E + /home/ec2-user/flask/flask/instance
+E ? ^^ ^^
+tests/test_instance_config.py:33: AssertionError
+This test seems to be passing fine on Travis, and on Debian and OSX. It appears to be a Redhat/Amazon Linux specific issue. I ran git bisect back to commits on May 26th, 2016 and the test still fails all attempts.

@@ -1,0 +1,47 @@
+YS- commented on 30 Mar 2015
+I'm using tornado AsyncHTTPClient with the following code, I basically call the scrape function with a url generator list that contains 10K urls.
+I expect to have maximum 50 concurrent requests at any time, which doesn't seem to work as the entire process ends in about 2 minutes.
+I got ~200 valid responses and ~9000 HTTP 599 error. I checked many urls that threw this error and they do load in less than 10 sec', I'm able to reach most urls using urllib2/requests with a smaller timeout (5 seconds).
+All requests sent to different servers, running from ubuntu with python 2.7.3 & tornado version = "4.1".
+I suspect that something is wrong as I can fetch most urls using other (blocking) libraries.
+import tornado.ioloop
+import tornado.httpclient
+
+class Fetcher(object):
+    def __init__(self, ioloop):
+        self.ioloop = ioloop
+        self.client = tornado.httpclient.AsyncHTTPClient(io_loop=ioloop, max_clients=50)
+        self.client.configure(None, defaults=dict(user_agent="Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.101 Safari/537.36",
+                                                  connect_timeout=20,request_timeout=20, validate_cert=False))
+
+    def fetch(self, url):
+        self.client.fetch(url, self.handle_response)
+
+    @property
+    def active(self):
+        """True if there are active fetching happening"""
+        return len(self.client.active) != 0
+
+    def handle_response(self, response):
+        if response.error:
+            print "Error: %s, time: %s, url: %s" % (response.error, response.time_info, response.effective_url)
+        else:
+           # print "clients %s" % self.client.active
+            print "Got %d bytes" % (len(response.body))
+
+        if not self.active:
+            self.ioloop.stop()
+
+def scrape(urls):
+    ioloop = tornado.ioloop.IOLoop.instance()
+    ioloop.add_callback(scrapeEverything, *urls)
+    ioloop.start()
+
+def scrapeEverything(*urls):
+    fetcher = Fetcher(tornado.ioloop.IOLoop.instance())
+
+    for url in urls:
+        fetcher.fetch(url)
+
+if __name__ == '__main__':
+scrape()

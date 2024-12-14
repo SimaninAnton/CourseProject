@@ -1,0 +1,71 @@
+pcpa commented on Aug 30, 2017
+With this test case (named request_iter_lines_test.py):
+import unittest
+import requests
+from io import StringIO
+
+
+class TestIterLines(unittest.TestCase):
+
+    def iter_lines_response(self, chunk_size, delimiter=None):
+        response = requests.Response()
+        response.raw = StringIO('01\r\n45')
+        gen = response.iter_lines(chunk_size=chunk_size, delimiter=delimiter)
+        result = list(gen)
+        self.assertEqual(result, ['01', '45'])
+
+    def test_splitlines_before_delimiter(self): self.iter_lines_response(2)
+
+    def test_splitlines_in_delimiter(self): self.iter_lines_response(3)
+
+    def test_splitlines_after_delimiter(self): self.iter_lines_response(4)
+
+    def test_splitlines_in_line(self): self.iter_lines_response(5)
+
+    def test_split_before_delimiter(self): self.iter_lines_response(2, '\r\n')
+
+    def test_split_in_delimiter(self): self.iter_lines_response(3, '\r\n')
+
+    def test_split_after_delimiter(self): self.iter_lines_response(4, '\r\n')
+
+    def test_split_in_line(self): self.iter_lines_response(5, '\r\n')
+when running:
+python3 -m unittest request_iter_lines_test.py
+It should finish without any errors. Instead if fails with 3 errors.
+When there is a delimiter, this patch (for Fedora) corrects the problems,
+--- /usr/lib/python3.5/site-packages/requests/models.py.orig 2017-02-01 16:04:02.117318286 -0200
++++ /usr/lib/python3.5/site-packages/requests/models.py 2017-02-01 16:53:15.219410425 -0200
+@@ -707,16 +707,29 @@
+ 
+             if pending is not None:
+                 chunk = pending + chunk
++                pending = None
+ 
+             if delimiter:
++                wrap = False
++                for i in range(1, len(delimiter) + 1):
++                    if chunk.endswith(delimiter[:i]):
++                        wrap = True
++                        break
++                if wrap:
++                    if pending is not None:
++                        pending = pending + chunk
++                    else:
++                        pending = chunk
++                    continue
+                 lines = chunk.split(delimiter)
+             else:
+                 lines = chunk.splitlines()
+ 
+             if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
+-                pending = lines.pop()
+-            else:
+-                pending = None
++                if pending is not None:
++                    pending = pending + lines.pop()
++                else:
++                    pending = lines.pop()
+ 
+             for line in lines:
+                 yield line
+but it is incomplete, as the test case fails when a delimiter is not specified, lines are separated by '\r\n' and the text chunk ends in the middle of the sequence, that is, ends in '\r' and next chunk starts with '\n'. So, chunk.splitlines() possibly needs to override TextIOWrapper logic in this condition.

@@ -1,0 +1,41 @@
+kousu commented on Jun 2, 2015
+This is near to #4791 , but it's a lot more fierce. For a reason that is beyond me, libsvm does not share code paths between svm_predict() and svm_predict_probability(). Go figure that the first real dataset I tried the two on tripped an inexplicable numerical(?) bug which shows up under that design.
+I am reporting this upstream too, but you have a fork of libsvm and upstream seems too busy to pay attention to their bug tracker right now.
+Dataset and scripts demonstrating the bug are at https://github.com/kousu/statasvm/tree/master/bugs/libsvm_classification. The dataset has a 56%-dominant category and all boolean predictors. This is an unusual edge case, but it should work, and more over the results should be consistent, but they aren't:
+[kousu@galleon libsvm_classification]$ python classfail.py
+Training:
+0    61
+1    91
+2     9
+3     9
+Name: category, dtype: int64
+
+Incorrect predictions:
+1    170
+dtype: int64
+
+Correct predictions:
+0    57
+1    99
+2     9
+3     5
+dtype: int64
+For some reason, svm_predict() insists everything is one class, which is also the class that is dominant in the dataset. The really strange thing is that svm_predict() gives the wrong answer while svm_predict_probability(), a more complicated function, which falls back to svm_predict(), gives the right thing.
+(the correct predictions jump around because libsvm does some sort of cross-validation thing that I don't understand yet to train them, but they're always in that ballpark).
+The bug is in upstream too (with libsvm 3.20, installed from the ArchLinux AUR).
+[kousu@galleon libsvm_classification]$ sh classfail.sh
+classfail.sh
+
+Incorrect values
+Model supports probability estimates, but disabled in prediction.
+Accuracy = 53.5294% (91/170) (classification)
+    170 1
+
+Correct values
+Accuracy = 84.7059% (144/170) (classification)
+labels 0 1 2 3
+     61 0
+    100 1
+      9 2
+[kousu@galleon libsvm_classification]$ 
+I am picturing hordes of unsuspecting SVM users trusting absurd results. I have no idea how to debug this, but at least I have a test case for you. Is there a better place I can upload the dataset?

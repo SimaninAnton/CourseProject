@@ -1,0 +1,54 @@
+shiretzet commented on 24 Aug 2016 •
+edited
+Some of the layer can handle symbolic parameters, but the get_output_shape_for doesn't in all layers.
+It is important when using None inputs and/or undefined output size.
+Here are a few changes from my Flatten, TimeDistributed and Dense layers:
+class TimeDistributed(Wrapper):
+...
+...
+    def get_output_shape_for(self, input_shape):
+        if type(input_shape) in [list, tuple]:
+            child_input_shape = (input_shape[0],) + input_shape[2:]
+        else:
+            child_input_shape = T.concatenate((input_shape[0:1],input_shape[2:]))
+        child_output_shape = self.layer.get_output_shape_for(child_input_shape)
+        timesteps = input_shape[1]
+        return (child_output_shape[0], timesteps) + child_output_shape[1:]
+
+    def call(self, input, mask=None):
+        input_length = input.shape[1]
+        x = T.reshape(input, T.concatenate(((-1, ) , input.shape[2:])), ndim=input.ndim-1)  # (nb_samples * timesteps, ...)
+        y = self.layer.call(x)  # (nb_samples * timesteps, ...)
+        # (nb_samples, timesteps, ...)
+        output_shape = self.get_output_shape_for(input.shape)
+        y = T.reshape(y, (-1, input_length) + output_shape[2:])
+        return y
+class Flatten(Layer):
+    def __init__(self, **kwargs):
+        self.input_spec = [InputSpec(ndim='3+')]
+        super(Flatten, self).__init__(**kwargs)
+
+    def get_output_shape_for(self, input_shape):
+        if type(input_shape) in [list, tuple]:
+            if None not in input_shape[1:]:
+                return (input_shape[0], np.prod(input_shape[1:]))
+            else:
+                return (input_shape[0], None)
+        elif type(input_shape) is T.TensorVariable:
+            return (input_shape[0], T.prod(input_shape[1:]))
+        else:
+            raise Exception('Type error in Flatten')
+
+    def call(self, x, mask=None):
+        return K.batch_flatten(x)
+class Dense(Layer):
+...
+...
+    def get_output_shape_for(self, input_shape):
+        assert input_shape
+        if type(input_shape) in [list, tuple]:
+            assert len(input_shape) == 2
+        else:
+            assert T.eq(input_shape.ndim , 2)
+
+        return (input_shape[0], self.output_dim)

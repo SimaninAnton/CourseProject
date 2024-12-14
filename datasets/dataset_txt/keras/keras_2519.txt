@@ -1,0 +1,44 @@
+inspiralpatterns commented on 29 Apr 2017
+Based on this I'd like to define a class to add a regularisation factor to the hidden layers. This is the code for the class
+class SparseReg(regularizers.Regularizer):
+
+    def __init__(self, p=0.05, beta=0.1):
+        self.p = K.cast_to_floatx(p)
+        self.beta = K.cast_to_floatx(beta)
+
+    def set_layer(self, layer):
+        self.layer = layer
+
+    def __call__(self, x):
+        regularization = 0.
+        # p_hat needs to be the average activation of the units in the hidden layer.      
+        p_hat = K.cast_to_floatx(K.sum(K.mean(self.layer.get_output(True) , axis=0)))
+
+        regularization += self.beta * losses.kullback_leibler_divergence(self.p, p_hat)
+        return regularization
+
+    def get_config(self):
+        return {'name': self.__class__.__name__,
+                'p': float(self.p),
+                'beta': float(self.beta)
+               }
+and this is the code where I want to call it
+import numpy as np
+from keras.layers import Conv2D, Activation, Input
+from keras.models import Sequential, Model
+from keras import backend as K
+from keras import losses
+from keras import regularizers
+
+# Define the model
+# encoder
+model = Sequential()
+model.add(Conv2D(filters=16,kernel_size=(4,4),padding='same',
+                 name='encoder',input_shape=(128,128,1),activity_regularizer=SparseReg()))
+model.add(Activation('relu'))
+
+# decoder
+model.add(Conv2D(filters=1,kernel_size=(4,4),padding='same', name='decoder'))
+model.add(Activation('relu'))
+but when compiling I get this error AttributeError: 'SparseReg' object has no attribute 'layer' .
+I checked the issue #41 to get activations out of the hidden layer. Is that a method in the Sequential or in the Model class that does it?

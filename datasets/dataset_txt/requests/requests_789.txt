@@ -1,0 +1,22 @@
+Contributor
+jvanasco commented on Jan 31, 2017
+Working on a PR, I discovered that a decently sized CDN will usually block the requests library via user-agent, but does so with a malformed response that raises an error. (usually means hitting the CDN from an ip address using a non-blocked user-string seems to whitelist the IP for 120 seconds -- which is why this took forever to figure out).
+Their 403 response is malformed, as the header indicates a gzipped encoding
+{'Content-Length': '345', 'Content-Encoding': 'gzip', 'Content-Type': '*/*'}
+however the payload is uncompressed plain-text:
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+ <head>
+  <title>403 - Forbidden</title>
+ </head>
+ <body>
+  <h1>403 - Forbidden</h1>
+ </body>
+</html>
+This raises a DecodeError/ContentDecodingError in Response.iter_content.
+I can provide a test case. I just don't want to name the CDN or a client as some project maintainers have (un)official policies on stuff like that.
+This is definitely a "bad server". Aside from sending the malformed response, they don't respect 'Accept-Encoding' either.
+With this particular CDN, the payload is not chunked and reading the stream with decode_content=False will work.
+I'm not sure how/if this should be handled. It might be nice to have a fallback where a failure to read compressed data will attempt to read it uncompressed.

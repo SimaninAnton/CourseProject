@@ -1,0 +1,49 @@
+HasBert commented on 2 Jul 2019 •
+edited
+Hey guys,
+I'm using the mitmproxy/mitmproxy:latest docker image. I tried 2 diffrent addons with mitmdump (and mitmweb). Both scripts does have a configure function implemented, which will be called in the mitmproxy lifecycle. The problem is, that one of the scripts call the def configure() function, the other one does not. The def load() function is called in both scripts. There are no errors I can see in the console.
+Steps to reproduce the problem:
+Create a jsondump.py with the source from here (copy&paste), and place a ctx.log.info('configuring') inside the configure() function of the script.
+Create a storemongo.py with the source from here(copy&paste), and place a ctx.log.info('configuring') inside the configure() function of the script.
+Place both files in a directory, e.g /your/path/addons these will be loaded into the container with docker volumes.
+Create a config.yml file and place it inside your /.mitmproxy/ directory.
+Execute docker-compose up with a similar file like the one attached in the sources below.
+Move into that container docker exec -it <container-id> /bin/sh and install dependencies for the addons: pip3 install requests for jsondump.py pip3 install pymongo for storemongo.py.
+Commit that container docker commit <container-id> some/name:sometag, so changes will persist after recreating the container.
+Edit your docker-compose.yml file to use that committed container:
+services:
+  mitmdump:
+    image: some/name:sometag
+Run your container docker-compose up with the docker-compose command mitmdump -s ~/addons/storemongo.py --> You can see the line "configuring" inside the logs.
+Run your container docker-compose up with the docker-compose command mitmdump -s ~/addons/jsondump.py --> The line "configuring" is not showing up.
+Any other comments? What have you tried so far?
+I also tried to log the ctx.options.dump_destination (inside the load() function, which gets called!) I placed inside the config.yml, but the value is always the default value (jsondump.out), so the ctx.option does also not work properly in this script.
+I also deleted all mitmproxy images and re-downloaded them, but still there is no change to this behaviour.
+I can remember, that this one worked for me a month ago, but I haven't changed my own image container since then, I just played around with several options, and the images does not persist if you docker rm <container-id>, what I surely did!
+Sources
+docker-compose.yml
+version: "3.7"
+
+services:
+  mitmdump:
+    image: mitmproxy/mitmproxy:latest
+    #restart: unless-stopped
+    #container_name: mitmdump 
+    command: mitmdump -s ~/addons/jsondump.py #~/addons/storemongo.py
+    volumes: 
+      - ${MITM_PROXY_DATA_PATH}/mitmproxy/addons:/home/mitmproxy/addons
+      - ${MITM_PROXY_DATA_PATH}/mitmproxy/dump:/home/mitmproxy/dump
+      - ${MITM_PROXY_DATA_PATH}/mitmproxy/.mitmproxy:/home/mitmproxy/.mitmproxy
+    tty: true
+config.yml
+dump_destination: "/home/mitmproxy/dump/output.json"
+dump_encodecontent: true
+System information
+Mitmproxy: 4.0.4
+Python: 3.6.3
+OpenSSL: OpenSSL 1.0.2o 27 Mar 2018
+Platform: Linux-4.15.0-54-generic-x86_64-with
+docker version: 18.09.6
+docker-compose version: 1.24.0, build 0aa59064
+Can anyone imagine, why the configure function doesn't get called inside the jsondump.py file?
+I appreciate any kind of help or advise. Kind regards

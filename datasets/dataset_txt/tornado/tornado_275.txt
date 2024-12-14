@@ -1,0 +1,185 @@
+empeeu commented on 2 Nov 2017
+I'm trying to write a websocket server that sends a good amount of point data for visualization in the browser (using THREE.js). I'm running tornado version 4.5.2.
+I found some issues suggesting I might be using threading incorrectly, but I couldn't find an example that showed me how to properly thread.
+Here's a stripped down example:
+server.py
+#! /usr/bin/python                                                              
+#                                                                               
+import tornado, tornado.websocket                                               
+import threading                                                                
+import numpy as np                                                              
+import time                                                                     
+                                                                                
+lock = threading.Lock()                                                         
+                                                                                
+class EchoWebSocket(tornado.websocket.WebSocketHandler):                        
+    t = 0                                                                       
+    streaming = False                                                           
+    last_message = ''                                                           
+    i = 0                                                                       
+              
+    def check_origin(self, origin):                                             
+        return True                                                             
+                                                                                
+    def open(self):                                                             
+        print("WebSocket opened")                                               
+        self.write_message("Connected.")                                        
+                                                                                
+    def on_message(self, message):                                              
+        if message.upper() == 'STREAM':                                         
+            if not self.streaming:                                              
+                self.streaming = True                                           
+                self.stream_data()                                              
+        elif message.upper() == "STOP":                                         
+            self.streaming = False                                              
+        self.last_message = message                                             
+                                                                                
+    def on_close(self):                                                         
+        self.streaming = False                                                  
+        print("WebSocket closed")                                               
+        self.write_message("Disconnecting.")                                    
+                                                                                
+    def stream_data(self):                                                      
+        if not self.streaming:                                                  
+            self.write_message('Streaming False Start.')                        
+            return                                                              
+        self.streaming = True                                                   
+        self.write_message('Streaming.')                                        
+        def stream():                                                           
+            while self.streaming:                                               
+                lock.acquire()                                                  
+                self.write_message(                                             
+                        (self.i * np.ones(2000, np.float32)).tobytes(),         
+                        binary=True)                                            
+                lock.release()                                                  
+                self. i += 1                                                    
+                                                                                
+            self.write_message(u'Stopping Streaming.')                          
+        tp = threading.Thread(target=stream)                                    
+        tp.daemon = True                                                        
+        tp.start()........                                                      
+                                                                                
+def start_tornado():                                                            
+    tornado.ioloop.IOLoop.instance().start()                                    
+                                                                                
+def stop_tornado():                                                             
+    tornado.ioloop.IOLoop.instance().stop()                                     
+                                                                                
+if __name__ == '__main__':                                                      
+    port = 8888                                                                 
+    handlers = [                                                                
+        (r'/ws', EchoWebSocket),                                                
+    ]                                                                           
+    app = tornado.web.Application(handlers, debug=True)                         
+    app.listen(port)                                                            
+    start_tornado()  
+index.html
+<!DOCTYPE html>                                                                 
+<html>                                                                          
+<body>                                                                          
+                                                                                
+<h1>Websocket streaming test</h1>                                               
+                                                                                
+<script>                                                                        
+var ws;                                                                         
+var binData = 0;                                                                
+function openWS(){                                                              
+  ws = new WebSocket('ws://localhost:8888/ws');                                 
+  ws.binaryType = 'arraybuffer';                                                
+  var ii = 0;                                                                   
+  ws.onmessage = function (e) {                                                 
+    if (typeof e.data == 'string'){                                             
+      document.getElementById('wsString').innerHTML = e.data;                   
+    } else {                                                                    
+        // Do a lot of work to delay things                                     
+      var j = 0;                                                                
+      for (var i=0; i<1000000; i++){                                            
+        j = i * 2;                                                              
+      }                                                                         
+      document.getElementById('wsBinary').innerHTML = e.data + ' ' + j + " " + ii;
+      binData = e.data;                                                         
+      ii++;                                                                     
+    }                                                                           
+  }                                                                             
+}                                                                               
+function closeWS(){                                                             
+  ws.close();                                                                   
+}                                                                               
+open()                                                                          
+</script>                                                                       
+<script>                                                                        
+function stop(){                                                                
+  ws.send('STOP');                                                              
+}                                                                               
+function stream(){                                                              
+  ws.send('STREAM');                                                            
+}                                                                               
+</script>                                                                       
+<p id='wsString'></p>                                                           
+<p id='wsBinary'></p>                                                           
+<input type='button' onclick=stream() value='Stream'></input>                   
+<input type='button' onclick=stop() value='Stop'></input>                       
+<input type='button' onclick=openWS() value='Open'></input>                     
+<input type='button' onclick=closeWS() value='Close'></input>                   
+</body>                                                                         
+</html> 
+And this is what I get when I click stream:
+python server.py.                                                               
+WebSocket opened                                                                
+ERROR:tornado.general:Uncaught exception, closing connection.                   
+Traceback (most recent call last):                                              
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/iostream.py", line 523, in _handle_ev>
+    self._handle_write()                                                        
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/iostream.py", line 847, in _handle_wr>
+    assert self._write_buffer_size >= 0                                         
+AssertionError                                                                  
+Exception in thread Thread-1:                                                   
+Traceback (most recent call last):                                              
+  File "/home/<user>/anaconda3/lib/python3.6/threading.py", line 916, in _bootstrap_inner
+    self.run()                                                                  
+  File "/home/<user>/anaconda3/lib/python3.6/threading.py", line 864, in run    
+    self._target(*self._args, **self._kwargs)                                   
+  File "server.py", line 48, in stream                                          
+    binary=True)                                                                
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/websocket.py", line 252, in write_mes>
+    return self.ws_connection.write_message(message, binary=binary)             
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/websocket.py", line 785, in write_mes>
+    return self._write_frame(True, opcode, message, flags=flags)                
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/websocket.py", line 768, in _write_fr>
+    return self.stream.write(frame)                                             
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/iostream.py", line 406, in write
+    self._handle_write()                                                        
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/iostream.py", line 872, in _handle_wr>
+    del self._write_buffer[:self._write_buffer_pos]                             
+BufferError: Existing exports of data: object cannot be re-sized                
+                                                                                
+ERROR:tornado.application:Exception in callback None                            
+Traceback (most recent call last):                                              
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/ioloop.py", line 888, in start
+    handler_func(fd_obj, events)                                                
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/stack_context.py", line 277, in null_>
+    return fn(*args, **kwargs)                                                  
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/iostream.py", line 523, in _handle_ev>
+    self._handle_write()                                                        
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/iostream.py", line 847, in _handle_wr>
+    assert self._write_buffer_size >= 0                                         
+AssertionError                                                                  
+WebSocket closed                                                                
+ERROR:tornado.application:Uncaught exception GET /ws (::1)                      
+HTTPServerRequest(protocol='http', host='localhost:8888', method='GET', uri='/ws', version='HTTP/1.1', r>
+Traceback (most recent call last):                                              
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/web.py", line 1467, in _stack_context>
+    raise_exc_info((type, value, traceback))                                    
+  File "<string>", line 4, in raise_exc_info                                    
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/stack_context.py", line 316, in wrapp>
+    ret = fn(*args, **kwargs)                                                   
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/websocket.py", line 436, in on_connec>
+    self.on_close()                                                             
+  File "server.py", line 35, in on_close                                        
+    self.write_message("Disconnecting.")                                        
+  File "/home/<user>/anaconda3/lib/python3.6/site-packages/tornado/websocket.py", line 249, in write_mes>
+    raise WebSocketClosedError()                                                
+tornado.websocket.WebSocketClosedError     
+So basically what's happening is I'm sending data faster than the client can handle, so this happens.
+If I put in a sleep in my python code, then all's well for this example, but I can't rely on that across the systems I'm working with.
+All help much appreciated.

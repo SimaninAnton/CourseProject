@@ -1,0 +1,46 @@
+Contributor
+jdespraz commented on 15 Aug 2016
+Hi,
+I have been using the Deconvolution2D implementation with the Tensorflow backend and I noticed that there was an issue with the batch_size (first entry of the output_shape vector).
+In my understanding, the batch size has to be known a priori to be hard-coded in the constructor of Deconvolution2D (passing a None as batch_size results in an error) and therefore, it is not possible to feed the deconvolution batches of different size.
+Now, when saving a model that contains a Deconvolution2D with
+json_string = model.to_json()
+open('cnn_auto_architecture.json', 'w').write(json_string)
+The resulting .json file does not save the batch_size as implemented in the original model but instead writes a null that will later give an error when the model will be loaded.
+So here are 2 possible fixes:
+Either allow the Deconvolution2D to have batch_size of None (variable size)
+Or change the way the model is written in .json to account for the actual hard-coded batch_size
+Of course, the 1st solution would be the most versatile and user friendly, however, I don't know if this would be possible at all, any ideas?
+Thanks!
+Below is a simple toy example that reproduces the error:
+import numpy as np
+from keras.models import Model, model_from_json
+from keras.layers import Input, Deconvolution2D
+from keras.optimizers import Adam
+
+imgs_dim = 10
+batch_size = 32
+
+# create model
+def get_model():
+    inputs = Input((1, imgs_dim, imgs_dim))
+    deconv1 = Deconvolution2D(1, 2, 2,output_shape=(batch_size,1,20,20),
+                              subsample=(2,2),activation='relu',border_mode='valid')(inputs)
+    model = Model(input=inputs, output=deconv1)
+    model.compile(optimizer=Adam(lr=1e-5), loss='poisson', metrics=['accuracy'])
+    return model
+
+model = get_model()
+in_train = np.zeros((batch_size*2,1,imgs_dim,imgs_dim))
+out_train = np.zeros((batch_size*2,1,imgs_dim*2,imgs_dim*2))
+model.fit(in_train, out_train, batch_size=batch_size, nb_epoch=1, verbose=1, shuffle=True)
+
+# save model
+json_string = model.to_json()
+open('model_architecture.json', 'w').write(json_string)
+model.save_weights('model_weights.h5',overwrite=True)
+
+# load model --> this will produce an error
+model2 = model_from_json(open('model_architecture.json').read())
+model2.load_weights('model_weights.h5')
+model2.predict(in_train, verbose=1, batch_size=batch_size)

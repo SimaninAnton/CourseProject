@@ -1,0 +1,36 @@
+pavlyuts commented on 17 May 2017
+My operating system is (include version):
+Centos 7.3
+I installed Certbot with (certbot-auto, OS package manager, pip, etc):
+EPEL package certbot.noarch 0.12.0-4.el7
+I ran this command and it produced this output:
+systemctl start certbot-renew.service
+Certbot's behavior differed from what I expected because:
+File /lib/systemd/system/certbot-renew.service from package has lines
+[Service]
+EnvironmentFile=-/etc/sysconfig/certbot
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --pre-hook $PRE_HOOK --post-hook $POST_HOOK --renew-hook $RENEW_HOOK $CERTBOT_ARGS
+Therefore, it rely on /etc/sysconfig/certbot to set the variables. Ones are set by default like
+PRE_HOOK="''"
+So, something goes wrong with variables passing, systemd clears all type of quotes and puts nothing instead of ''
+If I simulate certbot run with command from shell prompt:
+/usr/bin/certbot renew --pre-hook '' --post-hook '' --renew-hook ''
+It is Ok, it works.
+The workaround is to put any "do nothing" command in the quotes, for example:
+PRE_HOOK="'echo >/dev/null'"
+And the same to all others. Now it works.
+Here is a Certbot log showing the issue (if available):
+No cerbot logs created at all.
+System messages log shows:
+May 17 00:00:06 pavlyuts systemd: Starting This service automatically renews any certbot certificates found...
+May 17 00:00:06 pavlyuts certbot: usage:
+May 17 00:00:06 pavlyuts certbot: certbot [SUBCOMMAND] [options] [-d DOMAIN] [-d DOMAIN] ...
+May 17 00:00:06 pavlyuts certbot: Certbot can obtain and install HTTPS/TLS/SSL certificates.  By default,
+May 17 00:00:06 pavlyuts certbot: it will attempt to use a webserver both for obtaining and installing the
+May 17 00:00:06 pavlyuts certbot: cert.
+May 17 00:00:06 pavlyuts certbot: certbot: error: argument --pre-hook: expected one argument
+May 17 00:00:07 pavlyuts systemd: certbot-renew.service: main process exited, code=exited, status=2/INVALIDARGUMENT
+May 17 00:00:07 pavlyuts systemd: Failed to start This service automatically renews any certbot certificates found.
+May 17 00:00:07 pavlyuts systemd: Unit certbot-renew.service entered failed state.
+May 17 00:00:07 pavlyuts systemd: certbot-renew.service failed.`

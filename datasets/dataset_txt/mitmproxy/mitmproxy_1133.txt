@@ -1,0 +1,62 @@
+christofferqa commented on 12 Apr 2016
+Steps to reproduce the problem:
+Record a website using mitmdump --anticache -w out.tmp.
+For the sake of the example, record the JSON file at http://users-cs.au.dk/cqa/mitmproxy.json.
+Replay the website using mitmdump --anticache -S out.tmp -s proxy.py --no-pop --kill, where proxy.py mutates some responses from the recording.
+For the sake of the example, use the following proxy.py file, that pretty prints JSON files:
+import json
+
+from mitmproxy.script import concurrent
+
+def prettyjson(input):
+  return json.dumps(json.loads(input), indent=2)
+
+@concurrent
+def request(context, flow):
+  print('start request: %s%s' % (flow.request.host, flow.request.path))
+
+def response(context, flow):
+  if not flow.error and flow.request.path.endswith('.json'):
+    flow.response.decode()
+    flow.response.content = prettyjson(flow.response.content)
+  print('finish response: %s%s' % (flow.request.host, flow.request.path))
+What is the expected behavior?
+The JSON file in the recording gets pretty printed when visiting http://users-cs.au.dk/cqa/mitmproxy.json.
+What went wrong?
+A crash occurs:
+start request: users-cs.au.dk/cqa/mitmproxy.json
+finish response: users-cs.au.dk/cqa/mitmproxy.json
+127.0.0.1 GET http://users-cs.au.dk/cqa/mitmproxy.json
+[replay]  << 200 OK 34B
+start request: users-cs.au.dk/favicon.ico
+127.0.0.1 GET http://users-cs.au.dk/favicon.ico
+ << Connection killed
+finish response: users-cs.au.dk/favicon.ico
+Traceback (most recent call last):
+  File "/home/christofferqa/mitmproxy/venv/bin/mitmdump", line 9, in <module>
+    load_entry_point('mitmproxy', 'console_scripts', 'mitmdump')()
+  File "/home/christofferqa/mitmproxy/mitmproxy/main.py", line 102, in mitmdump
+    master.run()
+  File "/home/christofferqa/mitmproxy/mitmproxy/dump.py", line 354, in run
+    return flow.FlowMaster.run(self)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 128, in run
+    self.tick(self.masterq, 0.1)
+  File "/home/christofferqa/mitmproxy/mitmproxy/flow.py", line 836, in tick
+    return super(FlowMaster, self).tick(q, timeout)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 113, in tick
+    self.handle(*msg)
+  File "/home/christofferqa/mitmproxy/mitmproxy/controller.py", line 135, in handle
+    m(obj)
+  File "/home/christofferqa/mitmproxy/mitmproxy/dump.py", line 337, in handle_response
+    self._process_flow(f)
+  File "/home/christofferqa/mitmproxy/mitmproxy/dump.py", line 321, in _process_flow
+    self.state.delete_flow(f)
+  File "/home/christofferqa/mitmproxy/mitmproxy/flow.py", line 584, in delete_flow
+    self.flows._remove(f)
+  File "/home/christofferqa/mitmproxy/mitmproxy/flow.py", line 496, in _remove
+    self._list.remove(f)
+ValueError: list.remove(x): x not in list
+Any other comments?
+The bug only manifests when using @concurrent and --kill at the same time, and therefore may be related to #1061.
+Mitmproxy Version: master (0.18)
+Operating System: Ubuntu 14.03.3

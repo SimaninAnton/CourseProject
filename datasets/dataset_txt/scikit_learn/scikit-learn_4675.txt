@@ -1,0 +1,21 @@
+langmore commented on Sep 3, 2013
+Suppose you have a loop that fits a RandomForestClassifier 4 times in a row (e.g. with slightly different parameters). In this case, BaseForest.fit() keeps the current copy of trees in memory (stored as self.estimators_), while at the same time computing and storing the next set of trees (as all_trees). During this time, we have two sets of trees in memory, and the total memory usage can be huge (if you have many complicated trees).
+The following snippet can be used to demonstrate this issue (in 64bit Ubuntu with 4+4 cores, it will use around 7GB).
+X = np.random.randn(20000, 30)
+y = (X.sum(axis=1) > 0).astype('int')
+
+clf = RandomForestClassifier(n_estimators=1000, n_jobs=-1)
+
+# In "real life" we modify the classifier during every iteration
+for i in range(4):
+    print "Fit iteration %d" % i
+    clf.fit(X, y)
+The first time through you will see (using e.g. htop) memory spike as X and y are created. You will then see memory gradually grow as all_trees is populated. The second time through, you will see memory continue to grow since both all_trees and self.estimators_ are holding many trees. When the second loop finishes, memory usage will plummet since self.estimators_ is set equal to all_trees. Then, memory grows again...
+The following modification to BaseForest.fit() is suggested (it used about 1.3GB).
+self.estimators_ = None   # This one line fixes the memory issue
+
+# Parallel loop
+all_trees = Parallel(...)
+
+# Reduce
+self.estimators_ = list(itertools.chain(*all_trees))

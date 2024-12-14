@@ -1,0 +1,35 @@
+gbezyuk commented on 4 Sep 2015
+The case:
+I'm running django-rest-framework powered API as a backed for my universal javascript application. There are two servers: a gunicorn for django and node for the rest, both running behind nginx proxy.
+The problem:
+In nginx config i'm required to specify a named upstream host and then proxy to it like that:
+upstream backend {
+  server unix:/some-path/gunicorn.sock fail_timeout=0;
+}
+
+server {
+  location /api/ {
+    proxy_pass http://backend;
+  }
+}
+Doing this, I can reach my API, but with a very unfortunate defect: all the hyperlinks are built starting with http://backend/api instead of the actual domain I use.
+The solution via Nginx:
+Using nginx I can proxy location headers as well, which saves the day:
+server {
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Host $host;
+    # ... the rest of config
+}
+The proposition of a solution via rest-framework:
+There is an existing solution for cases like this one, given with django.contrib.sites. Please, make django-restframework to respect the SITE_ID if present in project settings.
+Unfortunately, I was unable to find a way to update the code myself, so sorry for providing no pull request. But for a single example, let me show how I dealt with an ImageField serialization, which bothered me the most:
+# hack to deal with nginx upstream wrong naming
+class MyImageField(ImageField):
+    def to_representation(self, value):
+        if self.use_url:
+            if not value:
+                return None
+            return 'http://' + get_current_site(self.context.get('request', None)).domain + value.url
+        return value.name
+1

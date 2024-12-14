@@ -1,0 +1,167 @@
+Chris8080 commented on Oct 6, 2019 •
+edited
+Description
+I've got a list of 109 URLs (in this test case - can be 200 or 500 or more, and the same issue persists) which is loaded correctly into a list of requests by the start_requests method and returned.
+Steps to Reproduce
+run the spider
+Expected behavior: [What you expect to happen]
+The crawler should crawl (in this case due to CONCURRENT_REQUESTS = 150 roughly 150 pages at the same time, create the folders and files.
+Actual behavior: [What actually happens]
+Up to ca. 70 folders are being created / 70 domains are being crawled before the spider eventually stops.
+Reproduces how often: [What percentage of the time does it reproduce?]
+100% in my actual spider and in this barebone example.
+Versions
+Scrapy : 1.7.3
+lxml : 4.3.3.0
+libxml2 : 2.9.9
+cssselect : 1.0.3
+parsel : 1.5.1
+w3lib : 1.20.0
+Twisted : 19.2.0
+Python : 3.7.3 (default, Aug 20 2019, 17:04:43) - [GCC 8.3.0]
+pyOpenSSL : 19.0.0 (OpenSSL 1.1.1b 26 Feb 2019)
+cryptography : 2.6.1
+Platform : Linux-5.0.0-29-generic-x86_64-with-Ubuntu-19.04-disco
+Additional context
+Following the settings.py and the spider.
+Maybe I'm doing sth wrong or there is an issue somehow?
+# -*- coding: utf-8 -*-
+
+BOT_NAME = 'crawlerscrapy'
+SPIDER_MODULES = ['crawlerscrapy.spiders']
+NEWSPIDER_MODULE = 'crawlerscrapy.spiders'
+USER_AGENT_LIST = "useragents.txt"
+ROBOTSTXT_OBEY = False
+CONCURRENT_REQUESTS = 150
+DOWNLOAD_DELAY = 13
+CONCURRENT_REQUESTS_PER_DOMAIN = 1
+COOKIES_ENABLED = False
+
+DEFAULT_REQUEST_HEADERS = {
+   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+   'Accept-Encoding':'gzip, deflate, sdch',
+   'Connection':'keep-alive',
+   'Cache-Control':'max-age=0',
+   'Accept-Language': 'en',
+}
+DOWNLOADER_MIDDLEWARES = {
+    'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware':None,
+    'random_useragent.RandomUserAgentMiddleware': 400
+}
+AUTOTHROTTLE_ENABLED = False
+
+# http://doc.scrapy.org/en/latest/topics/broad-crawls.html
+SCHEDULER_PRIORITY_QUEUE = 'scrapy.pqueues.DownloaderAwarePriorityQueue' # added for 3
+REACTOR_THREADPOOL_MAXSIZE = 20 # added for 2
+LOG_LEVEL = 'INFO'
+DEPTH_LIMIT = 1
+DOWNLOAD_TIMEOUT = 9
+SCHEDULER_DEBUG = True
+SCHEDULER_DISK_QUEUE = 'scrapy.squeues.PickleFifoDiskQueue'
+SCHEDULER_MEMORY_QUEUE = 'scrapy.squeues.FifoMemoryQueue'
+RETRY_TIMES = 1
+AJAXCRAWL_ENABLED = True
+# -*- coding: utf-8 -*-
+import scrapy
+from scrapy.linkextractors import LinkExtractor
+from scrapy.spiders import CrawlSpider, Rule
+from scrapy import Request
+
+import logging
+import sys
+import os 
+import os.path
+from datetime import datetime
+
+from urllib.parse import urlparse
+from pathvalidate import sanitize_filename
+
+'''
+scrapy crawl spid -s JOBDIR=crawls/2019_09_18 --logfile=log/2019-09-18-complete.log
+scrapy crawl spid --logfile=log/2019-10-05-complete.log
+'''
+
+class SpidSpider(CrawlSpider):
+    name = 'spid'
+
+    allowed_domains = []
+
+    with open("urls.txt", "rt") as f:
+        start_urls = [url.strip() for url in f.readlines()]
+        allowed_domains = [url.strip() for url in f.readlines()]
+
+    rules = (
+        Rule(LinkExtractor(allow=()), callback='parse_item', follow=True),
+    )
+    
+    def __init__(self, *a, **kw):
+        super(CrawlSpider, self).__init__(*a, **kw)
+
+    def start_requests(self):
+        logging.log(logging.INFO, "======== Starting with start_requests")
+        self._compile_rules()
+
+        request_list = []
+        line = 1
+        for link in self.start_urls:
+            o = urlparse(link)
+            result = '{uri.netloc}'.format(uri=o)
+            self.allowed_domains.append(result)
+            logging.log(logging.INFO, "======== in For:")
+            logging.log(logging.INFO, link)
+            request_list.append ( Request(url=link, callback=self.parse) )
+            line+=1 
+        
+        logging.log(logging.INFO, "======== Amount allowed Domains:")
+        logging.log(logging.INFO, len(self.allowed_domains) )
+        logging.log(logging.INFO, "======== Amount start URLs:")
+        logging.log(logging.INFO, len(self.start_urls) )
+        logging.log(logging.INFO, "======== Amount request list:")
+        logging.log(logging.INFO, len(request_list) )
+        logging.log(logging.INFO, "======== Finished with start_requests")
+        
+        return ( request_list )
+
+
+    def parse_item(self, response):
+        item = {}
+        self.write_html_file ( response )
+        return item
+
+
+    def write_html_file (self, response):
+        current_url = response.url
+        orootdir = 'out/'
+
+        title = response.xpath('//title/text()').get()
+        
+        o = urlparse(current_url)
+        result = '{uri.netloc}'.format(uri=o)
+
+        if '/de/' in current_url:
+            current_url = (current_url.replace('/de/', '')).strip()
+        if '/en/' in current_url:
+            current_url = (current_url.replace('/en/', '')).strip()
+        if current_url.endswith ( "/" ):
+            current_url = current_url[:-1]
+
+        page = current_url.split("/")[-1]
+        self.check_path ( orootdir + '/' )
+        self.check_path ( orootdir + '/' + result )
+        
+        filename = datetime.today().strftime('%Y-%m-%d') + '__' + title + '.html'
+        filename = sanitize_filename ( filename ).replace(' ', '_').strip()
+        
+        pathfilename = orootdir + '/' + result + '/'
+        pathfilename = pathfilename + filename
+        
+        self.logger.info("Filename to be generated: " + pathfilename)
+        
+        with open(pathfilename, 'wb') as f:
+            f.write(response.body)
+
+
+    def check_path ( self, path ):
+        if not os.path.exists( path ):
+            os.makedirs( path )
+And a list of URLs - works with any.

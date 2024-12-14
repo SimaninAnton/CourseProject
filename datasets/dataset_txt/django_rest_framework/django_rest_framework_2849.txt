@@ -1,0 +1,22 @@
+Contributor
+nemesisdesign commented on 11 May 2013
+Suppose a case in which you have two fields that must be "unique_together", and one of these two fields can be null.
+Now immagine the field that can be NULL would be automatically set by the pre_save method of the create method. What happens if pre_save sets the field to a value that is already present in the database? I get a 500 internal server error caused by the integrity error which is not caught.
+See the comments in this code:
+def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.DATA, files=request.FILES)
+
+        if serializer.is_valid():
+            # pre save changes the value of a field which causes the integrity error because the validation check is not done again before saving.
+            self.pre_save(serializer.object)
+            self.object = serializer.save(force_insert=True)
+            self.post_save(self.object, created=True)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED,
+                            headers=headers)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+I think that it would be better to set values of certain fields before the validation check is done.
+I don't know if this is possible, until now I haven't found a way in the docs.
+At the moment i will just overwrite the create method and supply my hacked request.DATA to the serializer, but it would be much better if there was a cleaner way to accomplish this.
+And maybe a validation check after pre_save should be done again anyway :)

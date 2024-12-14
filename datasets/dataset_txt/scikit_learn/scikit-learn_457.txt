@@ -1,0 +1,95 @@
+Contributor
+kirilldolmatov commented on Jun 17, 2019 •
+edited
+Description
+I've never met with such error when used GridSearchCV before. Other estimators in this pipeline work fine. Maybe cause isn't in scikit-learn, but in joblib... however, there are some related issues: #12413, #12891, #10054. For my task isn't possible to use "n_jobs=1", because in this case optimization will take a lot of time.
+Steps/Code to Reproduce
+import numpy as np
+import pandas as pd
+from sklearn.cluster import MiniBatchKMeans
+from sklearn.decomposition import TruncatedSVD
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline, make_pipeline, FeatureUnion
+
+N_JOBS = 30  
+RANDOM_STATE = 0
+
+df = pd.read_pickle('df_entities_candles.pkl', compression='gzip')
+
+pipe = Pipeline([
+    ('features', FeatureUnion([
+        ('text_tfidf', Pipeline([            
+            ('tfidf', TfidfVectorizer()),
+            ('svd', TruncatedSVD(random_state=RANDOM_STATE))
+        ]))
+    ])),
+    ('estimator', MiniBatchKMeans(random_state=RANDOM_STATE))
+])   
+
+param_grid = {'features__text_tfidf__tfidf__max_df': (0.25, 0.5, 0.75, 1),
+              'features__text_tfidf__tfidf__ngram_range': [(1, 1), (1, 2), (1, 3)],
+              'features__text_tfidf__tfidf__sublinear_tf': [True, False],
+              'features__text_tfidf__tfidf__norm': ['l1', 'l2'],
+              'features__text_tfidf__svd__n_components': [5, 10, 50, 100],
+              'features__text_tfidf__svd__n_iter': [5, 15],              
+              'estimator__batch_size': [100, 500, 1000],              
+              'estimator__n_clusters': [2, 3]}     
+
+search = GridSearchCV(pipe, 
+                          param_grid, 
+                          cv=2,
+                          n_jobs=N_JOBS,
+                          return_train_score=False,
+                          verbose=3)
+search.fit(df['text'], df['sign_change_30min'])
+Expected Results
+get fitted pipeline
+Actual Results
+exception calling callback for <Future at 0x1d512304128 state=finished raised BrokenProcessPool>
+joblib.externals.loky.process_executor._RemoteTraceback:
+'''
+Traceback (most recent call last):
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\externals\loky\process_executor.py", line 391, in _process_worker
+call_item = call_queue.get(block=True, timeout=timeout)
+File "C:\ProgramData\Anaconda3\envs\py36\lib\multiprocessing\queues.py", line 113, in get
+return _ForkingPickler.loads(res)
+MemoryError
+'''
+The above exception was the direct cause of the following exception:
+Traceback (most recent call last):
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\externals\loky_base.py", line 625, in _invoke_callbacks
+callback(self)
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\parallel.py", line 309, in call
+self.parallel.dispatch_next()
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\parallel.py", line 731, in dispatch_next
+if not self.dispatch_one_batch(self._original_iterator):
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\parallel.py", line 759, in dispatch_one_batch
+self._dispatch(tasks)
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\parallel.py", line 716, in _dispatch
+job = self._backend.apply_async(batch, callback=cb)
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib_parallel_backends.py", line 510, in apply_async
+future = self._workers.submit(SafeFunction(func))
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\externals\loky\reusable_executor.py", line 151, in submit
+fn, *args, **kwargs)
+File "C:\ProgramData\Anaconda3\envs\py36\lib\site-packages\joblib\externals\loky\process_executor.py", line 1022, in submit
+raise self._flags.broken
+joblib.externals.loky.process_executor.BrokenProcessPool: A task has failed to un-serialize. Please ensure that the arguments of the function are all picklable.
+Versions
+System:
+python: 3.6.8 |Anaconda, Inc.| (default, Feb 21 2019, 18:30:04) [MSC v.1916 64 bit (AMD64)]
+executable: C:\ProgramData\Anaconda3\envs\py36\python.exe
+machine: Windows-10-10.0.14393-SP0
+BLAS:
+macros:
+lib_dirs:
+cblas_libs: cblas
+Python deps:
+pip: 19.1.1
+setuptools: 41.0.1
+sklearn: 0.21.2
+numpy: 1.16.4
+scipy: 1.2.1
+Cython: None
+pandas: 0.24.2
+👍 2

@@ -1,0 +1,55 @@
+Contributor
+datumbox commented on 19 Jan 2017
+I believe there is a bug on the save/load mechanism of version 1.2.0. The problem did not exist on version 1.1.2.
+To reproduce the bug I'll be using the following code snippet taken from the Keras documentation: Fine-tune InceptionV3 on a new set of classes
+from keras.preprocessing import image
+generator = image.ImageDataGenerator().flow_from_directory('./data/cifar2-train', target_size=(224, 224), batch_size=32, class_mode='categorical', shuffle=True)
+
+# ==== Start of Code Snippet from Keras Documentation: https://keras.io/applications/ ====
+from keras.applications.inception_v3 import InceptionV3
+from keras.preprocessing import image
+from keras.models import Model
+from keras.layers import Dense, GlobalAveragePooling2D
+from keras import backend as K
+
+base_model = InceptionV3(weights='imagenet', include_top=False)
+
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(1024, activation='relu')(x)
+predictions = Dense(2, activation='softmax')(x)
+
+model = Model(input=base_model.input, output=predictions)
+
+for layer in base_model.layers:
+    layer.trainable = False
+
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
+model.fit_generator(generator, samples_per_epoch=1000, nb_epoch=1)
+
+for i, layer in enumerate(base_model.layers):
+   print(i, layer.name)
+
+for layer in model.layers[:172]:
+   layer.trainable = False
+for layer in model.layers[172:]:
+   layer.trainable = True
+
+from keras.optimizers import SGD
+model.compile(optimizer=SGD(lr=0.0001, momentum=0.9), loss='categorical_crossentropy')
+
+model.fit_generator(generator, samples_per_epoch=1000, nb_epoch=1)
+# ==== End of Code Snippet ====
+
+model.save('./data/tempModel')
+del model
+from keras.models import load_model
+model = load_model('./data/tempModel')
+Traceback (most recent call last):
+File "", line 1, in
+File "/usr/local/lib/python2.7/dist-packages/keras/models.py", line 143, in load_model
+model.load_weights_from_hdf5_group(f['model_weights'])
+File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2753, in load_weights_from_hdf5_group
+str(len(flattened_layers)) + ' layers.')
+ValueError: You are trying to load a weight file containing 190 layers into a model with 2 layers.

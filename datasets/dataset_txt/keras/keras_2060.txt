@@ -1,0 +1,55 @@
+kesinger commented on 26 Jun 2017 •
+edited
+I'm trying to dump a model to json, and am running into a bit of trouble.
+In particular, I can't do this:
+h = H()
+open("h.json","w").write(h.model.to_json())
+as I get an exception like:
+ Traceback (most recent call last):
+   File "./highway.py", line 163, in <module>
+     open("hwy.json","w").write(hwy.model.to_json())
+   File "/home/jake/tf3/lib/python3.5/site-packages/keras/engine/topology.py", line 2618, in  to_json
+     model_config = self._updated_config()
+   File "/home/jake/tf3/lib/python3.5/site-packages/keras/engine/topology.py", line 2585, in     _updated_config
+     config = self.get_config()
+   File "/home/jake/tf3/lib/python3.5/site-packages/keras/engine/topology.py", line 2383, in get_config
+     return copy.deepcopy(config)
+   File "/home/jake/tf3/lib/python3.5/copy.py", line 155, in deepcopy
+     y = copier(x, memo)
+   File "/home/jake/tf3/lib/python3.5/copy.py", line 243, in _deepcopy_dict
+     y[deepcopy(key, memo)] = deepcopy(value, memo)
+   # lots more lines of this snipped, sometimes _deepcopy_dict is _deepcopy_tuple or _list
+   File "/home/jake/tf3/lib/python3.5/copy.py", line 306, in _reconstruct
+     y.__dict__.update(state)
+ AttributeError: 'NoneType' object has no attribute 'update'
+ Exception ignored in: <bound method BaseSession.__del__ of   <tensorflow.python.client.session.Session object at 0x7f8fe60509e8>>
+ Traceback (most recent call last):
+   File "/home/jake/tf3/lib/python3.5/site-packages/tensorflow/python/client/session.py", line 595, in __del__
+ TypeError: 'NoneType' object is not callable
+If I use to_yaml, I get a different error at the end:
+  File "/home/jake/tf3/lib/python3.5/copy.py", line 174, in deepcopy
+    rv = reductor(4)
+TypeError: can't pickle google.protobuf.pyext._message.MessageDescriptor objects
+This is how I'm finalizing the model:
+    self.model = Model(inputs=self.jointInput, outputs=self.softmaxlayer)
+    self.opt = keras.optimizers.Adam()
+    self.loss = keras.losses.mean_squared_error
+    self.model.compile(loss=self.loss, optimizer=self.opt, metrics=['mae'])
+    self.checkpointer = ModelCheckpoint(filepath='weights3.h5',
+                                        verbose=1, monitor='mae')
+    self.tboard = TensorBoard(log_dir='./highway3.logs', histogram_freq=1,
+                              write_graph=True, write_images=True)
+    self.callbacks = [self.tboard, self.checkpointer]
+If I don't try to dump to json and just start training:
+h.model.fit(data, output,shuffle="batch", epochs=100, batch_size=1,
+          callbacks=h.callbacks)
+I get an error at end-of-epoch of the form:
+  File "/home/jake/tf3/lib/python3.5/copy.py", line 174, in deepcopy
+    rv = reductor(4)
+TypeError: cannot serialize '_io.TextIOWrapper' object
+and if I take out the "monitor='mae'" line I get:
+  File "/home/jake/tf3/lib/python3.5/copy.py", line 306, in _reconstruct
+    y.__dict__.update(state)
+AttributeError: 'NoneType' object has no attribute 'update'
+The model has one custom layer, keras_contrib's Deconvolution3D, and a little bit of fancy topology with some ugly Lambda layers and a siamese part, are there special things I need to take into account when trying to save models with that kind of stuff inside?
+(p.s.: saving weights only works fine)

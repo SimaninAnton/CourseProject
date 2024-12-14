@@ -1,0 +1,24 @@
+Contributor
+NicolasHug commented on Nov 29, 2018
+Description
+I need feedback on this before submitting a bugfix, but I think there's a subtle bug in the way the gradients are computed in GradientBoostingClassifier with the MultinomialDeviance loss.
+CC @amueller @ogrisel
+The problem is jointly in _fit_stage and in MultinomialDeviance. To sum up, some parts of y_pred in negative_gradient() are incorrect because they should be the predictions of iteration i - 1, but they are actually those of iteration i.
+more details.
+In a multiclass setting, we haveloss.K > 1. K is the number of classes, or equivalently the number of trees that are built at each iteration of the boosting process (1 tree per class).
+The y_pred variable is of shape (n_samples, K), and for a fixed iteration i (i.e. during a given call to _fit_stage), the parts y_pred[:, k] will be successively updated.
+To simplify a bit, _fit_stage(i) looks like this:
+for k in loss.K:
+   gradients = loss.negative_gradients(y_pred, k=k)
+   kth_tree = fit_a_tree_to_predict_the_negative_gradients(gradients)
+   y_pred[:, k] = kth_tree.predict(X)  # y_pred is updated here!!!
+and I think it should be like this:
+y_pred_copy = y_pred.copy()
+for k in loss.K:
+   gradients = loss.negative_gradients(y_pred_copy, k=k)
+   kth_tree = fit_a_tree_to_predict_the_negative_gradients(gradients)
+   y_pred[:, k] = kth_tree.predict(X)
+In the current code, for k=0 all is well, but at k=1, y_pred[:, 0] will have been updated. And in MultinomialDeviance.negative_gradients, the whole array y_pred is used:
+return y - np.nan_to_num(np.exp(pred[:, k] - logsumexp(pred, axis=1)))
+The problem is that logsumexp(pred, axis=1) uses the whole y_pred array which is already partially updated, while it should just be what it was before entering the loop mentionned above.
+Hope it's clear, happy to submit a PR if it's legit.

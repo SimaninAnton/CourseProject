@@ -1,0 +1,88 @@
+ghost commented on 1 Apr 2018
+Expected Behavior
+Testing with pytest and using the context manager app.test_client().session_transaction()
+to set the session configuration.
+@pytest.fixture()
+def client():
+    app.config['TESTING'] = True
+
+    app.secret_key = 'test_views'
+    with app.test_client() as client:
+        yield client
+
+def test_phase1(client, mocker):
+    with client.session_transaction() as session:
+        session['logged_in'] = True
+        response = client.get('/phase1')
+        print(response)
+Actual Behavior
+    def do_teardown_request(self, exc=_sentinel):
+        """Called after the actual request dispatching and will
+            call every as :meth:`teardown_request` decorated function.  This is
+            not actually called by the :class:`Flask` object itself but is always
+            triggered when the request context is popped.  That way we have a
+            tighter control over certain resources under testing environments.
+    
+            .. versionchanged:: 0.9
+               Added the `exc` argument.  Previously this was always using the
+               current exception information.
+            """
+        if exc is _sentinel:
+            exc = sys.exc_info()[1]
+        funcs = reversed(self.teardown_request_funcs.get(None, ()))
+>       bp = _request_ctx_stack.top.request.blueprint
+E           AssertionError: Popped wrong request context.  (None instead of <RequestContext 'http://localhost/' [GET])
+
+
+During handling of the above exception, another exception occurred:
+
+    def pop(self, exc=_sentinel):
+        """Pops the request context and unbinds it by doing that.  This will
+            also trigger the execution of functions registered by the
+            :meth:`~flask.Flask.teardown_request` decorator.
+    
+            .. versionchanged:: 0.9
+               Added the `exc` argument.
+            """
+        app_ctx = self._implicit_app_ctx_stack.pop()
+    
+        try:
+            clear_request = False
+            if not self._implicit_app_ctx_stack:
+                self.preserved = False
+                self._preserved_exc = None
+                if exc is _sentinel:
+                    exc = sys.exc_info()[1]
+                self.app.do_teardown_request(exc)
+    
+                # If this interpreter supports clearing the exception information
+                # we do that now.  This will only go into effect on Python 2.x,
+                # on 3.x it disappears automatically at the end of the exception
+                # stack.
+                if hasattr(sys, 'exc_clear'):
+                    sys.exc_clear()
+    
+                request_close = getattr(self.request, 'close', None)
+                if request_close is not None:
+                    request_close()
+                clear_request = True
+        finally:
+            rv = _request_ctx_stack.pop()
+    
+            # get rid of circular dependencies at the end of the request
+            # so that we don't require the GC to be active.
+            if clear_request:
+                rv.request.environ['werkzeug.request'] = None
+    
+            # Get rid of the app as well if necessary.
+            if app_ctx is not None:
+                app_ctx.pop(exc)
+    
+            assert rv is self, 'Popped wrong request context.  ' \
+>               '(%r instead of %r)' % (rv, self)
+E          AssertionError: Popped wrong request context.  (None instead of <RequestContext 'http://localhost/' [GET])
+tried with with app.config['PRESERVE_CONTEXT_ON_EXCEPTION'] = False but it doesn't work
+Environment
+Python version: 3.5.3
+Flask version: 0.12.2
+Werkzeug version: 0.14.1

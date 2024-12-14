@@ -1,0 +1,56 @@
+Member
+adrinjalali commented on Sep 21, 2018 •
+edited by TomDLT
+While adding examples to docstrings, two models (three classes) show an odd
+behavior, i.e. they give different results under different circumstances and they
+are not random, since the random seed and rand_state are fixed.
+The results are deterministic under each setting, but change from setup to
+setup.
+For instance (observed in PR #12124), the EllipticEnvelope, has the following
+issue (this is a failiur on travis).
+073     >>> import numpy as np
+074     >>> from sklearn.covariance import EllipticEnvelope
+075     >>> real_cov = np.array([[.8, .3],
+076     ...                      [.3, .4]])
+077     >>> np.random.seed(0)
+078     >>> X = np.random.multivariate_normal(mean=[0, 0],
+079     ...                                   cov=real_cov,
+080     ...                                   size=300)
+081     >>> cov = EllipticEnvelope(random_state=0).fit(X)
+082     >>> cov.covariance_ # doctest: +ELLIPSIS
+Expected:
+    array([[0.7411..., 0.2535...],
+           [0.2535..., 0.3053...]])
+Got:
+    array([[0.81478325, 0.28653659],
+           [0.28653659, 0.30913504]])
+The same issue was observed in PR #11732, for GraphicalLasso and
+GraphicalLassoCV.
+Please note that the results are deterministic, i.e. changing the values to
+what's reported by travis, would make the test pass, as I've done for the
+PR #11732 .
+The corresponding code resulting in the issue, is the following:
+import numpy as np
+from scipy import linalg
+from sklearn.datasets import make_sparse_spd_matrix
+from sklearn.covariance import GraphicalLasso, log_likelihood
+n_samples = 60
+n_features = 20
+prng = np.random.RandomState(1)
+prec = make_sparse_spd_matrix(n_features, alpha=.98,
+                              smallest_coef=.4,
+                              largest_coef=.7,
+                              random_state=prng)
+cov = linalg.inv(prec)
+d = np.sqrt(np.diag(cov))
+cov /= d
+cov /= d[:, np.newaxis]
+X = prng.multivariate_normal(np.zeros(n_features), cov, size=n_samples)
+emp_cov = np.dot(X.T, X) / n_samples
+model = GraphicalLasso()
+loglik_est = -model.fit(X).score(X)
+loglik_real = -log_likelihood(emp_cov, prec)
+print("estimated negative log likelihood: %g" % loglik_est)
+[here the difference between systems is: 26.1847 vs 26.1927]
+print("real negative log likelihood: %g" % loglik_real)
+[here the difference between systems is: 28.1526 vs 28.1067]

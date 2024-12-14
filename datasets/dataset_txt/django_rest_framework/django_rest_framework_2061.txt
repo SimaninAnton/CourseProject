@@ -1,0 +1,10 @@
+alvinchow86 commented on 24 Jan 2015
+I just migrated my project from DRF2.4 to DRF3.0 (exciting stuff!) and noticed slower performance for some endpoints. After extensive debugging and inspection, I think I've narrowed it down. Basically we are caching some large serializer data (using django.core.cache, which uses pickle).
+There are two changes in DRF3, one is using Python 2.7's OrderedDict instead of Django's SortedDict, and the other is the ReturnDict and ReturnList wrapper for serializer.data. From my own basic experiments, it seems that as far as pickling/unpickling performance, the standard dict is fastest, as expected. SortedDict is a bit slower (**~ 1.4x**), and surprisingly, OrderedDict is much slower (~2.5x) ! DRF2.4 was using SortedDict, and this would account for why our unpickling (and reading cached data) was noticeably slower in DRF3.0
+This commit e59b3d1 fixed pickling , referenced in #2360. I believe it also (intentionally or unintentionally) fixed the pickling performance issue, since the __reduce__() just converts a ReturnDict into a standard dict. However the issue in the case of instantiating a many=True Serializer, as ReturnList still contains a list of OrderedDict instances.
+One could argue that if a single item serializer output is pickled as dict, then a list output might as well do the same thing.
+Some possible fixes I can think of:
+Allow user to specify what dictionary class they want to use, at least for the final serialized data output. For JSON response, it's not as if order matters anyway.
+Make ReturnList somehow return an array of ReturnDict's, or some other wrapper that changes the pickling behavior..
+(We could also argue we shouldn't use pickle to begin with.. json may actually be a better and faster alternative. Still, that would mean porting over a lot of code, and a lot of people are probably going to use Django's built-in caching)
+FYI I am using Python 2.7, and experiments were done OS X Yosemite, but performance issues were observed on a Linux server deployment as well. Happy to share more data from my experiments if it's useful.

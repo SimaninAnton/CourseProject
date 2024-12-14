@@ -1,0 +1,82 @@
+pySilver commented on Oct 9, 2011
+I'm not sure this is issue directly related to requests but anyway, I'd like to share this for community.
+Lets GET content from invalid domain (client has enabled OpenDNS servers in order to match domain ip):
+In [1]: import requests
+In [2]: requests.__version__
+Out[2]: '0.6.2 (dev)'
+...
+In [8]: r = requests.get('http://kjsahfaskljfhaslfkjashjfjasfhasd.com')
+WARNING:requests.packages.urllib3.connectionpool:HttpConnectionPool is full, discarding connection: guide.a.id.opendns.com
+WARNING:requests.packages.urllib3.connectionpool:HttpConnectionPool is full, discarding connection: w10.guide.b.id.opendns.com
+WARNING:requests.packages.urllib3.connectionpool:HttpConnectionPool is full, discarding connection: w10.w10.guide.c.id.opendns.com
+WARNING:requests.packages.urllib3.connectionpool:HttpConnectionPool is full, discarding connection: w10.w10.w10.guide.d.id.opendns.com
+WARNING:requests.packages.urllib3.connectionpool:HttpConnectionPool is full, discarding connection: w10.w10.w10.w10.guide.e.id.opendns.com
+WARNING:requests.packages.urllib3.connectionpool:HttpConnectionPool is full, discarding connection: guide.opendns.com
+
+In [9]: r.status_code
+Out[9]: 200
+
+In [10]: r.request.url
+Out[10]: 'http://kjsahfaskljfhaslfkjashjfjasfhasd.com'
+In [11]: r.content
+Out[11]: u'<html>\n\t<head>\n\t\t<title>  </title>\n\t\t<script type="text/javascript">\n\t\tfunction bredir(a,b,c,d,e){var f,g,h,i,j;var k=false;var l=false;var m=[[300,250,false],[250,250,false],[240,400,false],[336,280,false],[180,150,false],[468,60,false],[234,60,false],[88,31,false],[120,90,false],[120,60,false],[120,240,false],[125,125,false],[728,90,false],[160,600,false],[120,600,false],[300,600,false],[300,125,false],[530,300,false],[190,200,false],[470,250,false],[720,300,true],[500,350,true],[550,480,true]];if(typeof window.innerHeight=="number"){g=window.innerHeight;f=window.innerWidth}else if(typeof document.body.offsetHeight=="number"){g=document.body.offsetHeight;f=document.body.offsetWidth}for(var n=0;n<m.length;n++){j=m[n];h=Math.abs(f-j[0]);i=Math.abs(g-j[1]);if(h<=2&&i<=2){k=true;l=j[2]}}if(k||f<100&&f!==0||g<100&&g!==0){if(l&&self==parent){self.close();return}return"/b"+"anner.php?w="+f+"&h="+g+"&d="+a+"&u="+b+"&r="+c+"&view="+d}else{return e+"&w="+f+"&h="+g}}\n\t\t</script>\n\t</head>\n\t<body onLoad="location.replace(bredir(\'kjsahfaskljfhaslfkjashjfjasfhasd.com\', \'kjsahfaskljfhaslfkjashjfjasfhasd.com\', \'\', \'error\', \'/main?url=kjsahfaskljfhaslfkjashjfjasfhasd.com\'));" style="margin: 0px;">\n\t\t<noscript>\n\t\t\t<iframe frameborder="0" src="/main?url=kjsahfaskljfhaslfkjashjfjasfhasd.com" width="100%" height="100%"></iframe>\n\t\t</noscript>\n\t</body>\n</html>\n'
+As you can see request has 200 code, however this domain does not exists, so we wrongly assume that everything is fine.
+This particular case works because DNS servers (OpenDNS.com) fallback erorrs to custom page, you can try this out yourserlf by settings client dns servers from this site.
+However, urllib2 raises 404 error for that
+In [15]: import urllib2
+
+In [16]: urllib2.urlopen("http://kjsahfaskljfhaslfkjashjfjasfhasd.com")
+ERROR: An unexpected error occurred while tokenizing input
+The following traceback may be corrupted or invalid
+The error message is: ('EOF in multi-line statement', (14, 0))
+
+---------------------------------------------------------------------------
+HTTPError                                 Traceback (most recent call last)
+
+/Users/silver/Projects/testpro/<ipython console> in <module>()
+
+/usr/local/Cellar/python/2.7.1/lib/python2.7/urllib2.pyc in urlopen(url, data, timeout)
+    124     if _opener is None:
+    125         _opener = build_opener()
+--> 126     return _opener.open(url, data, timeout)
+    127 
+    128 def install_opener(opener):
+
+/usr/local/Cellar/python/2.7.1/lib/python2.7/urllib2.pyc in open(self, fullurl, data, timeout)
+    396         for processor in self.process_response.get(protocol, []):
+    397             meth = getattr(processor, meth_name)
+--> 398             response = meth(req, response)
+    399 
+    400         return response
+
+/usr/local/Cellar/python/2.7.1/lib/python2.7/urllib2.pyc in http_response(self, request, response)
+    509         if not (200 <= code < 300):
+    510             response = self.parent.error(
+--> 511                 'http', request, response, code, msg, hdrs)
+    512 
+    513         return response
+
+/usr/local/Cellar/python/2.7.1/lib/python2.7/urllib2.pyc in error(self, proto, *args)
+    434         if http_err:
+    435             args = (dict, 'default', 'http_error_default') + orig_args
+--> 436             return self._call_chain(*args)
+    437 
+    438 # XXX probably also want an abstract factory that knows when it makes
+
+
+/usr/local/Cellar/python/2.7.1/lib/python2.7/urllib2.pyc in _call_chain(self, chain, kind, meth_name, *args)
+    368             func = getattr(handler, meth_name)
+    369 
+--> 370             result = func(*args)
+    371             if result is not None:
+    372                 return result
+
+/usr/local/Cellar/python/2.7.1/lib/python2.7/urllib2.pyc in http_error_default(self, req, fp, code, msg, hdrs)
+    517 class HTTPDefaultErrorHandler(BaseHandler):
+    518     def http_error_default(self, req, fp, code, msg, hdrs):
+--> 519         raise HTTPError(req.get_full_url(), code, msg, hdrs, fp)
+    520 
+    521 class HTTPRedirectHandler(BaseHandler):
+
+HTTPError: HTTP Error 404: Not Found
+I'm not really sure what to do about it beside not using that kind DNS servers.

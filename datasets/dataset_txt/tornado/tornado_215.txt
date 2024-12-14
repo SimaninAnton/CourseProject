@@ -1,0 +1,84 @@
+serg666 commented on 19 Mar 2018 •
+edited
+Hi!
+I have the following (tornado==4.5.3):
+import logging
+import asyncio
+import tornado.httpclient
+
+import tornado.platform.asyncio
+
+
+FORMAT='%(asctime)s,%(msecs)03d %(name)s [%(threadName)s] %(levelname)s: %(message)s'
+log = logging.getLogger(__name__)
+logging.basicConfig(format=FORMAT, datefmt='%Y-%m-%d %H:%M:%S%Z',
+                    level = logging.DEBUG)
+
+class Download(object):
+    def streaming_callback(self, data):
+        log.debug('get chunk')
+
+    def async_callback(self, response):
+        log.debug('final response: {}'.format(response))
+
+    async def run(self):
+        await tornado.platform.asyncio.to_asyncio_future(
+            tornado.httpclient.AsyncHTTPClient().fetch(
+                tornado.httpclient.HTTPRequest('https://ya.ru/', streaming_callback=self.streaming_callback),
+                self.async_callback
+            )
+        )
+        log.debug('fetch done')
+
+
+tornado.platform.asyncio.AsyncIOMainLoop().install()
+loop = asyncio.get_event_loop()
+loop.run_until_complete(Download().run())
+log.debug('Exit')
+If I run the code above under tornado==4.5.3, I see something like this:
+2018-03-19 18:38:58MSK,807 asyncio [MainThread] DEBUG: Using selector: EpollSelector
+2018-03-19 18:38:58MSK,953 __main__ [MainThread] DEBUG: get chunk
+2018-03-19 18:38:58MSK,954 __main__ [MainThread] DEBUG: get chunk
+2018-03-19 18:38:58MSK,956 __main__ [MainThread] DEBUG: final response: HTTPResponse(_body=None,buffer=<_io.BytesIO object at 0x7f6258e49308>,code=200,effective_url='https://ya.ru/',error=None,headers=<tornado.httputil.HTTPHeaders object at 0x7f625941ad30>,reason='Ok',request=<tornado.httpclient.HTTPRequest object at 0x7f62593bfc88>,request_time=0.13659238815307617,time_info={})
+2018-03-19 18:38:58MSK,957 __main__ [MainThread] DEBUG: fetch done
+2018-03-19 18:38:58MSK,957 __main__ [MainThread] DEBUG: Exit
+e.g. we have called async_callback inside async def run and before log.debug('fetch done')
+Due to current documentation AsyncHTTPClient.fetch return asyncio future, so we do not need to use tornado.platform.asyncio directly.
+So, I modify code like this:
+import logging
+import asyncio
+import tornado.httpclient
+
+
+FORMAT='%(asctime)s,%(msecs)03d %(name)s [%(threadName)s] %(levelname)s: %(message)s'
+log = logging.getLogger(__name__)
+logging.basicConfig(format=FORMAT, datefmt='%Y-%m-%d %H:%M:%S%Z',
+                    level = logging.DEBUG)
+
+class Download(object):
+    def streaming_callback(self, data):
+        log.debug('get chunk')
+
+    def async_callback(self, response):
+        log.debug('final response: {}'.format(response))
+
+    async def run(self):
+        await tornado.httpclient.AsyncHTTPClient().fetch(
+            tornado.httpclient.HTTPRequest('https://ya.ru/', streaming_callback=self.streaming_callback),
+            self.async_callback
+        )
+        log.debug('fetch done')
+
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(Download().run())
+log.debug('Exit')
+And when I run the code above, I see something like this:
+2018-03-19 18:48:32MSK,943 asyncio [MainThread] DEBUG: Using selector: EpollSelector
+2018-03-19 18:48:33MSK,081 __main__ [MainThread] DEBUG: get chunk
+2018-03-19 18:48:33MSK,082 __main__ [MainThread] DEBUG: get chunk
+2018-03-19 18:48:33MSK,083 __main__ [MainThread] DEBUG: fetch done
+2018-03-19 18:48:33MSK,084 __main__ [MainThread] DEBUG: final response: HTTPResponse(_body=None,buffer=<_io.BytesIO object at 0x7f4d23d545c8>,code=200,effective_url='https://ya.ru/',error=None,headers=<tornado.httputil.HTTPHeaders object at 0x7f4d23d6c400>,reason='Ok',request=<tornado.httpclient.HTTPRequest object at 0x7f4d23d8aa90>,request_time=0.12746953964233398,time_info={})
+2018-03-19 18:48:33MSK,085 __main__ [MainThread] DEBUG: Exit
+The problem is, that async_callback has not called inside async def run before log.debug('fetch done'), like under tornado 4.5.3
+So, how can I get response inside async def run and before log.debug('fetch done')?

@@ -1,0 +1,71 @@
+koallen commented on 19 Aug 2015
+I have 3 ModelSerializer classes and I'm trying to nest them into one Serializer class so that I can use one API to show all the information. I followed the description on the Serializer API guide page. And the error I got is
+Got AttributeError when attempting to get a value for field user_uuid on serializer UserInfoSerializer.
+The serializer field might be named incorrectly and not match any attribute or key on the ListSerializer instance.
+Original exception text was: 'ListSerializer' object has no attribute 'user_uuid'.
+I tried using normal Serializer class instead of ModelSerializer, but the error was still the same. The 3 Serializer classes work fine when I don't nest them.
+Below is my serializers.py:
+    from rest_framework import serializers
+    from userInfo.models import UserInfo, BabyInfo, UserBabyRelation
+
+    class UserInfoSerializer(serializers.ModelSerializer):
+        # This serializer is for returning UserInfo
+
+        class Meta:
+            model = UserInfo
+            fields = ('user_uuid', 'real_name', 'date_of_birth', 'gender', 'height', 'weight')
+
+    class BabyInfoSerializer(serializers.ModelSerializer):
+        # This serializer is for returning BabyInfo
+
+        class Meta:
+            model = BabyInfo
+            fields = ('baby_id', 'name', 'date_of_birth', 'gender', 'height', 'weight')
+
+    class UserBabyRelationSerializer(serializers.ModelSerializer):
+        # This serializer is for return UserBabyRelation
+
+        class Meta:
+            model = UserBabyRelation
+            fields = ('user', 'baby', 'guardian', 'relation')
+
+    class UserBabyInfo(object):
+
+        def __init__(self, users, babies, relations):
+            self.users = users
+            self.babies = babies
+            self.relations = relations
+
+    class UserBabyInfoSerializer(serializers.Serializer):
+        # This serializer combines the above three serializer
+
+        users = UserInfoSerializer()
+        babies = BabyInfoSerializer()
+        relations = UserBabyRelationSerializer()
+And my views.py
+    @api_view(['GET'])
+    def get_user_baby_info(request):
+        # This is the view to return user_baby_info
+
+        # Temporarily we use user_id to find related data
+        user_uuid = request.GET['user_id']
+        user_object = UserInfo.objects.get(user_uuid=user_uuid)
+
+        # Find all babies related to the user
+        #user_relations = UserBabyRelation.objects.filter(user=user_object)
+        babies = BabyInfo.objects.filter(userbabyrelation__user=user_object)
+
+        # Find all users related to those babies
+        babies_relations = UserBabyRelation.objects.filter(baby=babies)
+        users = UserInfo.objects.filter(userbabyrelation__baby=babies)
+
+        # Serialize all the objects
+        user_info_serializer = UserInfoSerializer(users, many=True)
+        baby_info_serializer = BabyInfoSerializer(babies, many=True)
+        user_baby_relation_serializer = UserBabyRelationSerializer(babies_relations, many=True)
+
+        # Combine the serializers together to form a nested one
+        user_baby_info = UserBabyInfo(users=user_info_serializer, babies=baby_info_serializer, relations=user_baby_relation_serializer)
+        user_baby_info_serializer = UserBabyInfoSerializer(user_baby_info)
+
+        return Response(user_baby_info_serializer.data)

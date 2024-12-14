@@ -1,0 +1,51 @@
+Contributor
+jmhessel commented on 24 Feb 2016
+Hey All,
+I posted this in keras-users but haven't gotten any replies, but I've been doing some thinking about the keras implementation of Batch Normalization.
+The problems with the current implementation are threefold:
+A) A batch normalization layer negates the bias term of the previous layer (i.e. BN(Wx+b) = BN(Wx)) which wastes memory and computation. Because all batch normalized activations are shifted by the mean over the batch, any bias term added in from the previous layer will be entirely canceled out. In batch normalized networks, you don't need bias terms.
+model.add(Dense(100, activation = 'linear'))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+is currently wrong, because there are an extra set of bias parameters in the dense layer that are useless.
+B) This point was correct, I am mistaken.
+C) The API makes it somewhat easy to incorrectly apply BN. BN should be applied before activations are applied, i.e.
+model.add(Dense(100, activation = 'relu'))
+model.add(BatchNormalization())
+is wrong. In addition to having an extraneous bias term, BN should be applied before the activation.
+Because it seems BN is here to stay, so to speak, it might be worth re-thinking the batch normalization layer. Having it as its own layer is hard because its behavior should depend on the type of layer before it. There are three possible routes.
+One could be having a parameter in the Model class that by default adds batch normalization to each layer, and removes all biases from the network. This might look like
+## A correct model
+model = Sequential(batch_norm = True)
+model.add(Convolution2D(32, 3, 3, border_mode='valid', input_shape=(3, 100, 100)))
+model.add(Flatten())
+model.add(Dense(100, input_dim=(20,), activation = 'relu'))
+model.add(Dense(500, input_dim=(20,), activation = 'relu'))
+model.add(Dense(10, input_dim=(20,), activation = 'softmax'))
+...
+This would make the API clean, but would also require some reworking of layers (i.e. if batch_norm mode was on, the parameters of the layers would not include bias terms)
+Another option would be to include it as a property of layers themselves.
+## A correct model
+model = Sequential()
+model.add(Convolution2D(32, 3, 3, border_mode='valid', input_shape=(3, 100, 100),
+no_bias=True, batch_norm = True))
+model.add(Flatten())
+model.add(Dense(100, input_dim=(20,), no_bias = True, batch_norm = True, activation = 'relu'))
+model.add(Dense(500, input_dim=(20,), no_bias = True, batch_norm = True, activation = 'relu'))
+model.add(Dense(10, input_dim=(20,), batch_norm = True, activation = 'softmax'))
+...
+This is less clean, but would require less implementation.
+The last option is to keep it as its own layer, and it performs inference to figure out what it should be doing, along with warnings about previous layers having biases/activations
+## A correct model
+model = Sequential()
+model.add(Convolution2D(32, 3, 3, border_mode='valid', input_shape=(3, 100, 100), no_bias=True))
+model.add(BatchNormalization()) #would perform the correct convolutional batch normalization
+model.add(Activation('relu')) #would raise no warnings about post-relu values being BN'ed -- this is right
+model.add(Flatten())
+model.add(Dense(100, no_bias = True))
+model.add(BatchNormalization())
+model.add(Activation('relu'))
+...
+This is the least clean API wise, but easiest to implement, because everything is contained in the BatchNormalization Layer itself.
+Thoughts? I'd be happy to work on this, but I don't know which direction would be best.
+1

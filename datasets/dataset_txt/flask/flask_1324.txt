@@ -1,0 +1,80 @@
+holdenweb commented on 27 Nov 2013
+I was trying to check out some DropBox API code, and came up with the following Flask server (mostly lifted from the Dropbpx docs)::
+from dropbox.client import DropboxOAuth2Flow
+from flask import (Flask, request, session, g, redirect, url_for,
+                   abort, render_template, flash)
+
+# configuration
+#DATABASE = '/tmp/flaskr.db'
+#PASSWORD = 'default'
+DEBUG = True
+SECRET_KEY = 'development key'
+USERNAME = 'admin'
+
+app = Flask("test_connect")
+app.config.from_object("test_connect")
+
+DROPBOX_APP_KEY = 'APP_KEY' # use your own value
+DROPBOX_APP_SECRET = 'APP_SECRET' # use your own value
+
+@app.route('/')
+def home():
+    if not 'access_token' in session:
+        return redirect(url_for('dropbox_auth_start'))
+    return 'Authenticated.'
+
+@app.route('/dropbox-auth-start')
+def dropbox_auth_start():
+    return redirect(get_auth_flow().start())
+
+@app.route('/dropbox-auth-finish')
+def dropbox_auth_finish():
+    try:
+        access_token, user_id, url_state = get_auth_flow().finish(request.args)
+    except ValueError:
+        abort(400)
+    else:
+        session['access_token'] = access_token
+    return redirect(url_for('home'))
+
+def get_auth_flow():
+    redirect_uri = url_for('dropbox_auth_finish', _external=True)
+    return DropboxOAuth2Flow(DROPBOX_APP_KEY, DROPBOX_APP_SECRET, redirect_uri,
+                         session, 'dropbox-auth-csrf-token')
+
+if __name__ == "__main__":
+    app.run()
+When I submit the root URI I see the following console output:
+(py3)localhost:ipynb3 sholden$ 127.0.0.1 - - [26/Nov/2013 14:13:42] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [26/Nov/2013 14:13:42] "GET /dropbox-auth-start HTTP/1.1" 302 -
+127.0.0.1 - - [26/Nov/2013 14:13:48] "GET /dropbox-auth-finish?code=EtdzRFdUsSsAAAAAAAAAAYsGGTJcWs8YtbQB_gvT99c&state=nBOWOVAN6XTqH-wdOaSmpw%3D%3D HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1836, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1820, in wsgi_app
+    response = self.make_response(self.handle_exception(e))
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1403, in handle_exception
+    reraise(exc_type, exc_value, tb)
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1817, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1477, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1381, in handle_user_exception
+    reraise(exc_type, exc_value, tb)
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/_compat.py", line 33, in reraise
+    raise value
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1475, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/flask/app.py", line 1461, in dispatch_request
+    return self.view_functions[rule.endpoint](**req.view_args)
+  File "/Users/sholden/Projects/Python/ipynb3/test_connect.py", line 33, in dropbox_auth_finish
+    access_token, user_id, url_state = get_auth_flow().finish(request.args)
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/dropbox/client.py", line 1234, in finish
+    if not _safe_equals(csrf_token_from_session, given_csrf_token):
+  File "/Users/sholden/.virtualenvs/py3/lib/python3.3/site-packages/dropbox/client.py", line 1306, in _safe_equals
+    res |= ord(ca) ^ ord(cb)
+TypeError: ord() expected string of length 1, but int found
+Using the excellent Werkzeug debugging features I discovered the trouble appears to be due to the finish() function calling _safe_equals() with one bytes argument and one string.
+Of course there could easily be something wrong with my code, in which case sorry for the spurious issue report.

@@ -1,0 +1,36 @@
+elgehelge commented on Feb 22, 2016
+The Pipeline object does not have a get_feature_names method. Is this intentional?
+A get_feature_names method is useful when dealing with parallel feature extraction like in this blog post or in the short example below:
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.pipeline import FeatureUnion
+from sklearn.pipeline import make_pipeline
+from sklearn.base import TransformerMixin
+
+class WordFeatureExtractor(TransformerMixin):
+    def transform(self, X, **transform_params):
+        return [dict(self._extract_features(data.items())) for data in X]
+
+    def fit(self, X, y=None, **fit_params):
+        return self
+
+    def _extract_features(self, key_value_pair):
+        for key, value in key_value_pair:
+            if isinstance(value, basestring):
+                for word in value.split():
+                    yield '%s.word=%s' % (key, word), True
+
+feature_extractor = FeatureUnion([
+    ('dict', DictVectorizer()),
+    ('word', make_pipeline(
+        WordFeatureExtractor(),
+        DictVectorizer())
+    )
+])
+
+feature_extractor.fit_transform([{'number': 123, 'text': 'foo bar'}, {'number': 321}])
+feature_extractor.get_feature_names()
+The above code example results in AttributeError: Transformer word does not provide get_feature_names.
+I would be happy to create a pullrequest is someone who has an overview of the project could verify that this functionality is actually wanted. Looking at Pipeline source, it looks like we only need 3 lines of code:
+    @if_delegate_has_method(delegate='_final_estimator')
+    def get_feature_names(self):
+        return self.steps[-1][-1].get_feature_names()

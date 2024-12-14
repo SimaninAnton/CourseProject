@@ -1,0 +1,60 @@
+Member
+TomDLT commented on May 12, 2015
+Ridge regression with fit_intercept=True does not give the same result if X is dense or sparse.
+The call to _center_data in _BaseRidge.fit should probably be a call to sparse_center_data
+test example :
+import numpy as np
+import scipy.sparse as sp
+from sklearn.linear_model import Ridge
+from sklearn.utils import safe_sqr
+
+
+def get_pobj(w, intercept, myX, myy, alpha):
+    w = w.ravel()
+    p = np.sum(safe_sqr(myX.dot(w) + intercept - myy)) / 2.
+    p += alpha * w.dot(w) / 2.
+    return p
+
+
+def test_ridge(X, y, alpha):
+    for solver in ["cholesky", "lsqr", "sparse_cg"]:
+        clf = Ridge(alpha=alpha, tol=1.0e-15, solver=solver,
+                    fit_intercept=True)
+        clf.fit(X, y)
+        print get_pobj(clf.coef_, clf.intercept_, X, y, alpha)
+
+alpha = 1.0
+r = np.random.RandomState(42)
+X = r.randn(100000, 2)
+w = r.randn(2)
+i = 10
+y = np.dot(X, w) + i
+
+print get_pobj(w, i, X, y, alpha)
+
+print "----Dense----"
+test_ridge(X, y, alpha)
+
+print "----Sparse---"
+X = sp.csr_matrix(X)
+test_ridge(X, y, alpha)
+returns
+1.22411269359
+----Dense----
+1.22410049215
+1.22410049215
+1.22410049215
+----Sparse---
+5.52296274786
+5.52296274786
+5.52296274786
+while with alpha = 0
+0.0
+----Dense----
+4.86608640337e-23
+1.41900299631e-26
+1.81890174989e-22
+----Sparse---
+4.2989480748
+4.2989480748
+4.2989480748

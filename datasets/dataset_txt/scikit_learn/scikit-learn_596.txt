@@ -1,0 +1,52 @@
+tf3193 commented on Apr 10, 2019 •
+edited
+Description
+Joblib loading works when serializing a Decision Tree classifier on x86 machine(MacOS) and loading it on z/OS however it fails when loading a GradientBoostingRegressor which has been serialized in the same way. I have made small changes into NumpyArrayWrapper to detect endianness and if loading on an incorrect endian system it would call array.byteswap(). However the object returned by the fit method in GBR causes a different path to be taken through the code and the creation of the array fails before we can even call byteswap().
+Steps/Code to Reproduce
+Example of GBR dumping.
+`from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.pipeline import Pipeline
+from sklearn import datasets
+from sklearn import metrics
+from sklearn.tree import DecisionTreeClassifier
+
+from sklearn.model_selection import train_test_split
+
+iris = datasets.load_iris()
+X_train, X_test, y_train, y_test = train_test_split(iris.data, iris.target, test_size=0.2)
+
+gbr = GradientBoostingRegressor(max_depth=3)
+model = Pipeline([('Gbr', gbr)])
+
+model.fit(X_train, y_train)
+
+
+from sklearn.externals import joblib
+joblib.dump(model, 'GBTmodelx86.pkl')`
+Example of DT model dumping
+`from sklearn import datasets
+from sklearn import metrics
+from sklearn.tree import DecisionTreeClassifier
+
+dataset = datasets.load_iris()
+
+model = DecisionTreeClassifier()
+model.fit(dataset.data, dataset.target)
+
+from sklearn.externals import joblib
+joblib.dump(model, 'DTmodelX86.pkl')`
+Loading both models
+`from sklearn.externals import joblib
+model = joblib.load(<model.pkl>) `
+Expected Results
+No error in either.
+Actual Results
+numpy_pickle.py", line 118, in read_array
+array = pickle.load(unpickler.file_handle)
+File "sklearn/tree/_tree.pyx", line 650, in sklearn.tree._tree.Tree._setstate (sklearn/tree/_tree.c:8403)
+ValueError: Did not recognise loaded array layout
+Versions
+z-OS-2.2-3906-64bit Python 3.6.1 (heads/v3.6.1-anaconda:aa4d638, May 18 2018, 12:10:40) [C] NumPy 1.12.1 SciPy 0.19.0 Scikit-Learn 0.18.1
+Additional notes
+I understand that different platforms are not supported, and I am not necessarily positive this is a scikit-learn issue, however pickle's docs mention that it is platform independent and this issue seems to be fine if we don't try to run the fit method on the gradient boost model.
+👍 1

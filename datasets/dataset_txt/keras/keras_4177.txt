@@ -1,0 +1,45 @@
+isaacgerg commented on 13 Oct 2016 •
+edited
+Just pulled keras from most recent pip using python 3.4 on windows 7 machine. Verified problem exists in current github baseline also.
+ImageDataGenerator standardize() function does not properly remove mean and normalize std from single channel images. e.g. shape= (1,height,cols)
+From the keras code, image.py, ...
+def standardize(self, x):
+        if self.rescale:
+            x *= self.rescale
+        # x is a single image, so it doesn't have image number at index 0
+        img_channel_index = self.channel_index - 1
+        if self.samplewise_center:
+            x -= np.mean(x, axis=img_channel_index, keepdims=True)  #  BROKEN LINE!
+            # My fix
+            # x -= np.mean(x.flatten()) # ig, do not use in deploy, smallest fix to get to finish line for now.
+        if self.samplewise_std_normalization:
+            x /= (np.std(x, axis=img_channel_index, keepdims=True) + 1e-7)
+            # My fix
+            # x /= (np.std(x.flatten()) + 1e-7) # ig, do not use in deploy, smallest fix to get to finish line for now.
+Inspection of variables at entrance of standardize()....
+x.dtype
+dtype('float32')
+x.shape
+(1, 400, 400)
+img_channel_index
+0
+Keras should be taking the mean and std over the last 2 dimensions. Currently, for mean, the code returns a copy of the matrix therefore returning a matrix of all zeros. For std, it simply returns 1e-7, the normalization factor, because the np.std() calls return a matrix of zeros.
+data gen created via:
+    datagenTrain = keras.preprocessing.image.ImageDataGenerator(
+        featurewise_center=False,
+        samplewise_center=True,
+        featurewise_std_normalization=False,
+        samplewise_std_normalization=True,
+        zca_whitening=False,
+        rotation_range=45.,
+        width_shift_range=0.05,
+        height_shift_range=0.05,
+        shear_range=0.,
+        zoom_range=0.,
+        channel_shift_range=0.,
+        fill_mode='reflect',
+        cval=0.,
+        horizontal_flip=True,
+        vertical_flip=True,
+        rescale=1./255)   
+EDIT 1: Cleaned up so report is more helpful.

@@ -1,0 +1,18 @@
+jamshid commented on Dec 12, 2012
+When using strict_mode (which should be the default, buggy browsers be damned) and a POST gets a 301 redirect, your library will correctly issue a POST to the uri pointed to by Location, but if that response is a 201 with a Location header it will loop indefinitely until requests.exceptions.TooManyRedirects.
+# Fails if /foo/ responds with a 301 to /bar/, and that responds with a 201 with a Location header.
+my_config = {'strict_mode': True, 'verbose': sys.stderr}
+print requests.post('http://example.com/foo/', data='', allow_redirects=True, config=my_config)
+This "while" test should only follow "Location" if the response code is a redirect. A Location header on a 201 response is perfectly valid, just end the request there.
+This seems like a correct fix:
+--- orig-0.14.2/models.py   2012-11-30 22:44:13.000000000 +0000
++++ ./models.py 2012-12-11 22:26:41.000000000 +0000
+@@ -232,7 +232,7 @@
+
+         if r.status_code in REDIRECT_STATI and not self.redirect:
+
+-            while (('location' in r.headers) and
++            while (('location' in r.headers and r.status_code in REDIRECT_STATI) and
+                    ((r.status_code is codes.see_other) or (self.allow_redirects))):
+
+                 r.content  # Consume socket so it can be released

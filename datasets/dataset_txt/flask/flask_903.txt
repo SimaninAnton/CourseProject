@@ -1,0 +1,40 @@
+obskyr commented on 14 Jan 2016
+If a function is set with the @app.teardown_request decorator (assuming your Flask instance name is app), it always gets passed an exception for the very first request to the server. This exception is a KeyError from Werkzeug (even though that particular error is handled in Werkzeug's code).
+Try copying and running the following bare-bones flask app:
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from flask import Flask
+
+import sys
+import traceback
+
+app = Flask(__name__)
+
+@app.teardown_request
+def teardown_request(exception):
+    if exception:
+        print "teardown_request received an exception:"
+        traceback.print_exception(*sys.exc_info())
+    else:
+        print "Request went through without passing an exception."
+
+@app.route("/")
+def works_but_not_really():
+    return "This gets returned, so this function finishes."
+
+if __name__ == '__main__':
+    app.run('localhost', 5000)
+Running this and performing two GET requests in a row to it results in the following output:
+ * Running on http://localhost:5000/ (Press CTRL+C to quit)
+teardown_request received an exception:
+Traceback (most recent call last):
+  File "C:\Python27\lib\site-packages\werkzeug\serving.py", line 647, in inner
+    fd = int(os.environ['WERKZEUG_SERVER_FD'])
+  File "C:\Python27\lib\os.py", line 425, in __getitem__
+    return self.data[key.upper()]
+KeyError: 'WERKZEUG_SERVER_FD'
+127.0.0.1 - - [14/Jan/2016 14:57:30] "GET / HTTP/1.1" 200 -
+Request went through without passing an exception.
+127.0.0.1 - - [14/Jan/2016 15:03:32] "GET / HTTP/1.1" 200 -
+Not only GET requests cause this - at the very least a POST will do the same, and I assume all other types will too. This is a problem in case the teardown request performs a database rollback on receiving an exception - because it means any changes the first request may make to the database are silently (since the page is still returned just fine) ignored.

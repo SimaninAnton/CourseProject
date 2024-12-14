@@ -1,0 +1,51 @@
+disdanes commented on 3 Dec 2014
+Problem:
+It seems as though the code listed under the .update() method for nested serializers in /docs/api-guide/serializers.md might be potentially incorrect. The variable 'user' does not exist in the method's context, and looking at the internals for the .update() method on the ModelSerializer class - it seems as though 'user' might really want to be 'instance'. I think the flow is that instance is the model object that you are potentially updating, and the validated data is what your going to potentially update the model object 'instance' with in the scope of the function. The earlier documentation on that page also seems to suggest that you want to be using 'instance' inside the nested .update() function.
+Current Documentation:
+Here's an example for an update() method on our previous UserSerializer class.
+def update(self, instance, validated_data):
+    profile_data = validated_data.pop('profile')
+    # Unless the application properly enforces that this field is
+    # always set, the follow could raise a `DoesNotExist`, which
+    # would need to be handled.
+    profile = instance.profile
+
+    user.username = validated_data.get('username', instance.username)
+    user.email = validated_data.get('email', instance.email)
+    user.save()
+
+    profile.is_premium_member = profile_data.get(
+        'is_premium_member',
+        profile.is_premium_member
+    )
+    profile.has_support_contract = profile_data.get(
+        'has_support_contract',
+        profile.has_support_contract
+     )
+    profile.save()
+
+    return user
+Because the behavior of nested creates and updates can be ambiguous, and may require complex dependancies between related models, REST framework 3 requires you to always write these methods explicitly. The default ModelSerializer .create() and .update() methods do not include support for writable nested representations.
+Potential Rework:
+def update(self, instance, validated_data):
+    profile_data = validated_data.pop('profile')
+    # Unless the application properly enforces that this field is
+    # always set, the follow could raise a `DoesNotExist`, which
+    # would need to be handled.
+    profile = instance.profile
+
+    instance.username = validated_data.get('username', instance.username)
+    instance.email = validated_data.get('email', instance.email)
+    instance.save()
+
+    profile.is_premium_member = profile_data.get(
+        'is_premium_member',
+        profile.is_premium_member
+    )
+    profile.has_support_contract = profile_data.get(
+        'has_support_contract',
+        profile.has_support_contract
+     )
+    profile.save()
+
+    return instance

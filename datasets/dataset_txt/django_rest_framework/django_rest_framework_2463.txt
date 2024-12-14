@@ -1,0 +1,15 @@
+Contributor
+poswald commented on 27 Jul 2014
+A somewhat obscure use case but I believe the existing implementation of outputting documentation is wrong. The crux of the matter is that the rest framework smart_text maps to the django function which in some cases may not output a string but a Promise object instead. However, the utility dedent function passes whatever it receives into a regex that is not compatible with non-string values. (you will get a TypeError with expected string or buffer if you do something that ends up passing a function proxy or Promise in there) I think the fact that smart_text may sometimes return non-str objects, and re.sub seems to require them means this usage is not correct.
+One way to fix it is to force the lazy object to unicode before passing it into the re.sub function in dedent:
+    # unindent the content if needed
+    if whitespace_counts:
+        whitespace_pattern = '^' + (' ' * min(whitespace_counts))
+        content = re.sub(re.compile(whitespace_pattern, re.MULTILINE), '', unicode(content))
+As to why I am running into this problem, I'm investigating translation of documentation using a pattern like:
+from django.utils.translation import ugettext_lazy as _
+class APIBaseView(APIView):
+    __doc__ = _("""
+    Here is some documentation that we want to translate.
+    """)
+If you agree with the above solution, I can send a pull request (and I guess it could use a test case as well).

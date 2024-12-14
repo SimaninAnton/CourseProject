@@ -1,0 +1,40 @@
+ilovenwd commented on Oct 9, 2014
+https://github.com/kennethreitz/requests/blob/master/requests/adapters.py#L404
+I encounter a bug that will be fixed when remove this line.
+Since the preload_content=False in HTTPResponse.from_httplib, we cannot _put_conn back to pool (where it's closed)
+                low_conn = conn._get_conn(timeout=timeout)
+                try:
+                    low_conn.putrequest(request.method,
+                                        url,
+                                        skip_accept_encoding=True)
+                    .....
+                    r = low_conn.getresponse()
+                    resp = HTTPResponse.from_httplib(
+                        r,
+                        pool=conn,
+                        connection=low_conn,
+                        preload_content=False,
+                        decode_content=False
+                    )
+                except:
+                    # If we hit any problems here, clean up the connection.
+                    # Then, reraise so that we can handle the actual exception.
+                    low_conn.close()
+                    raise
+                else:
+                    # All is well, return the connection to the pool.
+                    conn._put_conn(low_conn)
+the code trigger this bug (just illustrate):
+monkey.patch_all()
+
+def data_stream(n):
+    for i in range(n):
+        x = str(i)
+        gevent.sleep(0)
+        yield x
+
+gevent.spawn(requests.post('xxx', data=data_stream(100)))
+gevent.spawn(requests.post('xxx', data=data_stream(100)))
+gevent.joinall()
+the first post gets normal response, while the second get empty response (conn closed before read content)
+but result is ok if we don't use gevent.spawn

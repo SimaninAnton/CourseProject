@@ -1,0 +1,87 @@
+Contributor
+rgtk commented on Jun 22, 2016 •
+edited
+When custom middleware in DOWNLOADER_MIDDLEWARES is added below all redirect-related middlewares in chain, custom's process_response method is not executed before redirect-related ones.
+I tried to override chain directly in project's settings and extensions without any results. Setting redirect middlewares to None works as expected.
+scrapy_redirect_first.py:
+import scrapy
+
+class DummyDownloaderExtension(object):
+    def process_response(self, request, response, spider):
+        if 'something' in response.url:
+            request.meta['dont_redirect'] = True
+
+        print("==============> DUMMY YOU!")
+        return response
+
+class Spider(scrapy.Spider):
+    name = 'github-scrapy'
+    start_urls = ['http://blog.scrapinghub.com'] # use http, to be redirected to https
+    custom_settings = {
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapy_redirect_first.DummyDownloaderExtension': 50,
+            'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware': 580,
+            'scrapy.downloadermiddlewares.redirect.RedirectMiddleware': 600
+        }
+    }
+
+    def parse(self, response):
+        return {}
+Output:
+~ $ scrapy runspider scrapy_redirect_first.py
+2016-06-22 18:01:41 [scrapy] INFO: Scrapy 1.1.0 started (bot: scrapybot)
+2016-06-22 18:01:41 [scrapy] INFO: Overridden settings: {}
+2016-06-22 18:01:41 [scrapy] INFO: Enabled extensions:
+['scrapy.extensions.logstats.LogStats',
+ 'scrapy.extensions.telnet.TelnetConsole',
+ 'scrapy.extensions.corestats.CoreStats']
+2016-06-22 18:01:41 [scrapy] INFO: Enabled downloader middlewares:
+['scrapy_redirect_first.DummyDownloaderExtension',
+ 'scrapy.downloadermiddlewares.httpauth.HttpAuthMiddleware',
+ 'scrapy.downloadermiddlewares.downloadtimeout.DownloadTimeoutMiddleware',
+ 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware',
+ 'scrapy.downloadermiddlewares.retry.RetryMiddleware',
+ 'scrapy.downloadermiddlewares.defaultheaders.DefaultHeadersMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.MetaRefreshMiddleware',
+ 'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware',
+ 'scrapy.downloadermiddlewares.redirect.RedirectMiddleware',
+ 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware',
+ 'scrapy.downloadermiddlewares.chunked.ChunkedTransferMiddleware',
+ 'scrapy.downloadermiddlewares.stats.DownloaderStats']
+2016-06-22 18:01:41 [scrapy] INFO: Enabled spider middlewares:
+['scrapy.spidermiddlewares.httperror.HttpErrorMiddleware',
+ 'scrapy.spidermiddlewares.offsite.OffsiteMiddleware',
+ 'scrapy.spidermiddlewares.referer.RefererMiddleware',
+ 'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware',
+ 'scrapy.spidermiddlewares.depth.DepthMiddleware']
+2016-06-22 18:01:41 [scrapy] INFO: Enabled item pipelines:
+[]
+2016-06-22 18:03:02 [scrapy] INFO: Spider opened
+2016-06-22 18:03:02 [scrapy] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2016-06-22 18:03:02 [scrapy] DEBUG: Telnet console listening on 127.0.0.1:6023
+2016-06-22 18:03:02 [scrapy] DEBUG: Redirecting (301) to <GET https://blog.scrapinghub.com/> from <GET http://blog.scrapinghub.c>
+==============> DUMMY YOU!
+2016-06-22 18:03:03 [scrapy] DEBUG: Crawled (200) <GET https://blog.scrapinghub.com/> (referer: None)
+2016-06-22 18:03:03 [scrapy] DEBUG: Scraped from <200 https://blog.scrapinghub.com/>
+{}
+2016-06-22 18:03:03 [scrapy] INFO: Closing spider (finished)
+2016-06-22 18:03:03 [scrapy] INFO: Dumping Scrapy stats:
+{'downloader/request_bytes': 436,
+ 'downloader/request_count': 2,
+ 'downloader/request_method_count/GET': 2,
+ 'downloader/response_bytes': 33772,
+ 'downloader/response_count': 2,
+ 'downloader/response_status_count/200': 1,
+ 'downloader/response_status_count/301': 1,
+ 'finish_reason': 'finished',
+ 'finish_time': datetime.datetime(2016, 6, 22, 16, 3, 3, 868303),
+ 'item_scraped_count': 1,
+ 'log_count/DEBUG': 4,
+ 'log_count/INFO': 7,
+ 'response_received_count': 1,
+ 'scheduler/dequeued': 2,
+ 'scheduler/dequeued/memory': 2,
+ 'scheduler/enqueued': 2,
+ 'scheduler/enqueued/memory': 2,
+ 'start_time': datetime.datetime(2016, 6, 22, 16, 3, 2, 684250)}
+2016-06-22 18:03:03 [scrapy] INFO: Spider closed (finished)

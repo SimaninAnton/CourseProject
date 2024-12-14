@@ -1,0 +1,84 @@
+vxgmichel commented on Jul 12, 2018
+The no_proxy environment variable causes an exception when a url without a hostname is used.
+This happens with conda local file system adapter for instance.
+Reproduction Steps
+Consider the following example:
+import requests
+from requests.models import Response
+from requests.adapters import BaseAdapter
+
+
+class LocalFSAdapter(BaseAdapter):
+    """Simplified version of
+    'conda.gateways.connection.adapters.localfs.LocalFSAdapter'.
+    """
+
+    def send(self, request, **kwargs):
+        _, pathname = request.url.split('file://')
+        resp = Response()
+        resp.raw = open(pathname, "rb")
+        return resp
+
+    def close(self):
+        pass
+
+
+with requests.Session() as s:
+    s.mount("file://", LocalFSAdapter())
+    print(s.get('file:///tmp/test').text)
+Running with the no_proxy environment variable set:
+$ no_proxy=nope python test.py
+Expected Result
+<the content of '/tmp/test'>
+Actual Result
+Traceback (most recent call last):
+  File "test.py", line 23, in <module>
+    print(s.get('file:///tmp/test').text)
+  File "/home/vimiche/miniconda/lib/python3.6/site-packages/requests/sessions.py", line 525, in get
+    return self.request('GET', url, **kwargs)
+  File "/home/vimiche/miniconda/lib/python3.6/site-packages/requests/sessions.py", line 503, in request
+    prep.url, proxies, stream, verify, cert
+  File "/home/vimiche/miniconda/lib/python3.6/site-packages/requests/sessions.py", line 676, in merge_environment_settings
+    env_proxies = get_environ_proxies(url, no_proxy=no_proxy)
+  File "/home/vimiche/miniconda/lib/python3.6/site-packages/requests/utils.py", line 760, in get_environ_proxies
+    if should_bypass_proxies(url, no_proxy=no_proxy):
+  File "/home/vimiche/miniconda/lib/python3.6/site-packages/requests/utils.py", line 716, in should_bypass_proxies
+    if is_ipv4_address(parsed.hostname):
+  File "/home/vimiche/miniconda/lib/python3.6/site-packages/requests/utils.py", line 640, in is_ipv4_address
+    socket.inet_aton(string_ip)
+TypeError: inet_aton() argument 1 must be str, not None
+System Information
+$ python -m requests.help
+{
+  "chardet": {
+    "version": "3.0.4"
+  },
+  "cryptography": {
+    "version": "2.2.2"
+  },
+  "idna": {
+    "version": "2.7"
+  },
+  "implementation": {
+    "name": "CPython",
+    "version": "3.6.6"
+  },
+  "platform": {
+    "release": "4.15.0-24-generic",
+    "system": "Linux"
+  },
+  "pyOpenSSL": {
+    "openssl_version": "100020ff",
+    "version": "18.0.0"
+  },
+  "requests": {
+    "version": "2.19.1"
+  },
+  "system_ssl": {
+    "version": "100020ff"
+  },
+  "urllib3": {
+    "version": "1.23"
+  },
+  "using_pyopenssl": true
+}

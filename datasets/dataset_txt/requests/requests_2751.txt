@@ -1,0 +1,53 @@
+Contributor
+jedie commented on Aug 15, 2011
+It would be nice if we can request a html page as unicode... In my https://github.com/jedie/django-tools/blob/master/django_tools/utils/http.py i have a simple solution for this. The main code is:
+    def get_content_type(self):
+        content_type = self.response_header.get("content-type")
+        content_type, params = cgi.parse_header(content_type)
+        return content_type, params
+
+    def get_encoding_from_content_type(self):
+        content_type, params = self.get_content_type()
+        if "charset" in params:
+            return params["charset"].strip("'\"")
+
+    def get_encodings_from_content(self, content):
+        if self._charset_re is None:
+            self._charset_re = re.compile(
+                r'<meta.*?charset=["\']*(.+?)["\'>]', flags=re.I
+            )
+        return self._charset_re.findall(content)
+
+    def get_unicode(self):
+        """
+        Returns the requested content back in unicode.
+        Tried:
+        1. charset from content-type
+        2. every encodings from <meta ... charset=XXX>
+        3. fall back and replace all unicode characters
+        """
+        content = self.get_content()
+
+        # Try charset from content-type
+        encoding = self.get_encoding_from_content_type()
+        if encoding:
+            try:
+                return unicode(content, encoding)
+            except UnicodeError:
+                self.tried_encodings.append(encoding)
+
+        # Try every encodings from <meta ... charset=XXX>
+        encodings = self.get_encodings_from_content(content)
+        for encoding in encodings:
+            if encoding in self.tried_encodings:
+                continue
+            try:
+                return unicode(content, encoding)
+            except UnicodeError:
+                self.tried_encodings.append(encoding)
+
+        # Fall back:
+        return unicode(content, encoding, errors="replace")
+I know a real solution can do more, e.g. what http://chardet.feedparser.org/ does.
+But IMHO it's ok for the most request, isn't it?
+Is there any interests to merge this? If so, I would try to contribute it ;)

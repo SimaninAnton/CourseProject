@@ -1,0 +1,43 @@
+ddrouin commented on 28 May 2012
+ddrouin@Dave:~> git clone https://github.com/mitsuhiko/flask.git 
+Cloning into 'flask'...
+version = '0.9-dev' appears in flask/flask/init.py
+Tests run with Python 2.7.3 on Ubuntu 12.04 LTS
+ddrouin@Dave:~/flask> python run-tests.py 
+........................................................................................................................................E..................................................
+======================================================================
+ERROR: test_jsonify (flask.testsuite.helpers.JSONTestCase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ddrouin/flask/flask/testsuite/helpers.py", line 88, in test_jsonify
+    self.assert_equal(rv.mimetype, 'application/json', url)
+TypeError: assert_equal() takes exactly 3 arguments (4 given)
+
+----------------------------------------------------------------------
+Ran 187 tests in 0.706s
+
+FAILED (errors=1)
+/kw and /dict work fine, occurs on /unpadded.
+simplejson is present, version 2.3.2
+line 136 in flask/flask.helpers has:
+if 'padded' in kwargs:
+     ....
+     return current_app.response_class(content, mimetype='application/javascript')
+So the defect is triggered by kwargs containing {'padded': False}. To fix this - I ended up changing my copy to this and now the tests all pass:
+    if 'padded' in kwargs:
+        padded = kwargs['padded']
+        del kwargs['padded']
+    else:
+        padded = False
+
+    if padded:
+        if isinstance(padded, str):
+            callback = request.args.get(padded) or 'jsonp'
+        else:
+            callback = request.args.get('callback') or \
+                       request.args.get('jsonp') or 'jsonp'
+        json_str = json.dumps(dict(*args, **kwargs), indent=None)
+        content = str(callback) + "(" + json_str + ")"
+        return current_app.response_class(content, mimetype='application/javascript')
+    return current_app.response_class(json.dumps(dict(*args, **kwargs),
+        indent=None if request.is_xhr else 2), mimetype='application/json')

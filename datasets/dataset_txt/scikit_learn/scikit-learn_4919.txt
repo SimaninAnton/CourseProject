@@ -1,0 +1,24 @@
+Member
+jnothman commented on Mar 22, 2013
+Steps in pipelines are named; where a name equals that of an existing attribute on Pipeline (e.g. transform, predict, steps), calling set_params and setting that name to some value causes the attribute to be overwritten.
+Example:
+Consider the following:
+import sklearn.pipeline, sklearn.dummy
+class DummyTransformer(sklearn.dummy.DummyClassifier):
+    def transform(self, X):
+        return X
+
+clf = sklearn.pipeline.Pipeline([('transform', DummyTransformer()), ('predict', sklearn.dummy.DummyClassifier())])
+print(clf.transform) # (1)
+clf.set_params(transform=DummyTransformer())
+print(clf.transform) # (2)
+This prints <bound method Pipeline.transform of Pipeline(steps=[('transform', DummyTransformer(random_state=None, strategy='stratified')), ('est', DummyClassifier(random_state=None, strategy='stratified'))])> at (1) and DummyTransformer(random_state=None, strategy=stratified) at (2).
+Mechanism:
+The general mechanism of BaseEstimator.set_params is to set the attribute corresponding to the parameter name. In general, this is restricted to a small set of possible names (usually corresponding to constructor arguments) that would not conflict with non-parameter attributes (though I don't think there's a test to assure this). Where double-underscore notation is used to set sub-estimators' parameters, the sub-estimator's name (e.g. est in est__some_param) needs to be returned by the estimator's get_params. Hence set_params allows est to be set, in turn calling setattr, without regard to existing attributes.
+Resolution:
+(a) Don't allow step names to be used as parameter names in set_params
+or
+(b) Allow step names to be used as parameter names in set_params meaningfully while:
+prohibiting constructor arguments and existing attributes as names; or
+prohibiting constructor arguments as names, but special-casing the setting of steps, so that it doesn't involve setattr (rather, the modification of the steps attribute, which needs to happen somehow anyway). This approach is taken by #1769.
+Also, a test should be added for this case, and perhaps more generally for all estimators to ensure set_params does not overwrite class attributes (methods, etc.).

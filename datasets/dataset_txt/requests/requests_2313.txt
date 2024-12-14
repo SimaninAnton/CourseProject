@@ -1,0 +1,85 @@
+Contributor
+matthewlmcclure commented on Nov 28, 2012
+The current implementation of requests.auth.OAuth1.__call__ doesn't sign requests if there is no body data.
+    ...
+    elif r.data:
+        # The data we passed was either definitely not urlencoded
+        # (because extract_params returned nothing) or doesn't have a
+        # content header that assures us that it is. Assume then that the
+        # data shouldn't be part of the signature.
+        r.url, r.headers, _ = self.client.sign(unicode(r.full_url),
+                                               unicode(r.method),
+                                               None,
+                                               r.headers)
+    else:
+        _oauth_signed = False
+    ...
+The Twitter documentation indicates that their server expects a body-less POST request with an Authorization header to get a request token.
+POST /oauth/request_token HTTP/1.1
+User-Agent: themattharris' HTTP Client
+Host: api.twitter.com
+Accept: */*
+Authorization: 
+        OAuth oauth_callback="http%3A%2F%2Flocalhost%2Fsign-in-with-twitter%2F",
+              oauth_consumer_key="cChZNFj6T5R0TigYB9yd1w",
+              oauth_nonce="ea9ec8429b68d6b77cd5600adbbb0456",
+              oauth_signature="F1Li3tvehgcraF8DMJ7OyxO4w9Y%3D",
+              oauth_signature_method="HMAC-SHA1",
+              oauth_timestamp="1318467427",
+              oauth_version="1.0"
+So when I try to use Requests to get a request token from Twitter's API, it fails because requests doesn't sign the request.
+(develop) mlm@matt-mmf-macbook.local:~/Downloads/src/requests
+$ python ~/Downloads/oauth_request.py 
+INFO:requests.packages.urllib3.connectionpool:Starting new HTTPS connection (1): api.twitter.com
+DEBUG:requests.packages.urllib3.connectionpool:"POST /oauth/request_token HTTP/1.1" 401 62
+{'Accept': '*/*',
+ 'Accept-Encoding': 'gzip, deflate, compress',
+ 'Content-Length': '0',
+ 'User-Agent': 'python-requests/0.14.2 CPython/2.7.3 Darwin/11.4.2'}
+401
+Here's the source code of the test:
+import logging
+from pprint import pprint
+import urllib
+
+import requests
+from requests.auth import OAuth1
+
+logging.basicConfig(level='DEBUG')
+
+client_key = u'SsGHcZLVD0hBxOBSBj4AA'
+client_secret = u'...'
+queryoauth = OAuth1(client_key, client_secret)
+
+r = requests.post(
+    'https://api.twitter.com/oauth/request_token',
+    auth=OAuth1(client_key, client_secret, callback_uri=u'http://127.0.0.1:62231/'))
+
+pprint(r.request.headers)
+pprint(r.status_code)
+If I change:
+    elif r.data:
+to:
+    else:
+it works for my simple test case:
+(develop) mlm@matt-mmf-macbook.local:~/Downloads/src/requests
+$ git checkout sign-without-body 
+Switched to branch 'sign-without-body'
+
+(sign-without-body) mlm@matt-mmf-macbook.local:~/Downloads/src/requests
+$ python ~/Downloads/oauth_request.py 
+DEBUG:oauthlib.oauth1.rfc5849:Collected params: [(u'oauth_nonce', u'177959798967978713371354040025'), (u'oauth_timestamp', u'1354040025'), (u'oauth_consumer_key', u'SsGHcZLVD0hBxOBSBj4AA'), (u'oauth_signature_method', u'HMAC-SHA1'), (u'oauth_version', u'1.0'), (u'oauth_callback', u'http://127.0.0.1:62231/')]
+DEBUG:oauthlib.oauth1.rfc5849:Normalized params: oauth_callback=http%3A%2F%2F127.0.0.1%3A62231%2F&oauth_consumer_key=SsGHcZLVD0hBxOBSBj4AA&oauth_nonce=177959798967978713371354040025&oauth_signature_method=HMAC-SHA1&oauth_timestamp=1354040025&oauth_version=1.0
+DEBUG:oauthlib.oauth1.rfc5849:Normalized URI: https://api.twitter.com/oauth/request_token
+DEBUG:oauthlib.oauth1.rfc5849:Base signing string: POST&https%3A%2F%2Fapi.twitter.com%2Foauth%2Frequest_token&oauth_callback%3Dhttp%253A%252F%252F127.0.0.1%253A62231%252F%26oauth_consumer_key%3DSsGHcZLVD0hBxOBSBj4AA%26oauth_nonce%3D177959798967978713371354040025%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1354040025%26oauth_version%3D1.0
+DEBUG:oauthlib.oauth1.rfc5849:Signature: 64/bL32kyqvfe0LyI3bPUt04sk8=
+INFO:requests.packages.urllib3.connectionpool:Starting new HTTPS connection (1): api.twitter.com
+DEBUG:requests.packages.urllib3.connectionpool:"POST /oauth/request_token HTTP/1.1" 200 151
+{'Accept': '*/*',
+ 'Accept-Encoding': 'gzip, deflate, compress',
+ 'Authorization': 'OAuth oauth_nonce="177959798967978713371354040025", oauth_timestamp="1354040025", oauth_version="1.0", oauth_signature_method="HMAC-SHA1", oauth_consumer_key="SsGHcZLVD0hBxOBSBj4AA", oauth_callback="http%3A%2F%2F127.0.0.1%3A62231%2F", oauth_signature="64%2FbL32kyqvfe0LyI3bPUt04sk8%3D"',
+ 'Content-Length': '0',
+ 'User-Agent': 'python-requests/0.14.2 CPython/2.7.3 Darwin/11.4.2'}
+200
+Is that a reasonable change to make in Requests?
+If not, why doesn't the implementation sign requests with empty bodies? And how should a caller make a request for a Twitter request token?

@@ -1,0 +1,67 @@
+Contributor
+erg commented on Aug 29, 2017
+sklearn.feature_extraction.text.HashingVectorizer uses sklearn/feature_extraction/_hashing.pyx which has a signed 32bit variable as a counter which overflows on my dataset and causes the following error:
+Traceback (most recent call last):                                                                                                                           [0/1999]
+  File "/home/erg/foo/foo.py", line 109, in fit_transform
+    return self.foo.fit_transform(X)
+  File "/usr/lib/python3.6/site-packages/sklearn/pipeline.py", line 290, in fit_transform
+    Xt, fit_params = self._fit(X, y, **fit_params)
+  File "/usr/lib/python3.6/site-packages/sklearn/pipeline.py", line 222, in _fit
+    **fit_params_steps[name])
+  File "/usr/lib/python3.6/site-packages/sklearn/externals/joblib/memory.py", line 362, in __call__
+    return self.func(*args, **kwargs)
+  File "/usr/lib/python3.6/site-packages/sklearn/pipeline.py", line 589, in _fit_transform_one
+    res = transformer.fit_transform(X, y, **fit_params)
+  File "/usr/lib/python3.6/site-packages/sklearn/base.py", line 518, in fit_transform
+    return self.fit(X, **fit_params).transform(X)
+  File "/usr/lib/python3.6/site-packages/sklearn/feature_extraction/text.py", line 519, in transform
+    X = self._get_hasher().transform(analyzer(doc) for doc in X)
+  File "/usr/lib/python3.6/site-packages/sklearn/feature_extraction/hashing.py", line 167, in transform
+    shape=(n_samples, self.n_features))
+  File "/usr/lib/python3.6/site-packages/scipy/sparse/compressed.py", line 98, in __init__
+    self.check_format(full_check=False)
+  File "/usr/lib/python3.6/site-packages/scipy/sparse/compressed.py", line 167, in check_format
+    raise ValueError("indices and data should have the same size")
+ValueError: indices and data should have the same size
+Applying this patch and running my code gives an error:
+diff --git a/sklearn/feature_extraction/_hashing.pyx b/sklearn/feature_extraction/_hashing.pyx
+index e39aeafa0..b80d932cb 100644
+--- a/sklearn/feature_extraction/_hashing.pyx
++++ b/sklearn/feature_extraction/_hashing.pyx
+@@ -79,4 +79,6 @@ def transform(raw_X, Py_ssize_t n_features, dtype, bint alternate_sign=1):
+         indptr[len(indptr) - 1] = size
+ 
+     indices_a = np.frombuffer(indices, dtype=np.int32)
++    if not len(indices_a) == size:
++        raise ValueError("len indices_a: " + str(len(indices_a)) + ", size: " + str(size))
+Traceback (most recent call last):                                                                                                                                                            
+  File "/usr/lib/python3.6/site-packages/sklearn/pipeline.py", line 289, in fit_transform                                                                                                     
+    Xt, fit_params = self._fit(X, y, **fit_params)                                                                                                                                            
+  File "/usr/lib/python3.6/site-packages/sklearn/pipeline.py", line 221, in _fit                                                                                                              
+    **fit_params_steps[name])                                                                                                                                                                 
+  File "/usr/lib/python3.6/site-packages/sklearn/externals/joblib/memory.py", line 362, in __call__                                                                                           
+    return self.func(*args, **kwargs)                                                                                                                                                         
+  File "/usr/lib/python3.6/site-packages/sklearn/pipeline.py", line 588, in _fit_transform_one                                                                                                
+    res = transformer.fit_transform(X, y, **fit_params)                                                                                                                                       
+  File "/usr/lib/python3.6/site-packages/sklearn/base.py", line 518, in fit_transform                                                                                                         
+    return self.fit(X, **fit_params).transform(X)                                                                                                                                             
+  File "/usr/lib/python3.6/site-packages/sklearn/feature_extraction/text.py", line 519, in transform                                                                                          
+    X = self._get_hasher().transform(analyzer(doc) for doc in X)                                                                                                                              
+  File "/usr/lib/python3.6/site-packages/sklearn/feature_extraction/hashing.py", line 160, in transform                                                                                       
+    self.alternate_sign)                                                                                                                                                                      
+  File "sklearn/feature_extraction/_hashing.pyx", line 83, in sklearn.feature_extraction._hashing.transform                                                                                   
+ValueError: len indices_a: 2532660308, size: -1762306988                                                                                                                                      
+Proposed fix:
+diff --git a/sklearn/feature_extraction/_hashing.pyx b/sklearn/feature_extraction/_hashing.pyx
+index e39aeafa0..a3aec8158 100644
+--- a/sklearn/feature_extraction/_hashing.pyx
++++ b/sklearn/feature_extraction/_hashing.pyx
+@@ -38,7 +38,7 @@ def transform(raw_X, Py_ssize_t n_features, dtype, bint alternate_sign=1):
+     # Since Python array does not understand Numpy dtypes, we grow the indices
+     # and values arrays ourselves. Use a Py_ssize_t capacity for safety.
+     cdef Py_ssize_t capacity = 8192     # arbitrary
+-    cdef np.int32_t size = 0
++    cdef np.uint64_t size = 0
+     cdef np.ndarray values = np.empty(capacity, dtype=dtype)
+ 
+     for x in raw_X:

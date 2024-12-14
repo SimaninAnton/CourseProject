@@ -1,0 +1,73 @@
+misuzu commented on 5 Aug 2015
+# libcurl3:amd64 7.43.0-1
+# pycurl==7.19.5.1
+# tornado==4.2.1
+# connect with ssh -D 8080 to host with 192.168.1.0/24 network
+# make sure 192.168.1.161 (pick yours) is unavailable
+# run this script
+# in 5 seconds terminate ssh session
+
+import pycurl
+import tornado.gen
+import tornado.ioloop
+import tornado.log
+from tornado.httpclient import AsyncHTTPClient
+
+
+tornado.log.enable_pretty_logging()
+
+AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient",
+                          max_clients=10)
+
+
+http_client = AsyncHTTPClient()
+
+
+@tornado.gen.coroutine
+def curl_fetch(url):
+    prepare_curl_callback = lambda x: x.setopt(pycurl.PROXYTYPE,
+                                               pycurl.PROXYTYPE_SOCKS5)
+    try:
+        response = yield http_client.fetch(url,
+                                           prepare_curl_callback=prepare_curl_callback,
+                                           proxy_host='127.0.0.1',
+                                           proxy_port=8080,
+                                           connect_timeout=30,
+                                           request_timeout=30)
+        return response.body
+    except:
+        # just ignore
+        pass
+
+
+ioloop = tornado.ioloop.IOLoop.instance()
+# unavailable host on proxy side
+url = "http://192.168.1.161"
+for _ in range(500):
+    ioloop.add_callback(curl_fetch, url)
+
+
+ioloop.set_blocking_log_threshold(0.5)
+ioloop.start()
+Here is script output
+$ python test.py 
+[W 150805 14:39:33 ioloop:350] IOLoop blocked for 0.500000 seconds in
+      File "test.py", line 47, in <module>
+        ioloop.start()
+      File "/tmp/pyenv/lib/python3.4/site-packages/tornado/ioloop.py", line 813, in start
+        self._run_callback(timeout.callback)
+      File "/tmp/pyenv/lib/python3.4/site-packages/tornado/ioloop.py", line 592, in _run_callback
+        ret = callback()
+      File "/tmp/pyenv/lib/python3.4/site-packages/tornado/stack_context.py", line 275, in null_wrapper
+        return fn(*args, **kwargs)
+      File "/tmp/pyenv/lib/python3.4/site-packages/tornado/curl_httpclient.py", line 144, in _handle_timeout
+        pycurl.SOCKET_TIMEOUT, 0)
+      File "/tmp/pyenv/lib/python3.4/site-packages/tornado/curl_httpclient.py", line 112, in _set_timeout
+        def _set_timeout(self, msecs):
+
+^CTraceback (most recent call last):
+  File "test.py", line 47, in <module>
+    ioloop.start()
+  File "/tmp/pyenv/lib/python3.4/site-packages/tornado/ioloop.py", line 841, in start
+    event_pairs = self._impl.poll(poll_timeout)
+KeyboardInterrupt

@@ -1,0 +1,58 @@
+Contributor
+jsoref commented on 26 Jan 2017
+I had 101-default-ssl.conf:
+<VirtualHost *:443>
+        ServerName server.example.com
+        SSLCertificateFile /etc/ssl/certs/star.example.com.crt
+        SSLCertificateKeyFile /etc/ssl/private/star.example.com.key
+</VirtualHost>
+(Actually, the original file was default.conf and had both *:80 and *:443, so I first split them to give certbot a chance.)
+I want to move away from using my wildcard certificate, but I wanted to take baby-steps:
+cp 101-default-ssl.conf 001-server.example.com.conf
+I then changed 001-server.example.com.conf:
+<VirtualHost server.example.com:443>
+        ServerName server.example.com
+        SSLCertificateFile /etc/ssl/certs/star.example.com.crt
+        SSLCertificateKeyFile /etc/ssl/private/star.example.com.key
+</VirtualHost>
+Hoping that certbot would issue me a cert for server.example.com so that I could start my system on the long route away from wildcards.
+# ~/certbot-auto -d server.example.com
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Obtaining a new certificate
+Performing the following challenges:
+tls-sni-01 challenge for server.example.com
+Waiting for verification...
+Cleaning up challenges
+Failed authorization procedure. server.example.com (tls-sni-01): urn:acme:error:unauthorized :: The client lacks sufficient authorization :: Incorrect validation certificate for TLS-SNI-01 challenge. Requested .....acme.invalid from ....:443. Received certificate containing '*.foo.example.com'
+Note: apache's configtest did not report any problems w/ my config.
+My initial workaround was to delete the wildcard configuration (which by this point was a symlink to sites-available) and get certbot to register for my cert. And then I put back the cert.
+I only figured out what went wrong when I started diffing the two files because another service I was using didn't work.
+Once I removed the line from the wildcard configuration and graceful'd, I was able to renew my certificate:
+# ~/certbot-auto certonly -d server.example.com
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+-------------------------------------------------------------------------------
+1: Apache Web Server plugin - Beta (apache)
+2: Place files in webroot directory (webroot)
+3: Spin up a temporary webserver (standalone)
+-------------------------------------------------------------------------------
+Select the appropriate number [1-3] then [enter] (press 'c' to cancel): 1
+Cert not yet due for renewal
+
+You have an existing certificate that has exactly the same domains or certificate name you requested and isn't close to expiry.
+(ref: /etc/letsencrypt/renewal/server.example.com.conf)
+
+What would you like to do?
+-------------------------------------------------------------------------------
+1: Keep the existing certificate for now
+2: Renew & replace the cert (limit ~5 per 7 days)
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 2
+Renewing an existing certificate
+Performing the following challenges:
+tls-sni-01 challenge for server.example.com
+Waiting for verification...
+Cleaning up challenges
+Generating key (2048 bits): /etc/letsencrypt/keys/0013_key-certbot.pem
+Creating CSR: /etc/letsencrypt/csr/0013_csr-certbot.pem

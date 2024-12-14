@@ -1,0 +1,63 @@
+KushGoyal commented on 29 Jun 2017
+In update method of UpdateModelMixin _prefetched_objects_cache is forcibly invalidated. Same should be done for select_related objects cache.
+Steps to reproduce
+# models
+
+class Game(models.Model):
+    name = models.CharField(max_length=20)
+    company = models.ForeignKey(Company)
+
+class Company(models.Model):
+    name = models.CharField(max_length=20)
+
+# serializers
+
+class CompanySerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = Company
+        fields = '__all__'
+
+class GameSerializer(serializers.ModelSerializer):
+    company_id = serializers.IntegerField()
+    company = CompanySerializer(read_only=True)
+
+    class Meta:
+        model = Company
+        fields = '__all__'
+
+# views
+
+class GameUpdateDeleteApi(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = GameSerializer
+
+        def get_queryset(self):
+            return Game.objects.all().select_related('company')
+Expected behavior
+send request to game update api with new company_id value. It should update id of company object on game object. And then the updated company object should return with the game object.
+request
+{
+    "name":"angry birds",
+    "company_id":3
+}
+response
+{
+   "name":"angry birds",
+   "company_id":3,
+   "company": { "id": 3, "name":"Rovio" }
+}
+Actual behavior
+on sending the update request with new company id, the game object updates correctly but the company object in the response is the old one.
+request
+{
+    "name":"angry birds",
+    "company_id":3
+}
+response
+{
+   "name":"angry birds",
+   "company_id":3,
+   "company": { "id": 2, "name":"old company" }
+}
+If you remove the select_related method on the queryset and try this, then the correct response is returned.
+So if it is possible to invalidate the select related cache then the issue should get resolved.

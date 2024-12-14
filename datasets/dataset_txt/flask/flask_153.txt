@@ -1,0 +1,19 @@
+Hooksie commented on 24 Apr 2019 •
+edited
+At flask.testing:81, there exists the block below added in e97253e:
+    if 'json' in kwargs:
+        ...
+        # push a context so flask.json can use app's json attributes
+        with app.app_context():
+            kwargs['data'] = json_dumps(kwargs.pop('json'))
+This enables the werkzeug client to use app or blueprint defaults for the JSONEncode to use. However this invokes an app context and consequently (and surprisingly) the handlers handlers registered to the app context lifecycle.
+Since this behavior only happens when the json kwarg is used on the test client, it can lead to surprising behavior in tests that make use of json and inconsistent behavior between tests that do and do not use json. A more expected behavior would be to have consistent behavior both when and when not using the json kwarg.
+I also do not see any other usages of the app_context context manager in flask.testing, so this doesn't seem like a pattern that should be expected (not that I'm well versed in Flasks internal patterns, so take that for what its worth).
+I discovered this because Flask-SQLALchemy registers an app context teardown that removes the session and unexpectedly rolls back a session mid testcase. I imagine this behavior is not unique to Flask-SQLAlchemy.
+I propose removing the app_context context handler surrounding the json_dumps call, since
+this was the behavior prior to e97253e
+the general flask pattern is already to wrap the higher level calls in an app context, so there is unlikely to be significant impact
+json_dumps already degrades gracefully when there is no app context
+the behavior change is constrained to the testing utilities
+I can submit the PR for this if there's appetite, since it's just a couple of lines.
+Python3, flask 1.02.

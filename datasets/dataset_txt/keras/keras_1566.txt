@@ -1,0 +1,98 @@
+JustinhoCHN commented on 26 Oct 2017 •
+edited
+Hello, when I want to generate 10000 images (batch size = 1), it will generate less than 10000 images, you can see the fllowing codes and result.
+datagen = image.ImageDataGenerator()
+
+gen_data = datagen.flow_from_directory(sample_path+'trn/', 
+                                   batch_size=1, 
+                                   shuffle=False, 
+                                   save_to_dir=gen_path+'gen/',
+                                   save_prefix='gen', 
+                                   target_size=(224, 224))
+for i in range(10000):
+    gen_data.next()
+The more images you generate, the more images you'll lose.
+Then I check the source code of keras.preprocessing.image.py , the DirectoryIterator class, line 1105:
+fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=self.save_prefix,
+                                                                  index=j,
+                                                                  hash=np.random.randint(1e4),
+                                                                  format=self.save_format)
+The 'hash' term is using np.random.randint, that means the more images you want to generate , the higher probability you'll get the same hash number, that will cause filename conflict, the old one will be overwrite!
+In my data augmentation task, I have to generate the same number of images per class. If the image quantity per class doesn't equal, it'll cause the multi-input image pair mismatch. For example, the FaceNet model uses multi-input images (anchor - positive - nagative pair), we cannot lose any generating image.
+My solution's here, I hack the keras.preprocessing.image.py, you can find 4 changes in line 1088 to lline 1135:
+    def _get_batches_of_transformed_samples(self, index_array, index): # change 1: add the 'index' argurment
+        batch_x = np.zeros((len(index_array),) + self.image_shape, dtype=K.floatx())
+        grayscale = self.color_mode == 'grayscale'
+        # build batch of image data
+        for i, j in enumerate(index_array):
+            fname = self.filenames[j]
+            img = load_img(os.path.join(self.directory, fname),
+                           grayscale=grayscale,
+                           target_size=self.target_size)
+            x = img_to_array(img, data_format=self.data_format)
+            x = self.image_data_generator.random_transform(x)
+            x = self.image_data_generator.standardize(x)
+            batch_x[i] = x
+        # optionally save augmented images to disk for debugging purposes
+        if self.save_to_dir:
+            for i, j in enumerate(index_array):
+                img = array_to_img(batch_x[i], self.data_format, scale=True)
+                fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=self.save_prefix,
+                                                                  index=j,
+                                                                  hash=index, # change 2: hash using given index
+                                                                  format=self.save_format)
+                img.save(os.path.join(self.save_to_dir, fname))
+        # build batch of labels
+        if self.class_mode == 'input':
+            batch_y = batch_x.copy()
+        elif self.class_mode == 'sparse':
+            batch_y = self.classes[index_array]
+        elif self.class_mode == 'binary':
+            batch_y = self.classes[index_array].astype(K.floatx())
+        elif self.class_mode == 'categorical':
+            batch_y = np.zeros((len(batch_x), self.num_classes), dtype=K.floatx())
+            for i, label in enumerate(self.classes[index_array]):
+                batch_y[i, label] = 1.
+        else:
+            return batch_x
+        return batch_x, batch_y
+
+    def next(self, index): # change 3: add the 'index' argurment
+        """For python 2.x.
+        # Returns
+            The next batch.
+        """
+        with self.lock:
+            index_array = next(self.index_generator)
+        # The transformation of images is not under thread lock
+        # so it can be done in parallel
+        return self._get_batches_of_transformed_samples(index_array, index) # change 4: add the 'index' argurment
+And then I modify my codes:
+datagen = image.ImageDataGenerator()
+
+gen_data = datagen.flow_from_directory(sample_path+'trn/', 
+                                   batch_size=1, 
+                                   shuffle=False, 
+                                   save_to_dir=gen_path+'gen/',
+                                   save_prefix='gen', 
+                                   target_size=(224, 224))
+
+order_list = list(np.random.permutation(10000)) # give an shuffled numpy permutation number list
+
+for i in range(10000):
+    gen_data.next(order_list[i])
+It works fine! But I still suggest that this problem can be fixed, thanks.
+framework versions:
+keras: 2.0.5
+tensorflow: 1.3.0
+python: 3.5.3
+os: ubuntu 16.04
+Please make sure that the boxes below are checked before you submit your issue. If your issue is an implementation question, please ask your question on StackOverflow or join the Keras Slack channel and ask there instead of filing a GitHub issue.
+Thank you!
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+1

@@ -1,0 +1,50 @@
+arjunnambiartc commented on 27 Sep 2018 •
+edited
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+models.py
+class IP(models.Model):
+     name = models.CharField(max_length=30, unique=True)
+     address = models.CharField(max_length=50, unique=True)
+
+class IPGroup(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    ips = models.ManyToManyField('IP', through='IPGroupToIP')
+
+class IPGroupToIP(models.Model):
+    ip_group = models.ForeignKey('IPGroup', on_delete=models.CASCADE)
+    ip = models.ForeignKey('IP', on_delete=models.CASCADE)
+serializers.py
+class IPGroupCreateSerializer(serializers.ModelSerializer):
+    ips = serializers.ListField()
+    class Meta:
+        model = IPGroup
+        fields = ['name', 'ips']
+
+@transaction.atomic()
+def create(self, validated_data):
+    ips_data = validated_data.pop('ips', None)
+    ip_group = IPGroup.objects.create(name=validated_data['name'])
+    if ips_data:
+        for ip in ips_data:
+            ip_obj, created = IP.objects.get_or_create(name=ip['name'], address=ip['address'])
+            IPGroupToIP.objects.create(ip_group_id=ip_group.id, ip_id=ip_obj.id)
+    return ip_group
+views.py
+class IPGroupCreateView(generics.CreateAPIView):
+    queryset = IPGroup.objects.get_queryset()
+    serializer_class = IPGroupCreateSerializer
+JSON payload
+{ "ips": [{"name":"example.com", "address":"10.1.1.9"}], "name": "ipgroup1" }
+Expected behavior
+{"name": "ipgroup1", "ips": [{"name": "example.com",  "address": "10.1.1.9"}]}
+Actual behavior
+TypeError at /api/v1/ip-group/
+'ManyRelatedManager' object is not iterable
+This strangely works if i set write_only=True to the ListField. I went through the documentation and did not see this behavior mentioned anywhere.

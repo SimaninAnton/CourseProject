@@ -1,0 +1,53 @@
+jgyates commented on 11 Mar 2018
+I have a simple flask app that I want to restart if the server port is changed in a config file. I have the following code:
+#!/usr/bin/env python
+
+from flask import Flask, redirect
+import os
+import configparser
+
+config = configparser.ConfigParser()
+config.read('portnumber.ini')
+
+app = Flask(__name__,static_url_path='')
+
+HTTPPort = config['MAIN'].getint('portnumber')
+
+
+def touchMe():
+    with open(__file__, 'a'):
+        print(" - setting timestamp of " + __file__ )
+        os.utime(__file__, None)
+
+@app.route("/newport/<newport>")
+def changeRoute(newport):
+    HTTPPort = newport
+    name = newport
+    config['MAIN']['portnumber'] = newport
+    with open('portnumber.ini', 'w') as configfile:
+        config.write(configfile)
+    touchMe()
+    newurl = "http://192.168.11.15:" + HTTPPort + "/"
+    print("Redirecting to " + newurl)
+
+    return redirect(newurl, code=302)
+
+
+#------------------------------------------------------------
+if __name__ == "__main__":
+
+    # load options from file, which change HTTPPort value
+    # LoadConfig()
+    while True:
+        app.run(host="0.0.0.0", port=HTTPPort, debug=True, use_reloader=True)
+The this code works as expected on Windows 10, however the port fails to change on Linux (or ssl_context also does not change if used). I am running Raspbian Jessie. I have also tried disabling the reloader and replacing the python process with the following call:
+os.execl(sys.executable, 'python', __file__, *sys.argv[1:])
+This works on Windows, however on Linux, app.run() fails on reload with ""Address already in use"" error. I have reviewed the documentation and past issues however I have not found anything specific to these symptoms.
+I have found that, on Linux, if I use and external script to kill the python script (pkill) and reload the script it works about half of the time. When it fails it is due the "Address already in use" error.
+I have also tried this with Watchdog and I get the same results on Linux. I have duplicated this with python 2.7.9 and 3.6.4. I am using Flask 0.12.2
+Is this a known issue and if so are there any workarounds? Is there another way to pragmatically change the port and ssl_context of a running Flask app on Linux?
+Environment
+Windows 10 and Raspbian Jessie
+Python version: 2.7.9 and 3.6.4
+Flask version: 0.12.2
+Werkzeug version: 0.12.2

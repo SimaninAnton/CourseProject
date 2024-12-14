@@ -1,0 +1,72 @@
+AbhayGodbole commented on 2 Oct 2019 •
+edited
+Hi,
+The use case I am currently working, required to extract Person Name, Amount, SSN No. Out of that default model extracts Person and Money (I need to change it to as Amount) and SSN would be my custom entity. So I am preparing the Tagged tsv for SSN and while training the Model I am providing en_core_web_sm model, my understanding is it will keep the default entities and add my custom entity SSN. But in actual, if I load this new model, its nigher extracting default entities not the custom.
+When I train a custom model, by passing None to the model parameter its extracting my custom entities. I am using following function to train the model:
+`
+def trainModel(self,trainingFile=None,model=None, new_model_name='new_model', output_dir=None, n_iter=10):
+ try:
+  with open (trainingFile, 'rb') as fp:
+   TRAIN_DATA = pickle.load(fp)
+
+  """
+   Setting up the pipeline and entity recognizer, and training the new entity.
+  """
+  if model is not None:
+   nlp = spacy.load(model)  # load existing spacy model
+   logging.info("Loaded model '%s'" % model)
+  else:
+   nlp = spacy.blank('en')  # create blank Language class
+   logging.info("Created blank 'en' model")
+   reset_weights = False
+  if 'ner' not in nlp.pipe_names:
+   ner = nlp.create_pipe('ner')
+   nlp.add_pipe(ner)
+   reset_weights = True        
+  else:
+   ner = nlp.get_pipe('ner')
+
+  # Add Custom Labels
+  for _, annotations in TRAIN_DATA:
+   for ent in annotations.get('entities'):
+    ner.add_label(ent[2])
+
+  if model is None or reset_weights:
+   optimizer = nlp.begin_training()
+  else:
+   optimizer = nlp.entity.create_optimizer()
+
+  # Get names of other pipes to disable them during training to train only NER
+  other_pipes = [pipe for pipe in nlp.pipe_names if pipe != 'ner']
+  with nlp.disable_pipes(*other_pipes):  # only train NER
+   for itn in range(n_iter):
+       random.shuffle(TRAIN_DATA)
+       losses = {}
+       batches = minibatch(TRAIN_DATA, size=compounding(4., 32., 1.001))
+       for batch in batches:
+           texts, annotations = zip(*batch)
+           nlp.update(texts, annotations, sgd=optimizer, drop=0.35,
+                      losses=losses)
+       logging.info('Losses: ' + str(losses))
+
+  # Save model 
+  if output_dir is not None:
+   output_dir = Path(output_dir)
+   if not output_dir.exists():
+    output_dir.mkdir()
+   nlp.meta['name'] = new_model_name  # rename model
+   nlp.to_disk(output_dir)
+   logging.info("Saved model to "  + str(output_dir))
+   return nlp
+  else:
+   return nlp
+ except Exception as e:
+  logging.exception("Unable to process " + "\n" + "Error = " + str(e))
+  return None
+# End trainModel
+`
+Please suggest.
+Environment
+spaCy version: 2.1.8
+Platform: Windows-10-10.0.16299-SP0
+Python version: 3.7.1

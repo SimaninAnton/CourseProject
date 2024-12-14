@@ -1,0 +1,58 @@
+zakkie commented on 29 Jul 2014
+AsyncTestCase.tearDown will never return when it has called coroutine in WebSocketHandler.prepare.
+for example:
+# script: ws-test.py
+from tornado import web, testing, httpclient, gen, websocket
+from tornado.options import options
+
+options.define("target_url")
+
+class DummyContentsHandler(web.RequestHandler):
+    def get(self, *args, **kwargs):
+        self.write("done")
+
+class PreparedWebSocketHandler(websocket.WebSocketHandler):
+    @gen.coroutine
+    def prepare(self):
+        client = httpclient.AsyncHTTPClient()
+        response = yield client.fetch(options.target_url)
+
+    @gen.coroutine
+    def on_message(self, message):
+        """received any message, return response of target_url
+        """
+        client = httpclient.AsyncHTTPClient()
+        response = yield client.fetch(options.target_url)
+        self.write_message(response.body)
+
+class SampleTestCase(testing.AsyncHTTPTestCase):
+    def get_app(self):
+        options.target_url = "http://localhost:%s/contents" % self.get_http_port()
+        return web.Application([
+            (r"/ws_proxy", PreparedWebSocketHandler),
+            (r"/contents", DummyContentsHandler),
+        ])
+
+    @testing.gen_test
+    def test_ws(self):
+        url = "ws://localhost:%d/ws_proxy" % self.get_http_port()
+        ws = yield websocket.websocket_connect(url, io_loop=self.io_loop)
+        ws.write_message("hello")
+        res = yield ws.read_message()
+        self.assertEqual(res, "done")
+        print("ok")
+$ nosetests -xs ws-test.py
+ok
+^C    <========== **Cancel manually**
+----------------------------------------------------------------------
+Ran 1 test in 7.786s
+
+OK
+$ nosetests -V
+nosetests version 1.3.3
+python -V
+Python 3.4.1
+$ pip freeze | grep tornado
+tornado==4.0
+It also reproduced with Python 2.7.8.
+Note: What actually I wanted to do is user authentication in WebSocketHandler with a database which has REST API. Proposed script is a simplified example.

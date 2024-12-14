@@ -1,0 +1,61 @@
+Contributor
+ozabluda commented on 16 Dec 2017 •
+edited
+It's probably true of all layers other than Dense as well. The code below demostrates it:
+# Script for reproducing a shared layer regularization bug
+# https://gist.github.com/ozabluda/11326307bbf13936f18063a1a4165adc
+# https://github.com/keras-team/keras/issues/8807
+
+from keras.models import Sequential, Model
+from keras.layers import Dense, Input, concatenate
+from keras.regularizers import l1_l2
+import numpy as np
+
+m = Sequential([
+    Dense(units=1, input_dim=1, use_bias=False,
+          kernel_initializer='ones',
+          kernel_regularizer=l1_l2(l1=1,l2=0),
+          trainable=False),
+])
+m.summary()
+
+if False: # not shared
+    x  = np.array([0])
+    y  = np.array([0])
+
+    m.compile(optimizer='sgd', loss='mse', metrics=['mse'])
+    print(m.metrics_names, m.evaluate(x,y), m.predict(x))
+
+    m.fit(x, y, verbose=1, epochs=1)
+
+    print(m.metrics_names, m.evaluate(x,y), m.predict(x))
+else: # shared
+    input_a = Input(shape=(1,))
+    input_b = Input(shape=(1,))
+
+    processed_a = m(input_a)
+    processed_b = m(input_b)
+
+    c = concatenate([processed_a, processed_b])
+    c = Dense(1, kernel_initializer='ones', use_bias=False, trainable=False)(c)
+    s = Model([input_a, input_b], c)
+    s.compile(optimizer='sgd', loss='mse', metrics=['mse'])
+    s.summary()
+
+    x0 = np.array([0])
+    x1 = np.array([0])
+    x  = [x0,x1]
+    y  = np.array([0])
+
+    print(s.metrics_names, s.evaluate(x,y), s.predict(x))
+
+    s.fit(x, y, verbose=1, epochs=1)
+
+    print(s.metrics_names, s.evaluate(x,y), s.predict(x))
+output (you can see that the regularization loss is equal to 2):
+1/1 [==============================] - 2s 2s/step
+(['loss', 'mean_squared_error'], [2.0, 0.0], array([[ 0.]], dtype=float32))
+Epoch 1/1
+1/1 [==============================] - 0s 9ms/step - loss: 2.0000 - mean_squared_error: 0.0000e+00
+1/1 [==============================] - 0s 2ms/step
+(['loss', 'mean_squared_error'], [2.0, 0.0], array([[ 0.]], dtype=float32))

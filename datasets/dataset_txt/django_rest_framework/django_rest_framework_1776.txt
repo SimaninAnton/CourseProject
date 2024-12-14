@@ -1,0 +1,43 @@
+jannon commented on 5 Jun 2015
+Brief
+Started using https://github.com/inonit/drf-haystack and it exposed an issue with the way field.blank gets mapped to allow_blank in ModelSerializer. Specifically, it is added for all fields instead of only the fields that actually support the keyword (CharField and ChoiceField I believe). This causes an error if one were to try to instantiate a different field type with the result of rest_framework.utils.field_mapping.get_field_kwargs (like so: https://github.com/inonit/drf-haystack/blob/master/drf_haystack/serializers.py#L114-L115)
+Detail
+The stack trace I ran into is at the bottom, but here's why it happens:
+There is a model like so:
+class MyModel(models.Model):
+    problem_field = models.BooleanField(default=False, blank=True)
+    ...
+It is conceivable that one might have such a model field definition if they were using it to support both a DRF API and regular Django form validation.
+The blank=True causes the code in field_mapping.py (https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/utils/field_mapping.py#L105-L106) to add the allow_blank keyword to the field kwargs.
+So when drf_haystack gets the field kwargs and tries to instantiate a BooleanField, Field.__init__ throws TypeError: __init__() got an unexpected keyword argument 'allow_blank' because serializers.BooleanField doesn't pop it off the kwargs like serializers.CharField and serializers.ChoiceField do before passing the kwargs up.
+Solutions
+There are, of course, workarounds. drf-haystack could hack something up. I could not use blank=True and do some custom form handling, but this just exposed something I think should be a part of DRF behavior. If 'allow_blank` is going to be added for all field types, then all field types should accept it (and optionally, ignore it) or it should only be added for field types that support it.
+I'd be happy to throw together a PR if you agree. I'm inclined to just check for instance of models.CharField before setting the keyword
+stacktrace if you're interested
+File "/lib/python3.4/site-packages/rest_framework/viewsets.py", line 85, in view
+    return self.dispatch(request, *args, **kwargs)
+  File "/lib/python3.4/site-packages/rest_framework/views.py", line 456, in dispatch
+    response = self.handle_exception(exc)
+  File "/lib/python3.4/site-packages/rest_framework/views.py", line 453, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "/lib/python3.4/site-packages/rest_framework/mixins.py", line 47, in list
+    return Response(serializer.data)
+  File "/lib/python3.4/site-packages/rest_framework/serializers.py", line 622, in data
+    ret = super(ListSerializer, self).data
+  File "/lib/python3.4/site-packages/rest_framework/serializers.py", line 217, in data
+    self._data = self.to_representation(self.instance)
+  File "/lib/python3.4/site-packages/rest_framework/serializers.py", line 572, in to_representation
+    self.child.to_representation(item) for item in iterable
+  File "/lib/python3.4/site-packages/rest_framework/serializers.py", line 572, in <listcomp>
+    self.child.to_representation(item) for item in iterable
+  File "/lib/python3.4/site-packages/drf_haystack/serializers.py", line 137, in to_representation
+    ret = super(HaystackSerializer, self).to_representation(instance)
+  File "/lib/python3.4/site-packages/rest_framework/serializers.py", line 426, in to_representation
+    fields = [field for field in self.fields.values() if not field.write_only]
+  File "/lib/python3.4/site-packages/rest_framework/serializers.py", line 317, in fields
+    for key, value in self.get_fields().items():
+  File "/lib/python3.4/site-packages/drf_haystack/serializers.py", line 118, in get_fields
+    field_mapping[field_name] = self._field_mapping[field_type](**kwargs)
+  File "/lib/python3.4/site-packages/rest_framework/fields.py", line 506, in __init__
+    super(BooleanField, self).__init__(**kwargs)
+TypeError: __init__() got an unexpected keyword argument 'allow_blank'

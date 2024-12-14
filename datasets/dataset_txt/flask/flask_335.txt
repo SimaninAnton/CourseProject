@@ -1,0 +1,83 @@
+danieljacobs1 commented on 26 Jun 2018
+Hi,
+We're looking at upgrading from Flask 0.12 to 1.0, and have run into an issue with routes that don't exist.
+We have a custom error handler that we install for Python's built-in Exception class so that we can have a useful error message should any error occur during request execution. With Flask 1.0, we are finding that URLs that don't exist are triggering a call to the custom error handler.
+We would like to preserve the behaviour so that non-existent URLs continue to return a 404/Not Found response.
+I've tried reading the docs and couldn't see a way, so might have missed something:
+http://flask.pocoo.org/docs/1.0/errorhandling/#error-handlers
+What is the recommended way of doing this? Or is this a bug?
+I wasn't 100% sure, but this could be the same as #2778?
+Expected Behavior
+With the Flask app running as below, the following command:
+curl -XGET http://127.0.0.1:5001/does-not-exist
+should return 404/Not Found.
+#! python
+
+"""
+Simple Flask app with a global exception handler.
+"""
+
+from http import HTTPStatus
+
+from flask import Flask
+
+
+app = Flask(__name__)
+
+
+@app.errorhandler(Exception)
+def global_exception_handler(err):
+    """ Global exception handler.
+    """
+    print("In global_exception_handler", err)
+    return "From global_exception_handler\n", HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@app.route("/error")
+def error():
+    """ Simple endpoint that raises an exception
+    """
+    # simulate a real error that can occur during request processing
+    raise AttributeError("These aren't the attributes you are looking for.")
+
+
+@app.route("/simple")
+def simple():
+    """ Simple endpoint
+    """
+    # sanity check
+    return "Hello World!\n", HTTPStatus.OK
+
+
+def main():
+    """ The entry point
+    """
+    app.run(port=5001)
+
+
+if __name__ == "__main__":
+    main()
+Actual Behavior
+Our global exception handler is invoked and instead of 404/Not found we get what it returns (500/internal server error).
+Command line output when running the app with Flask 1.0.2:
+dan@dan-desktop:/tmp $ curl -XGET http://127.0.0.1:5001/error
+From global_exception_handler
+dan@dan-desktop:/tmp $ curl -XGET http://127.0.0.1:5001/does-not-exist
+From global_exception_handler
+dan@dan-desktop:/tmp $ curl -XGET http://127.0.0.1:5001/simple
+Hello World!
+Command line output when running the app with Flask 0.12.4:
+dan@dan-desktop:/tmp $ curl -XGET http://127.0.0.1:5001/error
+From global_exception_handler
+dan@dan-desktop:/tmp $ curl -XGET http://127.0.0.1:5001/does-not-exist
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<title>404 Not Found</title>
+<h1>Not Found</h1>
+<p>The requested URL was not found on the server.  If you entered the URL manually please check your spelling and try again.</p>
+dan@dan-desktop:/tmp $ curl -XGET http://127.0.0.1:5001/simple
+Hello World!
+Environment
+Python version: Python 3.6.2
+Flask version: 1.0.2
+Werkzeug version: 0.14.1
+8

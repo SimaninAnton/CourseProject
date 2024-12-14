@@ -1,0 +1,21 @@
+metaljoe commented on 18 Dec 2014
+Not sure if this is a bug or PEBKAC, but I'm migrating from DRF2 and currently implementing an .update method on a subclass of ListSerializer. However, the validated_data is missing the primary keys passed in the request. This makes it a little tricky to determine what items are being updated! :-)
+I have an AssociatedMedia model which defines a primary key called associated_media_id, and some other fields that aren't relevant to the issue:
+class AssociatedMedia(models.Model):
+    associated_media_id = models.AutoField(primary_key=True)
+There's a corresponding AssociatedMediaSerializer, of which the associated_media_id field is specified in the Meta fields list and not overridden - it defaults to an automatically generated field of type IntegerField(read_only=True) as I would expect.
+class AssociatedMediaSerializer(serializers.ModelSerializer):
+    [...]
+    class Meta:
+        list_serializer_class = AssociatedMediaListSerializer
+        model = models.AssociatedMedia
+        fields = (
+            "associated_media_id",
+    [...]
+There's also an AssociatedMediaListSerializer (as noted above) which includes just the .update method:
+class AssociatedMediaListSerializer(serializers.ListSerializer):
+    def update(self, instance, validated_data):
+    [...]
+instance has a list of the expected AssociatedMedia instances already in the database. However, validated_data has everything passed in the request JSON, except for the associated_media_id primary key. For example, a source request of [{'media_type_id': 3, 'sort_order': 1, 'is_approved': False, 'associated_media_id': 2}] ends up as the validated_data of [{u'media_type_id': 3, u'sort_order': 1, u'is_approved': False}].
+If I override the associated_media_id field in AssociatedMediaSerializer to be an IntegerField which has read_only=False, it will now appear in validated_data: [{u'media_type_id': 3, u'sort_order': 1, u'is_approved': False, u'associated_media_id': 2}]
+It looks like read_only fields are being skipped on validation. I can see SkipField exceptions raised and trapped in DRF's fields.py which look like it might be the cause, because the field has a default set to rest_framework.fields.empty. Overriding the default for the field to another value always sets it to that value rather than the one supplied in the request.

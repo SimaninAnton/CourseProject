@@ -1,0 +1,39 @@
+danielnelson commented on 30 Jan 2014
+With this test case:
+import tornado.testing
+import threading
+
+class Sleeper(threading.Thread):
+  def __init__(self, callback):
+    super(Sleeper, self).__init__()
+    self.callback = callback
+
+  def run(self):
+    self.callback()
+
+class AsyncTestCaseAssert(tornado.testing.AsyncTestCase):
+  def setUp(self):
+    super(AsyncTestCaseAssert, self).setUp()
+
+  def test_bug(self):
+    thread = Sleeper(self.stop)
+    thread.start()
+    self.wait()
+    assert True
+
+  def test_bug2(self):
+    thread = Sleeper(self.stop)
+    thread.start()
+    self.wait()
+    assert True
+If you run it repeatedly, sometimes you will trigger this error:
+Traceback (most recent call last):
+  File "tmp.py", line 19, in test_bug
+    self.wait()
+  File "tornado/testing.py", line 267, in wait
+    assert self.__stopped
+AssertionError
+You can trigger it faster by placing a short sleep in AsyncTestCase.stop right before:
+self.__stopped = True
+I think this variable needs to either have a mutex, be set to True before
+stopping the ioloop, or the assert needs to be removed in AsyncTestCase.wait.

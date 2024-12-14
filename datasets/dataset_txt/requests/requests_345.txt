@@ -1,0 +1,82 @@
+aedelbro commented on Mar 8, 2018
+When following the standard (as shown in the quickstart) method of requests.put(path, data=json.dumps(payload)) is used, and then replayed using requests.Session().send(res.request), this method will occasionally fail inside of the ssl.py with the type error: 'str' does not support the buffer interface.
+I believe this also might be related to this issue opened. If it is related to this encoding error, would a proper solution be to use json=payload instead of doing data=json.dumps(payload)? Except in the linked issue, there it can fail consistently, whereas mine cannot.
+Is there a more proper way change headers in a prepared request to then resend said request?
+If the issue is on requests' end, I feel like it might be in here somewhere.
+Use case and explanation
+So we're using requests to talk with our REST API in JSON (standard stuff). Everything works peachy (thanks for providing such a great lib), until our token expires. So once our bearer token expires, I get a new one, and save the token. However, I now want to resend the request that just failed, but with the new token in the header. I have been using requests.Session().send(res.request) to resend the prepared request (after changing the header in the prepared request). When replaying using the Session().send(), it hits the above type error occasionally, like once every 30ish times (it's hard to measure, it'll go a week or two without erroring, but then come back when you least expect).
+Note: it only occurs when PUTing (I would assume also with POSTing, but I haven't seen it)
+Here's our general setup:
+class A:
+  def authenticate(self):
+    res = requests.post(url, headers=headers, data=json.dumps(payload))
+    if res.status_code != 200:
+      raise Exception("Error authenticating")
+    self.token = "Bearer " + res.json()['payload']['data']['token']
+
+  def headers(self):
+    return {
+      'Authorization': self.token,
+      'Content-Type': 'application/json'
+    }
+
+  def put(self, path, payload):
+    res = requests.put(self.url(path), headers=self.headers(), data=json.dumps(payload))
+    return self.handle_response(res)
+
+  def handle_response(self, res, auth=True):
+    if res.status_code == 200:
+      return res.json()
+    elif res.status_code == 401 and auth:
+      print("Got 401, attempting to reauth", flush=True)
+      self.authenticate()
+      res.request.headers = self.headers()
+      return self.handle_response(requests.Session().send(res.request), auth=False)
+    else:
+      raise Exception('Error making request ' + res.url + ':' + res.request.method + ' - ' + str(res.status_code))
+Expected Result
+It to replay the request with the updated header, and either fail constantly or not at all. The hardest part is it doesn't happen consistently. Like I mentioned above, once every 30ish times does this happen.
+Actual Result
+Here is a stack trace:
+File "/app/behavior/b.py"
+  self.a.put(path, payload)
+File "/app/behavior/a.py"
+  return self.handle_response(res)
+File "/app/behavior/a.py" line 89 in handle_response
+  return self.handle_response(requests.Session().send(res.request), auth=False)
+File "/usr/local/lib/python3.4/dist-packages/requests/sessions.py" line 618 in send
+  r = adapter.send(request, **kwargs)
+File "/usr/local/lib/python3.4/dist-packages/requests/adapters.py" line 463 in send
+  low_conn.send(i)
+File "/usr/lib/python3.4/http/client.py" line 921 in send
+  self.sock.sendall(d)
+File "/usr/local/lib/python3.4/dist-packages/eventlet/green/ssl.py" line 168 in sendall
+  v = self.send(data_to_send)
+File "/usr/local/lib/python3.4/dist-packages/eventlet/green/ssl.py" line 143 in send
+  super(GreenSSLSocket, self).send, data, flags)
+File "/usr/local/lib/python3.4/dist-packages/eventlet/green/ssl.py" line 110 in _call_trampolining
+  return func(*a, **kw)
+File "/usr/lib/python3.4/ssl.py" line 702 in send
+  v = self._sslobj.write(data)
+TypeError: 'str' does not support the buffer interface
+The payload is simple dictionary of dictionary:
+{
+  "a": {
+    "b": "Yes",
+    "c": "No"
+  }
+}
+no fancy things, just ascii strings
+Reproduction Steps
+Create a put request using res = requests.put(self.url(path), headers=self.headers(), data=json.dumps(payload))
+Change header dictionary self.authenticate()
+Update headers in prepared request res.request.headers = self.headers()
+Resend request requests.Session().send(res.request)
+Cross fingers it fails?
+System Information
+Python 3.4.3
+requests==2.18.4
+urllib3==1.22
+Linux version 4.9.60-linuxkit-aufs (gcc version 6.3.0 (Alpine 6.3.0) )
+This is running on flask inside of linux docker container.
+This also happened with requests version 2.2.1 (we thought updating might have solved the issue, but alas...)

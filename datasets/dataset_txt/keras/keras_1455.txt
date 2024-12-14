@@ -1,0 +1,68 @@
+vsenko commented on 29 Nov 2017 •
+edited
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+I observe a lot of stale processes when I'm trying to train a model using fit_generator() with use_multiprocessing=True.
+Key points:
+data has to be prepared with multiprocessing (use_multiprocessing=True);
+both train and validation sets have to be Sequences;
+main process has to be heavily loaded (the model has to be complex enough);
+I could not reproduce this behavior with Dense layer, but I have not spent much time on this.
+I expect to see 5 python processes (1 main process and 4 worker processes) during the whole training. But as training proceeds, there are more and more processes. 5 of them are active (use CPU) while other are idle (stale). It seems to me that these are worker processes that for some reason failed to join the main process.
+Usually the whole thing looks like this:
+1 process at startup
+5 processes during the first epoch
+on every next epoch the number of processes can increase by 1-4 processes
+While legacy processes do not use the CPU, they use RAM, which leads to RAM shortage and eventually training failure.
+Code to reproduce this issue:
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
+
+import numpy as np
+from keras.utils import Sequence
+from keras.models import Model
+from keras.layers import Input, RepeatVector, GRU
+
+BATCH_SIZE = 64
+DIM_A = 50
+DIM_B = 26
+
+class MySequence(Sequence):
+    def __len__(self):
+        return 100
+
+    def __getitem__(self, idx):
+        sample_input = np.zeros((BATCH_SIZE, DIM_A, DIM_B), dtype=np.float32)
+        sample_output = np.zeros((BATCH_SIZE, 1), dtype=np.float32)
+        return sample_input, sample_output
+
+if __name__ == '__main__':
+    inputs = Input(shape=(DIM_A, DIM_B))
+    encoded = GRU(1, return_sequences=False)(inputs)
+
+    model = Model(inputs, encoded)
+    model.compile(optimizer='adam', loss='mean_squared_error')
+
+    train_sequence = MySequence()
+    validation_sequence = MySequence()
+    model.fit_generator(
+        train_sequence,
+        len(train_sequence),
+        epochs=100,
+        verbose=1,
+        validation_data=validation_sequence,
+        validation_steps=len(validation_sequence),
+        workers=4,
+        use_multiprocessing=True)
+System configuration:
+Ubuntu 16.04
+Keras (2.1.1) installed from git yesterday
+tensorflow-gpu (1.4.0)
+GeForce GTX 1080 GPU
+cuda-8-0 (8.0.61-1)
+libcudnn6 (6.0.21-1+cuda8.0)
+python3.5 (3.5.2-2ubuntu0~16.04.3)

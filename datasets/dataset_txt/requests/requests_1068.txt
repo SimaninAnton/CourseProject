@@ -1,0 +1,36 @@
+Contributor
+jayvdb commented on May 22, 2016
+I ran into a problem with a TLSv1.2 site using the Travis Ubuntu precise containers, which is documented at travis-ci/travis-ci#4757
+I was able to work around the problem using:
+import ssl, urllib3
+pm = urllib3.PoolManager(ssl_version=ssl.PROTOCOL_TLSv1_2)
+r = pm.request('GET', 'http://proofwiki.org/wiki/Main_Page')
+I'd like to workaround it using requests if possible, and it seems like it should be possible according to
+http://docs.python-requests.org/en/master/user/advanced/#example-specific-ssl-version
+However when I try to follow that recipe (below) on Python 2.7.9+ / 3.4+, requests.exceptions.SSLError: ("bad handshake: SysCallError(104, 'ECONNRESET')",) is raised.
+import ssl
+import sys
+
+import requests
+
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.poolmanager import PoolManager
+
+class Tls12HttpAdapter(HTTPAdapter):
+    """Transport adapter that forces use of TLSv1.2."""
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        """Create and initialize the urllib3 PoolManager."""
+        self.poolmanager = PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block, ssl_version=ssl.PROTOCOL_TLSv1_2)
+
+
+url = sys.argv[1]
+
+s = requests.Session()
+s.mount(url, Tls12HttpAdapter())
+r = s.get(url)
+print(r.status_code)
+https://github.com/jayvdb/my-ci-test/blob/tls12/requests_explicit.py
+Full backtrace at https://travis-ci.org/jayvdb/my-ci-test/jobs/132022039

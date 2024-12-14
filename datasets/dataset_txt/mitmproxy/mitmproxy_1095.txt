@@ -1,0 +1,62 @@
+ghost commented on 15 May 2016 •
+edited by ghost
+What's the problem?
+While testing mitmdump replay I see that it consumes multiple GB of RAM and multiple GB of data went through the network. Because mitmdump eats up all physical memory as well as nearly all memory of swap the system was nearly dead. The client could not load a lot of the test pages.
+Friendly killing mitmdump was not successful for more than 20 minutes and in the log files I could see crash reports.
+After some search it seems that my client start download of several big files, many of them are bigger than one GB, but abort it after less than two MB.
+Steps to reproduce the problem:
+start mitmdump in transparent proxy mode, SSL and --no-pop
+start on the client a big download like Linux DVD
+abort download
+watch mitmdump downloading the whole file for the next minutes or hours and eating up memory
+What is the expected behaviour?
+The client disconnect and thus does not need the information any more. Therefore mitmdump should abort the download. Additionally for me it seems to be a good idea to not load big files completely into the memory.
+What went wrong?
+One of my test pages contains JavaScript/links to movies. These mp4 files are mostly bigger than one GB bur some of them are only about 500 MB. It seems that Internet Explorer peek into these files. I could not see Firefox doing this. As a result of the behaviour of the Internet Explorer mitmdump tried to download all these files completely and dumping them in the memory. But the sum of all of these files are more than the memory of machine mitmdump is running on. Thus the system slows down a lot and mitmdump is not able to replay other sites.
+With this behaviour it is easy for a client to do a denial of service attack against mitmdump, even though it is not the intention of the client.
+What is an example of the crash log?
+For me it seems that mitmdump finished a 'smaller' download and then tries to send it to the client which disconnected minutes ago.
+Here is an example:
+  << 200 OK 692.45MB
+
+ Error in processing of request from 192.168.*.*:50000
+ Traceback (most recent call last):
+   File "/usr/local/lib/python2.7/dist-packages/netlib/tcp.py", line 854, in connection_thread
+     self.handle_client_connection(connection, client_address)
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/proxy/server.py", line 62, in handle_client_connection
+     self.channel
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/proxy/server.py", line 75, in __init__
+     None)
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/models/connections.py", line 17, in __init__
+     super(ClientConnection, self).__init__(client_connection, address, server)
+   File "/usr/local/lib/python2.7/dist-packages/netlib/tcp.py", line 734, in __init__
+     super(BaseHandler, self).__init__(connection)
+   File "/usr/local/lib/python2.7/dist-packages/netlib/tcp.py", line 461, in __init__
+     self.peer_address = Address(connection.getpeername())
+   File "/usr/lib/python2.7/socket.py", line 228, in meth
+     return getattr(self._sock,name)(*args)
+ error: [Errno 107] Transport endpoint is not connected
+
+ ----------------------------------------
+ Traceback (most recent call last):
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/proxy/server.py", line 121, in handle
+     root_layer()
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/proxy/modes/transparent_proxy.py", line 22, in __call__
+     layer()
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/protocol/tls.py", line 358, in __call__
+     layer()
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/protocol/http1.py", line 67, in __call__
+     layer()
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/protocol/http.py", line 204, in __call__
+     self.send_response_to_client(flow)
+   File "/usr/local/lib/python2.7/dist-packages/mitmproxy/protocol/http.py", line 270, in send_response_to_client
+     if not flow.response.stream:
+ AttributeError: 'NoneType' object has no attribute 'response'
+
+ mitmproxy has crashed!
+ Please lodge a bug report at: https://github.com/mitmproxy/mitmproxy
+Any other comments?
+I am aware of different reports like #1081 and I tried the --stream option. The result was that most sites in the dump could not be replayed. For example amazon was only a white page with favicon. The last one was not replayed but loaded from the internet. Other sites like weather.com could not be loaded at all. Internet Explorer complained about being unable to load that site and I should check if the address is spelled correctly.
+I am also aware of other reports like #1036 #1029 and #1095 but I was not able to find a solution. Maybe with the SQL mitmdump will not eat up all memory. But this will not prevent mitmdump from wasting time to download unnecessary files or prevent --stream from destroying replays.
+Mitmproxy Version: 0.17
+Operating System: Kali Linux Rolling (2016.1) 64 Bit and Windows 7 64 Bit

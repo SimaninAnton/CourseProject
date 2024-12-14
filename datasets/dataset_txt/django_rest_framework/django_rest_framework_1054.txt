@@ -1,0 +1,40 @@
+klahnen commented on 13 Sep 2016
+Considering a view.py
+class MyMovelViewSet:
+    lookup_fields = ('pk', 'slug')
+and urls.py
+my_urls = [
+    url(regex=r'^app/myobject/(?P<pk>\d+)|(?P<slug>[-\w\d]+)/$',
+        view=app.MyModelViewSet.as_view({
+            'get': 'retrieve',
+            'patch': 'partial_update',
+            'delete': 'destroy'}),
+        name="object-detail"),
+]
+
+urlpatterns = [
+    url(r'^', include(my_urls))
+]
+Requests:
+GET /app/myobject/2/ #Wont work because filter is considering pk=2 and slug=None
+GET /app/myobject/cool-slug/ #Wont work because filter is considering pk=None and slug='cool-slug'
+That's why we need to add extra validation, like the following.
+class MultipleFieldLookupMixin(object):
+    """
+    Apply this mixin to any view or viewset to get multiple field filtering
+    based on a `lookup_fields` attribute, instead of the default single field filtering.
+    """
+    def get_object(self):
+        queryset = self.get_queryset()             # Get the base queryset
+        queryset = self.filter_queryset(queryset)  # Apply any filter backends
+        filter = {}
+
+        for field in self.lookup_fields:
+            if self.kwargs[field]: # This is the extra validation that will ignore empty fields.
+                filter[field] = self.kwargs[field]
+
+        obj = get_object_or_404(queryset, **filter)  # Lookup the object
+
+        # May raise a permission denied
+        self.check_object_permissions(self.request, obj)
+        return obj

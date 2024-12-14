@@ -1,0 +1,38 @@
+guettli commented on 18 Nov 2013
+In stack_context.py exceptions get sometimes swallowed.
+After modifying this line, I could find the root of the problem:
+diff --git a/tornado/stack_context.py b/tornado/stack_context.py
+index b1e82b0..83b9d88 100644
+--- a/tornado/stack_context.py
++++ b/tornado/stack_context.py
+@@ -300,7 +300,7 @@ def wrap(fn):
+             if top is None:
+                 try:
+                     ret = fn(*args, **kwargs)
+-                except:
++                except IOError:
+                     exc = sys.exc_info()
+                     top = contexts[1]
+Of course this is just a small hack, which can't make it into the real code.
+Here is the exception which happens inside a websocket client:
+Exception in callback <functools.partial object at 0x1469ec0>
+Traceback (most recent call last):
+  File "/home/modwork_eins_dmes/src/tornado/tornado/ioloop.py", line 461, in _run_callback
+    callback()
+  File "/home/modwork_eins_dmes/src/tornado/tornado/stack_context.py", line 302, in wrapped
+    ret = fn(*args, **kwargs)
+  File "/home/modwork_eins_dmes/src/tornado/tornado/iostream.py", line 353, in wrapper
+    callback(*args)
+  File "/home/modwork_eins_dmes/src/tornado/tornado/stack_context.py", line 302, in wrapped
+    ret = fn(*args, **kwargs)
+  File "/home/modwork_eins_dmes/src/tornado/tornado/websocket.py", line 719, in _on_frame_data
+    self._handle_message(opcode, data)
+  File "/home/modwork_eins_dmes/src/tornado/tornado/websocket.py", line 735, in _handle_message
+    self.async_callback(self.handler.on_message)(decoded)
+  File "/home/modwork_eins_dmes/src/tornado/tornado/websocket.py", line 325, in wrapper
+    self.request.path, exc_info=True)
+  File "/home/modwork_eins_dmes/src/tornado/tornado/httpclient.py", line 485, in __getattr__
+    request_attr = getattr(self.request, name)
+AttributeError: 'HTTPRequest' object has no attribute 'path'
+In websocket.py line 325 request.path gets accessed to create an error message. But the websocket request does not have this attribute. One possible fix would be to use getattr(request, 'path', None) in websocket Line 325.
+1

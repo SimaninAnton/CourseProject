@@ -1,0 +1,38 @@
+MisakaDev commented on 25 Apr 2018 •
+edited
+Steps to reproduce
+models:
+class Region(models.Model):
+    name = models.CharField(max_length=255)
+    code = models.IntegerField()
+
+
+class District(models.Model):
+    region = models.ForeignKey('Region', related_name='districts', on_delete=models.PROTECT)
+    name = models.CharField(max_length=255)
+    code = models.IntegerField()
+views:
+class RegionDelete(generics.DestroyAPIView):
+    queryset = Region.objects.all()
+    serializer_class = RegionSerializer
+Expected behavior
+HTTP code 423 or other.
+Error detail.
+Actual behavior
+Django exception
+Fix for me
+mixins:
+class DestroyModelMixin(object):
+    """
+    Destroy a model instance.
+    """
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+        except django.db.models.deletion.ProtectedError as e:
+            return Response(status=status.HTTP_423_LOCKED, data={'detail':str(e)})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def perform_destroy(self, instance):
+        instance.delete()

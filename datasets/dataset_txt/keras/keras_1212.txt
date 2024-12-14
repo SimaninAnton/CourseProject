@@ -1,0 +1,88 @@
+ryanhalabi commented on 1 Mar 2018 •
+edited
+I've been trying to strip the last few layers off a model, then reapply them and their weights to recreate the model but the result gives different results then the original model.
+I'm working with a modified version of Inception3 with 5 outputs as my base model
+nightTest model summary tail
+__________________________________________________________________________________________________
+mixed10 (Concatenate)           (None, 9, 18, 2048)  0           activation_368[0][0]             
+                                                                 mixed9_1[0][0]                   
+                                                                 concatenate_8[0][0]              
+                                                                 activation_376[0][0]             
+__________________________________________________________________________________________________
+average_pooling2d_38 (AveragePo (None, 1, 1, 2048)   0           mixed10[0][0]                    
+__________________________________________________________________________________________________
+flatten_2 (Flatten)             (None, 2048)         0           average_pooling2d_38[0][0]       
+__________________________________________________________________________________________________
+dense_2 (Dense)                 (None, 5)            10245       flatten_2[0][0]                  
+==================================================================================================
+Total params: 21,813,029
+Trainable params: 10,245
+Non-trainable params: 21,802,784
+__________________________________________________________________________________________________
+I load the model, and recreate the layers and set the weights
+lModel = keras.models.clone_model( nightTest )
+
+dense = nightTest.layers[-1]
+weights =  dense.get_weights()[0]
+bias = dense.get_weights()[1]
+
+lModel.layers.pop()
+lModel.layers.pop()
+lModel.layers.pop()
+lModel.layers[-1].outbound_nodes = []
+lModel.outputs = [lModel.layers[-1].output]
+
+output = lModel.layers[-1].output
+output = keras.layers.AveragePooling2D(  pool_size= (9,18) )(output)
+output = keras.layers.Flatten()(output)
+output = keras.layers.Dense( 5 ,weights = [ weights, bias], activation= "softmax" )(output)
+
+newModel = keras.models.Model(lModel.input, output)
+newModel summary tail
+mixed10 (Concatenate)           (None, 9, 18, 2048)  0           activation_368[0][0]             
+                                                                 mixed9_1[0][0]                   
+                                                                 concatenate_8[0][0]              
+                                                                 activation_376[0][0]             
+__________________________________________________________________________________________________
+average_pooling2d_2 (AveragePoo (None, 1, 1, 2048)   0           mixed10[0][0]                    
+__________________________________________________________________________________________________
+flatten_1 (Flatten)             (None, 2048)         0           average_pooling2d_2[0][0]        
+__________________________________________________________________________________________________
+dense_4 (Dense)                 (None, 5)            10245       flatten_1[0][0]                  
+==================================================================================================
+Total params: 21,813,029
+Trainable params: 10,245
+Non-trainable params: 21,802,784
+__________________________________________________________________________________________________
+the models both have the same weights on the last dense layer
+In [16]: nightTest.layers[-1].get_weights()
+Out[16]: 
+[array([[-0.48583984, -0.3229709 , -0.45720956, -0.05654235, -0.06217908],
+        [ 0.21722902, -0.42007211, -0.55972689,  0.28028402, -0.55804795],
+        [-0.44516855, -0.31592309, -0.64490259, -0.78610712,  0.6084547 ],
+        ..., 
+        [-0.69679749, -0.75140196,  0.29399979, -0.09377766,  0.03748649],
+        [-0.09075294, -0.16623352,  0.01132002, -0.19380382, -0.33328345],
+        [ 0.22006784,  0.59183991, -0.40247962,  0.04129548, -0.96817166]], dtype=float32),
+ array([-0.31901461, -0.09213933, -0.11699879, -0.1551993 , -0.25612155], dtype=float32)]
+
+In [17]: newModel.layers[-1].get_weights()
+Out[17]: 
+[array([[-0.48583984, -0.3229709 , -0.45720956, -0.05654235, -0.06217908],
+        [ 0.21722902, -0.42007211, -0.55972689,  0.28028402, -0.55804795],
+        [-0.44516855, -0.31592309, -0.64490259, -0.78610712,  0.6084547 ],
+        ..., 
+        [-0.69679749, -0.75140196,  0.29399979, -0.09377766,  0.03748649],
+        [-0.09075294, -0.16623352,  0.01132002, -0.19380382, -0.33328345],
+        [ 0.22006784,  0.59183991, -0.40247962,  0.04129548, -0.96817166]], dtype=float32),
+ array([-0.31901461, -0.09213933, -0.11699879, -0.1551993 , -0.25612155], dtype=float32)]
+when applying them to the same data I get different results
+In [19]: nightTest.predict(img)
+Out[19]: 
+array([[  5.80226145e-11,   9.96415138e-01,   1.06817879e-06,
+          3.58372275e-03,   2.55914040e-10]], dtype=float32)
+
+In [20]: newModel.predict(img)
+    ...: 
+Out[20]: array([[ 0.17518976,  0.21585718,  0.21578987,  0.20453331,  0.18862988]], dtype=float32)
+I'm guessing the newModel still has random weights and the new ones aren't being applied for some reason.

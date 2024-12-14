@@ -1,0 +1,63 @@
+DrJackilD commented on Feb 23, 2016
+Hi! I have one issue, when trying to test proxies with Scrapy. I want to check proxies with httpbin.org, and make crawler:
+class CheckerSpider(scrapy.Spider):
+    name = "checker"
+    start_urls = (
+        'https://www.httpbin.org/ip'
+    )
+    connection = get_connection()
+
+    def start_requests(self):
+
+        with self.connection.cursor() as cursor:
+            limit = int((datetime.now() - datetime(1970, 1, 1)).total_seconds()) - 3600
+            q = """ SELECT *
+                    FROM {}
+                    WHERE active = 1 AND last_checked <= {} OR last_checked IS NULL;""".format(DB_TABLE, limit)
+            cursor.execute(q)
+            proxy_list = cursor.fetchall()
+
+        for proxy in proxy_list[:15]:
+            word = get_random_word()
+            req = scrapy.Request(self.start_urls, self.check_proxy, dont_filter=True)
+            req.meta['proxy'] = 'https://{}:8080'.format(proxy['ip'])
+            req.meta['item'] = proxy
+            user_pass = base64.encodestring('{}:{}'.format(PROXY_USER, PROXY_PASSWORD))
+            req.headers['Proxy-Authorization'] = 'Basic {}'.format(user_pass)
+            req.headers['User-Agent'] = get_user_agent()
+            yield req
+
+    def check_proxy(self, response):
+        print response.request.meta['proxy']
+        print response.meta['item']['ip']
+        print response.body
+But when I'm testing it, I've see that Scrapy connect to url only with 5 proxies and then didn't change it. Example output (just messed IP):
+2016-02-23 14:54:36 [scrapy] DEBUG: Crawled (200) <GET https://www.httpbin.org/ip> (referer: None)
+https://192.168.100.130:8080
+192.168.100.130
+{
+  "origin": "192.168.100.130"
+}
+
+2016-02-23 14:54:36 [scrapy] DEBUG: Crawled (200) <GET https://www.httpbin.org/ip> (referer: None)
+https://192.168.100.131:8080
+192.168.100.131
+{
+  "origin": "192.168.100.131"
+}
+2016-02-23 14:54:37 [scrapy] DEBUG: Crawled (200) <GET https://www.httpbin.org/ip> (referer: None)
+https://192.168.100.132:8080
+192.168.100.132
+{
+  "origin": "192.168.100.132"
+}
+
+# Here Scrapy used wrong proxy to connect to site.
+2016-02-23 14:54:37 [scrapy] DEBUG: Crawled (200) <GET https://www.httpbin.org/ip> (referer: None)
+https://192.168.100.134:8080
+192.168.100.134
+{
+  "origin": "192.168.100.130"
+}
+May be I've make something wrong? Any idea? Thank you.
+👍 3

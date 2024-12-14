@@ -1,0 +1,7 @@
+Contributor
+crlane commented on Jun 12, 2014
+If you dynamically generate allowed domains (e.g., using urlparse(url).hostname) for your spiders, it is possible to generate a list of domains where some elements of the list are None. In our case it was because of some poorly formatted URLs in a large dataset.
+This causes the OffsiteMiddleware object to error out when trying compile the regex for allowed hosts and the self.host_regex is never set for the OffsiteMiddleware instance. This is because of a call to re.escape(d) in get_host_regex, where d is some iterable. Since None is not iterable, we see two errors, one for the failing call to re.escape, and then subsequently lots of
+ AttributeError: 'OffsiteMiddleware' object has no attribute 'host_regex' 
+For spiders that have a more than one url and allowed domain, this means that processing stops as soon as the first None (or really non-iterable) domain is encountered, i.e., it crashes the whole process and no results will be collected for that spider.
+I suppose it is also possible that something other non-iterable could be there, but it's most likely going to be a string or None. So the pull request is a quick fix that protects against None in the regex builder and a test to ensure that the spider doesn't crash if it encounters None in the list of allowed domains.

@@ -1,0 +1,92 @@
+Contributor
+dsoprea commented on Jun 24, 2019
+I'm having a strange issue where I try to hit either the same server or different servers twice, and the second one always gets a name-resolution failure. This does not happen when I use urllib3. This is specific to Requests, which is queer as Requests uses urllib3.
+This only happens on my build systems. It works as expected locally. Both local and remote are on Requests 2.9.1 .
+It happens in both Python 2.7 and Python 3.
+It happens even when I request SSL from these servers and then get a SSL failure (because these servers aren't configured for it). Even though there is an SSL-related protocol breakdown, the first request fails properly, and the second fails due to no connection.
+Specifically, it's the socket.getaddrinfo call. I tested it directly.. after I due a requests.get(), I do a socket.getaddrinfo() and it fails.
+I've tried with and without using Requests' sessions functionality.
+I've tried requests with and without a "Connection: close" header.
+The results are always identical.
+_LOGGER.info("SENDING REQUEST 1")
+
+try:
+    r = requests.get(url)
+    r.raise_for_status()
+except:
+    _LOGGER.exception("There was a problem.")
+else:
+    raw_response = r.text
+
+    _LOGGER.info("Response:\n=====\n{}\n=====".format(raw_response))
+
+        
+_LOGGER.info("SENDING REQUEST 2")
+
+try:
+    r = requests.get(url)
+    r.raise_for_status()
+except:
+    _LOGGER.exception("There was a problem.")
+else:
+    raw_response = r.text
+
+    _LOGGER.info("Response:\n=====\n{}\n=====".format(raw_response))
+Output:
+04:00:58 INFO:__main__:SENDING REQUEST 1
+04:00:58 INFO:requests.packages.urllib3.connectionpool:Starting new HTTP connection (1): sanitized.url
+04:00:58 DEBUG:requests.packages.urllib3.connectionpool:"GET /CiTriggerService/Notify HTTP/1.1" 405 1741
+04:00:58 ERROR:__main__:There was a problem.
+04:00:58 Traceback (most recent call last):
+04:00:58   File "/tmp/jenkins7232109961798303504.sh", line 36, in <module>
+04:00:58     r.raise_for_status()
+04:00:58   File "/usr/lib/python3/dist-packages/requests/models.py", line 840, in raise_for_status
+04:00:58     raise HTTPError(http_error_msg, response=self)
+04:00:58 requests.exceptions.HTTPError: 405 Client Error: Method Not Allowed for url: http://sanitized.url:9091/CiTriggerService/Notify
+
+04:00:58 INFO:__main__:SENDING REQUEST 2
+04:00:58 INFO:requests.packages.urllib3.connectionpool:Starting new HTTP connection (1): sanitized.url
+04:00:58 ERROR:__main__:There was a problem.
+04:00:58 Traceback (most recent call last):
+04:00:58   File "/usr/lib/python3/dist-packages/urllib3/connection.py", line 137, in _new_conn
+04:00:58     (self.host, self.port), self.timeout, **extra_kw)
+04:00:58   File "/usr/lib/python3/dist-packages/urllib3/util/connection.py", line 67, in create_connection
+04:00:58     for res in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM):
+04:00:58   File "/usr/lib/python3.5/socket.py", line 732, in getaddrinfo
+04:00:58     for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+04:00:58 socket.gaierror: [Errno -2] Name or service not known
+Yet, urllib3 works fine:
+import urllib3
+http = urllib3.PoolManager()
+
+print('')
+print("Request 1:")
+print('')
+
+r = http.request('GET', 'http://sanitized.url:9091/CiTriggerService/Notify')
+print(r.status)
+print(r.data)
+
+http = urllib3.PoolManager()
+
+print('')
+print("Request 2:")
+print('')
+
+r = http.request('GET', 'http://sanitized.url:9091/CiTriggerService/Notify')
+print(r.status)
+print(r.data)
+Output:
+04:12:52 
+04:12:52 Request 1:
+04:12:52 
+04:12:52 405
+04:12:52 b'\xef\xbb\xbf<?xml version="1.0" encoding="utf-8"?>\r\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-
+...
+04:12:52 
+04:12:52 Request 2:
+04:12:52 
+04:12:52 405
+04:12:52 b'\xef\xbb\xbf<?xml version="1.0" encoding="utf-8"?>\r\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-
+...
+I realize that the version that we're running on is quite a bit behind, but, given that it works perfectly fine on my local system at the same version, I doubt that an update would not make a difference and I can't blindly move forward on tweaking our provisioning process without a reason.

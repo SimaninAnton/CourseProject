@@ -1,0 +1,27 @@
+grayfall commented on 31 Jan 2018 •
+edited
+I've accidentally created and trained a model with an Embedding layer with insufficient input dimension size. The model performs great, but I can't wrap my head around the fact, I've encountered no errors. Here is a small reproducible example:
+import numpy as np
+from keras.layers import Embedding, GRU, Input, Dense
+from keras.models import Model
+
+# create 100 random batches of 32 samples, 128 items each
+x = np.random.choice(128, 100*32*128).reshape((100*32, 128))
+y = x[:, 0] % 2
+
+samples = Input(batch_shape=(32, 128))
+embeddings = Embedding(x.max(), 10)(samples)
+rnn = GRU(16)(embeddings)
+labels = Dense(1)(rnn)
+
+model = Model(samples, labels)
+model.compile(optimizer='Adam', loss='binary_crossentropy')
+
+model.fit(x, y, batch_size=32, epochs=3)
+When I run this model on a CPU, I get the expected error:
+InvalidArgumentError (see above for traceback): indices[1,2] = 127 is not in [0, 127)
+  [[Node: embedding_2/Gather = Gather[Tindices=DT_INT32, Tparams=DT_FLOAT, validate_indices=true, _device="/job:localhost/replica:0/task:0/device:CPU:0"](embedding_2/embeddings/read, embedding_2/Cast)]]
+Yet, this same model trains and performs perfectly on a GPU. As far as I understand the Embedding layer calls backend.gather, which in its turn calls tensorflow::ops::Gather if Keras is using the TF backend (this is the case). This operation's documentation states:
+validate_indices: DEPRECATED. If this operation is assigned to CPU, values in indices are always validated to be within range. If assigned to GPU, out-of-bound indices result in safe but unspecified behavior, which may include raising an error
+This explains, why I get the error on a CPU, but I don't quite understand, how it handles the situation on a GPU. I've managed to train a capable model for 30 epochs without ever getting a single error or any performance issues.
+I want to make it clear, that I need to understand how it works to use the weights from the model I've trained. It's a fairly heavy model, so I don't want to waste time retraining it from scratch. Basically, I need to understand how the backend maps the out of range indices (there is only one out of range index in my case) to manually rebuild the embedding layer's weights.

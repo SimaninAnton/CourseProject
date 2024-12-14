@@ -1,0 +1,79 @@
+davidfischer-ch commented on 24 Nov 2014
+I want to partially update a preferences model through a dedicated preferences API endpoint.
+When using the PATCH method of the API I remarked that all boolean fields of the instance not present on the request DATA are updated to False!
+DRF at commit 5b671cb
+Django at commit 5b26a014
+Preliminary analysis : PreferencesSerializerTestCase shows that partial update works, but the test is using a dict as data. The view is actually using a QueryDict and I think this is the only major difference. PreferencesViewTestCase works with the hack'ish implementation but not with the one using DRF.
+Here an extract of my code:
+class Preferences(dj_models.Model):
+    user = dj_models.OneToOneField(settings.AUTH_USER_MODEL, related_name='preferences')
+    language = dj_models.CharField(choices=settings.LANGUAGES, ...)
+    edit = dj_models.BooleanField(default=True, verbose_name=_('Edit'))
+    only_favorites = dj_models.BooleanField(default=False, verbose_name=_('Only favorites'))
+    show_controls = dj_models.BooleanField(default=True, verbose_name=_('Show controls'))
+    show_details = dj_models.BooleanField(default=True, verbose_name=_('Show details'))
+
+
+class PreferencesSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = models.Preferences
+        fields = ('language', 'edit', 'only_favorites', 'show_controls', 'show_details')
+
+
+class PreferencesView(APIView):
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        preferences = models.Preferences.objects.get_or_create(user=request.user)[0]
+        return Response(serializers.PreferencesSerializer(preferences).data)
+
+    def patch(self, request):
+        """The temporary hack that works well."""
+        preferences = models.Preferences.objects.get_or_create(user=request.user)[0]
+        for name in ('edit', 'only_favorites', 'show_controls', 'show_details'):
+            value = request.DATA.get(name, None)
+            if value is not None:
+                setattr(preferences, name, value == 'true')
+        preferences.save()
+        return Response(serializers.PreferencesSerializer(preferences).data)
+
+    def patch_(self, request):
+        """The buggy implementation using DRF that sets booleans to False."""
+        preferences = models.Preferences.objects.get_or_create(user=request.user)[0]
+        serializer = serializers.PreferencesSerializer(preferences, data=request.DATA, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PreferencesSerializerTestCase(mixins.BaseMixin, TestCase):
+
+    def test_partial_update(self):
+        user = G(self.User)
+        preferences = models.Preferences.objects.get_or_create(user=user)[0]
+        preferences.language = 'fr'
+        preferences.edit = False
+        preferences.only_favorites = True
+        preferences.show_controls = False
+        preferences.show_details = False
+        serializer = serializers.PreferencesSerializer(preferences, data={'show_controls': True}, partial=True)
+        self.assertTrue(serializer.is_valid())
+        serializer.save()
+        self.assertEqual(serializer.data['language'], 'fr')
+        self.assertFalse(serializer.data['edit'])
+        self.assertTrue(serializer.data['only_favorites'])
+        self.assertTrue(serializer.data['show_controls'])
+        self.assertFalse(serializer.data['show_details'])
+
+
+class PreferencesViewTestCase(mixins.BaseMixin, APITestCase):
+
+    def test_partial_update(self):
+        self.login()
+        a = self.get('preferences').data
+        a['show_details'] = not a['show_details']
+        b = self.patch('preferences', {'show_details': a['show_details']}).data
+        self.assertDictEqual(a, b)

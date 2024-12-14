@@ -1,0 +1,114 @@
+ruojol commented on 25 Sep 2018 •
+edited
+So I have declared a model as follows paired with a custom generator class.
+The problem is that the fit_generator() never gets past first epoch and eventhough it allocates to my GPU there is no load on GPU -> so propably nothing is happening tried this with multi-CPU and the results are same. Tried changing the batch_size around 2 to 512 but still some other problem lies underneath which I just can't see.
+Running keras 2.2.2
+and tensorflow 1.7.0 (haven't updated to newest because of scared that everything breaks).
+import threading
+class Threadsafe_Iter:
+    def __init__(self, it):
+        self.it = it
+        self.lock = threading.Lock()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self.lock:
+            return self.it.__next__()
+
+
+def threadsafe_generator(f):
+    def g(*a, **kw):
+        return Threadsafe_Iter(f(*a, **kw))
+    return g
+
+@threadsafe_generator
+def custom_generator(data=train, batch_size=32, num_negatives=1):
+    user_input, item_input, labels = data_generator(data, num_negatives)
+    print('generator initiated')
+    X_train = np.array(user_input)
+    Y_train = np.array(item_input)
+    y_train = np.array(labels)
+    idx=0
+    while True:
+        for i in range(p['n_users']):
+            index = np.random.choice(len(labels))
+            X_train[i] = X_train[index]
+            Y_train[i] = Y_train[index]
+            y_train[i] = y_train[index]
+            X = [X_train[:batch_size], Y_train[:batch_size]]
+            y = y_train[:batch_size]
+            if(idx%batch_size == 0):
+                    yield X, y
+                    print('generator yielded a batch %d' % idx)
+                    idx+=1`
+#Model
+def DAE_CF(params):
+    # user input + embeddings
+    user_input = Input(shape=[1], name='user_input')
+    user_embedding = Embedding(input_dim = params['n_users'],
+                               input_length=1,
+                               output_dim=params['n_users'],
+                               embeddings_constraint=non_neg(),
+                               name='User-Embedding')(user_input)
+    h_user = Dropout(0.5)(user_input) # item drop out
+    # Encoding layer
+    encoded = Dense(128, W_regularizer=l2(params['lr']),
+                    b_regularizer=l2(params['lr']))(h_user)
+    encoded = Dense(64, W_regularizer=l2(params['lr']),
+                    b_regularizer=l2(params['lr']))(encoded)
+    encoded = Dense(32, W_regularizer=l2(params['lr']),
+                    b_regularizer=l2(params['lr']))(encoded)
+    # Decoding layer
+    decoded = Dense(32, activation=params['output_activation'])(encoded)
+    decoded = Dense(64, activation=params['output_activation'])(decoded)
+    decoded = Dense(128, activation=params['output_activation'])(decoded)
+    decoded = Dense(h_user._keras_shape[1], activation=params['output_activation'])(decoded)
+    # item input + embedding
+    item_input = Input(shape=[1], dtype='int32', name='item_input')
+    item_embedding = Embedding(input_dim=params['n_movies'],
+                               output_dim=32,
+                               input_length=1,
+                               embeddings_constraint=non_neg(),
+                               W_regularizer=l2(params['lr']),
+                               name='Movie-Embedding')(item_input)      
+    # formerly known as decoded with linear model
+    user_vec = Flatten(name='Flatten_user')(user_embedding) # user bias vector
+    item_vec = Flatten(name='Flatten_items')(item_embedding) # item bias vector
+    #keras 2.2 fix
+    h = add([encoded,item_vec])
+    if params['hidden_activation']:
+        h = keras.layers.Activation(params['hidden_activation'])(h)
+    y = Dense(h_user._keras_shape[1], activation=params['output_activation'],activity_regularizer=l1(params['reg_rate']))(h)
+    autoencoder = Model(input=[user_input, item_input], output=[y]) 
+    
+    # Separate Encoder model
+    encoder = Model(user_input, h_user) #formerly encoded
+    
+    # Separate Decoder model
+    
+    # this model maps an input to its encoded representation
+    encoded_input = Input(shape=[1], name='encoded_input')
+    decoder_layer1 = autoencoder.layers[-10]
+    decoder_layer2 = autoencoder.layers[-9]
+    decoder_layer3 = autoencoder.layers[-8]
+    decoder_layer4 = autoencoder.layers[-7]
+    # create the decoder model
+    decoder = Model(encoded_input,   decoder_layer4(decoder_layer3(decoder_layer2(decoder_layer1(encoded_input)))))
+    return autoencoder, encoder, decoder
+training_generator = custom_generator(train, batch_size=16, num_negatives=1)
+validation_generator = custom_generator(val, batch_size=16, num_negatives=1)
+k=10
+#loss_data = LossHistory()
+start_time = time.time()
+hist = DAE_model[0].fit_generator(training_generator,
+                               steps_per_epoch=train.shape[0] // 16,
+                               #validation_data=validation_generator,
+                               #validation_steps=val.shape[0] // 16,
+                               epochs=1)
+# Evaluate hitrate and loss on test data
+hr = evaluate(DAE_model[0], test, k, metric='hitrate')
+loss = hist.history['loss'][0]
+print("Epoch {}\tloss:{:.3f}\thr:{:.3f}".format(epoch, loss, hr))
+print("--- Training time: %s seconds ---" % (time.time() - start_time))

@@ -1,0 +1,93 @@
+emft commented on 2 Feb 2018
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+Here is a very minimal, vanilla app, test_simple.
+# models.py
+import uuid
+from django.db import models
+class Entity(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+
+# serializers.py
+from rest_framework import serializers
+from test_simple import models
+class EntitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = models.Entity
+        fields = ('id',)
+        extra_kwargs = {'id': {'read_only': True}}
+
+# views.py
+from rest_framework import viewsets
+from test_simple import models, serializers
+class EntityViewSet(viewsets.ModelViewSet):
+    serializer_class = serializers.EntitySerializer
+    queryset = models.Entity.objects.all()
+    def perform_create(self, serializer):
+        # When it fails, it fails here
+        # With Postgres, it fails with `django.db.utils.InterfaceError: connection already closed`
+        # With MySQL, it fails with `django.db.transaction.TransactionManagementError: An error occurred in the current transaction. You can't execute queries until the end of the 'atomic' block.`
+        # With SQLite, it succeeds
+        return super().perform_create(serializer)
+Here are some very simple, vanilla tests on the app.
+from rest_framework.test import APITestCase, APIClient, RequestsClient
+class Test(APITestCase):
+    def test_api_client(self):
+        client = APIClient()
+        response = client.post('/entities/')
+        self.assertEqual(response.status_code, 201)
+    def test_requests_client(self):
+        client = RequestsClient()
+        response = client.post('http://testserver/entities/')
+        self.assertEqual(response.status_code, 201)
+Aside from using different databases as explained below, no settings have been modified -- no authentication, permissioning, etc.
+Expected behavior
+I would expect both tests to pass regardless of the database being used.
+Actual behavior
+When I use SQLite, as per below, both tests pass:
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+    }
+}
+However, when I use Postgres or MySQL as per below, the APIClient test passes but the test using RequestClient fails as noted in the inline comment under perform_create above:
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'test',
+        'USER': 'test_user',
+        'PASSWORD': 'XXXXX',
+        'HOST': '',
+        'PORT': '',
+        'OPTIONS': {
+           'init_command': 'SET default_storage_engine=INNODB',
+        }
+    }
+}
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': 'test',
+        'USER': 'test_user',
+        'PASSWORD': 'XXXXX', 
+        'HOST': '',
+        'PORT': '',
+    }
+}
+In the failing cases, it does successfully connect to the database and build the tables -- and the APIClient test passes -- so it does not appear to be a connection problem.
+I don't believe it's user error, because both tests pass with SQLite.
+Version Info
+Tested with:
+REST Framework 3.7.1 and 3.7.7
+Windows 10, Version 1709
+Django 1.11.6 and 1.11.9
+Postgres 10.1
+MySQL 5.7

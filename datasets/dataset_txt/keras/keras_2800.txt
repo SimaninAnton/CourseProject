@@ -1,0 +1,30 @@
+Ironbell commented on 30 Mar 2017
+First of all, I know that there are already issues open regarding that topic, but their solutions don't solve my problem and I'll explain why.
+The problem is to predict the next n_post steps of a sequence given n_pre steps of it, with n_pre < n_post. I've built a toy example using a simple sine wave to illustrate it. The many to one forecast (n_pre=50, n_post=1) works perfectly:
+model = Sequential()  
+model.add(LSTM(input_dim=1, output_dim=hidden_neurons, return_sequences=False))  
+model.add(Dense(1))
+model.add(Activation('linear'))   
+model.compile(loss='mean_squared_error', optimizer='rmsprop', metrics=['accuracy'])  
+Also, the many to many forecast with (n_pre=50, n_post=50) gives a near perfect fit:
+model = Sequential()  
+model.add(LSTM(input_dim=1, output_dim=hidden_neurons, return_sequences=True))  
+model.add(TimeDistributed(Dense(1)))
+model.add(Activation('linear'))   
+model.compile(loss='mean_squared_error', optimizer='rmsprop', metrics=['accuracy'])  
+But now assume we have data that looks like this:
+dataX or input: (nb_samples, nb_timesteps, nb_features) -> (1000, 50, 1)
+dataY or output: (nb_samples, nb_timesteps, nb_features) -> (1000, 10, 1)
+The solution given in #2403 is to build the model like this:
+model = Sequential()  
+model.add(LSTM(input_dim=1, output_dim=hidden_neurons, return_sequences=False))  
+model.add(RepeatVector(10))
+model.add(TimeDistributed(Dense(1)))
+model.add(Activation('linear'))   
+model.compile(loss='mean_squared_error', optimizer='rmsprop', metrics=['accuracy'])  
+Well, it compiles and trains, but the prediction is really bad:
+My explanation to this is: The network has only one piece of information (no return_sequences) at the end of the LSTM layer, repeats this output_dimension-times and then tries to fit. The best guess it can give is the average of all the points to predict as it doesn't know whether it is currently going down or up in the sinus wave, it loses this information with return_sequences=False!
+So, my final question is: How can I keep this information and let the LSTM layer return a part of its sequence? Because I don't want to fit it to n_pre=50 time steps but only to 10 because in my problem, the points are not so nicely correlated as in the sine wave of course. Currently I just give 50 points and then crop the output (after training) to 10 but it still tries to fit to all 50, which distorts the result.
+Any help would be greatly appreciated!
+4
+3

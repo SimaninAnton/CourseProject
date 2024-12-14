@@ -1,0 +1,39 @@
+KlaymenGC commented on 20 Feb 2017
+Hello,
+I want to get the gradients after every convolution layer wrt the feature maps with:
+model = ... # trained model with input shape (1, 1, 32, 32)
+
+# get conv layers outputs
+conv_output_tensor = [model.layers[i].output for i in range(1, len(model.layers)) if 'conv' in model.layers[i].name]
+# output of two conv layers are of shape (1, 32, 26, 26) and (1, 32, 24, 24)
+get_conv_layer_output = K.function([model.layers[0].input], conv_output_tensor)
+
+# calculate gradient wrt feature maps
+grads_wrt_feature_map = model.optimizer.get_gradients(model.total_loss, conv_output_tensor)
+
+input_tensors = [model.inputs[0], # input data
+                 model.sample_weights[0], # sample weights
+                 model.targets[0], # labels
+                 K.learning_phase(), # train/test
+]
+
+f_get_grad_wrt_feature_map = K.function(inputs=input_tensors, outputs=grads_wrt_feature_map)
+
+inputs = [ X, # input, shape (1, 1, 32, 32)
+          [1], # sample weights
+          [[2]], # y
+          0] # test mode
+get_gradients = f_get_grad_wrt_feature_map(inputs)
+But somehow I got input dimension mis-match error in Theano:
+ValueError: Input dimension mis-match. (input[0].shape[1] = 10, input[3].shape[1] = 1)
+Apply node that caused the error: Elemwise{Composite{((i0 * i1 * i2 * i3 * i4) / (i5 * i6 * i7 * i8 * i8))}}(Elemwise{Composite{AND(GE(i0, i1), LE(i0, i2))}}.0, Elemwise{Cast{float32}}.0, InplaceDimShuffle{0,x}.0, activation_4_target, SoftmaxWithBias.0, Elemwise{Cast{float32}}.0, InplaceDimShuffle{x,x}.0, Elemwise{Clip}[(0, 0)].0, InplaceDimShuffle{0,x}.0)
+Toposort index: 60
+Inputs types: [TensorType(int8, matrix), TensorType(float32, (True, True)), TensorType(float32, col), TensorType(float32, matrix), TensorType(float32, matrix), TensorType(float32, (True, True)), TensorType(float32, (True, True)), TensorType(float32, matrix), TensorType(float32, col)]
+Inputs shapes: [(1, 10), (1, 1), (1, 1), (1, 1), (1, 10), (1, 1), (1, 1), (1, 10), (1, 1)]
+Inputs strides: [(10, 1), (4, 4), (4, 4), (4, 4), (40, 4), (4, 4), (4, 4), (40, 4), (4, 4)]
+Inputs values: ['not shown', array([[ 1.]], dtype=float32), array([[ 1.]], dtype=float32), array([[ 2.]], dtype=float32), 'not shown', array([[ 1.]], dtype=float32), array([[ 1.]], dtype=float32), 'not shown', array([[ 1.]], dtype=float32)]
+Outputs clients: [[Sum{axis=[1], acc_dtype=float64}(Elemwise{Composite{((i0 * i1 * i2 * i3 * i4) / (i5 * i6 * i7 * i8 * i8))}}.0)]]
+
+HINT: Re-running with most Theano optimization disabled could give you a back-trace of when this node was created. This can be done with by setting the Theano flag 'optimizer=fast_compile'. If that does not work, Theano optimizations can be disabled with 'optimizer=None'.
+HINT: Use the Theano flag 'exception_verbosity=high' for a debugprint and storage map footprint of this apply node.
+Any ideas?

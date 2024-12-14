@@ -1,0 +1,21 @@
+hartwork commented on 16 Mar 2018
+Hi!
+There is a bug in acme.Client.__init__. When called with net=None, self.net is first initialited with a new instance of ClientNetwork but then net (rather than self.net) is pass to ClientBase.__init__ which sets self.net back to None. The breaking code was introduced in 9baf75d and is this:
+class ClientBase(object):  # pylint: disable=too-many-instance-attributes
+    [..]
+    def __init__(self, directory, net, acme_version):
+        [..]
+        self.net = net
+[..]
+class Client(ClientBase):
+    [..]
+    def __init__(self, directory, key, alg=jose.RS256, verify_ssl=True,
+                 net=None):
+        [..]
+        self.net = ClientNetwork(key, alg=alg, verify_ssl=verify_ssl) if net is None else net
+        [..]
+        super(Client, self).__init__(directory=directory,
+            net=net, acme_version=1)
+As a result, calling .register(...) on the client will raise AttributeError: 'NoneType' object has no attribute 'post' which breaks wile, see costela/wile#34.
+One way to fix the issue is to change net=net to self.net=net in the line using super. I could provide a pull request to do that if that's the way you want to patch it.
+What do you think?

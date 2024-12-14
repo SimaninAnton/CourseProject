@@ -1,0 +1,66 @@
+fcharras commented on Nov 18, 2017 •
+edited
+Description
+Because of how joblib hash inputs, and how joblib is used in Pipeline, it might happen that if the versions from the transformers in the Pipeline have changed, the Pipeline will still load from cache the output of the previous versions.
+Steps/Code to Reproduce
+Here's a minimal example to explain this behavior. It follow the structure of the code in the Pipeline (see
+scikit-learn/sklearn/pipeline.py
+Line 579 in a13a7d8
+ def _fit_transform_one(transformer, weight, X, y, 
+).
+from sklearn.externals import joblib
+from sklearn.base import TransformerMixin, BaseEstimator
+from sklearn.utils.testing import assert_equal
+
+
+def call_some_operations(some_class, *args):
+    '''
+    Return some_class.some_operations(*args)
+    Could be _fit_transform_one called on an estimator.
+    '''
+    return some_class.some_operations(*args)
+
+
+class A(BaseEstimator, TransformerMixin):
+    '''
+    Some minimal class, that could be a sklearn estimator.
+    '''
+
+    def __init__(self, a):
+        self.a = a
+
+    def some_operations(self, b):
+        return self.a + b
+
+
+# create memoîzed version of call_some_operations:
+mem = joblib.Memory('/tmp')
+call_some_operations_memoized = mem.cache(call_some_operations)
+
+a = A(1)
+result = call_some_operations_memoized(a, 2)
+assert_equal(result, 1+2)
+
+
+# Redefine A
+class A(BaseEstimator, TransformerMixin):
+
+    def __init__(self, a):
+        self.a = a
+
+    def some_operations(self, b):
+        return self.a + b + 1  # notice that this changed
+
+
+mem = joblib.Memory('/tmp')
+call_some_operations_memoized = mem.cache(call_some_operations)
+
+a = A(1)
+result = call_some_operations_memoized(a, 2)
+Expected Results
+In the last line result == 4
+Actual Results
+In the last line result == 3 i.e the value cached during the call of the previous version of A.
+More generally, a reset of the cache will be triggered only if attributes or methods of A are added or removed.
+Following those observations, and #10068, I'd like to submit a few documentation changes to warn the user that the cache, which is by default permanent, should be wiped when versions of the transformers in the Pipeline have changed.
+More broadly should this be considered as a bug ?

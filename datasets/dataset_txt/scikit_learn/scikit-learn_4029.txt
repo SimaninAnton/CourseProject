@@ -1,0 +1,71 @@
+Contributor
+jamestwebber commented on Feb 9, 2015
+Per @GaelVaroquaux's comment in #1059, I'm opening a new ticket for this.
+If I try to use LassoCV or ElasticNetCV to fit a target of uniform values, it will fail to properly initialize and this leads to an unassigned variable in the fit() method. This seems to be happening because it tries to pick the alpha values based on the range of the target vector (see this line) and that leads to a bunch of NaNs, which leads to trouble in this comparison because NaN is not less than Inf and so best_l1_ratio, etc are never assigned.
+One possible fix would be at coordinate_descent.py#L100, changing that so it doesn't run into numerical problems.
+Code to reproduce (this was with version 0.15.1 but it doesn't look like this has been fixed since then):
+import numpy as np
+
+from sklearn.linear_model import ElasticNetCV, LassoCV
+
+enet = ElasticNetCV()
+
+X = np.random.random(size=(5,5))
+
+y = np.zeros(5)
+
+enet.fit(X, y)
+/usr/local/Cellar/python/2.7.6/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.py:100: RuntimeWarning: divide by zero encountered in log10
+  alphas = np.logspace(np.log10(alpha_max * eps), np.log10(alpha_max),
+/usr/local/Cellar/python/2.7.6/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/numpy/core/function_base.py:87: RuntimeWarning: invalid value encountered in double_scalars
+  step = (stop-start)/float((num-1))
+/usr/local/Cellar/python/2.7.6/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.py:479: UserWarning: Coordinate descent with alpha=0 may lead to unexpected results and is discouraged.
+  coef_, l1_reg, l2_reg, X, y, max_iter, tol, positive)
+---------------------------------------------------------------------------
+UnboundLocalError                         Traceback (most recent call last)
+<ipython-input-6-290bc86de561> in <module>()
+----> 1 enet.fit(X, y)
+
+/usr/local/Cellar/python/2.7.6/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.pyc in fit(self, X, y)
+   1113                 best_mse = this_best_mse
+   1114 
+-> 1115         self.l1_ratio_ = best_l1_ratio
+   1116         self.alpha_ = best_alpha
+   1117         if self.alphas is None:
+
+UnboundLocalError: local variable 'best_l1_ratio' referenced before assignment
+
+lasso = LassoCV()
+
+lasso.fit(X,y)
+---------------------------------------------------------------------------
+UnboundLocalError                         Traceback (most recent call last)
+<ipython-input-9-5cdf793e8cfd> in <module>()
+----> 1 lasso.fit(X,y)
+
+/usr/local/Cellar/python/2.7.6/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.pyc in fit(self, X, y)
+   1113                 best_mse = this_best_mse
+   1114 
+-> 1115         self.l1_ratio_ = best_l1_ratio
+   1116         self.alpha_ = best_alpha
+   1117         if self.alphas is None:
+
+UnboundLocalError: local variable 'best_l1_ratio' referenced before assignment
+
+y = np.ones(5)
+
+lasso.fit(X,y)
+---------------------------------------------------------------------------
+UnboundLocalError                         Traceback (most recent call last)
+<ipython-input-11-5cdf793e8cfd> in <module>()
+----> 1 lasso.fit(X,y)
+
+/usr/local/Cellar/python/2.7.6/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/sklearn/linear_model/coordinate_descent.pyc in fit(self, X, y)
+   1113                 best_mse = this_best_mse
+   1114 
+-> 1115         self.l1_ratio_ = best_l1_ratio
+   1116         self.alpha_ = best_alpha
+   1117         if self.alphas is None:
+
+UnboundLocalError: local variable 'best_l1_ratio' referenced before assignment
+👍 1

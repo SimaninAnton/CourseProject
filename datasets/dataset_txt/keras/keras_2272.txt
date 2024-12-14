@@ -1,0 +1,39 @@
+pierluigic commented on 29 May 2017
+Hi, I hope someone can help me, I passed a month trying to implement this https://arxiv.org/abs/1603.01354 . The task is NER, so sequence labelling, I'm trying my model on CoNLL-2003 data, I implement everything like in the paper, the model should reach a F1-measure of 91.2 on test data, but my model in Keras reach only 77.8 . I find the code of the paper's author so the text preprocessing is the same and the weights for the Embedding layer is the same. For the CRF layer I use the implementation of @phipleg Hope someone can help me, thanks.
+EMBEDDING_WORD_DIM= 100
+EMBEDDING_CHAR_DIM= 30
+N_FILTERS=30
+window=3
+embedding_char= True
+
+class Model(object):
+    def __init__(self, embedding_weights, dictonary_size, MAX_SEQUENCE_LENGTH,MAX_CHARACTER_LENGTH, alfabeth_size, tags):
+       word_input= Input((MAX_SEQUENCE_LENGTH,))
+       embed_out=Embedding(dictonary_size+1,
+                                EMBEDDING_WORD_DIM, 
+                                weights=[embedding_weights],
+                                        input_length=MAX_SEQUENCE_LENGTH)(word_input)
+       word=TimeDistributed(Flatten())(embed_out)
+       if embedding_char:
+           character_input=Input((MAX_SEQUENCE_LENGTH,MAX_CHARACTER_LENGTH,))
+           embed_char_out=TimeDistributed(Embedding(alfabeth_size+1,
+                                      EMBEDDING_CHAR_DIM,
+                                      embeddings_initializer=RandomUniform(-sqrt(3/EMBEDDING_CHAR_DIM),sqrt(3/EMBEDDING_CHAR_DIM))))(character_input)
+           dropout= Dropout(0.5)(embed_char_out)
+           conv1d_out= TimeDistributed(Convolution1D(nb_filter=N_FILTERS, filter_length=2*window+1, border_mode='same',activation='tanh', subsample_length=1))(dropout)
+           maxpool_out=TimeDistributed(MaxPooling1D(MAX_CHARACTER_LENGTH))(conv1d_out)
+           char= TimeDistributed(Flatten())(maxpool_out)
+           themodel= concatenate([word,char])
+       else:
+           themodel=embed_out
+       themodel= Dropout(0.5)(themodel)   
+       themodel= Bidirectional(LSTM(200, return_sequences=True))(themodel)
+       themodel= Dropout(0.5)(themodel)
+       themodel= TimeDistributed(Dense(tags))(themodel)
+       crf=ChainCRF()
+       output= crf(themodel)
+       if embedding_char:
+           self.model= KerasModel(inputs=[word_input,character_input],outputs=output)
+       else:
+           self.model= KerasModel(inputs=[word_input],outputs=output)
+       self.model.compile(loss=crf.sparse_loss, optimizer=SGD(lr=0.015,decay=0.05,momentum=0.9,clipvalue=5.0))

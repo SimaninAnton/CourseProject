@@ -1,0 +1,53 @@
+Contributor
+xiaohanyu commented on 20 Jan 2016
+I've drafted a API with DRF, and there're two models, django.contrib.auth.models.User and Customer, code for Customer model:
+from django.db import models
+from django.contrib.auth.models import User
+
+
+class Customer(models.Model):
+    SEXES = (
+        ('Male', 'Male'),
+        ('Female', 'Female'),
+    )
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    sex = models.CharField(max_length=10, choices=SEXES)
+    mobile_number = models.CharField(max_length=20, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __unicode__(self):
+        return u'<%s, %s, %s>' % (self.user.username, self.sex,
+                                  self.mobile_number)
+Note that Customer has a user = models.OneToOneField(User, on_delete=models.CASCADE) field, thus we can still use django's built authentication while add some extra field to our own Customer model.
+The code for CustomerSerializer:
+class CustomerSerializer(serializers.HyperlinkedModelSerializer):
+    created_at = serializers.DateTimeField(read_only=True,
+                                           format='%Y-%m-%dT%H:%M:%SZ')
+    updated_at = serializers.DateTimeField(read_only=True,
+                                           format='%Y-%m-%dT%H:%M:%SZ')
+    mobile_number = serializers.CharField(min_length=6, max_length=20,
+                validators=[UniqueValidator(queryset=Customer.objects.all())])
+    username = serializers.CharField(source='user.username',
+                validators=[UniqueValidator(queryset=User.objects.all())])
+    email = serializers.CharField(source='user.email')
+    first_name = serializers.CharField(source='user.first_name')
+    last_name = serializers.CharField(source='user.last_name')
+    password = serializers.CharField(source='user.password',
+                                     min_length=6, max_length=32,
+                                     write_only=True)
+
+    ...
+But when I work with CustomerSerializer, it will raise an exception:
+E                   FieldError: Cannot resolve keyword u'user' into field. Choices are: auth_token, customer, date_joined, email, first_name, groups, id, is_active, is_staff, is_superuser, last_login, last_name, logentry, masseuse, password, user_permissions, username
+I've checked DRF's code, and I think this exception comes from https://github.com/tomchristie/django-rest-framework/blob/master/rest_framework/validators.py#L38
+        self.field_name = serializer_field.source_attrs[0]
+I've read DRF's documentation: http://www.django-rest-framework.org/api-guide/fields/, it says
+source
+The name of the attribute that will be used to populate the field. May be a method that only takes a self argument, such as URLField(source='get_absolute_url'), or may use dotted notation to traverse attributes, such as EmailField(source='user.email').
+And for EmailField(source='user.email'), the code self.field_name = serializer_field.source_attrs[0] will return user instead of email, which is not right and will lead to a FieldError.
+For my case,
+    username = serializers.CharField(source='user.username',
+                validators=[UniqueValidator(queryset=User.objects.all())])
+I think it's better to change self.field_name = serializer_field.source_attrs[0] to self.field_name = serializer_field.source_attrs[-1].

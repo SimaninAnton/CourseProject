@@ -1,0 +1,37 @@
+Contributor
+carsonyl commented on Sep 17, 2016
+The following snippet raises an exception on Windows, using the embedded distribution of Python 3.5.2 x64:
+from concurrent.futures import ThreadPoolExecutor
+import requests
+def task(_):
+    return requests.get("https://example.org").reason
+
+executor = ThreadPoolExecutor(max_workers=2)
+for x in executor.map(task, [(1,), (1,),]):
+    print(x)
+OK
+Traceback (most recent call last):
+  File "repro.py", line 7, in <module>
+    for x in executor.map(task, [(1,), (1,),]):
+  File "concurrent\futures\_base.py", line 556, in result_iterator
+  File "concurrent\futures\_base.py", line 398, in result
+  File "concurrent\futures\_base.py", line 357, in __get_result
+  File "concurrent\futures\thread.py", line 55, in run
+  File "repro.py", line 4, in task
+    return requests.get("https://example.org").reason
+  File "K:\PR\pybug\requests\api.py", line 70, in get
+    return request('get', url, params=params, **kwargs)
+  File "K:\PR\pybug\requests\api.py", line 56, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "K:\PR\pybug\requests\sessions.py", line 461, in request
+    prep = self.prepare_request(req)
+  File "K:\PR\pybug\requests\sessions.py", line 394, in prepare_request
+    hooks=merge_hooks(request.hooks, self.hooks),
+  File "K:\PR\pybug\requests\models.py", line 294, in prepare
+    self.prepare_url(url, params)
+  File "K:\PR\pybug\requests\models.py", line 361, in prepare_url
+    host = host.encode('idna').decode('utf-8')
+LookupError: unknown encoding: idna
+This problem seems specific to the standard library being inside a zip file in the embedded distribution, as I couldn't reproduce this in regular distributions, or when Python35.zip is extracted out to Lib.
+import encodings.idna succeeds. Doing this in the main thread prior to launching the workers will avoid this problem, as per http://stackoverflow.com/a/13057751. Though it looks like the str.encode() call is the culprit, changing my task function to be 'foo'.encode('idna') doesn't trigger the exception.
+I've tested this using Requests 2.10.0 and 2.11.1. This is also reproducible using multiprocessing.pool.ThreadPool.

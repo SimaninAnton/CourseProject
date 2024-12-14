@@ -1,0 +1,30 @@
+huntc commented on Oct 28, 2016
+When subscribing to a Server Sent Events endpoint, I notice an error given the processing of a heartbeat. Heartbeats in SSE can be sent as an empty line. Consider the following SSE reply for chunked transfer encoding:
+    00000000  48 54 54 50 2f 31 2e 31  20 32 30 30 20 4f 4b 0d HTTP/1.1  200 OK.
+    00000010  0a 53 65 72 76 65 72 3a  20 6f 70 65 6e 72 65 73 .Server:  openres
+    00000020  74 79 2f 31 2e 39 2e 31  35 2e 31 0d 0a 44 61 74 ty/1.9.1 5.1..Dat
+    00000030  65 3a 20 46 72 69 2c 20  32 38 20 4f 63 74 20 32 e: Fri,  28 Oct 2
+    00000040  30 31 36 20 30 32 3a 33  39 3a 35 34 20 47 4d 54 016 02:3 9:54 GMT
+    00000050  0d 0a 43 6f 6e 74 65 6e  74 2d 54 79 70 65 3a 20 ..Conten t-Type: 
+    00000060  74 65 78 74 2f 65 76 65  6e 74 2d 73 74 72 65 61 text/eve nt-strea
+    00000070  6d 0d 0a 54 72 61 6e 73  66 65 72 2d 45 6e 63 6f m..Trans fer-Enco
+    00000080  64 69 6e 67 3a 20 63 68  75 6e 6b 65 64 0d 0a 43 ding: ch unked..C
+    00000090  6f 6e 6e 65 63 74 69 6f  6e 3a 20 6b 65 65 70 2d onnectio n: keep-
+    000000A0  61 6c 69 76 65 0d 0a 0d  0a                      alive... .
+    000000A9  31 0d 0a 0a 0d 0a                                1.....
+With the last line, the 31 indicates that there is just one byte to receive (ASCII 1). The chunked size is then followed by a CRLF and then the empty line (LF), followed again by a CRLF.
+This appears to cause the following stacktrace:
+  ...
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/requests/utils.py", line 377, in stream_decode_response_unicode
+    for chunk in iterator:
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/requests/models.py", line 676, in generate
+    for chunk in self.raw.stream(chunk_size, decode_content=True):
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 353, in stream
+    for line in self.read_chunked(amt, decode_content=decode_content):
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 502, in read_chunked
+    self._update_chunk_length()
+  File "/Library/Frameworks/Python.framework/Versions/3.5/lib/python3.5/site-packages/requests/packages/urllib3/response.py", line 448, in _update_chunk_length
+    line = self._fp.fp.readline()
+AttributeError: 'NoneType' object has no attribute 'readline'
+What I'm left wondering is whether chunked responses that only contain a newline cause the requests library a problem.
+I'm using requests 2.11.1.

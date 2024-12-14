@@ -1,0 +1,41 @@
+lxtsina commented on Oct 13, 2017 •
+edited
+when i debug the spider process ,it show (self._sock.recv() ? blocked):
+(gdb) py-bt
+#5 Frame 0x3c68ab0, for file /usr/lib64/python2.7/socket.py, line 476, in readline (self=<_fileobject at remote 0x3bb92d0>, size=65537, buf=<cStringIO.StringO at remote 0x3bca1f0>, buf_len=0)
+data = self._sock.recv(self._rbufsize)
+#9 Frame 0x3c688b0, for file /usr/lib64/python2.7/httplib.py, line 400, in _read_status (self=<HTTPResponse(fp=<_fileobject at remote 0x3bb92d0>, status='UNKNOWN', will_close='UNKNOWN', chunk_left='UNKNOWN', length='UNKNOWN', strict=0, reason='UNKNOWN', version='UNKNOWN', debuglevel=0, msg=None, chunked='UNKNOWN', _method='POST') at remote 0x3bc8d40>)
+line = self.fp.readline(_MAXLINE + 1)
+......
+(gdb) info threads
+Id Target Id Frame
+1 Thread 0x7f125c92f740 (LWP 29841) "python2" 0x00007f125c142a9b in __libc_recv (fd=19, buf=buf@entry=0x3c70b44, n=n@entry=8192, flags=flags@entry=0) at ../sysdeps/unix/sysv/linux/x86_64/recv.c:33
+(gdb) py-list
+471 self._rbuf.write(buf.read())
+472 return rv
+473 self._rbuf = StringIO() # reset _rbuf. we consume it via buf.
+474 while True:
+475 try:
+476 data = self._sock.recv(self._rbufsize) #blocked here
+477 except error, e:
+478 if e.args[0] == EINTR:
+the parse spider source file ,i have add timeout like this(why it not exit?) :
+class SinbotSpider(scrapy.Spider):
+name = "sinbot"
+allowed_domains = []
+def __init__(self, start_url, tid, timeout=2400, **kwargs):
+    super(SinbotSpider, self).__init__()
+
+    self.logger.debug('TIMEOUT=%s' %timeout)
+    self.logger.debug('the param is %s' % start_url)
+    self.start_url = start_url
+    self.tid = tid
+    self.timeout = int(timeout)
+    ....
+def parse(self, response):
+    cur_time = time.time()
+    dif_time = cur_time - self.start_time
+    if dif_time - self.timeout > 0:
+        self.logger.info('time exceed the time limit.')
+        return
+     ....

@@ -1,0 +1,58 @@
+JoshuaC3 commented on Sep 24, 2017 •
+edited by jnothman
+Description
+Using a cross-validation iterator behaves differently when using it with cross_val_score, then when you iterate over the returned indices. This seems to be contradictory to what is implied in the code snippet here.
+The reasons for not just using cross_val_score are that I wish to go on to use the more complex TimeSeriesSplit, which does not play nicely with the cross_val_predict. Therefore, to get my predictions out I need to iterate over the KFolds/TimeSeriesSplit.
+Steps/Code to Reproduce
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+
+from sklearn.model_selection import cross_val_score, cross_val_predict, KFold
+from sklearn.metrics import median_absolute_error as mae
+from sklearn.datasets import load_boston
+
+boston = load_boston()
+target = boston['target']
+data = boston['data']
+columns = boston['feature_names']
+
+data = (pd.DataFrame(data, columns=columns)
+          .join(pd.DataFrame(target, columns=['target'])))
+
+kf = KFold(n_splits=5)
+xgbr = xgb.XGBRegressor()
+
+cv_results = cross_val_score(xgbr, data.drop('target', axis=1), data.target, cv=kf,
+                             scoring='neg_mean_absolute_error')
+print('CVS with KFold: %f' % -np.mean(cv_results))
+
+cv_pred = cross_val_predict(xgbr, data.drop('target', axis=1), data.target, cv=kf)
+print('CVP with KFold: %f' % mae(data.target, cv_pred))
+
+results_cv2 = []
+
+for ts, vs in kf.split(X=data.drop('target', axis=1)):
+    
+    X, y = data.drop('target', axis=1).iloc[ts], data.iloc[ts].target
+    X_val, y_val = data.drop('target', axis=1).iloc[vs], data.iloc[vs].target
+    
+    xgbr.fit(X,y)
+    pred = xgbr.predict(X_val)
+    
+    results_cv2.append(mae(y_val, pred))
+
+print('Kfold iterated: %f' %np.mean(results_cv2))
+Expected Results
+I would expect them to behave and score exactly the same.
+Actual Results
+CVS with KFold: 2.922614
+CVP with KFold: 2.154790
+Kfold iterated: 2.188556
+Versions
+Linux-4.4.0-96-generic-x86_64-with-Ubuntu-16.04-xenial
+Python 3.5.2 (default, Nov 17 2016, 17:05:23)
+[GCC 5.4.0 20160609]
+NumPy 1.13.1
+SciPy 0.19.1
+Scikit-Learn 0.19.0

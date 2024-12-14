@@ -1,0 +1,44 @@
+mjs-wpi commented on 18 Feb 2017 •
+edited
+I'm training a 5-class classification model that uses a generator to balance batches during training; every batch contains the same number of examples from each class.
+My Accuracy on the Training Set is 80% and my accuracy on the Validation Set is 35%. Here is the problem: when I construct a confusions matrix on the Training Set, accuracy appears to be way less than what the verbose=1 flag is reporting as my accuracy (confusion matrix = 25%).
+My question is what could be going wrong? Why is the accuracy on the training set during training different from accuracy reported on the training set in the final confusion matrix? Is this a problem with my generator?
+def training_gen(batchsize = 100):
+
+    lengths = {}
+    order = {}
+    index = {}
+    for i in ['S1_64.npz', 'S2_64.npz', 'S3_64.npz', 'R_64.npz', 'W_64.npz']:
+        with np.load('./' + i) as data:
+            lengths[i] = data['Y'].shape[0]
+            order[i] = np.random.permutation(lengths[i]) - 1
+            index[i] = 0
+
+    xbatch_dict = {}
+    ybatch_dict = {}
+
+    while 1:
+        for i in ['S1_64.npz', 'S2_64.npz', 'S3_64.npz', 'R_64.npz', 'W_64.npz']:
+            with np.load('./' + i) as data:
+                xbatch_dict[i] = data['X'][order[i][index[i]:index[i] + int(batchsize/5)],:,:]
+                ybatch_dict[i] = data['Y'][order[i][index[i]:index[i] + int(batchsize/5)],:]
+                index[i] += int(batchsize/5)
+
+        xbatch = np.vstack(list(xbatch_dict.values()))
+        ybatch = np.vstack(list(ybatch_dict.values()))
+        yield xbatch, ybatch                                                                                                                                                    
+
+        del (xbatch, ybatch)
+
+        flag = 0
+        for i in ['S1_64.npz', 'S2_64.npz', 'S3_64.npz', 'R_64.npz', 'W_64.npz']:
+            if index[i] >= max(lengths.values()):
+                flag = 1
+                break
+            if index[i] + int(batchsize/5) - 1 > lengths[i]:
+                index[i] = 0
+
+        if flag == 1:
+            for i in ['S1_64.npz', 'S2_64.npz', 'S3_64.npz', 'R_64.npz', 'W_64.npz']:
+                index[i] = 0
+                order[i] = np.random.shuffle(order[i])

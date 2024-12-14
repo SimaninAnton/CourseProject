@@ -1,0 +1,23 @@
+ojomio commented on 8 Apr 2015
+I have a situation in which one faulty request stops all my application. The traceback is as follows
+ERROR:[tornado.application][ioloop.py:585]:Exception in callback (14, <function wrap.<locals>.null_wrapper at 0x7f4b2008dbf8>)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.4/dist-packages/tornado/ioloop.py", line 837, in start
+    handler_func(fd_obj, events)
+  File "/usr/local/lib/python3.4/dist-packages/tornado/stack_context.py", line 275, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/usr/local/lib/python3.4/dist-packages/tornado/curl_httpclient.py", line 138, in _handle_events
+    self._finish_pending_requests()
+  File "/usr/local/lib/python3.4/dist-packages/tornado/curl_httpclient.py", line 197, in _finish_pending_requests
+    self._process_queue()
+  File "/usr/local/lib/python3.4/dist-packages/tornado/curl_httpclient.py", line 215, in _process_queue
+    curl.info["headers"])
+  File "/usr/local/lib/python3.4/dist-packages/tornado/curl_httpclient.py", line 278, in _curl_setup_request
+    curl.setopt(pycurl.URL, native_str(request.url))
+UnicodeEncodeError: 'ascii' codec can't encode character '\u2116' in position 73: ordinal not in range(128)
+As I understand, in CurlAsyncHTTPClient._handle_socket() there is a line
+ self.io_loop.add_handler(fd, self._handle_events,
+                                     ioloop_event)
+which adds a handler on some FD events to IOLoop. So when an event is processed it is basically in no context other than bare IOLoop.
+If an exception occurs in such a handler Tornado does not handle it and neither does it call handle_response() defined in AsyncHTTPClient.fetch() thus leaving the associated Future unfinished(future leaks!)
+When my application waits all coroutines in a yield list_ construct it lacks one which called faulty request and hangs :(

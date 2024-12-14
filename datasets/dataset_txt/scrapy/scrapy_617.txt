@@ -1,0 +1,98 @@
+Contributor
+redapple commented on May 30, 2017
+Originally from https://stackoverflow.com/questions/44259172/scrapy-twisted-internet-defer-defgen-return-exception
+When a scrapy.Request is created with a callback that is a string (and not a callable),
+callback (callable) – the function that will be called with the response of this request (once its downloaded) as its first parameter.
+Twisted chokes with a confusing twisted.internet.defer._DefGen_Return exception traceback.
+The error of using a string for a callback comes from allowing a string in CrawlSpider rules.
+callback is a callable or a string (in which case a method from the spider object with that name will be used) to be called for each link extracted with the specified link_extractor.
+Suggestion
+either allow callback to be string and matched with a spider method, like in CrawlSpider rules
+or fail earlier in scrapy.Request.__init__() if a non-None callback is not callable
+How to reproduce
+$ scrapy version -v
+Scrapy    : 1.4.0
+lxml      : 3.7.3.0
+libxml2   : 2.9.3
+cssselect : 1.0.1
+parsel    : 1.2.0
+w3lib     : 1.17.0
+Twisted   : 17.1.0
+Python    : 3.6.0+ (default, Feb 24 2017, 17:40:01) - [GCC 6.2.0 20161005]
+pyOpenSSL : 17.0.0 (OpenSSL 1.0.2g  1 Mar 2016)
+Platform  : Linux-4.8.0-53-generic-x86_64-with-debian-stretch-sid
+
+
+$ cat noncallable/spiders/example.py 
+# -*- coding: utf-8 -*-
+import scrapy
+
+
+class ExampleSpider(scrapy.Spider):
+    name = 'example'
+    start_urls = ['http://example.com/']
+
+    def parse(self, response):
+        yield scrapy.Request('http://httpbin.org/get?q=1', callback='parse_item')
+
+    def parse_item(self, response):
+        pass
+
+
+$ scrapy crawl example
+2017-05-30 16:04:47 [scrapy.utils.log] INFO: Scrapy 1.4.0 started (bot: noncallable)
+(...)
+2017-05-30 16:04:48 [scrapy.core.engine] INFO: Spider opened
+2017-05-30 16:04:48 [scrapy.extensions.logstats] INFO: Crawled 0 pages (at 0 pages/min), scraped 0 items (at 0 items/min)
+2017-05-30 16:04:48 [scrapy.extensions.telnet] DEBUG: Telnet console listening on 127.0.0.1:6023
+2017-05-30 16:04:48 [scrapy.core.engine] DEBUG: Crawled (404) <GET http://example.com/robots.txt> (referer: None)
+2017-05-30 16:04:48 [scrapy.core.engine] DEBUG: Crawled (200) <GET http://example.com/> (referer: None)
+2017-05-30 16:04:49 [scrapy.core.engine] DEBUG: Crawled (200) <GET http://httpbin.org/robots.txt> (referer: None)
+2017-05-30 16:04:49 [scrapy.core.engine] DEBUG: Crawled (200) <GET http://httpbin.org/get?q=1> (referer: http://example.com/)
+2017-05-30 16:04:49 [scrapy.core.scraper] ERROR: Spider error processing <GET http://httpbin.org/get?q=1> (referer: http://example.com/)
+Traceback (most recent call last):
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/twisted/internet/defer.py", line 1301, in _inlineCallbacks
+    result = g.send(result)
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/scrapy/core/downloader/middleware.py", line 43, in process_request
+    defer.returnValue((yield download_func(request=request,spider=spider)))
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/twisted/internet/defer.py", line 1278, in returnValue
+    raise _DefGen_Return(val)
+twisted.internet.defer._DefGen_Return: <200 http://httpbin.org/get?q=1>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/scrapy/utils/defer.py", line 45, in mustbe_deferred
+    result = f(*args, **kw)
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/scrapy/core/spidermw.py", line 49, in process_spider_input
+    return scrape_func(response, request, spider)
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/scrapy/core/scraper.py", line 146, in call_spider
+    dfd.addCallbacks(request.callback or spider.parse, request.errback)
+  File "/home/paul/.virtualenvs/scrapy14/lib/python3.6/site-packages/twisted/internet/defer.py", line 303, in addCallbacks
+    assert callable(callback)
+AssertionError
+2017-05-30 16:04:49 [scrapy.core.engine] INFO: Closing spider (finished)
+2017-05-30 16:04:49 [scrapy.statscollectors] INFO: Dumping Scrapy stats:
+{'downloader/request_bytes': 893,
+ 'downloader/request_count': 4,
+ 'downloader/request_method_count/GET': 4,
+ 'downloader/response_bytes': 2816,
+ 'downloader/response_count': 4,
+ 'downloader/response_status_count/200': 3,
+ 'downloader/response_status_count/404': 1,
+ 'finish_reason': 'finished',
+ 'finish_time': datetime.datetime(2017, 5, 30, 14, 4, 49, 477327),
+ 'log_count/DEBUG': 5,
+ 'log_count/ERROR': 1,
+ 'log_count/INFO': 7,
+ 'memusage/max': 45879296,
+ 'memusage/startup': 45879296,
+ 'request_depth_max': 1,
+ 'response_received_count': 4,
+ 'scheduler/dequeued': 2,
+ 'scheduler/dequeued/memory': 2,
+ 'scheduler/enqueued': 2,
+ 'scheduler/enqueued/memory': 2,
+ 'spider_exceptions/AssertionError': 1,
+ 'start_time': datetime.datetime(2017, 5, 30, 14, 4, 48, 184220)}
+2017-05-30 16:04:49 [scrapy.core.engine] INFO: Spider closed (finished)

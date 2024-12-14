@@ -1,0 +1,59 @@
+tobinus commented on Jul 17, 2016
+Under some specific circumstances, a loop using iter_content ends up hanging after all the content has been iterated over. Specifically, all the following conditions must be met for this to occur:
+You must be using Python 3 (I've tested using 2.7.11 (under which this works) and 3.3.6, 3.4.11 and 3.5.1 (under which this bug occurs).
+Use requests.Session(), not requests.
+Set chunk_size=None in iter_content.
+Here, have an example:
+# requests_bug.py
+import requests
+
+def iterate_through_streamed_content(requests_module_or_session, chunk_size):
+    r = requests_module_or_session.get('http://example.org', stream=True)
+    r.raise_for_status()
+    for chunk in r.iter_content(chunk_size=chunk_size):
+        print(len(chunk))
+
+
+iterate_through_streamed_content(requests, 1024)
+print('requests, 1024 works')
+
+iterate_through_streamed_content(requests, None)
+print('requests, None works')
+
+iterate_through_streamed_content(requests.Session(), 1024)
+print('requests.Session(), 1024 works')
+
+iterate_through_streamed_content(requests.Session(), None)
+print('requests.Session(), None works')
+
+print("That's all.")
+Output 1 (bug does not occur in Python2.7):
+$ python --version
+Python 2.7.11
+$ pip install -U requests
+Requirement already up-to-date: requests in /home/...
+$ python requests_bug.py 
+1270
+requests, 1024 works
+1270
+requests, None works
+1270
+requests.Session(), 1024 works
+1270
+requests.Session(), None works
+That's all.
+Output 2 (bug occurs in Python3.5):
+$ python --version
+Python 3.5.1
+$ pip install -U requests
+Requirement already up-to-date: requests in /home/...
+$ python requests_bug.py 
+1270
+requests, 1024 works
+1270
+requests, None works
+1270
+requests.Session(), 1024 works
+1270
+...after which the script hangs until you do Ctrl+C.
+This is all done on Ubuntu 16.04, using pyenv and its virtualenv feature for testing using different Python versions. (Thank you all for requests, btw! Keep on rocking 👍 )

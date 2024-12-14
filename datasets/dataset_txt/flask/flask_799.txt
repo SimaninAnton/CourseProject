@@ -1,0 +1,44 @@
+jaraco commented on 22 Jun 2016
+I've encountered an issue while migrating one of our Flask apps from Python 2 to Python 3.
+Consider the canonical sessions example, with one minor tweak which forces a Python 2 ascii string into the session:
+from flask import Flask, session, redirect, url_for, escape, request
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    if 'username' in session:
+        return 'Logged in as %s' % escape(session['username'])
+    return 'You are not logged in'
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        session['username'] = str(request.form['username'])
+        return redirect(url_for('index'))
+    return '''
+        <form action="" method="post">
+            <p><input type=text name=username>
+            <p><input type=submit value=Login>
+        </form>
+    '''
+
+@app.route('/logout')
+def logout():
+    # remove the username from the session if it's there
+    session.pop('username', None)
+    return redirect(url_for('index'))
+
+# set the secret key.  keep this really secret:
+app.secret_key = 'A0Zr98j/3yX R~XHH!jmN]LWX/,?RT'
+Run that app on Python 2, log in as 'jaraco', then run the app on Python 3 and refresh the / resource, and you'll get a response with this text:
+Logged in as b'jaraco'
+The value has been typecast into bytes as a result of the TaggedJSONSerializer. This bytes value then wreaks havoc when text strings are expected.
+I imagine three possible ways to deal with this issue:
+Rewrite the applications such that they ensure that all text values are stored as unicode even on Python 2.
+Rewrite the TaggedJSONSerializer to only b64 encode bytes values on Python 3, but provide a hook so that if Python 2 consumers still want to encode to bytes, they can wrap the values in a special class that indicates bytes (similar to how MongoDB provides bson.Binary) which will be treated the same as bytes on Python 3.
+Rewrite the applications such that when consuming session values, any binary values found for text strings are decoded.
+Option 3 seems like a hack around the symptom, addressing the output and not the underlying issue, so I'm dismissing that out of hand.
+Option 1 seems the cleanest, though a lot of work for potentially a lot of applications.
+Option 2 seems the most robust, but has backward-compatibility concerns. On the whole, though, I expect it will save users a great deal of time and trouble as they upgrade from Python 2 to 3. I expect that most users of Flask when storing Python 2 str values in the session are actually intending to be storing text and not binary bytes, and this option honors that expectation while providing a solution for consumers that might need to intentionally store binary values.
+What's your recommendation? Would Flask consider a PR to implement Option 2? Is there another option I'm not considering?

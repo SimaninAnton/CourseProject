@@ -1,0 +1,76 @@
+royakabiri commented on 27 Jun 2019
+I am trying to train the existing POS tagger on my own lexicon, not starting off from scratch (I do not want to create an "empty model").
+In the documentation, it says "Load the model you want to stat with", and the next step is "Add the tag map to the tagger using add_label method". However, when I try to load the English small model, and add the tag map, it throws this error:
+ValueError: [T003] Resizing pre-trained Tagger models is not currently supported.
+I have also seen #2635 but I am using a simple training style as suggested, and it gives such an error. I was wondering how it can be fixed.
+Also, it is not very clear in the documentation if we need to have a mapping dictionary (TAG_MAP) even if our training examples tags are the same as the universal dependency tags.
+from __future__ import unicode_literals, print_function
+import plac
+import random
+from pathlib import Path
+import spacy
+from spacy.util import minibatch, compounding
+
+TAG_MAP = {"noun": {"pos": "NOUN"}, "verb": {"pos": "VERB"}, "adj": {"pos": "ADJ"}, "adv": {"pos": "ADV"}}
+
+TRAIN_DATA = [
+    ('Afrotropical', {'tags': ['adj']}), ('Afrocentricity', {'tags': ['noun']}),
+    ('Afrocentric', {'tags': ['adj']}), ('Afrocentrism', {'tags': ['noun']}),
+    ('Anglomania', {'tags': ['noun']}), ('Anglocentric', {'tags': ['adj']}),
+    ('apraxic', {'tags': ['adj']}), ('aglycosuric', {'tags': ['adj']}),
+    ('asecretory', {'tags': ['adj']}), ('aleukaemic', {'tags': ['adj']}),
+    ('agrin', {'tags': ['adj']}), ('Eurotransplant', {'tags': ['noun']}),
+    ('Euromarket', {'tags': ['noun']}), ('Eurocentrism', {'tags': ['noun']}),
+    ('adendritic', {'tags': ['adj']}), ('asynaptic', {'tags': ['adj']}),
+    ('Asynapsis', {'tags': ['noun']}), ('ametabolic', {'tags': ['adj']})
+]
+@plac.annotations(
+    lang=("ISO Code of language to use", "option", "l", str),
+    output_dir=("Optional output directory", "option", "o", Path),
+    n_iter=("Number of training iterations", "option", "n", int),
+)
+def main(lang="en", output_dir=None, n_iter=25):
+    nlp = spacy.load('en_core_web_sm', disable=['ner', 'parser'])
+    tagger = nlp.get_pipe('tagger')
+    for tag, values in TAG_MAP.items():
+        tagger.add_label(tag, values)
+    nlp.vocab.vectors.name = 'spacy_pretrained_vectors'
+    optimizer = nlp.begin_training()
+    for i in range(n_iter):
+        random.shuffle(TRAIN_DATA)
+        losses = {}
+        # batch up the examples using spaCy's minibatch
+        batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
+        for batch in batches:
+            texts, annotations = zip(*batch)
+            nlp.update(texts, annotations, sgd=optimizer, losses=losses)
+        print("Losses", losses)
+
+    # test the trained model
+    test_text = "I like Afrotropical apraxic blue eggs and Afrocentricity. A Eurotransplant is cool too. The agnathostomatous Euromarket and asypnapsis is even cooler. What about Eurocentrism?"
+    doc = nlp(test_text)
+    print("Tags", [(t.text, t.tag_, t.pos_) for t in doc])
+
+    # save model to output directory
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        if not output_dir.exists():
+            output_dir.mkdir()
+        nlp.to_disk(output_dir)
+        print("Saved model to", output_dir)
+
+        # test the save model
+        print("Loading from", output_dir)
+        nlp2 = spacy.load(output_dir)
+        doc = nlp2(test_text)
+        print("Tags", [(t.text, t.tag_, t.pos_) for t in doc])
+
+
+if __name__ == "__main__":
+    plac.call(main)
+Your Environment
+spaCy version:** 2.1.3
+Platform:** Darwin-18.6.0-x86_64-i386-64bit
+Python version:** 3.6.8
+Model: en_core_web_sm
+1

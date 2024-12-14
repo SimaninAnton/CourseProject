@@ -1,0 +1,82 @@
+sztomi commented on Nov 2, 2016
+Description
+It is not possible to send a basic http authentication using a username or password that contains Unicode data.
+What happens
+UnicodeEncodeError is thrown. Traceback:
+  File "(my code)", line 163, in _get
+    auth=(self.user, self.password))
+  File "/usr/local/lib/python3.5/site-packages/requests/api.py", line 67, in get
+    return request('get', url, params=params, **kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests/api.py", line 53, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/usr/local/lib/python3.5/site-packages/requests/sessions.py", line 454, in request
+    prep = self.prepare_request(req)
+  File "/usr/local/lib/python3.5/site-packages/requests/sessions.py", line 388, in prepare_request
+    hooks=merge_hooks(request.hooks, self.hooks),
+  File "/usr/local/lib/python3.5/site-packages/requests/models.py", line 297, in prepare
+    self.prepare_auth(auth, url)
+  File "/usr/local/lib/python3.5/site-packages/requests/models.py", line 490, in prepare_auth
+    r = auth(self)
+  File "/usr/local/lib/python3.5/site-packages/requests/auth.py", line 51, in __call__
+    r.headers['Authorization'] = _basic_auth_str(self.username, self.password)
+  File "/usr/local/lib/python3.5/site-packages/requests/auth.py", line 31, in _basic_auth_str
+    b64encode(('%s:%s' % (username, password)).encode('latin1')).strip()
+UnicodeEncodeError: 'latin-1' codec can't encode character '\u0171' in position 7: ordinal not in range(256)
+Expected behavior
+The authentication is encoded as utf-8 (at least if charset=utf-8 is provided in the header).
+How to reproduce
+Consider the following request:
+        user = 'űser'
+        password = 'páéáésswőrd'
+        response = requests.get(
+            url='http://example.com'
+            headers={'Content-Type': 'application/xml; charset=utf-8'},
+            auth=(user, password))
+I think that the culprit is this line (https://github.com/kennethreitz/requests/blob/master/requests/auth.py#L32), which assumes latin-1 encoding regardless of the charset header:
+def _basic_auth_str(username, password):
+    """Returns a Basic Auth string."""
+
+    authstr = 'Basic ' + to_native_string(
+        b64encode(('%s:%s' % (username, password)).encode('latin1')).strip()
+    )
+
+    return authstr
+Workaround
+This seems to work:
+    from requests.auth import to_native_string
+
+    # ... snip ...
+
+        auth = 'Basic ' + to_native_string(b64encode('{}:{}'.format(self.user, self.password).encode('utf-8')).strip())
+        response = requests.get(
+            url=self.base_url + uri,
+            headers={
+                'Content-Type': 'application/xml; charset=utf-8',
+                'Authorization': auth
+            })
+Version info
+$ pip show requests
+
+---
+Metadata-Version: 2.0
+Name: requests
+Version: 2.9.1
+Summary: Python HTTP for Humans.
+Home-page: http://python-requests.org
+Author: Kenneth Reitz
+Author-email: me@kennethreitz.com
+Installer: pip
+License: Apache 2.0
+Location: /usr/local/lib/python3.5/site-packages
+Requires: 
+Classifiers:
+  Development Status :: 5 - Production/Stable
+  Intended Audience :: Developers
+  Natural Language :: English
+  License :: OSI Approved :: Apache Software License
+  Programming Language :: Python
+  Programming Language :: Python :: 2.7
+  Programming Language :: Python :: 3
+  Programming Language :: Python :: 3.3
+  Programming Language :: Python :: 3.4
+  Programming Language :: Python :: 3.5

@@ -1,0 +1,27 @@
+Feuermurmel commented on 3 May 2017
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework.
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+I have included a failing test as a pull request. (If you are unable to do so we can still accept the issue.)
+Steps to reproduce
+I have found an issue when using certain types of callables as the source of a serializer's field. I'm not sure whether this is a bug or intentional behavior:
+Some of the methods I use as source of fields are wrapped with functools.lru_cache(), along these lines:
+from rest_framework import serializers, fields
+
+class Model:
+    @method_lru_cache(None)
+    def get_something(self):
+        pass
+
+class Serializer(serializers.Serializer):
+    status = fields.CharField(source='get_something')
+
+serializer = Serializer(Model())
+See https://gist.github.com/Feuermurmel/26c8a10ee2c9c7fc3cbacc7dd84ecfba for the implementation of method_lru_cache() I'm using here.
+Somewhere between the current releases of Python 3.4 and Python 3.5, a C implementation of the function returned when applying method_lru_cache() to a function has been added. Under Python 3.4, the serializer implementation would accept get_something() as a method and call it to get the serialized value. With Python 3.5, the method is no longer called and instead an attempt is made to serialize the method itself.
+This behavior is caused by the implementation of fields.is_simple_method(), which tests each object in a chain of attribute accesses with inspect.isfunction(obj) or inspect.ismethod(obj). inspect.isfunction() returns True for the Python implementation of the lru_cache() implementation, but not for the C one.
+I would assume that is_simple_callable() should treat all callables the same and use callable() to test for it. I created a pull request which implements this change but also breaks a lot of other tests. The ones I looked at fail because for some reason instances of Django's ManyRelatedManager, which implements __call__(), are also checked using this method. These instances are now also considered callable with the change.
+Creating a workaround for this issue in my project is easy and I only became aware of this behavior because of updated implementation of Python's lru_cache. So I'm not sure whether this should be regarded as a bug of django-rest-framework.

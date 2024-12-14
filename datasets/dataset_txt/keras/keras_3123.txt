@@ -1,0 +1,70 @@
+marioyc commented on 26 Feb 2017 •
+edited
+I'm having an error when loading the weights of the following model:
+content = Input(shape=(maxlen_content,))
+title = Input(shape=(maxlen_title,))
+stars = Input(shape=(1,))
+
+embedding = Embedding(vocab_size,
+                    embed_dim,
+                    weights=[embeddings_matrix],
+                    dropout=0.3)
+x_content = embedding(content)
+x_title = embedding(title)
+
+conv = Convolution1D(nb_filter=nb_filter,
+                        filter_length=filter_length,
+                        border_mode='valid',
+                        activation='relu',
+                        subsample_length=1)
+x_content = conv(x_content)
+x_title = conv(x_title)
+
+x_content = GlobalMaxPooling1D()(x_content)
+x_content = Dropout(0.5)(x_content)
+x_title = GlobalMaxPooling1D()(x_title)
+x_title = Dropout(0.5)(x_title)
+
+x = merge([x_content, x_title, stars], mode='concat')
+x = Dense(hidden_dims, activation='relu')(x)
+x = Dropout(0.5)(x)
+
+output = Dense(1, activation='sigmoid')(x)
+
+model = Model(input=[content, title, stars], output=[output])
+model.layers[2].trainable = False
+after training I store the model in the following way:
+model_json = model.to_json()
+with open("models/" + output_prefix + ".json", "w") as json_file:
+    json_file.write(model_json)
+model.save_weights("models/" + output_prefix + ".h5")
+then load it:
+json_file = open("models/" + input_prefix + ".json", 'r')
+loaded_model_json = json_file.read()
+json_file.close()
+model = model_from_json(loaded_model_json)
+model.summary()
+
+# load weights into new model
+model.load_weights("models/" + input_prefix + ".h5")
+and then I get this error:
+Traceback (most recent call last):
+File "main_fit_predict_from_model.py", line 40, in
+main()
+File "main_fit_predict_from_model.py", line 37, in main
+method6.predict(Xtrain, Ytrain, Xtest, input_prefix, output_prefix, True, X_percentage=cross_validate)
+File "/home/marioyc/challengedata/lib_fit/method6.py", line 30, in predict
+model.load_weights("models/" + input_prefix + ".h5")
+File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2701, in load_weights
+self.load_weights_from_hdf5_group(f)
+File "/usr/local/lib/python2.7/dist-packages/keras/engine/topology.py", line 2753, in load_weights_from_hdf5_group
+str(len(flattened_layers)) + ' layers.')
+ValueError: You are trying to load a weight file containing 4 layers into a model with 3 layers.
+I went and took a look into the load_weights_from_hdf5_group function. At the beginning it seems like the flattened_layers has all layers:
+[<keras.engine.topology.InputLayer object at 0x7fe8f05b0ed0>, <keras.engine.topology.InputLayer object at 0x7fe8e1651a10>, <keras.layers.embeddings.Embedding object at 0x7fe8e1651b90>, <keras.layers.convolutional.Convolution1D object at 0x7fe8e1651bd0>, <keras.layers.pooling.GlobalMaxPooling1D object at 0x7fe925c8ed90>, <keras.layers.pooling.GlobalMaxPooling1D object at 0x7fe8e22df050>, <keras.layers.core.Dropout object at 0x7fe8e207be10>, <keras.layers.core.Dropout object at 0x7fe8e1f3f1d0>, <keras.engine.topology.InputLayer object at 0x7fe8e1c635d0>, <keras.engine.topology.Merge object at 0x7fe8e1c77c90>, <keras.layers.core.Dense object at 0x7fe8e1c77cd0>, <keras.layers.core.Dropout object at 0x7fe8e1c77f50>, <keras.layers.core.Dense object at 0x7fe8e2177b10>]
+which is ok, but then it filters only those that have weights, and apparently the weights of the embedding layer are not found, so it gives:
+[<keras.layers.convolutional.Convolution1D object at 0x7fe8e1651bd0>, <keras.layers.core.Dense object at 0x7fe8e1c77cd0>, <keras.layers.core.Dense object at 0x7fe8e2177b10>]
+whereas the layer_names variable contains:
+[u'embedding_1', u'convolution1d_1', u'dense_1', u'dense_2']
+Could this be due to the fact that the embedding layer uses a pre-trained embedding? or because it's marked as not trainable?
+I'm using Keras 1.2.0 with backend Theano 0.8.2

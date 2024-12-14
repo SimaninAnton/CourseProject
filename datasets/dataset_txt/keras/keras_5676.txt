@@ -1,0 +1,78 @@
+bkj commented on 24 Mar 2016
+Hi all,
+I'm trying to figure out the precise differences between Sequential and Graph models, and I'm a little bit confused about a particular behavior that I'm encountering. First I implement a Sequential model:
+        model = Sequential()
+        model.add(
+            Embedding(
+                input_dim  = 100000 
+                output_dim = 500 
+                mask_zero  = True,
+            )
+        )
+
+        model.add(TimeDistributedMerge(mode='ave'))
+
+        model.add(Dense(200, activation='relu'))
+        model.add(Dropout(0.5))
+
+        model.add(Dense(200, activation='relu'))
+        model.add(Dropout(0.5))
+
+        model.add(Dense(5, activation='softmax'))
+        model.compile(loss='categorical_crossentropy', optimizer='adam')
+I train this for a single epoch and get:
+fitist = model.fit(
+    sX_train, sy_train,
+    nb_epoch        = 1,
+    batch_size      = 256
+)
+
+171048/171048 [==============================] - 18s - loss: 1.5751
+Now I re-implement the same model as a Graph, where all nodes are shared w/ the input and output replicated twice. I weight the loss at 0.5, and I would expect the results to be (roughly) the same.
+       model = Graph()
+
+        model.add_input(name='labeled_1', input_shape=(100000,), dtype=int)
+        model.add_input(name='labeled_2', input_shape=(100000,), dtype=int)
+
+        model.add_shared_node(
+            Embedding(
+                input_dim  = 100000 
+                output_dim = 500, 
+                mask_zero  = True
+            ),
+            name='emb',
+            inputs=['labeled_1', 'labeled_2'], outputs=['emb_1', 'emb_2']
+        )
+
+        model.add_shared_node(TimeDistributedMerge(mode='ave'),
+            name='tdm', inputs=['emb_1', 'emb_2'], outputs=['tdm_1', 'tdm_2'])
+
+        model.add_shared_node(Dense(200, activation='relu'), 
+            name='dense1', inputs=['tdm_1', 'tdm_2'], outputs=['dense1_1', 'dense1_2'])
+        model.add_shared_node(Dropout(0.5),
+            name='do1', inputs=['dense1_1', 'dense1_2'], outputs=['do1_1', 'do1_2'])
+
+        model.add_shared_node(Dense(200, activation='relu'), 
+            name='dense2', inputs=['do1_1', 'do1_2'], outputs=['dense2_1', 'dense2_2'])
+        model.add_shared_node(Dropout(0.5),
+            name='do2', inputs=['dense2_1', 'dense2_2'], outputs=['do2_1', 'do2_2'])
+
+        model.add_shared_node(Dense(5, activation='softmax'), name='densef', inputs=['do2_1', 'do2_2'], outputs=['densef_1', 'densef_2'])
+
+        model.add_output(name="lab_1", input="densef_1")
+        model.add_output(name="lab_2", input="densef_2")
+
+        model.compile(loss={
+            "lab_1" : 'categorical_crossentropy',
+            "lab_2" : 'categorical_crossentropy'
+        }, loss_weights={"lab_1" : 0.5, "lab_2" : 0.5}, optimizer='adam')
+Train this model:
+model.fit({
+    "labeled_1" : sX_train,
+    "labeled_2" : sX_train,
+    "lab_1"     : sy_train,
+    "lab_2"     : sy_train,
+}, nb_epoch=1, batch_size=256)
+
+171048/171048 [==============================] - 139s - loss: 1.2544
+So this second model takes 10x longer, has lower training loss but also significantly lower out of sample accuracy. Does anyone have insight into what might be going on?

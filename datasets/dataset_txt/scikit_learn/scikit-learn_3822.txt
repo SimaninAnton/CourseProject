@@ -1,0 +1,22 @@
+macaodha commented on May 15, 2015
+OneVsRestClassifier and svm.SVC throw an error when requesting the coef_ when given a scipy.sparse.csr_matrix during training. The bug occurs using version 0.16.1
+from sklearn import svm
+from scipy import sparse
+svc = svm.SVC(kernel='linear')
+svc_r = OneVsRestClassifier(svc)
+x_train = sparse.csr_matrix(([1, 1, 1], ([0, 1, 2], [0, 1, 0])), (3, 2))
+y_train = np.asarray([0, 1, 2])
+svc_r.fit(x_train, y_train)
+svm_weights = svc_r.coef_
+However if we convert the matrix to dense we don't have a problem:
+svc_r.fit(x_train.todense(), y_train)
+svm_weights = svc_r.coef_
+The problem lies in multiclass.py:
+@property
+def coef_(self):
+    check_is_fitted(self, 'estimators_')
+    if not hasattr(self.estimators_[0], "coef_"):
+        raise AttributeError(
+            "Base estimator doesn't have a coef_ attribute.")
+    return np.array([e.coef_.ravel() for e in self.estimators_])
+Where e.coef_ is sparse (when the input is sparse) and thus ravel() throws an error.

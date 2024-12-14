@@ -1,0 +1,26 @@
+Contributor
+Yorwba commented on 17 Apr 2017 •
+edited
+Up-to-date with the master branch of Keras.
+The backend is not involved.
+Example code illustrating the issue:
+from keras.layers import Dense, Input, add
+from keras.models import Model
+
+def make_left_tower(n):
+ x = input = Input((1,))
+ dense = Dense(1)
+ for _ in range(n):
+  x = add([dense(x), x])
+ return Model(inputs=[input], outputs=[x])
+
+def make_right_tower(n):
+ x = input = Input((1,))
+ dense = Dense(1)
+ for _ in range(n):
+  x = add([x, dense(x)])
+ return Model(inputs=[input], outputs=[x])
+make_left_tower(100) runs in under a second on my machine, while make_right_tower(16) already takes longer, and doubles its runtime as depth increases.
+The problem is in the build_map_of_graph function, which seems intended to compute a topological sort using the depth-first algorithm, but uses a non-standard marking scheme for the visited nodes. This leads to the observed pathological behavior where subgraphs are traversed multiple times if they are seen at successively higher depths (as is the case for the models created by make_right_tower).
+I will work on a PR to fix this issue, but beforehand I'd like to know how important it is that the computed order be identical to the current result (the comment about determinism makes we worry someone's weights will be swapped when loading a model generated with a different ordering, or something.)
+1

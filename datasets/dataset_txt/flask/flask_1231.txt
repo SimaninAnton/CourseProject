@@ -1,0 +1,11 @@
+aegarbutt commented on 19 Jun 2014
+We recently stumbled across an issue with the @after_this_request decorator deferred callback pattern (described at http://flask.pocoo.org/docs/patterns/deferredcallbacks/).
+This issue does not occur in v0.9, but does occur in v0.10 and v0.10.1. The issue also does not occur when using the @after_this_request decorator defined in 'flask/ctx.py'.
+If an exception occurs in a function decorated with @teardown_request, any callback added with the @after_this_request decorator copied from the pattern will continue to be executed on subsequent requests. This occurs when running standalone:
+$ python flask_teardown_exception.py
+and when running under uwsgi:
+$ uwsgi --yaml uwsgi.yaml (Be sure to correct paths if you want to use this)
+We realize that @teardown_request documentation indicates that one should be careful never to throw an exception, but the end result was still very surprising.
+A minimal testcase can be found in the github repo referenced at the bottom. It defines two functions to be executed after the current request. One using the built-in decorator, and one using the pattern and code sample. Both functions add a header to the response indicating the handling processID and an incrementing request ID. An exception can be triggered in the @teardown_request function by passing any value to the "e" GET parameter. After an exception is triggered, the built-in @after_this_request continues to work as expected an all subsequent requests that do not throw an exception. However, the functions added with the custom @after_this_request decorator following the pattern code sample continue to execute for all subsequent requests. For example, if I trigger an exception on request 6, and make 4 more requests, then the second to last request (request 9) will have the headers for request 6 ,7, 8 and 9; and the last request (request 10) will have the headers for request 6, 7, 8, 9 and 10.
+The github repo also includes console output running under both uwsgi and standalone, and HTTP request/response pairs for 10 requests showing the outcome.
+https://github.com/aegarbutt/teardown_request_exception

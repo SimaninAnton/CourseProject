@@ -1,0 +1,26 @@
+splashx commented on 17 Aug 2017 •
+edited
+Steps to reproduce the problem:
+Have a proxy in the environment which supports CONNECT method (this is the upstream proxy)
+Run mitmproxy with -U <proxy>:<port>
+Setup a iptables rule to forward any traffic locally generated to dst tcp/443 to mitmproxy localhost:8080
+Any other comments? What have you tried so far?
+This happens because mitmproxy tries to stablish an SSL connection with a proxy which doesn't support it. When sniffing a working ssl request in this environment (https_proxy=http://10.17.70.70:3128 curl https://www.google.com) the following is seen in tcpdump:
+C->P: CONNECT www.google.com:443
+I would suggest to add a flag to upstream to use CONNECT tunnel for ssl destinations (-U proxy:port ---upstream-use-connect-ssl). It should work like this (C = client, M = mitmproxy, P = upstream proxy, S = https server):
+C: https://www.google.com
+C->M: certificate presented by MITM, auto-generated, trusted
+M->P: sends up CONNECT www.google.com:443 (this is just a tcp connection, all the handshake will happen here)
+P->S: blindly forwards the tcp connection request from M to S
+M--viaP-->S: SSL handshake using the CONNECT tunnel (P from now on everything is encrypted to P, P can't read anything)
+System information
+# mitmdump -U 10.17.70.70:3128
+mitmdump: Invalid server specification: 10.17.70.70:3128
+root@cog:~# mitmdump -U http://10.17.70.70:3128
+Proxy server listening at http://0.0.0.0:8080
+100.127.169.165:56054: clientconnect
+100.127.169.165:56054: Cannot establish TLS with 10.17.70.70:3128 (sni: www.google.com): TlsException("SSL handshake error: Error([('SSL routines', 'SSL23_GET_SERVER_HELLO', 'unknown protocol')],)",)
+100.127.169.165:56054: clientdisconnect
+100.127.169.165:56056: clientconnect
+100.127.169.165:56056: Cannot establish TLS with 10.17.70.70:3128 (sni: www.google.com): TlsException("SSL handshake error: Error([('SSL routines', 'SSL23_GET_SERVER_HELLO', 'unknown protocol')],)",)
+100.127.169.165:56056: clientdisconnect

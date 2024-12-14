@@ -1,0 +1,10 @@
+Member
+bmw commented on 27 Sep 2019
+As described at #7402, it appears that distro.linux_distribution() cannot be used as a replacement for platform.linux_distribution() with the way we use the return value in the Apache plugin which is expecting specific strings to be returned.
+We fixed this in #7403 by continuing to use platform.linux_distribution when we can, but this means we still have problems when run on Python 3.8 on Linux systems without /etc/os-release (which is the only time *.linux_distribution is called).
+Unfortunately, we cannot completely remove this fallback while still supporting RHEL 6 based systems. There may be other niche systems relying on this too, but it's the only one we're aware of.
+I'm open to other ideas, but to propose a way to accomplish this, I think we could:
+Revert #7403 so we consistently use distro rather than having different behavior on different Python versions.
+When not calling linux_distribution to build the user-agent string, call distro.linux_distribution(full_distribution_name=False) since it maintains an explicit list of the values it may return at https://github.com/nir0s/distro/blob/cdfe85d15bd366820db6a1cfdc6cf9a0a5de7e37/distro.py#L134-L166.
+Add any missing strings we want to handle to the dict in the Apache plugin.
+As a bonus, we could maybe tackle #7399 at the same time, but I don't think this is absolutely necessary.

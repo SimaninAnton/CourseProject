@@ -1,0 +1,19 @@
+michael-aloys commented on 18 May 2017
+Short form:
+Why does Kera's cosine loss uses the mean here https://github.com/fchollet/keras/blob/master/keras/losses.py#L67 . Shouldn't it be K.sum()
+Long form:
+The cosine similarity between two normalized vectors u,v (let's assume of length 3) is usually computed as
+sim = u * v = u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+For multiple vectors, a loop is used.
+Keras implements the cosine loss as a matrix operation (which is of course totally fine and I guess more efficient). For matrices U = {u1, u2} and V = {v1, v2} with u1, u2, v1, v2 being normalized vectors (let's assume length 3), this can be computed as
+U * V = { (u1[0] * v1[0], u1[1] * v1[1], u1[2] * v1[2]),
+(u2[0] * v2[0], u2[1] * v2[1], u2[2] * v2[2]) }
+Now we need to sum up the matrix entries along the rows (u1[0]v1[0] + u1[1]v1[1] + ...), to obtain the two results {u1v1, u2v2}. Keras instead uses the mean over the rows. In the end, the difference is only that in Keras the sums are divided by the length of the vector which in most cases should be a constant. I'm wondering, however, why this is done.
+It seems to me that this is an unnecessary division.
+For large vectors the loss value becomes very small which might create problems with rounded floating point values/too low precision.
+In practice I noticed that for a vector size of 500 and an LSTM generating vectors, accuracy doubled when moving from K.mean to K.sum. I was then able to get the same accuracy performance as the Theano model [2] I was re-implementing in Keras.
+What is the motivation behind using the mean here?
+I'm running the current version of Keras, with [3] being the latest commit to the loss file. I'm using Tensorflow (GPU, 1.0.1). If needed, I could probably provide a script to reproduce the configuration, but I guess this is more a conceptional issue.
+[1] https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.spatial.distance.cosine.html
+[2] https://github.com/fh295/DefGen2
+[3] 8967d16

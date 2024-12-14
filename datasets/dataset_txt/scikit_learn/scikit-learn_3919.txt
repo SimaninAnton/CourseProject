@@ -1,0 +1,24 @@
+Contributor
+ThatGeoGuy commented on Apr 4, 2015
+Lines 362-368 in sklearn/covariance/robust_covariance.py specify the following:
+    X = np.asarray(X)
+    if X.ndim == 1:
+        X = np.reshape(X, (1, -1))
+        warnings.warn("Only one sample available. "
+                      "You may want to reshape your data array")
+    n_samples, n_features = X.shape
+The problem with this is that if you pass in a 1D array of shape (n_samples,), you typically want the univariate estimate of the MCD for all those samples (hence you actually wanted to pass in an array of shape (n_samples, 1)). However, the code above assumes you really wanted to pass in a 1D array of shape (1, n_features), which has the following problems:
+This is backwards to the assumption made by LIBRA (http://wis.kuleuven.be/stat/robust.html
+), which contains the reference implementation of FastMCD by Van Dreissen and Rombouts. This can be found in the mcdcov.m file, lines 213-215.
+Nobody in their right mind would try to find the covariance amongst n_features using only a single sample. I'm half-kidding, but at the very least, the behaviour appears unconventional to me. Perhaps I am missing some justification for this?
+The current behaviour raises an exception stating that the covariance matrix is singular, when in reality it is non-singular, just univariate. If you for example pass in a matrix object instead of an array with the appropriate dimensions, then the function will compute without error.
+Because of these reasons, I'm going to assume this is a bug, which appears similar to the bugs found in #4509 and #4466. The fix is simple, just change the above lines to the following:
+    X = np.asarray(X)
+    if X.ndim == 1:
+        X = np.reshape(X, (-1, 1))
+        warnings.warn("1D array passed in. " 
+                "Assuming the array contains samples, not features. "
+                "You may wish to reshape your data.")
+    n_samples, n_features = X.shape
+With this fix, finding univariate estimates of the MCD becomes much easier. I have made the above changes to my fork at https://github.com/ThatGeoGuy/scikit-learn and can submit a pull request at any time. However, while running nosetests, I could not correctly get the tests to complete. I also could not find any documentation mentioning how to run the tests so sklearn.__check_build will run appropriately.
+Any advice is appreciated. I am examining the MinCovDet / fast_mcd so that I can hopefully fix issue #3367, which is currently preventing me from completing a project I am working on.

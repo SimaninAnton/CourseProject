@@ -1,0 +1,56 @@
+kentsommer commented on 20 Mar 2017 •
+edited
+When converting weights (InceptionV3 for instance), if the backend is switched, loading crashes with an error pointing to h5py. It looks like since the conv2d layers are usually included last in any h5 file they are the only ones who have their indexes checked but h5py expects the index to be > 0 as it is not the first layer in the file.
+How to reproduce:
+Change your backend to 'theano' in the keras.json config file
+Run this script:
+from keras.applications.inception_v3 import *
+from keras.preprocessing import image
+from keras.applications.imagenet_utils import decode_predictions
+from keras import backend as K
+import numpy as np
+
+model = InceptionV3(weights='imagenet')
+
+img_path = 'elephant.jpg'
+img = image.load_img(img_path, target_size=(299, 299))
+x = image.img_to_array(img)
+x = np.expand_dims(x, axis=0)
+x = preprocess_input(x)
+
+preds = model.predict(x)
+print('Predicted:', decode_predictions(preds))
+With the Tensorflow backend this works fine and outputs the following:
+[[(u'n02504458', u'African_elephant', 0.90738213)]]
+However, if the backend is switched to Theano you get the following error (full traceback):
+Using Theano backend.
+Traceback (most recent call last):
+  File "test.py", line 7, in <module>
+    model = InceptionV3(weights='imagenet')
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/keras/applications/inception_v3.py", line 383, in InceptionV3
+    model.load_weights(weights_path)
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/keras/engine/topology.py", line 2491, in load_weights
+    load_weights_from_hdf5_group(f, self.layers)
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/keras/engine/topology.py", line 2893, in load_weights_from_hdf5_group
+    original_backend)
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/keras/engine/topology.py", line 2833, in preprocess_weights_for_loading
+    weights[0] = conv_utils.convert_kernel(weights[0])
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/keras/utils/conv_utils.py", line 86, in convert_kernel
+    return np.copy(kernel[slices])
+  File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2840)
+  File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper (/tmp/pip-nCYoKW-build/h5py/_objects.c:2798)
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/h5py/_hl/dataset.py", line 474, in __getitem__
+    selection = sel.select(self.shape, args, dsid=self.id)
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/h5py/_hl/selections.py", line 90, in select
+    sel[args]
+  File "/home/kent/.virtualenvs/keras2/local/lib/python2.7/site-packages/h5py/_hl/selections.py", line 363, in __getitem__
+    raise TypeError("Indexing elements must be in increasing order")
+TypeError: Indexing elements must be in increasing order
+This is definitely unexpected behavior, however, I'm unable to see an obvious issue anywhere in the Keras-2 changes which is why I'm posting it here.
+Check that you are up-to-date with the master branch of Keras. You can update with:
+pip install git+git://github.com/fchollet/keras.git --upgrade --no-deps
+If running on TensorFlow, check that you are up-to-date with the latest version. The installation instructions can be found here.
+If running on Theano, check that you are up-to-date with the master branch of Theano. You can update with:
+pip install git+git://github.com/Theano/Theano.git --upgrade --no-deps
+Provide a link to a GitHub Gist of a Python script that can reproduce your issue (or just copy the script here if it is short).
+4

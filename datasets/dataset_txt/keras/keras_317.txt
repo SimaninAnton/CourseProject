@@ -1,0 +1,63 @@
+LukeBolly commented on 25 Mar 2019 •
+edited
+Freezing a Keras graph which contains a BatchNormalization Layer creates a graph which cannot be loaded by the Tensorflow API. The following error is produced:
+Traceback (most recent call last):
+  File "C:\Program Files\JetBrains\PyCharm 2018.2.5\helpers\pydev\pydevd.py", line 1664, in <module>
+    main()
+  File "C:\Program Files\JetBrains\PyCharm 2018.2.5\helpers\pydev\pydevd.py", line 1658, in main
+    globals = debugger.run(setup['file'], None, None, is_module)
+  File "C:\Program Files\JetBrains\PyCharm 2018.2.5\helpers\pydev\pydevd.py", line 1068, in run
+    pydev_imports.execfile(file, globals, locals)  # execute the script
+  File "C:\Program Files\JetBrains\PyCharm 2018.2.5\helpers\pydev\_pydev_imps\_pydev_execfile.py", line 18, in execfile
+    exec(compile(contents+"\n", file, 'exec'), glob, loc)
+  File "C:/code sandbox/keras_load_batchnorm.py", line 37, in <module>
+    tf.import_graph_def(graph_def)
+  File "C:\Users\lukeb\AppData\Local\Programs\Python\Python36\lib\site-packages\tensorflow\python\util\deprecation.py", line 488, in new_func
+    return func(*args, **kwargs)
+  File "C:\Users\lukeb\AppData\Local\Programs\Python\Python36\lib\site-packages\tensorflow\python\framework\importer.py", line 422, in import_graph_def
+    raise ValueError(str(e))
+ValueError: Input 0 of node import/bn/cond/ReadVariableOp/Switch was passed float from import/bn/gamma:0 incompatible with expected resource.
+It seems that the "convert_variables_to_constants" method doesn't know what to do with the Batch Normalization layer.
+Here is a fully working example that demonstrates the error:
+import os
+import tensorflow as tf
+from tensorflow.python.framework.graph_util import convert_variables_to_constants
+from tensorflow.python.platform import gfile
+
+path = "graph\\"
+dirname = os.path.dirname(os.path.realpath(__file__))
+filename = "frozen_graph.pb"
+output_folder = os.path.join(dirname, path)
+output_file = os.path.join(output_folder, filename)
+os.makedirs(output_folder, exist_ok=True)
+
+sess = tf.Session()
+tf.keras.backend.set_session(sess)
+
+input = tf.keras.layers.Input(shape=(1, 1, 1), name="input")
+x = tf.keras.layers.BatchNormalization(name="bn")(input)
+x = tf.keras.layers.Activation("relu", name="ouput")(x)
+model = tf.keras.models.Model(input, x)
+model.compile("adam", loss="mse")
+
+sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+
+input_graph_def = sess.graph.as_graph_def()
+output_names = [node.op.name for node in model.outputs]
+freeze_var_names = list(set(v.op.name for v in tf.global_variables()))
+
+frozen_graph = convert_variables_to_constants(sess, input_graph_def, output_names, freeze_var_names)
+tf.train.write_graph(frozen_graph, "", output_file, as_text=False)
+
+with sess:
+   with gfile.FastGFile(output_file,'rb') as f:
+       graph_def = tf.GraphDef()
+   graph_def.ParseFromString(f.read())
+   sess.graph.as_default()
+   tf.import_graph_def(graph_def)
+I have tried the solutions suggested by the following:
+-Altering nodes before saving: This one doesn't fix it
+-Setting learning phase: This one cannot be used outside of a Keras environment
+-Rolling batchnorm layer into previous layers: I started this one but it gets very complicated when your layers are not simply stacked.
+This is a real showstopper for getting models into production, especially with Keras becoming the main API for RNN's in tf 2.0.
+2

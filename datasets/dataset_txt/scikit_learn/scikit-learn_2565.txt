@@ -1,0 +1,37 @@
+dsl10brc commented on Nov 24, 2016 •
+edited
+SelectFromModel only uses attribute coef_ or feature_importances_ . This is fine if you are using Logistic Regression or Xgboost (with f- score). Since respective models have those attributes.
+However, when you use it for feature importances by ‘gain’, it doesn’t work.
+.booster().get_score(importance_type='gain') attribute is not present in SelectFromModel . Most of the time we need to select features based on feature importances by 'information gain' . I would suggest to add this attribute.
+python : 3.3
+sklearn : 0.18
+to reproduce: please use your own data for
+df_final_x - training features
+df_final_y - training target
+df_final_x_vl - cross val features
+df_final_y_vl - cross val target
+from xgboost.sklearn import XGBClassifier
+import pandas as pd
+model = XGBClassifier()
+model.fit(df_final_x, df_final_y)
+gain_plot = pd.DataFrame.from_dict(model.booster().get_score(importance_type='gain'), orient='index')
+gain_plot = gain_plot.reset_index()
+gain_plot.columns = ['feature','importance']
+gain_plot = gain_plot.sort_values(by='importance')
+gain_plot = gain_plot.reset_index(drop=True)
+thresholds = list(gain_plot.importance)
+for thresh in thresholds:
+    print(list(gain_plot[gain_plot.importance > thresh]['feature']))
+    print(len(list(gain_plot[gain_plot.importance > thresh]['feature'])))
+    # select features using threshold
+    selection = SelectFromModel(model, threshold=thresh, prefit=True)
+    select_X_train = selection.transform(df_final_x)
+    # train model
+    selection_model = XGBClassifier()
+    selection_model.fit(select_X_train, df_final_y)
+    # eval model
+    select_X_test = selection.transform(df_final_x_vl)
+    y_pred = selection_model.predict(select_X_test)
+    predictions = [round(value) for value in y_pred]
+    accuracy = accuracy_score(df_final_y_vl, predictions)
+    print("Thresh=%.3f, n=%d, Accuracy: %.2f%%" % (thresh, select_X_train.shape[1], accuracy*100.0))

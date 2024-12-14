@@ -1,0 +1,65 @@
+Contributor
+jmargeta commented on Dec 10, 2017
+Description
+Spectral clustering with lobpcg solver appears to be unstable.
+An exception is thrown on windows CI build while the code runs well on Linux.
+On Linux, the solver is sensitive to tiny image variations.
+See #9062 for more details.
+This might be because the problem is not particularly well preconditioned.
+However at least the behaviour should be consistent across all platforms.
+Steps/Code to Reproduce
+import numpy as np
+from sklearn.cluster import spectral_clustering
+from sklearn.feature_extraction import img_to_graph
+
+# make an image with two circles and construct a graph
+x, y = np.indices((40, 40))
+center1, center2 = (14, 12), (20, 25)
+radius1, radius2 = 8, 7
+
+circle1 = (x - center1[0]) ** 2 + (y - center1[1]) ** 2 < radius1 ** 2
+circle2 = (x - center2[0]) ** 2 + (y - center2[1]) ** 2 < radius2 ** 2
+
+circles = circle1 | circle2
+mask = circles.copy()
+img = circles.astype(float)
+
+graph = img_to_graph(img, mask=mask)
+graph.data = np.exp(-graph.data / graph.data.std())
+
+# this fails on windows for seemingly random versions of Python
+# on linux the results can be sensitive to tiny image variations 
+labels = spectral_clustering(graph, n_clusters=2, eigen_solver='lobpcg', random_state=0)
+On Linux, when adding random noise to the image, tiny image variations (img = img + 1 + 0.05 * rand.random(*img.shape) vs img += 1 + 0.05 * rand.random(*img.shape) can throw of convergence of the lobpcg solver.
+Expected Results
+The returned labels of the clusters should be identical to the other two solvers:
+labels_arpack = spectral_clustering(graph, n_clusters=2, eigen_solver='arpack', random_state=0)
+or
+labels_amg = spectral_clustering(graph, n_clusters=2, eigen_solver='amg', random_state=0)
+i.e.
+Actual Results
+Exception is thrown on windows - no noise to the images applied See
+E numpy.linalg.linalg.LinAlgError: the leading minor of order 5 of 'b' is not positive definite. The factorization of 'b' could not be completed and no eigenvalues or eigenvectors were computed.
+Solver sensitivity to small image variations See
+labels_arpack = array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,...1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+
+       1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=int32)
+
+labels_lobpcg = array([1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+
+       1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,...1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1,
+
+       1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1], dtype=int32)
+Or the failed result:
+Versions
+The exception is thrown on scikit-learn's CI, windows build.
+PYTHON=C:\Python35, PYTHON_VERSION=3.5.0, PYTHON_ARCH=32
+The sensitivity to tiny image variations was found on:
+Linux-4.10.0-40-generic-x86_64-with-Ubuntu-16.04-xenial
+Python 3.6.3 (default, Oct 6 2017, 08:44:35)
+[GCC 5.4.0 20160609]
+NumPy 1.13.3
+SciPy 1.0.0
+Scikit-Learn 0.20.dev0

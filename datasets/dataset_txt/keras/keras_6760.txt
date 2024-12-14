@@ -1,0 +1,101 @@
+rbharath commented on 18 Aug 2015
+When sample_weight is a sparse vector, the following simple example code crashes (I'm running on Anaconda python, with a GeForce GTX 980, on Ubuntu 12.04):
+import numpy as np
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation
+from keras.optimizers import SGD
+
+# Generate data
+X = np.zeros((100, 100))
+y = np.zeros((100, 2))
+## The training always fails with
+#W = np.zeros((100,))
+## The training fails roughly half the time with
+W = np.random.binomial(1, .05, size=(100,))
+## The training always succeeds with
+# W = np.ones((100,))
+
+model = Sequential()
+model.add(Dense(100, 50, init='uniform', activation="relu"))
+model.add(Dense(50, 2, init='uniform', activation="softmax"))
+sgd = SGD(lr=.01, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(optimizer=sgd, loss="binary_crossentropy")
+model.fit(X, y, nb_epoch=20, batch_size=50,
+          sample_weight=W)
+The code crashes halfway through training with output:
+rbharath@not0rious:~/torch-models$ python simple_multitask_seq.py
+Using gpu device 0: GeForce GTX 980
+Epoch 0
+100/100 [==============================] - 0s - loss: 0.6931
+Epoch 1
+Traceback (most recent call last):
+  File "simple_multitask_seq.py", line 22, in <module>
+    sample_weight=W)
+  File "build/bdist.linux-x86_64/egg/keras/models.py", line 477, in fit
+  File "build/bdist.linux-x86_64/egg/keras/models.py", line 215, in _fit
+  File "/home/rbharath/anaconda/lib/python2.7/site-packages/theano/compile/function_module.py", line 606, in __call__
+    storage_map=self.fn.storage_map)
+  File "/home/rbharath/anaconda/lib/python2.7/site-packages/theano/compile/function_module.py", line 595, in __call__
+    outputs = self.fn()
+  File "/home/rbharath/anaconda/lib/python2.7/site-packages/theano/gof/op.py", line 768, in rval
+    r = p(n, [x[0] for x in i], o)
+  File "/home/rbharath/anaconda/lib/python2.7/site-packages/theano/sandbox/cuda/basic_ops.py", line 2384, in perform
+    out[0] = x.reshape(tuple(shp))
+ValueError: Reshape has invalid dimension 0 (must be >0)
+Apply node that caused the error: GpuReshape{1}(GpuElemwise{TrueDiv}[(0, 0)].0, MakeVector.0)
+Inputs types: [CudaNdarrayType(float32, vector), TensorType(int64, vector)]
+Inputs shapes: [(0,), (1,)]
+Inputs strides: [(1,), (8,)]
+Inputs values: [<CudaNdarray object at 0x7f3909e31d70>, array([0])]
+
+Debugprint of the apply node:
+GpuReshape{1} [@A] <CudaNdarrayType(float32, vector)> ''
+ |GpuElemwise{TrueDiv}[(0, 0)] [@B] <CudaNdarrayType(float32, vector)> ''
+ | |GpuFlatten{1} [@C] <CudaNdarrayType(float32, vector)> ''
+ | | |GpuFromHost [@D] <CudaNdarrayType(float32, vector)> ''
+ | |   |AdvancedSubtensor [@E] <TensorType(float32, vector)> ''
+ | |     |<TensorType(float32, matrix)> [@F] <TensorType(float32, matrix)>
+ | |     |Subtensor{int64} [@G] <TensorType(int64, vector)> ''
+ | |     | |Nonzero [@H] <TensorType(int64, matrix)> ''
+ | |     | | |<TensorType(float32, matrix)> [@F] <TensorType(float32, matrix)>
+ | |     | |Constant{0} [@I] <int64>
+ | |     |Subtensor{int64} [@J] <TensorType(int64, vector)> ''
+ | |       |Nonzero [@H] <TensorType(int64, matrix)> ''
+ | |       |Constant{1} [@K] <int64>
+ | |GpuDimShuffle{x} [@L] <CudaNdarrayType(float32, (True,))> ''
+ |   |GpuFromHost [@M] <CudaNdarrayType(float32, scalar)> ''
+ |     |Elemwise{Cast{float32}} [@N] <TensorType(float32, scalar)> ''
+ |       |Shape_i{1} [@O] <TensorType(int64, scalar)> ''
+ |         |Nonzero [@H] <TensorType(int64, matrix)> ''
+ |MakeVector [@P] <TensorType(int64, vector)> ''
+   |Shape_i{1} [@O] <TensorType(int64, scalar)> ''
+The crashing behavior is nondeterministic and appears to depend on the sparsity of the sample_weight. If sample_weight is uniformly 0, then it always crashes, with a sparse sample_weight, it crashes about half the time, and if it is uniformly one, then the code never crashes. On CPU, the code doesn't crash, but the loss function goes to NaN instead. This behavior isn't limited to Sequential models. Here's a Graph model with the same behavior:
+import numpy as np
+from keras.models import Graph
+from keras.layers.core import Dense, Dropout, Activation
+from keras.optimizers import SGD
+
+# Generate data
+X = np.zeros((100, 100))
+y = np.zeros((100, 2))
+## The training always fails with
+#W = np.zeros((100,))
+## The training fails roughly half the time with
+W = np.random.binomial(1, .05, size=(100,))
+## The training always succeeds with
+# W = np.ones((100,))
+
+model = Graph()
+model.add_input(name="input", ndim=100)
+model.add_node(
+    Dense(100, 50, init='uniform', activation="relu"),
+    name="dense", input="input")
+model.add_node(
+    Dense(50, 2, init='uniform', activation="softmax"),
+    name="head", input="dense")
+model.add_output(name="task", input="head")
+sgd = SGD(lr=.01, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(optimizer=sgd, loss={"task": "binary_crossentropy"})
+model.fit({"input": X, "task": y}, nb_epoch=20, batch_size=50,
+          sample_weight={"task": W})
+Any suggestions for debugging/fixing this issue would be greatly appreciated. I've been banging my head against it for a day or so.

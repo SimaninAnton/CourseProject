@@ -1,0 +1,19 @@
+Contributor
+EderSantana commented on 8 Dec 2015
+Please, let me know if I got this wrong.
+I was doing some experiments with masking and it seems that it doesn't work for heterogeneous batches, I mean those where in a single batch we have sequences with different lengths. Here is why:
+https://github.com/fchollet/keras/blob/master/keras/backend/theano_backend.py#L418
+It will only mask out if all the values for all dimensions and all samples are zero. This means that mask will only kick out for homogenous batches (all samples have same length). But, training with homogeneous batches don't work well since the gradient steps will be biased to each sequence length, one at time instead of properly averaging across different lengths.
+In the Theano backend, sequences can have different lengths in different batches, so this kind of masking could be replaced by using batches where everybody already have similar lengths. If that is also the case for TF, we may just get rid of masking.
+In case we are looking to support heterogenous batches, one solution could be:
+# calculate masking per sample and reshape it to the size of the input
+switch = input.sum(axis=1, keepdims=True).repeat(input.shape[1], axis=1)
+output = T.switch(switch, output, 0. * output)
+return_states = []
+for state, new_state in zip(states, new_states):
+    # same for states
+    switch = input.sum(axis=1, keepdims=True).repeat(states.shape[1], axis=1)
+    return_states.append(T.switch(switch, new_state, state))
+One thing about that solutions is that we have to make sure that all states are matrices, which is the case for conventional RNN. For the case of Neural Turing Machines and others where the states are tensors, we can just reshape them back and forth.
+I don't know if that solution would work for TensorFlow though. But here is one thing. Masking users should be warned to use homogenous batches for now.
+Again, let me know if I got anything wrong.

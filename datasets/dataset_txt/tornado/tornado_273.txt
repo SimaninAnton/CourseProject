@@ -1,0 +1,27 @@
+ghost commented on 4 Nov 2017 •
+edited by ghost
+Hello.
+tornado/web.py:356:
+_INVALID_HEADER_CHAR_RE = re.compile(r"[\x00-\x1f]")
+is used to raise error in:
+         # If \n is allowed into the header, it is possible to inject
+        # additional headers or split the request.
+        if RequestHandler._INVALID_HEADER_CHAR_RE.search(retval):
+          raise ValueError("Unsafe header value %r", retval)
+But some servers able to response unprintable chars, for example \x01 in Set-Cookie response.
+For example here is a result of tornado's request to doterra.com:
+HTTPServerRequest(protocol='https', host='www.doterra.com', method='GET', uri='/', version='HTTP/1.1', remote_ip='')
+Traceback (most recent call last):
+  File "\tornado\web.py", line 1532, in _execute
+  File "\tornado\gen.py", line 1049, in run
+  File "\tornado\concurrent.py", line 238, in result
+  File "\tornado\gen.py", line 1063, in run
+  File "\myproj\request.py", line 162, in request_handler
+  File "\myproj\request.py", line 51, in finish_response
+  File "\myproj\request.py", line 44, in write_headers
+  File "\tornado\web.py", line 345, in add_header
+  File "\tornado\web.py", line 385, in _convert_header_value
+ValueError: ('Unsafe header value %r', '___utmvaFauNaIi=EnS\x01okWd; path=/; Max-Age=900')
+As a solution i do a monkeypatch in my RequestHandler as:
+web.RequestHandler._INVALID_HEADER_CHAR_RE = re.compile(r"[\r\n]")
+Is it a bug or I don't understand something? :)

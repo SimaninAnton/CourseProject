@@ -1,0 +1,69 @@
+GeeWee commented on 24 Jan 2019
+Checklist
+I have verified that that issue exists against the master branch of Django REST framework. (at least latest published)
+I have searched for similar issues in both open and closed tickets and cannot find a duplicate.
+This is not a usage question. (Those should be directed to the discussion group instead.)
+This cannot be dealt with as a third party library. (We prefer new functionality to be in the form of third party libraries where possible.)
+I have reduced the issue to the simplest possible case.
+Steps to reproduce
+class StaticField(Field):
+    """
+    A read-only field that always has the same value.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs["read_only"] = True
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        return self.default
+
+    def to_representation(self, value):
+        return self.default
+
+# A ModelSerializer with one field, model is not included as it doesn't matter.
+class SerializerExample(ModelSerializer):
+    static = StaticField(default='THIS SHOULD ALWAYS BE RETURNED')
+
+    class Meta:
+        model = CallOrder # Doesn't really matter
+        fields = ['static']
+
+# Tests that show the static field is returned on everything but partial updates
+
+def test_when_serializing_instance_static_field_works():
+    order = mommy.make_recipe('orders.call_order') # Create some order instance, details doesn't matter
+    serializer = SerializerExample(instance=order)
+
+    # Passes just fine!
+    assert serializer.data == {'static': 'THIS SHOULD ALWAYS BE RETURNED'}
+
+def test_full_updates_do_return_static():
+    order = mommy.make_recipe('orders.call_order') # Create some order instance, details doesn't matter
+
+    # Creating a new serializer, doing a partial
+    serializer = SerializerExample(instance=order, data={
+        "location": 1, # location doesn't matter, just the model I had needed that.
+    })
+    serializer.is_valid(raise_exception=True)
+
+    # This passes as well!
+    assert serializer.data == {'static': 'THIS SHOULD ALWAYS BE RETURNED'}
+
+def test_partial_updates_do_not_return_static():
+    order = mommy.make_recipe('orders.call_order') # Create some order instance, details doesn't matter
+    serializer = SerializerExample(instance=order, data={
+       # location still doesn't matter. It also happens with an empty dictionary
+       # I just wanted to keep the examples consistent
+        "location": 1 
+    }, partial=True)
+    serializer.is_valid(raise_exception=True)
+
+    # Passes, nothing is returned:
+    assert len(serializer.data) == 0
+    # This fails
+    assert serializer.data == {'static': 'THIS SHOULD ALWAYS BE RETURNED'}
+Expected behavior
+I have a read-only field on a ModelSerializer that always returns some static value. I expect it to always be returned when using the serializer.
+Actual behavior
+It is returned, but only on create and update. Any update with partial=True does not return the field.

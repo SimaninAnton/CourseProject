@@ -1,0 +1,75 @@
+sergeyf commented on 30 Jul 2015
+Consider the following toy example dataset and network:
+from __future__ import print_function
+import numpy as np
+from keras.models import Graph
+from keras.layers.core import Dense
+from keras.regularizers import l2
+
+# generate random data
+d = 6000
+X1 = np.random.random((10000,d))**2
+X2 = np.log(np.random.random((10000,d)))
+Y = (np.dot(X1,np.random.random((d,1))) - np.dot(X2,np.random.random((d,1))))**2
+Y /= Y.max() # scale to be between 0 and 1
+
+data = {'X1':X1, 'X2':X2, 'output':Y}
+
+# network parameters
+d1 = 512
+d2 = 256
+l2_lambda = 1e-3
+
+# graph model
+model = Graph()
+
+# inputs
+model.add_input(name='X1', ndim=2)
+model.add_input(name='X2', ndim=2)
+
+# X1 dense layer
+model.add_node(Dense(d, d1, activation='relu',W_regularizer=l2(l2_lambda)), 
+               name='dense_X1', input='X1')
+
+# X2 dense layer
+model.add_node(Dense(d, d1, activation='relu',W_regularizer=l2(l2_lambda)), 
+               name='dense_X2', input='X2')
+
+# merging dense layer
+model.add_node(Dense(2*d1 , d2, activation='relu',W_regularizer=l2(l2_lambda)), 
+               name='dense_merge', merge_mode="concat", 
+               inputs=['dense_X1','dense_X2'])
+
+# output dense layer
+model.add_node(Dense(d2 , 1, activation='sigmoid',W_regularizer=l2(l2_lambda)), 
+               name='dense_final',input='dense_merge')      
+
+model.add_output(name='output', input="dense_final")
+
+model.compile('rmsprop', {"output": 'mse'})
+First, I check the MSE of the network BEFORE it is trained.
+predictions = model.predict(data)
+print('MSE before any training:')
+print(np.mean((predictions['output']-Y)**2))
+
+MSE before any training:
+0.444015524597
+The MSE before training is 0.44. So, once we actually start training, we would expect the progress bar to report something in that vicinity.
+However, during the actual training the output is nonsensically huge:
+history = model.fit(data=data, nb_epoch=3, validation_split=0.25)
+Train on 7500 samples, validate on 2500 samples
+Epoch 0
+7500/7500 [==============================] - 2s - output: 2.1041 - val_output: 0.0096
+Epoch 1
+7500/7500 [==============================] - 2s - output: 1.6632 - val_output: 0.0096
+Note the output: 2.1041 which is MUCH bigger than the val_output. How can the MSE be this large?
+I have noticed that this bug is not active if we change l2_lambda to be 0:
+MSE before any training:
+0.0487085829439
+
+Train on 7500 samples, validate on 2500 samples
+Epoch 0
+7500/7500 [==============================] - 2s - output: 0.0093 - val_output: 0.0083
+Epoch 1
+7500/7500 [==============================] - 2s - output: 0.0084 - val_output: 0.0083
+Any idea what's going on here?

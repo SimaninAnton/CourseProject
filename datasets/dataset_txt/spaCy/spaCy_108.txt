@@ -1,0 +1,75 @@
+Contributor
+BramVanroy commented on 28 Nov 2019 •
+edited
+Following a discussion on Twitter about spaCy vs stanfordnlp vs spacy-stanfordnlp, I figured I'd do a speed comparison. The task is putting 1K lines through the whole pipeline. The test includes nlp() as well as nlp.pipe().
+The testing scripts and data are available in this test repo: https://github.com/BramVanroy/parsers-test
+I was extremely surprised by the big differences in speed (spaCy being much faster than stanfordnlp) so I went digging. I found that for the whole input in nlp() only one doc.sent sentence was created. In other words, no sentence segmentation was done. In addition, I saw extremely bad parsing results from spaCy. An example from using readlines() + nlp.pipe():
+['The', 'decrease', 'in', '2008', 'primarily', 'relates', 'to', 'the', 'decrease', 'in', 'cash', 'and', 'cash', 'equivalents', '1', '.', '\n']
+['VERB', 'PRON', 'PROPN', 'NOUN', 'VERB', 'ADV', 'VERB', 'NUM', 'PRON', 'NOUN', 'VERB', 'PROPN', 'PROPN', 'VERB', 'VERB', 'NOUN', 'SPACE']
+['dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'ROOT', '']
+
+['The', 'Company', "'s", 'current', 'liabilities', 'of', '&', 'euro;32.6', 'million', 'primarily', 'relate', 'to', 'deferred', 'income', 'from', 'collaborative', 'arrangements', 'and', 'trade', 'payables', '.', '\n']
+['NOUN', 'VERB', 'AUX', 'NOUN', 'NOUN', 'PROPN', 'PROPN', 'PROPN', 'VERB', 'VERB', 'ADV', 'VERB', 'VERB', 'NOUN', 'NOUN', 'PROPN', 'NOUN', 'PROPN', 'VERB', 'NUM', 'NOUN', 'SPACE']
+['dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'punct', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'ROOT', '']
+
+['The', 'increase', 'in', 'deferred', 'income', 'is', 'related', 'to', 'new', 'deals', 'with', 'partners', '.', '\n']
+['NOUN', 'PROPN', 'PROPN', 'VERB', 'NOUN', 'NOUN', 'NOUN', 'VERB', 'ADV', 'VERB', 'NOUN', 'VERB', 'NOUN', 'SPACE']
+['dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'dep', 'punct', 'dep', 'dep', 'ROOT', '']
+This is not how I've seen spaCy behave in the past (non-GPU version). The parses seem almost random, as if the model is not initialized correctly. Also note how basically all dependencies are dep. Again, the posted repo above may prove some insight. After more digging:
+I found that using the CPU version of spaCy does work as expected.
+I did a complete reinstall of CUDA and tried the supported version (9.2 per spaCy documentation). So I installed CUDA 9.2 (+patch) followed by installing the specifc cupy package cupy-cuda92 and spacy[cuda92]. Unfortunately, this leads to the same result.
+I found that it does work perfectly fine on Linux (Ubuntu 18.04) with 9.2. So this seems like a Windows issue.
+I tried installing spacy[cuda92]==2.1.8 to check whether the issue also arises in spaCy 2.1. Even though installation works, I get an error propagating from thinc (dependency issue?). Possibly related: explosion/thinc#79
+  File "C:/dev/python/parsers-test/spacy_test.py", line 7, in parse
+    doc = nlp(text)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\spacy\language.py", line 402, in __call__
+    doc = proc(doc, **component_cfg.get(name, {}))
+  File "pipes.pyx", line 392, in spacy.pipeline.pipes.Tagger.__call__
+  File "pipes.pyx", line 411, in spacy.pipeline.pipes.Tagger.predict
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\model.py", line 169, in __call__
+    return self.predict(x)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\feed_forward.py", line 40, in predict
+    X = layer(X)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\model.py", line 169, in __call__
+    return self.predict(x)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 310, in predict
+    X = layer(layer.ops.flatten(seqs_in, pad=pad))
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\model.py", line 169, in __call__
+    return self.predict(x)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\feed_forward.py", line 40, in predict
+    X = layer(X)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\model.py", line 169, in __call__
+    return self.predict(x)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\model.py", line 133, in predict
+    y, _ = self.begin_update(X, drop=None)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 379, in uniqued_fwd
+    Y_uniq, bp_Y_uniq = layer.begin_update(X_uniq, drop=drop)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\feed_forward.py", line 46, in begin_update
+    X, inc_layer_grad = layer.begin_update(X, drop=drop)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 163, in begin_update
+    values = [fwd(X, *a, **k) for fwd in forward]
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 163, in <listcomp>
+    values = [fwd(X, *a, **k) for fwd in forward]
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 256, in wrap
+    output = func(*args, **kwargs)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 163, in begin_update
+    values = [fwd(X, *a, **k) for fwd in forward]
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 163, in <listcomp>
+    values = [fwd(X, *a, **k) for fwd in forward]
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 256, in wrap
+    output = func(*args, **kwargs)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 163, in begin_update
+    values = [fwd(X, *a, **k) for fwd in forward]
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 163, in <listcomp>
+    values = [fwd(X, *a, **k) for fwd in forward]
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\api.py", line 256, in wrap
+    output = func(*args, **kwargs)
+  File "C:\Users\bramv\.virtualenvs\parsers-test-NtX--KFc\lib\site-packages\thinc\neural\_classes\hash_embed.py", line 59, in begin_update
+    keys = self.ops.hash(ids, self.seed) % self.nV
+  File "ops.pyx", line 967, in thinc.neural.ops.CupyOps.hash
+AttributeError: module 'thinc_gpu_ops' has no attribute 'hash'
+Info about spaCy
+spaCy version: 2.2.3
+Platform: Windows-10-10.0.18362-SP0
+Python version: 3.7.5
+Models: en, nl

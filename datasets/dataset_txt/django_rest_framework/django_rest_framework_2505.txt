@@ -1,0 +1,123 @@
+sheluchin commented on 12 Jun 2014
+I have the following code:
+# models.py
+
+from django.db import models
+
+
+class FooModel(models.Model):
+    name = models.CharField(
+        max_length=25,
+    )
+
+
+class BarModel(models.Model):
+    foo = models.ForeignKey(
+        FooModel,
+        related_name="bars"
+    )
+    bar_name = models.CharField(
+        max_length=25,
+    )
+
+    def clean(self):
+        if self.foo.name != 'test':
+            raise ValidationError('problem')
+# serializers.py
+
+from django.shortcuts import render
+
+from rest_framework import serializers
+
+from test_app.models import (
+    FooModel,
+    BarModel,
+    BazModel
+)
+
+
+class BarSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BarModel
+        fields = ('bar_name',)
+
+
+class FooSerializer(serializers.ModelSerializer):
+    bars = BarSerializer(many=True, required=True)
+
+    class Meta:
+        model = FooModel
+        fields = ('name', 'bars',)
+
+    def restore_object(self, attrs, instance=None):
+        obj = super(FooSerializer, self).restore_object(attrs, instance)
+# views.py
+
+from rest_framework import (
+    viewsets,
+    mixins
+)
+
+from test_app.serializers import FooSerializer
+from test_app.models import FooModel
+from test_app.mixins import CreateModelMixin
+
+
+class FooViewSet(mixins.CreateModelMixin,
+                 viewsets.GenericViewSet):
+    model = FooModel
+    serializer_class = FooSerializer
+# urls.py
+
+from django.conf.urls import patterns, include, url
+
+from django.contrib import admin
+admin.autodiscover()
+
+from rest_framework import routers
+
+from test_app.views import FooViewSet
+
+router = routers.DefaultRouter()
+
+router.register(r'foos', FooViewSet, base_name='foos')
+
+urlpatterns = router.urls
+# test.py
+
+from django.test import TestCase
+import json
+
+# Create your tests here.
+
+from rest_framework.test import APIRequestFactory
+from django.test import TestCase
+from django.core.urlresolvers import reverse
+
+from test_app.views import FooViewSet
+
+
+class MyTest(TestCase):
+
+    def test_foo(self):
+        path = reverse('foos-list')
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            path=path,
+            data=json.dumps({
+                "name": "My name",
+                "bars": [
+                    {"bar_name": "5"},
+                    {"bar_name": "6"}
+                ]
+            }),
+            content_type='application/json'
+        )
+
+        response = FooViewSet.as_view({'post': 'create'})(request=request)
+Running the test produces this error:
+RelatedObjectDoesNotExist: BarModel has no foo.
+This happens because when the BarModel instance calls self.full_clean() , instance.foo does not yet exist. I am doing this sort of clean on my models to validate the relationship. To explain why I'm doing this, I can provide the following example:
+If you have a model for FoodOrder, and a PizzaTopping model which references it by FK, inside PizzaTopping.clean() you may want to check that the FoodOrder record is for a pizza. If it's for a hamburger, the toppings won't be a logical fit.
+What can I do to resolve this issue?

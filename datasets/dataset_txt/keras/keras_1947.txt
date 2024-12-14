@@ -1,0 +1,85 @@
+PaoloV91 commented on 11 Jul 2017 •
+edited
+Hello everyone,
+I have an issue when trying to freeze a part of the neural network. I am working with the Keras version 2.0.5.
+My purpose is to build a unique network with two different inputs and two different outputs, and to use one of the output to train the other one. The network consists of two separate networks which elaborates their data independently. I will call those two networks Net1 and Net2.
+I implemented my own function in order to build the network, which can freeze separately Net1 or Net2.
+What I do is to train the whole network freezing Net1 and updating weights in Net2. After that I save all the weights of the network. Thus I build another network (using the saved weights) where I freeze Net2 while training and updating Net1.
+In addition I use ad dummy loss function in order to not consider the error produced by one of the two outputs.
+from keras import backend as K
+
+def mse_dummy(y_true, y_pred):
+    return K.mean(K.square(y_pred - y_pred), axis=-1)
+
+def build_network_no_loading():
+    #creates the network without calling (weights = temp_weights), necessary for initializing
+
+def build_network( LayerNamesWeightsList, Net1_Train, Net2_Train ): #it automatically load weights already trained and saved in LayerNamesWeightsList
+    #Net1
+    Net1_Input_Layer = Input(shape = (10,), name = 'Net1_Input');
+    
+    temp_weights = get_weights(LayerNamesWeightsList); #Skipping details, it works
+    Net1_Dense = Dense(10, activation= 'relu', trainable = Net1_Train, weights = temp_weights)(Net1_Input_Layer)
+    
+    temp_weights = get_weights(LayerNamesWeightsList); #Skipping details, it works
+    Net1_Output_Layer = Dense(2, activation='relu', trainable = Net1_Train, weights = temp_weights, name = 'Net1_Output')(Net1_Dense)
+    
+    #Net2
+    Net2_Input_Layer = Input(shape = (10,), name = 'Net2_Input');
+    
+    temp_weights = get_weights(LayerNamesWeightsList); #Skipping details, it works
+    Net2_Dense = Dense(10, activation= 'relu', trainable = Net2_Train, weights = temp_weights)(Net2_Input_Layer)
+    
+    temp_weights = get_weights(LayerNamesWeightsList); #Skipping details, it works
+    Net2_Dense = Dense(2, activation= 'relu', trainable = Net2_Train, weights = temp_weights)(Net2_Dense)
+    
+    #merging Net1 output to feed Net2
+    Net1_Net2_Merged_Layer = keras.layers.concatenate([Net1_Output_Layer, Net2_Dense], axis = -1) #should I set the training option also there?
+    
+    #Output for Net2
+    temp_weights = get_weights(LayerNamesWeightsList); #Skipping details, it works
+    Net2_Output_Layer = Dense(2, activation='relu', trainable = Net2_Train, weights = temp_weights, name = 'Net2_Output')(Net1_Net2_Merged_Layer)
+
+
+    #define model
+    model = Model(inputs=[Net1_Input_Layer, Net2_Input_Layer], outputs=[Net1_Output_Layer, Net2_Output_Layer])
+
+    #build
+    sgd = SGD(lr=NetworkParams.Learning_Rate, decay=1e-6, momentum=0.9, nesterov=True)                                                            
+    
+    if Net1_Train == 'true':
+        Net1_Optimizer_Objective = 'mse';
+    elif Net1_Train == 'false':
+        Net1_Optimizer_Objective = mse_dummy;
+    if Net2_Train == 'true':
+        Net2_Optimizer_Objective = 'mse';
+    elif Net2_Train == 'false':
+        Net2_Optimizer_Objective = mse_dummy;
+
+    model.compile(optimizer=sgd, loss={'Net1_Output' : Net1_Optimizer_Objective, 'Net2_Output' : Net2_Optimizer_Objective})
+
+    return model;
+
+#training
+model = build_network_no_loading();
+
+while (training_condition == 'true'):
+    
+    LayerNamesWeightsList = RetrieveWeightsName( model);
+    model = build_network( LayerNamesWeightsList, 'true', 'false' ); #train Net1
+    model.fit({'Net1_Input': data1, 'Net2_Input': data2}, {'Net1_Output': label1, 'Net2_Output': label2},epochs=1, batch_size=50)
+    
+    LayerNamesWeightsList = RetrieveWeightsName( model);
+    model = build_network( LayerNamesWeightsList, 'false', 'true' ); #train Net2
+    model.fit({'Net1_Input': data1, 'Net2_Input': data2}, {'Net1_Output': label1, 'Net2_Output': label2},epochs=1, batch_size=50)
+    
+    training_condition = CheckTrainingCondition();
+It is a reduced part of the code, but the main idea is there.
+The issue rises while training. What I am supposed to observe is that while training Net1 with Net2 freezed, is that Net1_Loss decrease and Net2_Losses is zero.
+Thus, while Net2 is freezed and Net2 is training, loss for Net2 should decrease and loss for Net1 should be zero.
+Successively the next while loop, I should observe that Net1_Loss (while training) should restart from where it was left in the previous loop. However it does not happen, it starts from a value of loss such as 0.5.
+It should mean that when I freeze Net1 for training Net2, Net1 is not totally freezed and its weights change. And it's far from my objective.
+I think it is a problem caused by concantenating Net1_Output_Layer with Net2_Dense.
+Am I wrong? Is there a solution to this kind of problem? Is there any mistake in my code?
+Thank you for your time.
+Paolo

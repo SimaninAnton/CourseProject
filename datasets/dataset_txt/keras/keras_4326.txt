@@ -1,0 +1,122 @@
+hadikazemi commented on 23 Sep 2016 •
+edited
+The following code generates no error on a virtualbox Ubuntu 14.04 (CPU only). The code is an tutorial from www.pyimagesearch.com
+    from sklearn.cross_validation import train_test_split
+    from sklearn import datasets
+    from keras.optimizers import SGD
+    from keras.utils import np_utils
+    import numpy as np
+    import argparse
+    import cv2
+    from keras.models import Sequential
+    from keras.layers.convolutional import Convolution2D
+    from keras.layers.convolutional import MaxPooling2D
+    from keras.layers.core import Activation
+    from keras.layers.core import Flatten
+    from keras.layers.core import Dense
+
+    def LeNet_build(width, height, depth, classes, weightsPath=None):
+        print width, height, depth
+        model = Sequential()
+
+        # first set of CONV => RELU => POOL
+        model.add(Convolution2D(20, 5, 5, border_mode="same",
+            input_shape=(depth, height, width)))
+        model.add(Activation("relu"))
+        model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+        # second set of CONV => RELU => POOL
+        model.add(Convolution2D(50, 5, 5, border_mode="same"))
+        model.add(Activation("relu"))
+        model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+        # set of FC => RELU layers
+        model.add(Flatten())
+        model.add(Dense(500))
+        model.add(Activation("relu"))
+
+        # softmax classifier
+        model.add(Dense(classes))
+        model.add(Activation("softmax"))
+
+        # if a weights path is supplied (inicating that the model was
+        # pre-trained), then load the weights
+        if weightsPath is not None:
+            model.load_weights(weightsPath)
+
+        # return the constructed network architecture
+        return model
+
+    dataset = datasets.fetch_mldata("MNIST Original")
+
+    # reshape the MNIST dataset from a flat list of 784-dim vectors, to
+    #28 x 28 pixel images, then scale the data to the range [0, 1.0]
+    # and construct the training and testing splits
+    data = dataset.data.reshape((dataset.data.shape[0], 28, 28))
+    data = data[:, np.newaxis, :, :]
+    (trainData, testData, trainLabels, testLabels) = train_test_split(
+        data / 255.0, dataset.target.astype("int"), test_size=0.33)
+
+    # transform the training and testing labels into vectors in the
+    # range [0, classes] -- this generates a vector for each label,
+    # where the index of the label is set to `1` and all other entries
+    # to `0`; in the case of MNIST, there are 10 class labels
+    trainLabels = np_utils.to_categorical(trainLabels, 10)
+    testLabels = np_utils.to_categorical(testLabels, 10)
+
+    # initialize the optimizer and model
+    print("[INFO] compiling model...")
+    opt = SGD(lr=0.01)
+    model = LeNet_build(width=28, height=28, depth=1, classes=10, weightsPath=None)
+However, it generates the following error inside a fresh installed Ubuntu 14.04 with Titan X Pascal and Cuda 8.0 (tested both on CPU and GPU - Theano backend) - the same error is reported before and remained unsolved (https://github.com/fchollet/keras/issues/1592):
+ Exception                                 Traceback (most recent call last)
+<ipython-input-3-c61646d5fa78> in <module>()
+     23 print("[INFO] compiling model...")
+     24 opt = SGD(lr=0.01)
+---> 25 model = LeNet_build(width=28, height=28, depth=1, classes=10, weightsPath=None)
+
+<ipython-input-2-a36c66483235> in LeNet_build(width, height, depth, classes, weightsPath)
+     16 
+     17         # set of FC => RELU layers
+---> 18         model.add(Flatten())
+     19         model.add(Dense(500))
+     20         model.add(Activation("relu"))
+
+/home/hadi/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/models.pyc in add(self, layer)
+    306                  output_shapes=[self.outputs[0]._keras_shape])
+    307         else:
+--> 308             output_tensor = layer(self.outputs[0])
+    309             if type(output_tensor) is list:
+    310                 raise Exception('All layers in a Sequential model '
+
+/home/hadi/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/engine/topology.pyc in __call__(self, x, mask)
+    512         if inbound_layers:
+    513             # this will call layer.build() if necessary
+--> 514             self.add_inbound_node(inbound_layers, node_indices, tensor_indices)
+    515             input_added = True
+    516 
+
+/home/hadi/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/engine/topology.pyc in add_inbound_node(self, inbound_layers, node_indices, tensor_indices)
+    570         # creating the node automatically updates self.inbound_nodes
+    571         # as well as outbound_nodes on inbound layers.
+--> 572         Node.create_node(self, inbound_layers, node_indices, tensor_indices)
+    573 
+    574     def get_output_shape_for(self, input_shape):
+
+/home/hadi/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/engine/topology.pyc in create_node(cls, outbound_layer, inbound_layers, node_indices, tensor_indices)
+    150             output_masks = to_list(outbound_layer.compute_mask(input_tensors[0], input_masks[0]))
+    151             # TODO: try to auto-infer shape if exception is raised by get_output_shape_for
+--> 152             output_shapes = to_list(outbound_layer.get_output_shape_for(input_shapes[0]))
+    153         else:
+    154             output_tensors = to_list(outbound_layer.call(input_tensors, mask=input_masks))
+
+/home/hadi/.virtualenvs/keras/local/lib/python2.7/site-packages/keras/layers/core.pyc in get_output_shape_for(self, input_shape)
+    400             raise Exception('The shape of the input to "Flatten" '
+    401                             'is not fully defined '
+--> 402                             '(got ' + str(input_shape[1:]) + '. '
+    403                             'Make sure to pass a complete "input_shape" '
+    404                             'or "batch_input_shape" argument to the first '
+
+Exception: The shape of the input to "Flatten" is not fully defined (got (0, 7, 50). Make sure to pass a complete "input_shape" or "batch_input_shape" argument to the first layer in your model.
+Update: I have checked all of my previous Keras codes which were working in the virtualbox and all of them give the same error:
+Exception: The shape of the input to "Flatten" is not fully defined (got (0, 7, 512). Make sure to pass a complete "input_shape" or "batch_input_shape" argument to the first layer in your model.

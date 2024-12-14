@@ -1,0 +1,33 @@
+robcharlwood commented on 3 Dec 2012
+Hi Tom,
+Issue
+When trying to view an API view which utilises a serializer with a RegexField the browsable api view explodes with a TypeError. (I have attached my traceback after this message). I have traced it to the renderers.py file line 351 on the 2.1.6 release. The issue is that the code is trying to instantiate an instance of django.forms.RegexField without passing it the regex argument.
+The kwargs passed to the instantiation call are:
+{'label': 'code', 'required': False, 'widget': <django.forms.widgets.TextInput object at 0x1057bcb90>}
+The field is mapping correctly to the django.forms.RegexField but because regex is not passed as an argument to the class, django whines that its missing some arguments. To re-create this issue, create a standard serializer with a RegexField, Create a standard CreateAPIView, map to the view with a URL and then access.
+Fix
+It looks like we need some extra code in that method. This fixes the issue for me locally at least:
+if getattr(v, 'regex', None) is not None:
+    kwargs['regex'] = v.regex
+Cheers,
+Rob
+Traceback
+Request Method: GET
+Request URL: http://localhost:8000/drf/xxxxx/
+
+Traceback:
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/core/handlers/base.py" in get_response
+  136.                     response = response.render()
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/Django-1.4.2-py2.7.egg/django/template/response.py" in render
+  104.             self._set_content(self.rendered_content)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.6-py2.7.egg/rest_framework/response.py" in rendered_content
+  42.         return renderer.render(self.data, media_type, context)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.6-py2.7.egg/rest_framework/renderers.py" in render
+  453.         post_form = self.get_form(view, 'POST', request)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.6-py2.7.egg/rest_framework/renderers.py" in get_form
+  379.         fields = self.serializer_to_form_fields(serializer)
+File "/Users/robcharlwood/Dev/Envs/ism-env/src/eggs/djangorestframework-2.1.6-py2.7.egg/rest_framework/renderers.py" in serializer_to_form_fields
+  353.                 fields[k] = field_mapping[v.__class__](**kwargs)
+
+Exception Type: TypeError at /drf/xxxxx/
+Exception Value: __init__() takes at least 2 arguments (1 given)

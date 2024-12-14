@@ -1,0 +1,12 @@
+yoavfrancis commented on 18 Mar 2014
+Firstly, I'm running mitmproxy in cert-forward mode + transparent proxy mode.
+When I attempt to connect to some specific websites - such as outlook.com - I get only parts of the page loaded and other strange quirks. Upon further investigation of the wireshark sniff, I can see that the client receives only the last leaf in the certificate chain (instead of the entire certificate chain).
+I attempted to look futher and debug mitmproxy to figure out why this happens. I saw quite a few errors being thrown in the "handle_sni" method (in server.py):
+new_context.use_privatekey_file(key) throws an exception that "keyfile must be a byte string" (key is of type OpenSSL.crypto.PKey).
+I tried fixing the call to be new_context.use_privatekey and this line worked correctly.
+However, the line right after that, that calls to new_context.use_certificate(cert.X509) also throws an exception, since X509 is not an attribute of netlib.certutils.SSLCert
+it should be x509 instead (lowercase)
+So I fixed that as well and now no exception is being thrown in handle_sni. However, the SSL handshake fails with error :
+**SSL handshake error: [('SSL routines', 'SSL3_GET_RECORD', 'decryption failed or bad record mac')] ** in the handle method of server.py (thrown from the call to self.establish_ssl(client=client_ssl, server=server_ssl))
+To sum up - I believe there is some bug in regards to the way SNI connection is being handled (at least in cases of certificate forwarding). Perhaps I'm mistaken so I'd happy to get your feedback on that matter.
+Edit - Apparently if I do leave these fixes in place - it breaks other stuff that previously had worked (eg. Gmail app) - Wireshark reports "Bad Record Mac" SSL Alert packet. This packet is sent from the remote server after the client sends a "Client Key Exchange" packet to the mitm, followed by "Change cipher spec" and an "Encrypted handshake message". I can attach a screenshot if necessary.

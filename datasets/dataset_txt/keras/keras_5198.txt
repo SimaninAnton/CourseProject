@@ -1,0 +1,58 @@
+MarkVdBergh commented on 11 May 2016 •
+edited
+I'm trying to reproduce a saved model. (see code)
+First I train the model, then save it with the weights and state,
+In order to test if it's reproducible, I continue to train for 10 epochs, make a prediction and save that prediction.
+Then I load the model, weights and state and train the reproduced model for 10 epochs and compare the prediction with the saved prediction from the original model. They are not the same!
+I first thought that shuffling during training was the problem, but setting shuffle= False doesn't solve it.
+Questions:
+Is there a better way to save a partially trained model than what I'm doing here under?
+why is there a difference between the prediction from the original model and the loaded model? When shuffle=True, the losses are the same for the 2 models, but not the predictions.
+Thanks !
+shuffle = True
+X = np.random.uniform(0, 1, 100)
+nb_epoch = 10
+input_dim = 1
+
+act = 'tanh'
+inputs = Input(shape=(input_dim,))
+encoder = Dense(10, activation=act)(inputs)
+decoder = Dense(input_dim, activation=act)(encoder)
+autoencoder1 = Model(input=inputs, output=decoder)
+sgd = SGD(lr=0.01, decay=1e-6, momentum=0.96, nesterov=True)
+autoencoder1.compile(loss='mean_squared_error', optimizer=sgd)
+autoencoder1.fit(X, X, nb_epoch=nb_epoch, shuffle=shuffle)
+Xpred1 = autoencoder1.predict(X)
+pickle.dump(Xpred1, open('Xpred1', 'wb'))
+# Save model
+state = autoencoder1.optimizer.get_state()
+weights = autoencoder1.get_weights()
+pickle.dump(state, open('state', 'wb'))
+autoencoder1.save_weights('weights')
+model_json = autoencoder1.to_json()
+open('model.json', 'w').write(model_json)
+# Continue training
+autoencoder1.fit(X, X, nb_epoch=nb_epoch, shuffle=shuffle)
+Xpred2 = autoencoder1.predict(X)
+pickle.dump(Xpred2, open('Xpred2', 'wb'))
+#---------------------------------------------------------------------------------------------
+
+# Reconstuct model
+nb_epoch = 10
+Xpred1 = pickle.load(open('Xpred1', 'rb'))
+Xpred2 = pickle.load(open('Xpred1', 'rb'))
+model = model_from_json(open('model.json').read())
+model.load_weights('weights')
+state = pickle.load(open('state', 'rb'))
+sgd = SGD(lr=0.01, decay=1e-6, momentum=0.96, nesterov=True)
+model.compile(loss='mean_squared_error', optimizer=sgd)
+model.load_weights('weights')
+
+model.fit(X, X, nb_epoch=0, shuffle=shuffle)  # No training !
+model.optimizer.set_state(state)
+
+print (model.predict(X) - Xpred1).sum()  # ==0? OK
+
+# Continue training
+model.fit(X, X, nb_epoch=nb_epoch, shuffle=shuffle)
+print (model.predict(X) - Xpred2).sum()  # ==0? NOT OK !!!

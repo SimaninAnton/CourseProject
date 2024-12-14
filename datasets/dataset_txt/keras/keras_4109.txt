@@ -1,0 +1,77 @@
+mattsim commented on 21 Oct 2016
+I'm suspecting to be an issue in the calculation of the validation binary_crossentropy loss for unbalanced datasets. To reproduce the error, I (roughly) adapted the mnist_irnn example to a binary unbalanced classification problem
+hidden_units, learning_rate, clip_norm = 100, 1e-6, 1.0
+
+# the data, shuffled and split between train and test sets
+(X_train, Y_train), (X_test, Y_test) = mnist.load_data()
+
+# unbalanced dataset
+Y_train[Y_train > 0] = 1
+Y_test[Y_test > 0] = 1
+class_weight = {1: 1.0, 0: Y_train[Y_train == 1].size / Y_train[Y_train == 0].size}
+
+X_train = X_train.reshape(X_train.shape[0], -1, 1)
+X_test = X_test.reshape(X_test.shape[0], -1, 1)
+X_train = X_train.astype('float32')
+X_test = X_test.astype('float32')
+X_train /= 255
+X_test /= 255
+print('X_train shape:', X_train.shape)
+print(X_train.shape[0], 'train samples')
+print(X_test.shape[0], 'test samples')
+
+print('Evaluate IRNN...')
+model = Sequential()
+model.add(SimpleRNN(output_dim=hidden_units,
+                init=lambda shape, name: normal(shape, scale=0.001, name=name),
+                inner_init=lambda shape, name: identity(shape, scale=1.0, name=name),
+                activation='relu',
+                input_shape=X_train.shape[1:]))
+model.add(Dense(1))
+model.add(Activation('sigmoid'))
+rmsprop = RMSprop(lr=learning_rate)
+model.compile(loss='binary_crossentropy',
+              optimizer=rmsprop,
+              metrics=['accuracy'])
+
+model.fit(X_train, Y_train, batch_size=32, nb_epoch=50,
+          verbose=1, validation_data=(X_test, Y_test),
+          class_weight = class_weight)
+
+scores = model.evaluate(X_test, Y_test, verbose=0)
+print('IRNN test score:', scores[0])
+print('IRNN test accuracy:', scores[1])
+Below, I report the output of the firsts epochs:
+Epoch 1/200
+60000/60000 [==============================] - 1147s - loss: 1.0599 - acc: 0.6132 - val_loss: 0.4425 - val_acc: 0.7998
+Epoch 2/200
+60000/60000 [==============================] - 1156s - loss: 1.0055 - acc: 0.6963 - val_loss: 0.6132 - val_acc: 0.6577
+Epoch 3/200
+60000/60000 [==============================] - 1150s - loss: 1.0026 - acc: 0.6847 - val_loss: 0.5428 - val_acc: 0.7012
+Epoch 4/200
+60000/60000 [==============================] - 1114s - loss: 0.9975 - acc: 0.6776 - val_loss: 0.4686 - val_acc: 0.7476
+Epoch 5/200
+60000/60000 [==============================] - 1106s - loss: 0.9964 - acc: 0.6723 - val_loss: 0.4878 - val_acc: 0.7352
+The validation loss value is definitely lower the train one, while yielding a similar trend. My hypothesis is it to be not scaled for the class_weight component.
+Looking at the code in training.py, I found that sample_weight considers the class_weight parameter only when computing training data.
+        # validate user data
+        x, y, sample_weights = self._standardize_user_data(x, y,
+                                           sample_weight=sample_weight,
+                                           class_weight=class_weight,
+                                           check_batch_dim=False,
+                                           batch_size=batch_size)
+        # prepare validation data
+        if validation_data:
+            do_validation = True
+            if len(validation_data) == 2:
+                val_x, val_y = validation_data
+                val_sample_weight = None
+            elif len(validation_data) == 3:
+                val_x, val_y, val_sample_weight = validation_data
+            else:
+                raise
+            val_x, val_y, val_sample_weights = self._standardize_user_data(val_x, val_y,
+                                                       sample_weight=val_sample_weight,
+                                                       check_batch_dim=False,
+                                                       batch_size=batch_size)
+I would have expected the loss function to be weighted also by class_weight, even if evaluated on test/validation samples. Is it intended behaviour? (and, if so, why?)

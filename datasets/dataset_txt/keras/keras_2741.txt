@@ -1,0 +1,39 @@
+claudio-lucchese commented on 4 Apr 2017
+The behaviour of keras.backend.categorical_crossentropy is not as expected
+when output is pre-processed with a softmax.
+Specifically, I believe the issue is the following.
+According to the documentation from_logits is a Boolean whether output is the result of a softmax.
+When from_logits==True, keras invokes tf.nn.softmax_cross_entropy_with_logits.
+But, according to tensorflow documentation:
+This op expects unscaled logits, since it performs a softmax on logits internally for efficiency. Do not call this op with the output of softmax, as it will produce incorrect results.
+As a result, the output of a softmax is forwarded to the tensorflow softmax_cross_entropy_with_logits which in turn "will produce incorrect results".
+Below a piece of code showing the issue.
+import numpy as np
+import tensorflow as tf
+X = np.array([[1.0, 0.0],[0.0, 1.0]])
+
+# apparently wrong behaviour
+error = keras.backend.eval( keras.backend.categorical_crossentropy(
+                            keras.backend.softmax( keras.backend.variable(X) ), 
+                            keras.backend.variable( X ), 
+                            from_logits=True) # since `output` is the result of a softmax
+                          )
+print np.mean(error) # this prints 0.488548
+
+# expected behaviour
+error = keras.backend.eval( keras.backend.categorical_crossentropy(
+                            keras.backend.variable(X), 
+                            keras.backend.variable(X), 
+                            from_logits=False) # force keras to normlize
+                          )
+print np.mean(error) # this prints 1.19209e-07
+
+# this is different from invoking tensorflow direclty
+error = keras.backend.eval( tf.nn.softmax_cross_entropy_with_logits(
+                            logits=keras.backend.variable(X), 
+                            labels=keras.backend.variable(X))
+                          )
+                          
+print np.mean(error) # this prints 0.313262
+thanks,
+@claudio-lucchese @francomarianardini @rossanoventurini
